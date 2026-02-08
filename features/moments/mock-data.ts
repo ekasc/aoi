@@ -1,0 +1,37 @@
+import type { Moment } from '@/features/moments/types';
+
+export const mockMoments: Moment[] = [
+  {
+    id: 'm_2025_1224_goal',
+    type: 'goal',
+    title: 'Build monthly recap',
+    body: 'Deterministic recap selection is planned once backend and data sync are in place.',
+    occurredAt: '2025-12-24T18:10:00.000Z',
+    createdAt: '2025-12-24T18:15:00.000Z',
+    authorId: 'user_partner',
+    authorRole: 'partner',
+    authorName: 'Alex',
+  },
+  {
+    id: 'm_2026_0114_milestone',
+    type: 'milestone',
+    title: 'A chapter begins',
+    body: 'This timeline structure will hold milestones, notes, goals, and media moments.',
+    occurredAt: '2026-01-14T11:00:00.000Z',
+    createdAt: '2026-01-14T11:03:00.000Z',
+    authorId: 'user_you',
+    authorRole: 'you',
+    authorName: 'You',
+  },
+  {
+    id: 'm_2026_0208_note',
+    type: 'note',
+    title: 'First page',
+    body: 'Aoi opens like a private book: soft paper, steady rhythm, no feed noise.',
+    occurredAt: '2026-02-08T09:15:00.000Z',
+    createdAt: '2026-02-08T09:16:00.000Z',
+    authorId: 'user_partner',
+    authorRole: 'partner',
+    authorName: 'Alex',
+  },
+];
