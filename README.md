@@ -1,50 +1,63 @@
-# Welcome to your Expo app 👋
+# Aoi
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aoi is a private, shared relationship scrapbook for two people. It stores photos, short videos, notes, milestones, important dates, and goals, and generates monthly and anniversary recaps.
 
-## Get started
+## Principles
+- No AI features.
+- No social feed, chat, or public sharing.
+- Relationship as a chapter (can be archived/ended).
+- Media owned by uploader; shared visibility via relationship membership.
+- Direct-to-object storage uploads (no media through API).
 
-1. Install dependencies
+## Monetization
+- Free to download.
+- $9.99 one-time in-app purchase per relationship creation (invite one partner for free).
+- Optional storage subscription later (extra capacity). If canceled: view-only, export allowed.
 
-   ```bash
-   npm install
-   ```
+## Stack
+- Mobile: React Native (Expo)
+- Backend: Go (Gin)
+- Database: Postgres (Neon)
+- Storage: Cloudflare R2 (S3-compatible)
+- Hosting: Fly.io
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+## Suggested repo layout
+```
+aoi/
+  apps/
+    mobile/                # Expo app
+  services/
+    api/                   # Go Gin API
+  packages/
+    shared/                # shared types, schemas, constants
+  docs/
+    blueprint.md
+    prd-engineering.md
+    db-api.md
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Core flows (MVP)
 
-## Learn more
+### Upload
+1. Client compresses media locally.
+2. Client requests a presigned upload URL.
+3. Client uploads directly to R2.
+4. Client calls complete endpoint to register media.
+5. Client creates a moment referencing the media.
 
-To learn more about developing your project with Expo, look at the following resources:
+### Relationship creation
+1. Client purchases relationship creation entitlement (IAP).
+2. Client verifies purchase with backend.
+3. Client creates relationship (consumes entitlement).
+4. Client generates invite code.
+5. Partner redeems invite code.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Policies (high level)
+- Location optional per upload and stored at rounded precision.
+- Refunds revoke entitlements and switch users to view-only.
+- Retention cleanup runs daily via cron hitting an internal endpoint.
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Docs
+- `docs/blueprint.md` — product scope and constraints
+- `docs/prd-engineering.md` — PRD + engineering spec
+- `docs/db-api.md` — schema + endpoints
