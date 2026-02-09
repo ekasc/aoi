@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { FlatList, StyleSheet, View, type ListRenderItemInfo } from 'react-native';
 import Animated, { FadeInDown, ReduceMotion } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MomentCard } from '@/components/moments/moment-card';
 import { ThemedText } from '@/components/themed-text';
@@ -18,15 +19,30 @@ function ListSpacer() {
 
 export default function TimelineScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { moments } = useMoments();
   const thread = useThemeColor({}, 'thread');
+  const muted = useThemeColor({}, 'muted');
+  const border = useThemeColor({}, 'border');
+  const surface = useThemeColor({}, 'surface');
+  const background = useThemeColor({}, 'background');
+  const timelineMoments = useMemo(() => [...moments].reverse(), [moments]);
+
+  const periodLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+      }),
+    []
+  );
 
   const handleAddMoment = useCallback(() => {
     router.push('/(app)/moment/new');
   }, [router]);
 
-  const handleOpenRecaps = useCallback(() => {
-    router.push('/(app)/(tabs)/recaps');
+  const handleOpenCalendar = useCallback(() => {
+    router.push('/(app)/(tabs)/calendar');
   }, [router]);
 
   const keyExtractor = useCallback((item: Moment) => item.id, []);
@@ -37,34 +53,44 @@ export default function TimelineScreen() {
 
   const emptyState = useMemo(
     () => (
-      <Surface style={styles.emptyState}>
+      <Surface style={[styles.emptyState, { borderColor: border, backgroundColor: surface }]}>
         <ThemedText type="title" style={styles.emptyTitle}>
-          No moments yet
+          Start your timeline
         </ThemedText>
-        <ThemedText type="body">
-          Add the first moment and start this timeline for both of you.
-        </ThemedText>
+        <ThemedText type="caption">Add photos, notes, and memories you share.</ThemedText>
       </Surface>
     ),
-    []
+    [border, surface]
   );
   const railStyle = useMemo(
     () => [styles.rail, { backgroundColor: thread }],
     [thread]
   );
+  const rootStyle = useMemo(
+    () => [styles.root, { backgroundColor: background, paddingTop: insets.top + Spacing[8] }],
+    [background, insets.top]
+  );
+  const contentContainerStyle = useMemo(
+    () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
+    [insets.bottom]
+  );
 
   return (
-    <View style={styles.root}>
+    <View style={rootStyle}>
       <Animated.View
         entering={FadeInDown.duration(Motion.slow)
           .delay(20)
           .reduceMotion(ReduceMotion.System)}
         style={styles.hero}
       >
-        <ThemedText type="meta">Shared timeline</ThemedText>
-        <ThemedText type="title">Current moments first</ThemedText>
-        <ThemedText type="caption">
-          Scroll up to move deeper into older notes, milestones, and media.
+        <ThemedText type="meta" selectable>
+          Your story
+        </ThemedText>
+        <ThemedText type="title" selectable>
+          Your moments
+        </ThemedText>
+        <ThemedText type="caption" style={{ color: muted }}>
+          {periodLabel}
         </ThemedText>
       </Animated.View>
 
@@ -75,7 +101,7 @@ export default function TimelineScreen() {
         style={styles.actions}
       >
         <Button label="Add moment" onPress={handleAddMoment} />
-        <Button label="Open recaps" variant="secondary" onPress={handleOpenRecaps} />
+        <Button label="Calendar" variant="secondary" onPress={handleOpenCalendar} />
       </Animated.View>
 
       <View style={styles.timelineWrap}>
@@ -85,10 +111,9 @@ export default function TimelineScreen() {
           style={railStyle}
         />
         <FlatList
-          inverted
           contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={styles.contentContainer}
-          data={moments}
+          contentContainerStyle={contentContainerStyle}
+          data={timelineMoments}
           ItemSeparatorComponent={ListSpacer}
           keyExtractor={keyExtractor}
           ListEmptyComponent={emptyState}
@@ -104,12 +129,12 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     paddingHorizontal: Spacing[16],
-    paddingTop: Spacing[16],
-    paddingBottom: Spacing[12],
+    paddingTop: 0,
+    paddingBottom: Spacing[0],
     gap: Spacing[12],
   },
   hero: {
-    gap: Spacing[8],
+    gap: Spacing[4],
   },
   actions: {
     flexDirection: 'row',
@@ -127,13 +152,13 @@ const styles = StyleSheet.create({
     left: '50%',
     width: StyleSheet.hairlineWidth,
     transform: [{ translateX: -0.5 }],
-    opacity: 0.8,
+    opacity: 0.95,
     zIndex: 0,
   },
   contentContainer: {
     gap: Spacing[8],
-    paddingBottom: Spacing[8],
-    paddingTop: Spacing[8],
+    paddingBottom: Spacing[24],
+    paddingTop: Spacing[12],
   },
   listSpacer: {
     height: Spacing[8],

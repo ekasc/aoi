@@ -1,60 +1,104 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router/stack';
-import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo } from 'react';
+import {
+	DarkTheme,
+	DefaultTheme,
+	ThemeProvider as NavigationThemeProvider,
+} from "@react-navigation/native";
+import { Stack } from "expo-router/stack";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useMemo, useState } from "react";
 
-import { Colors } from '@/constants/theme';
-import { SessionProvider } from '@/features/session/session-context';
-import { useAoiFonts } from '@/hooks/use-aoi-fonts';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { LaunchSplash } from "@/components/launch-splash";
+import { SessionProvider } from "@/features/session/session-context";
+import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
+import { useAoiFonts } from "@/hooks/use-aoi-fonts";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const themeName = colorScheme === 'dark' ? 'dark' : 'light';
-  const { fontsLoaded } = useAoiFonts();
+	const { fontsLoaded } = useAoiFonts();
 
-  const navigationTheme = useMemo(() => {
-    const baseTheme = themeName === 'dark' ? DarkTheme : DefaultTheme;
+	return (
+		<SessionProvider>
+			<AoiThemeProvider>
+				<RootNavigation fontsLoaded={fontsLoaded} />
+			</AoiThemeProvider>
+		</SessionProvider>
+	);
+}
 
-    return {
-      ...baseTheme,
-      colors: {
-        ...baseTheme.colors,
-        primary: Colors[themeName].accent,
-        background: Colors[themeName].background,
-        card: Colors[themeName].surface,
-        text: Colors[themeName].text,
-        border: Colors[themeName].border,
-        notification: Colors[themeName].danger,
-      },
-    };
-  }, [themeName]);
+type RootNavigationProps = {
+	fontsLoaded: boolean;
+};
 
-  useEffect(() => {
-    if (!fontsLoaded) {
-      return;
-    }
+function RootNavigation({ fontsLoaded }: RootNavigationProps) {
+	const { mode, colors, isHydrated } = useAoiTheme();
+	const themeName = mode === "dark" ? "dark" : "light";
+	const [showLaunchSplash, setShowLaunchSplash] = useState(true);
 
-    void SplashScreen.hideAsync().catch(() => {});
-  }, [fontsLoaded]);
+	const navigationTheme = useMemo(() => {
+		const baseTheme = mode === "dark" ? DarkTheme : DefaultTheme;
 
-  if (!fontsLoaded) {
-    return null;
-  }
+		return {
+			...baseTheme,
+			colors: {
+				...baseTheme.colors,
+				primary: colors.accent,
+				background: colors.background,
+				card: colors.surface,
+				text: colors.text,
+				border: colors.border,
+				notification: colors.danger,
+			},
+		};
+	}, [colors, mode]);
 
-  return (
-    <SessionProvider>
-      <ThemeProvider value={navigationTheme}>
-        <Stack>
-          <Stack.Screen name="(public)" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(app)" options={{ headerShown: false }} />
-        </Stack>
-        <StatusBar style={themeName === 'dark' ? 'light' : 'dark'} />
-      </ThemeProvider>
-    </SessionProvider>
-  );
+	useEffect(() => {
+		if (!fontsLoaded || !isHydrated) {
+			return;
+		}
+
+		let isActive = true;
+		let splashTimer: ReturnType<typeof setTimeout> | null = null;
+
+		async function hideNativeSplash() {
+			await SplashScreen.hideAsync().catch(() => {});
+			splashTimer = setTimeout(() => {
+				if (isActive) {
+					setShowLaunchSplash(false);
+				}
+			}, 980);
+		}
+
+		void hideNativeSplash();
+
+		return () => {
+			isActive = false;
+			if (splashTimer) {
+				clearTimeout(splashTimer);
+			}
+		};
+	}, [fontsLoaded, isHydrated]);
+
+	if (!fontsLoaded || !isHydrated || showLaunchSplash) {
+		return <LaunchSplash colors={colors} themeName={themeName} />;
+	}
+
+	return (
+		<NavigationThemeProvider value={navigationTheme}>
+			<Stack
+				screenOptions={{
+					contentStyle: { backgroundColor: colors.background },
+				}}
+			>
+				<Stack.Screen
+					name="(public)"
+					options={{ headerShown: false }}
+				/>
+				<Stack.Screen name="(auth)" options={{ headerShown: false }} />
+				<Stack.Screen name="(app)" options={{ headerShown: false }} />
+			</Stack>
+			<StatusBar style={themeName === "dark" ? "light" : "dark"} />
+		</NavigationThemeProvider>
+	);
 }

@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ThemeSelector } from '@/components/theme/theme-selector';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Divider } from '@/components/ui/divider';
@@ -12,47 +14,68 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { signOut } = useSession();
   const muted = useThemeColor({}, 'muted');
+  const background = useThemeColor({}, 'background');
 
   const handleSignOut = useCallback(() => {
     signOut();
     router.replace('/(public)');
   }, [router, signOut]);
+  const contentContainerStyle = useMemo(
+    () => [
+      styles.contentContainer,
+      {
+        paddingTop: insets.top + Spacing[8],
+        paddingBottom: insets.bottom + Spacing[16],
+      },
+    ],
+    [insets.bottom, insets.top]
+  );
 
   return (
     <ScrollView
-      contentContainerStyle={styles.contentContainer}
-      contentInsetAdjustmentBehavior="automatic"
+      style={{ backgroundColor: background }}
+      contentContainerStyle={contentContainerStyle}
+      contentInsetAdjustmentBehavior="never"
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.hero}>
         <ThemedText type="meta" style={{ color: muted }}>
-          Account and relationship
+          Your space
         </ThemedText>
-        <ThemedText type="title">Settings</ThemedText>
+        <ThemedText type="title" selectable>
+          Settings
+        </ThemedText>
         <ThemedText type="body" style={{ color: muted }}>
-          Export and archive controls are scaffolded for backend integration.
+          Customize how it looks and feels.
         </ThemedText>
       </View>
 
       <Surface variant="raised" style={styles.card}>
-        <ThemedText type="meta">Data</ThemedText>
+        <ThemedText type="meta">Appearance</ThemedText>
         <Divider style={styles.divider} />
-        <Button label="Export data" variant="secondary" disabled onPress={() => {}} />
+        <ThemeSelector />
+      </Surface>
+
+      <Surface variant="raised" style={styles.card}>
+        <ThemedText type="meta">Your data</ThemedText>
+        <Divider style={styles.divider} />
+        <Button label="Take your data with you" variant="secondary" disabled onPress={() => {}} />
       </Surface>
 
       <Surface style={styles.card}>
-        <ThemedText type="meta">Relationship</ThemedText>
+        <ThemedText type="meta">Account</ThemedText>
         <Divider style={styles.divider} />
         <View style={styles.actionStack}>
           <Button
-            label="Archive relationship"
+            label="Close this chapter"
             variant="secondary"
             disabled
             onPress={() => {}}
           />
-          <Button label="Delete account" variant="destructive" disabled onPress={() => {}} />
+          <Button label="Delete everything" variant="destructive" disabled onPress={() => {}} />
         </View>
       </Surface>
 
@@ -69,8 +92,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     gap: Spacing[12],
     paddingHorizontal: Spacing[16],
-    paddingTop: Spacing[16],
-    paddingBottom: Spacing[40],
+    paddingBottom: Spacing[24],
   },
   hero: {
     gap: Spacing[8],

@@ -36,6 +36,7 @@ export default function NewMomentScreen() {
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const danger = useThemeColor({}, 'danger');
+  const background = useThemeColor({}, 'background');
 
   const [type, setType] = useState<MomentType>('note');
   const [title, setTitle] = useState('');
@@ -88,6 +89,7 @@ export default function NewMomentScreen() {
     <>
       <Stack.Screen options={{ title: 'Add moment' }} />
       <ScrollView
+        style={{ backgroundColor: background }}
         contentContainerStyle={styles.contentContainer}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
@@ -140,7 +142,7 @@ export default function NewMomentScreen() {
             accessibilityLabel="Moment title"
             autoCapitalize="sentences"
             onChangeText={setTitle}
-            placeholder="Name this moment"
+            placeholder="What was it?"
             placeholderTextColor={muted}
             style={inputStyle}
             value={title}
@@ -151,14 +153,14 @@ export default function NewMomentScreen() {
             autoCapitalize="sentences"
             multiline
             onChangeText={setBody}
-            placeholder="Write what happened"
+            placeholder="The details you'll want later"
             placeholderTextColor={muted}
             style={textAreaStyle}
             textAlignVertical="top"
             value={body}
           />
           <ThemedText type="caption" style={mutedStyle}>
-            Occurred at: {new Date().toLocaleDateString('en-US')}
+            Saved on {new Date().toLocaleDateString('en-US')}
           </ThemedText>
           {error ? (
             <ThemedText accessibilityRole="alert" type="caption" style={errorStyle}>

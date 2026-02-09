@@ -8,16 +8,19 @@ import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
 import { MOCK_VERIFY_CODE } from '@/features/session/mock-auth';
 import { useSession } from '@/features/session/session-context';
+import { useAoiTheme } from '@/features/theme/theme-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function VerifyCodeScreen() {
   const router = useRouter();
   const { pendingEmail, verifyCode } = useSession();
+  const { hasStoredSelection, isHydrated } = useAoiTheme();
   const border = useThemeColor({}, 'border');
   const surface2 = useThemeColor({}, 'surface2');
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const danger = useThemeColor({}, 'danger');
+  const background = useThemeColor({}, 'background');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
 
@@ -30,6 +33,11 @@ export default function VerifyCodeScreen() {
   );
 
   const handleVerify = useCallback(() => {
+    if (!isHydrated) {
+      setError('Preparing your theme settings. Please try again.');
+      return;
+    }
+
     const result = verifyCode(code);
 
     if (!result.ok) {
@@ -37,12 +45,13 @@ export default function VerifyCodeScreen() {
       return;
     }
 
-    router.replace('/(app)/(tabs)');
-  }, [code, router, verifyCode]);
+    router.replace(hasStoredSelection ? '/(app)/(tabs)' : '/(auth)/theme-select');
+  }, [code, hasStoredSelection, isHydrated, router, verifyCode]);
 
   if (!pendingEmail) {
     return (
       <ScrollView
+        style={{ backgroundColor: background }}
         contentContainerStyle={styles.contentContainer}
         contentInsetAdjustmentBehavior="automatic"
       >
@@ -58,6 +67,7 @@ export default function VerifyCodeScreen() {
 
   return (
     <ScrollView
+      style={{ backgroundColor: background }}
       contentContainerStyle={styles.contentContainer}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
@@ -65,11 +75,16 @@ export default function VerifyCodeScreen() {
     >
       <Surface variant="raised" style={styles.card}>
         <ThemedText type="meta" style={{ color: muted }}>
-          Verification
+          Check your email
         </ThemedText>
-        <ThemedText type="title">Enter your code</ThemedText>
+        <ThemedText type="title" selectable>
+          Enter the 6-digit code
+        </ThemedText>
         <ThemedText type="caption" style={{ color: muted }}>
-          Sent to {pendingEmail}. Use {MOCK_VERIFY_CODE} for this mock flow.
+          Sent to {pendingEmail}
+        </ThemedText>
+        <ThemedText type="meta" style={{ color: muted }} selectable>
+          Demo code {MOCK_VERIFY_CODE}
         </ThemedText>
 
         <TextInput
@@ -99,7 +114,7 @@ export default function VerifyCodeScreen() {
         ) : null}
 
         <View style={styles.actions}>
-          <Button label="Verify and continue" onPress={handleVerify} />
+          <Button label="Continue" onPress={handleVerify} />
           <Link href="/(auth)/sign-in" asChild>
             <Button label="Back to email" variant="secondary" />
           </Link>

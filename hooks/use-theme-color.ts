@@ -1,19 +1,18 @@
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import type { BeachThemeColors } from '@/constants/theme-presets';
+import { useAoiTheme } from '@/features/theme/theme-context';
 
-type ThemeColorToken = keyof (typeof Colors)['light'];
+type ThemeColorToken = keyof BeachThemeColors;
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
   colorName: ThemeColorToken
 ) {
-  const colorScheme = useColorScheme();
-  const theme = colorScheme === 'dark' ? 'dark' : 'light';
-  const colorFromProps = props[theme];
+  const { mode, colors } = useAoiTheme();
+  const colorFromProps = props[mode];
 
   if (colorFromProps) {
     return colorFromProps;
   }
 
-  return Colors[theme][colorName];
+  return colors[colorName];
 }

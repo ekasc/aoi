@@ -1,0 +1,323 @@
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Stack, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+
+import { ThemedText } from '@/components/themed-text';
+import { Button } from '@/components/ui/button';
+import { Surface } from '@/components/ui/surface';
+import { Spacing } from '@/constants/theme';
+import { useCalendar } from '@/features/calendar/calendar-context';
+import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
+import type { CalendarActor, CalendarPresetLabel } from '@/features/calendar/types';
+import { useThemeColor } from '@/hooks/use-theme-color';
+
+function applyDatePart(base: Date, datePart: Date) {
+  const next = new Date(base);
+  next.setFullYear(datePart.getFullYear(), datePart.getMonth(), datePart.getDate());
+  return next;
+}
+
+function applyTimePart(base: Date, timePart: Date) {
+  const next = new Date(base);
+  next.setHours(timePart.getHours(), timePart.getMinutes(), 0, 0);
+  return next;
+}
+
+export default function NewCalendarEventScreen() {
+  const router = useRouter();
+  const { addEvent } = useCalendar();
+  const border = useThemeColor({}, 'border');
+  const accent = useThemeColor({}, 'accent');
+  const onAccent = useThemeColor({}, 'onAccent');
+  const partnerAccent = useThemeColor({}, 'partnerAccent');
+  const surface2 = useThemeColor({}, 'surface2');
+  const text = useThemeColor({}, 'text');
+  const muted = useThemeColor({}, 'muted');
+  const danger = useThemeColor({}, 'danger');
+  const background = useThemeColor({}, 'background');
+
+  const now = useMemo(() => new Date(), []);
+  const inOneHour = useMemo(() => new Date(now.getTime() + 60 * 60 * 1000), [now]);
+
+  const [title, setTitle] = useState('');
+  const [actor, setActor] = useState<CalendarActor>('you');
+  const [presetLabel, setPresetLabel] = useState<CalendarPresetLabel>('Work');
+  const [customLabel, setCustomLabel] = useState('');
+  const [startsAt, setStartsAt] = useState(now);
+  const [endsAt, setEndsAt] = useState(inOneHour);
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const inputStyle = useMemo(
+    () => [
+      styles.input,
+      {
+        borderColor: border,
+        backgroundColor: surface2,
+        color: text,
+      },
+    ],
+    [border, surface2, text]
+  );
+
+  const handleSave = useCallback(async () => {
+    const trimmedTitle = title.trim();
+
+    if (!trimmedTitle) {
+      setError('Event title is required.');
+      return;
+    }
+
+    if (endsAt.getTime() <= startsAt.getTime()) {
+      setError('End time must be after start time.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addEvent({
+        title: trimmedTitle,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        actor,
+        actorName: actor === 'you' ? 'You' : 'Alex',
+        label: {
+          preset: presetLabel,
+          customText: customLabel.trim() || undefined,
+        },
+      });
+
+      router.back();
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    actor,
+    addEvent,
+    customLabel,
+    endsAt,
+    presetLabel,
+    router,
+    startsAt,
+    title,
+  ]);
+
+  return (
+    <>
+      <Stack.Screen options={{ title: 'New event' }} />
+      <ScrollView
+        style={{ backgroundColor: background }}
+        contentContainerStyle={styles.contentContainer}
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Surface variant="raised" style={styles.section}>
+          <ThemedText type="meta">Event details</ThemedText>
+          <TextInput
+            accessibilityLabel="Event title"
+            autoCapitalize="sentences"
+            onChangeText={(value) => {
+              setTitle(value);
+              if (error) {
+                setError('');
+              }
+            }}
+            placeholder="Event title"
+            placeholderTextColor={muted}
+            style={inputStyle}
+            value={title}
+          />
+        </Surface>
+
+        <Surface style={styles.section}>
+          <ThemedText type="meta">Creator</ThemedText>
+          <View style={styles.choiceRow}>
+            {(['you', 'partner'] as const).map((candidate) => {
+              const selected = actor === candidate;
+
+              return (
+                <Pressable
+                  accessibilityLabel={`Set creator to ${candidate}`}
+                  accessibilityRole="button"
+                  key={candidate}
+                  onPress={() => setActor(candidate)}
+                  style={[
+                    styles.choiceChip,
+                    {
+                      borderColor: selected
+                        ? candidate === 'you'
+                          ? accent
+                          : partnerAccent
+                        : border,
+                      backgroundColor: selected
+                        ? candidate === 'you'
+                          ? accent
+                          : partnerAccent
+                        : surface2,
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    type="caption"
+                    style={{ color: selected ? onAccent : text }}
+                  >
+                    {candidate === 'you' ? 'You' : 'Partner'}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Surface>
+
+        <Surface style={styles.section}>
+          <ThemedText type="meta">Start</ThemedText>
+          <DateTimePicker
+            mode="date"
+            onChange={(_, value) => {
+              if (!value) {
+                return;
+              }
+              setStartsAt((current) => applyDatePart(current, value));
+            }}
+            value={startsAt}
+          />
+          <DateTimePicker
+            mode="time"
+            onChange={(_, value) => {
+              if (!value) {
+                return;
+              }
+              setStartsAt((current) => applyTimePart(current, value));
+            }}
+            value={startsAt}
+          />
+          <ThemedText type="caption" selectable style={{ color: muted }}>
+            {startsAt.toLocaleString('en-US')}
+          </ThemedText>
+
+          <ThemedText type="meta">End</ThemedText>
+          <DateTimePicker
+            mode="date"
+            onChange={(_, value) => {
+              if (!value) {
+                return;
+              }
+              setEndsAt((current) => applyDatePart(current, value));
+            }}
+            value={endsAt}
+          />
+          <DateTimePicker
+            mode="time"
+            onChange={(_, value) => {
+              if (!value) {
+                return;
+              }
+              setEndsAt((current) => applyTimePart(current, value));
+            }}
+            value={endsAt}
+          />
+          <ThemedText type="caption" selectable style={{ color: muted }}>
+            {endsAt.toLocaleString('en-US')}
+          </ThemedText>
+        </Surface>
+
+        <Surface style={styles.section}>
+          <ThemedText type="meta">Availability label</ThemedText>
+          <View style={styles.choiceRow}>
+            {CALENDAR_PRESET_LABELS.map((label) => {
+              const selected = presetLabel === label;
+
+              return (
+                <Pressable
+                  accessibilityLabel={`Set label ${label}`}
+                  accessibilityRole="button"
+                  key={label}
+                  onPress={() => setPresetLabel(label)}
+                  style={[
+                    styles.choiceChip,
+                    {
+                      borderColor: selected ? accent : border,
+                      backgroundColor: selected ? accent : surface2,
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    type="caption"
+                    style={{ color: selected ? onAccent : text }}
+                  >
+                    {label}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <TextInput
+            accessibilityLabel="Custom label"
+            autoCapitalize="sentences"
+            onChangeText={setCustomLabel}
+            placeholder="Optional custom label"
+            placeholderTextColor={muted}
+            style={inputStyle}
+            value={customLabel}
+          />
+        </Surface>
+
+        {error ? (
+          <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+            {error}
+          </ThemedText>
+        ) : null}
+
+        <View style={styles.actionRow}>
+          <Button
+            disabled={isSubmitting}
+            label={isSubmitting ? 'Saving…' : 'Save event'}
+            onPress={handleSave}
+          />
+          <Button label="Cancel" variant="secondary" onPress={() => router.back()} />
+        </View>
+      </ScrollView>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  contentContainer: {
+    paddingHorizontal: Spacing[16],
+    paddingTop: Spacing[16],
+    paddingBottom: Spacing[40],
+    gap: Spacing[12],
+  },
+  section: {
+    gap: Spacing[8],
+  },
+  input: {
+    minHeight: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: Spacing[12],
+    paddingVertical: Spacing[12],
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing[8],
+  },
+  choiceChip: {
+    minHeight: 44,
+    minWidth: 44,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing[8],
+  },
+});

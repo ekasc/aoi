@@ -39,8 +39,11 @@ function MomentCardComponent({ moment }: MomentCardProps) {
   const accent = useThemeColor({}, 'accent');
   const partnerAccent = useThemeColor({}, 'partnerAccent');
   const border = useThemeColor({}, 'border');
+  const surface = useThemeColor({}, 'surface');
+  const surface2 = useThemeColor({}, 'surface2');
   const onAccent = useThemeColor({}, 'onAccent');
   const text = useThemeColor({}, 'text');
+  const muted = useThemeColor({}, 'muted');
   const title = moment.title?.trim() || 'Untitled moment';
   const body = moment.body?.trim() || 'No details added yet.';
   const isYou = moment.authorRole === 'you';
@@ -63,11 +66,12 @@ function MomentCardComponent({ moment }: MomentCardProps) {
     () => [
       styles.card,
       {
+        backgroundColor: isYou ? surface2 : surface,
         borderColor: isYou ? accent : partnerAccent,
       },
       isYou ? styles.cardYou : styles.cardPartner,
     ],
-    [accent, isYou, partnerAccent]
+    [accent, isYou, partnerAccent, surface, surface2]
   );
   const badgeStyle = useMemo(
     () => [
@@ -82,6 +86,9 @@ function MomentCardComponent({ moment }: MomentCardProps) {
     () => [styles.badgeLabel, { color: isYou ? onAccent : text }],
     [isYou, onAccent, text]
   );
+  const metaStyle = useMemo(() => [styles.meta, { color: muted }], [muted]);
+  const titleStyle = useMemo(() => [styles.title, { color: text }], [text]);
+  const bodyStyle = useMemo(() => [styles.body, { color: text }], [text]);
 
   const meta = useMemo(
     () =>
@@ -105,13 +112,15 @@ function MomentCardComponent({ moment }: MomentCardProps) {
               {isYou ? 'You' : moment.authorName}
             </ThemedText>
           </View>
-          <ThemedText type="meta">{meta}</ThemedText>
+          <ThemedText type="meta" style={metaStyle}>
+            {meta}
+          </ThemedText>
         </View>
         <Divider style={styles.divider} />
-        <ThemedText type="title" style={styles.title}>
+        <ThemedText type="title" style={titleStyle}>
           {title}
         </ThemedText>
-        <ThemedText type="body" style={styles.body}>
+        <ThemedText type="body" style={bodyStyle}>
           {body}
         </ThemedText>
       </Surface>
@@ -157,6 +166,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  meta: {
+    flexShrink: 1,
+    textAlign: 'right',
+  },
   badge: {
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -172,6 +185,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   body: {
-    opacity: 0.95,
+    opacity: 1,
   },
 });

@@ -21,6 +21,7 @@ export default function SignInScreen() {
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const danger = useThemeColor({}, 'danger');
+  const background = useThemeColor({}, 'background');
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
 
@@ -46,6 +47,7 @@ export default function SignInScreen() {
 
   return (
     <ScrollView
+      style={{ backgroundColor: background }}
       contentContainerStyle={styles.contentContainer}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
@@ -55,10 +57,11 @@ export default function SignInScreen() {
         <ThemedText type="meta" style={{ color: muted }}>
           Welcome back
         </ThemedText>
-        <ThemedText type="title">Sign in with email</ThemedText>
+        <ThemedText type="title" selectable>
+          Sign in
+        </ThemedText>
         <ThemedText type="caption" style={{ color: muted }}>
-          We will send a verification code. For this phase, use the mock code in
-          the next screen.
+          Enter your email to get started.
         </ThemedText>
 
         <TextInput
