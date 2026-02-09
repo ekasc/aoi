@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Divider } from '@/components/ui/divider';
 import { Surface } from '@/components/ui/surface';
+import { getGoalHorizon } from '@/features/moments/moment-goal-utils';
 import type { Moment, MomentType } from '@/features/moments/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -35,9 +36,28 @@ function formatDateLabel(value: string) {
     .toUpperCase();
 }
 
+function formatGoalTargetLabel(targetAt?: string | null) {
+  if (!targetAt) {
+    return 'Someday';
+  }
+
+  const targetDate = new Date(targetAt);
+
+  if (Number.isNaN(targetDate.getTime())) {
+    return 'Someday';
+  }
+
+  return targetDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 function MomentCardComponent({ moment }: MomentCardProps) {
   const accent = useThemeColor({}, 'accent');
   const partnerAccent = useThemeColor({}, 'partnerAccent');
+  const warning = useThemeColor({}, 'warning');
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
   const surface2 = useThemeColor({}, 'surface2');
@@ -47,6 +67,12 @@ function MomentCardComponent({ moment }: MomentCardProps) {
   const title = moment.title?.trim() || 'Untitled moment';
   const body = moment.body?.trim() || 'No details added yet.';
   const isYou = moment.authorRole === 'you';
+  const isGoal = moment.type === 'goal';
+  const goalHorizon = useMemo(() => getGoalHorizon(moment), [moment]);
+  const goalTargetLabel = useMemo(
+    () => formatGoalTargetLabel(moment.targetAt),
+    [moment.targetAt]
+  );
 
   const rowStyle = useMemo(
     () => [styles.row, isYou ? styles.rowYou : styles.rowPartner],
@@ -59,8 +85,9 @@ function MomentCardComponent({ moment }: MomentCardProps) {
         borderColor: isYou ? accent : border,
         backgroundColor: isYou ? accent : partnerAccent,
       },
+      isGoal ? styles.goalKnot : undefined,
     ],
-    [accent, border, isYou, partnerAccent]
+    [accent, border, isGoal, isYou, partnerAccent]
   );
   const cardStyle = useMemo(
     () => [
@@ -69,9 +96,10 @@ function MomentCardComponent({ moment }: MomentCardProps) {
         backgroundColor: isYou ? surface2 : surface,
         borderColor: isYou ? accent : partnerAccent,
       },
+      isGoal ? styles.goalCard : undefined,
       isYou ? styles.cardYou : styles.cardPartner,
     ],
-    [accent, isYou, partnerAccent, surface, surface2]
+    [accent, isGoal, isYou, partnerAccent, surface, surface2]
   );
   const badgeStyle = useMemo(
     () => [
@@ -94,8 +122,8 @@ function MomentCardComponent({ moment }: MomentCardProps) {
     () =>
       `${formatDateLabel(moment.occurredAt)}  ·  ${
         MOMENT_TYPE_LABELS[moment.type]
-      }`,
-    [moment.occurredAt, moment.type]
+      }${isGoal ? `  ·  ${goalHorizon}` : ''}`,
+    [goalHorizon, isGoal, moment.occurredAt, moment.type]
   );
 
   return (
@@ -120,6 +148,18 @@ function MomentCardComponent({ moment }: MomentCardProps) {
         <ThemedText type="title" style={titleStyle}>
           {title}
         </ThemedText>
+        {isGoal ? (
+          <View style={styles.goalMetaRow}>
+            <View style={[styles.goalPill, { borderColor: warning, backgroundColor: surface2 }]}>
+              <ThemedText type="meta" style={{ color: warning }}>
+                {goalHorizon}
+              </ThemedText>
+            </View>
+            <ThemedText type="caption" style={{ color: muted }}>
+              {goalTargetLabel}
+            </ThemedText>
+          </View>
+        ) : null}
         <ThemedText type="body" style={bodyStyle}>
           {body}
         </ThemedText>
@@ -149,10 +189,18 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     marginTop: 18,
   },
+  goalKnot: {
+    width: 14,
+    height: 14,
+    marginTop: 16,
+  },
   card: {
     flex: 1,
     maxWidth: '92%',
     borderWidth: 1,
+  },
+  goalCard: {
+    borderStyle: 'dashed',
   },
   cardYou: {
     marginRight: 8,
@@ -183,6 +231,18 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: 6,
+  },
+  goalMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  goalPill: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 9,
+    paddingVertical: 2,
   },
   body: {
     opacity: 1,

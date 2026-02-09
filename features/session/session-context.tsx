@@ -2,65 +2,201 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type PropsWithChildren,
 } from 'react';
+import * as SecureStore from 'expo-secure-store';
 
-import { createMockUser, MOCK_VERIFY_CODE } from '@/features/session/mock-auth';
+import { getAuthApi } from '@/features/auth/auth-api';
+import { isAuthStubMode } from '@/features/auth/auth-config';
+import {
+  OAuthClientError,
+  signInWithOAuthProvider,
+} from '@/features/auth/oauth-client';
 import type {
   SessionContextValue,
   SessionStatus,
+  SessionTokens,
   SessionUser,
-  VerifyCodeResult,
 } from '@/features/session/types';
+
+const SESSION_STORAGE_KEY = 'aoi.session.v1';
+
+type StoredSession = {
+  user: SessionUser;
+  tokens: SessionTokens;
+};
+
+function isValidStoredSession(value: unknown): value is StoredSession {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<StoredSession>;
+
+  return Boolean(
+    candidate.user?.id &&
+      candidate.user?.email &&
+      candidate.user?.displayName &&
+      candidate.tokens?.accessToken
+  );
+}
+
+function parseStoredSession(rawValue: string) {
+  try {
+    const parsedValue: unknown = JSON.parse(rawValue);
+
+    if (isValidStoredSession(parsedValue)) {
+      return parsedValue;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 
 export function SessionProvider({ children }: PropsWithChildren) {
-  const [status, setStatus] = useState<SessionStatus>('signed_out');
+  const authApi = useMemo(() => getAuthApi(), []);
+  const [status, setStatus] = useState<SessionStatus>('loading');
+  const [isHydrated, setIsHydrated] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [tokens, setTokens] = useState<SessionTokens | null>(null);
 
-  const signInStart = useCallback((email: string) => {
-    setPendingEmail(email.trim().toLowerCase());
+  const clearStoredSession = useCallback(async () => {
+    await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
   }, []);
 
-  const verifyCode = useCallback(
-    (code: string): VerifyCodeResult => {
-      if (!pendingEmail) {
-        return { ok: false, error: 'Start with your email first.' };
-      }
-
-      if (code.trim() !== MOCK_VERIFY_CODE) {
-        return { ok: false, error: 'Incorrect code. Use 111111 for now.' };
-      }
-
-      const nextUser = createMockUser(pendingEmail);
-      setUser(nextUser);
-      setStatus('signed_in');
-      setPendingEmail(null);
-      return { ok: true };
+  const persistSession = useCallback(
+    async (nextUser: SessionUser, nextTokens: SessionTokens) => {
+      const serializedSession = JSON.stringify({
+        user: nextUser,
+        tokens: nextTokens,
+      } satisfies StoredSession);
+      await SecureStore.setItemAsync(SESSION_STORAGE_KEY, serializedSession);
     },
-    [pendingEmail]
+    []
   );
 
-  const signOut = useCallback(() => {
+  const restoreSession = useCallback(async () => {
+    setStatus('loading');
+
+    try {
+      const storedRawSession = await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
+
+      if (!storedRawSession) {
+        setUser(null);
+        setTokens(null);
+        setStatus('signed_out');
+        return;
+      }
+
+      const storedSession = parseStoredSession(storedRawSession);
+
+      if (!storedSession) {
+        await clearStoredSession();
+        setUser(null);
+        setTokens(null);
+        setStatus('signed_out');
+        return;
+      }
+
+      let resolvedUser = storedSession.user;
+
+      try {
+        resolvedUser = await authApi.getSession(storedSession.tokens.accessToken);
+      } catch {
+        if (!isAuthStubMode()) {
+          await clearStoredSession();
+          setUser(null);
+          setTokens(null);
+          setStatus('signed_out');
+          return;
+        }
+      }
+
+      setUser(resolvedUser);
+      setTokens(storedSession.tokens);
+      setStatus('signed_in');
+      await persistSession(resolvedUser, storedSession.tokens);
+    } catch {
+      setUser(null);
+      setTokens(null);
+      setStatus('signed_out');
+      await clearStoredSession().catch(() => {});
+    } finally {
+      setIsHydrated(true);
+    }
+  }, [authApi, clearStoredSession, persistSession]);
+
+  useEffect(() => {
+    void restoreSession();
+  }, [restoreSession]);
+
+  const signInWithProvider = useCallback(
+    async (provider: 'apple' | 'google') => {
+      setStatus('loading');
+
+      try {
+        const authSession = await signInWithOAuthProvider(provider, authApi);
+
+        setUser(authSession.user);
+        setTokens(authSession.tokens);
+        setStatus('signed_in');
+        await persistSession(authSession.user, authSession.tokens);
+
+        return { ok: true };
+      } catch (error) {
+        setUser(null);
+        setTokens(null);
+        setStatus('signed_out');
+
+        if (error instanceof OAuthClientError && error.code === 'cancelled') {
+          return { ok: false, error: 'Sign in was canceled.' };
+        }
+
+        return { ok: false, error: 'Unable to sign in right now. Please try again.' };
+      }
+    },
+    [authApi, persistSession]
+  );
+
+  const signOut = useCallback(async () => {
+    const accessToken = tokens?.accessToken;
+
+    if (accessToken) {
+      await authApi.logout(accessToken).catch(() => {});
+    }
+
+    await clearStoredSession().catch(() => {});
     setUser(null);
-    setPendingEmail(null);
+    setTokens(null);
     setStatus('signed_out');
-  }, []);
+  }, [authApi, clearStoredSession, tokens?.accessToken]);
 
   const value = useMemo<SessionContextValue>(
     () => ({
       status,
+      isHydrated,
       user,
-      pendingEmail,
-      signInStart,
-      verifyCode,
+      tokens,
+      signInWithProvider,
+      restoreSession,
       signOut,
     }),
-    [pendingEmail, signInStart, signOut, status, user, verifyCode]
+    [
+      isHydrated,
+      restoreSession,
+      signInWithProvider,
+      signOut,
+      status,
+      tokens,
+      user,
+    ]
   );
 
   return (

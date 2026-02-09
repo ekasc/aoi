@@ -1,10 +1,15 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
 import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
+import { StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FontFamilies } from '@/constants/typography';
 import { useAoiTheme } from '@/features/theme/theme-context';
 
 export default function TabsLayout() {
-  const { colors, mode, selectedThemeId } = useAoiTheme();
+  const { colors, mode } = useAoiTheme();
+  const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
   const blurEffect = isIos
     ? mode === 'dark'
@@ -12,9 +17,89 @@ export default function TabsLayout() {
       : 'systemMaterialLight'
     : undefined;
 
+  if (!isIos) {
+    return (
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          sceneStyle: { backgroundColor: colors.background },
+          tabBarHideOnKeyboard: true,
+          tabBarActiveTintColor: colors.accent,
+          tabBarInactiveTintColor: colors.muted,
+          tabBarLabelStyle: {
+            fontFamily: FontFamilies.body,
+            fontSize: 12,
+            fontWeight: '600',
+          },
+          tabBarStyle: [
+            styles.androidTabBar,
+            {
+              backgroundColor: colors.surface,
+              borderTopColor: colors.border,
+              height: 60 + Math.max(insets.bottom, 8),
+              paddingBottom: Math.max(insets.bottom, 8),
+            },
+          ],
+        }}
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Timeline',
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons
+                color={color}
+                name={focused ? 'time' : 'time-outline'}
+                size={size}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="calendar"
+          options={{
+            title: 'Calendar',
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons
+                color={color}
+                name={focused ? 'calendar' : 'calendar-outline'}
+                size={size}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: 'Profile',
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons
+                color={color}
+                name={focused ? 'person-circle' : 'person-circle-outline'}
+                size={size}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: 'Settings',
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons
+                color={color}
+                name={focused ? 'settings' : 'settings-outline'}
+                size={size}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+    );
+  }
+
   return (
     <NativeTabs
-      key={`${selectedThemeId}-${mode}`}
       backgroundColor={colors.surface}
       blurEffect={blurEffect}
       disableTransparentOnScrollEdge={isIos}
@@ -46,6 +131,11 @@ export default function TabsLayout() {
         <Label>Calendar</Label>
       </NativeTabs.Trigger>
 
+      <NativeTabs.Trigger name="profile">
+        <Icon sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }} />
+        <Label>Profile</Label>
+      </NativeTabs.Trigger>
+
       <NativeTabs.Trigger name="settings">
         <Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
         <Label>Settings</Label>
@@ -53,3 +143,10 @@ export default function TabsLayout() {
     </NativeTabs>
   );
 }
+
+const styles = StyleSheet.create({
+  androidTabBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
+  },
+});

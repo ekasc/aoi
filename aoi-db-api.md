@@ -1,179 +1,268 @@
-# Aoi — Database Schema + API Endpoints (MVP)
+# Aoi - Database Schema + API Endpoints (Updated MVP Scope)
 
 ## 0. Principles
+
 - Postgres (Neon)
-- Store object keys, not URLs.
-- Media owned by uploader.
-- Relationship membership gates visibility.
-- Stateless API (Gin).
-- Direct-to-R2 uploads via presigned URLs.
+- Stateless API (Gin)
+- OAuth provider auth (Apple, Google)
+- Membership-gated access to shared data
+- Owner-gated updates/deletes for user-owned resources
+- Cursor/range-friendly indexing for timeline and calendar
+
+This document reflects the current MVP scope in the app. Media uploads, purchases, and recap services are explicitly deferred.
 
 ---
 
-## 1. Database Schema (proposed)
+## 1. Database schema (current MVP)
 
-### 1.1 Users
-**users**
-- id (uuid, pk)
-- email (citext, unique)
-- created_at (timestamptz)
-- deleted_at (timestamptz, nullable)
+### 1.1 Users and auth
 
-**user_settings**
-- user_id (uuid, pk, fk users)
-- locale (text)
-- timezone (text)
-- created_at
-- updated_at
+#### `users`
 
-### 1.2 Relationships
-**relationships**
-- id (uuid, pk)
-- created_by (uuid, fk users)
-- status (text) // active | archived
-- title (text, nullable)
-- started_at (date, nullable)
-- created_at
-- updated_at
+- `id` (uuid, pk)
+- `email` (citext, unique, nullable for provider edge-cases)
+- `display_name` (text, not null)
+- `avatar_url` (text, nullable)
+- `created_at` (timestamptz, not null)
+- `updated_at` (timestamptz, not null)
+- `deleted_at` (timestamptz, nullable)
 
-**relationship_members**
-- relationship_id (uuid, fk relationships)
-- user_id (uuid, fk users)
-- role (text) // owner | partner
-- state (text) // active | left | archived (per-user)
-- joined_at (timestamptz)
-- left_at (timestamptz, nullable)
-- archived_at (timestamptz, nullable)
-- primary key (relationship_id, user_id)
+#### `auth_accounts`
 
-**relationship_invites**
-- id (uuid, pk)
-- relationship_id (uuid, fk relationships)
-- inviter_user_id (uuid, fk users)
-- invite_code (text, unique)
-- expires_at (timestamptz)
-- redeemed_by_user_id (uuid, fk users, nullable)
-- redeemed_at (timestamptz, nullable)
-- created_at
+- `id` (uuid, pk)
+- `user_id` (uuid, fk users)
+- `provider` (text, check: `apple | google`)
+- `provider_subject` (text, not null)
+- `created_at` (timestamptz, not null)
 
-### 1.3 Media + Moments
-**media**
-- id (uuid, pk)
-- owner_user_id (uuid, fk users)
-- relationship_id (uuid, fk relationships)
-- object_key (text, unique)
-- media_type (text) // photo | video
-- byte_size (bigint)
-- width (int, nullable)
-- height (int, nullable)
-- duration_seconds (numeric, nullable)
-- has_location (bool)
-- location_lat_round (numeric, nullable)
-- location_lng_round (numeric, nullable)
-- captured_at (timestamptz, nullable)
-- created_at
-- deleted_at (timestamptz, nullable)
+Constraints:
 
-**moments**
-- id (uuid, pk)
-- relationship_id (uuid, fk relationships)
-- created_by_user_id (uuid, fk users)
-- type (text) // media | note | milestone | date | goal
-- title (text, nullable)
-- body (text, nullable)
-- occurred_at (timestamptz, nullable)
-- created_at
-- updated_at
-- deleted_at (timestamptz, nullable)
+- unique (`provider`, `provider_subject`)
 
-**moment_media**
-- moment_id (uuid, fk moments)
-- media_id (uuid, fk media)
-- primary key (moment_id, media_id)
+#### `user_sessions`
 
-### 1.4 Entitlements + Purchases
-**entitlements**
-- id (uuid, pk)
-- user_id (uuid, fk users)
-- kind (text) // relationship_create
-- remaining (int)
-- source (text) // apple | google
-- created_at
-- updated_at
+- `id` (uuid, pk)
+- `user_id` (uuid, fk users)
+- `refresh_token_hash` (text, not null)
+- `user_agent` (text, nullable)
+- `ip` (inet, nullable)
+- `expires_at` (timestamptz, not null)
+- `revoked_at` (timestamptz, nullable)
+- `created_at` (timestamptz, not null)
 
-**purchase_receipts**
-- id (uuid, pk)
-- user_id (uuid, fk users)
-- platform (text) // apple | google
-- product_id (text)
-- receipt_token (text)
-- status (text) // active | refunded | revoked
-- purchased_at (timestamptz)
-- updated_at
+### 1.2 Space and membership
 
-### 1.5 Storage usage
-**storage_usage**
-- user_id (uuid, pk, fk users)
-- bytes_used (bigint)
-- tier (text) // base | subscription
-- updated_at
+#### `spaces`
 
-### 1.6 Retention
-**retention_events**
-- id (uuid, pk)
-- user_id (uuid, fk users)
-- kind (text)
-- effective_at (timestamptz)
-- created_at
+- `id` (uuid, pk)
+- `name` (text, not null)
+- `relationship_start_date` (date, not null)
+- `created_by_user_id` (uuid, fk users)
+- `created_at` (timestamptz, not null)
+- `updated_at` (timestamptz, not null)
+- `archived_at` (timestamptz, nullable)
 
----
+#### `space_members`
 
-## 2. API Endpoints (MVP)
+- `space_id` (uuid, fk spaces)
+- `user_id` (uuid, fk users)
+- `role` (text, check: `you | partner`)
+- `state` (text, check: `active | left`)
+- `joined_at` (timestamptz, not null)
+- `left_at` (timestamptz, nullable)
 
-### 2.1 Auth
-- `POST /auth/request-code` { email }
-- `POST /auth/verify-code` { email, code } -> tokens + user
-- `POST /auth/refresh` { refresh_token } -> new access token
-- `POST /auth/logout` { refresh_token }
+Primary key:
 
-### 2.2 Relationships
-- `GET /relationships`
-- `POST /relationships` (consumes entitlement)
-- `POST /relationships/:id/invites`
-- `POST /invites/redeem` { invite_code }
-- `POST /relationships/:id/archive`
-- `POST /relationships/:id/leave`
+- (`space_id`, `user_id`)
 
-### 2.3 Moments
-- `GET /relationships/:id/moments?cursor=&limit=`
-- `POST /relationships/:id/moments`
-- `PATCH /moments/:id`
-- `DELETE /moments/:id`
+#### `space_invites`
 
-### 2.4 Media
-- `POST /media/presign`
-- `POST /media/complete`
-- `GET /media/:id/download` -> signed URL
-- `DELETE /media/:id` (owner-only)
+- `id` (uuid, pk)
+- `space_id` (uuid, fk spaces)
+- `code` (text, not null)                    -- canonical display code
+- `code_normalized` (text, not null)         -- uppercase/no-space lookup key
+- `created_by_user_id` (uuid, fk users)
+- `expires_at` (timestamptz, nullable)
+- `redeemed_by_user_id` (uuid, fk users, nullable)
+- `redeemed_at` (timestamptz, nullable)
+- `created_at` (timestamptz, not null)
 
-### 2.5 Recaps
-- `GET /relationships/:id/recaps/monthly?year=&month=`
-- `GET /relationships/:id/recaps/anniversary`
+Constraints:
 
-### 2.6 Purchases / entitlements
-- `POST /purchases/verify`
-- `GET /entitlements` -> entitlements + access state
+- unique (`code_normalized`)
 
-### 2.7 Export + deletion
-- `POST /export`
-- `DELETE /account`
+### 1.3 Imported milestones
 
-### 2.8 Internal
-- `POST /internal/cleanup` (cron, protected)
+#### `imported_milestones`
+
+- `id` (uuid, pk)
+- `space_id` (uuid, fk spaces)
+- `created_by_user_id` (uuid, fk users)
+- `type` (text, check: `note | milestone | date | goal`)
+- `title` (text, not null)
+- `body` (text, nullable)
+- `occurred_at` (timestamptz, not null)
+- `target_at` (timestamptz, nullable)
+- `created_at` (timestamptz, not null)
+- `deleted_at` (timestamptz, nullable)
+
+### 1.4 Moments
+
+#### `moments`
+
+- `id` (uuid, pk)
+- `space_id` (uuid, fk spaces)
+- `created_by_user_id` (uuid, fk users)
+- `author_role` (text, check: `you | partner`)
+- `author_name` (text, not null)
+- `type` (text, check: `note | milestone | date | goal | media`)
+- `title` (text, not null)
+- `body` (text, not null default '')
+- `occurred_at` (timestamptz, not null)
+- `target_at` (timestamptz, nullable)
+- `media_preview` (text, nullable)           -- MVP keeps optional pointer only
+- `created_at` (timestamptz, not null)
+- `updated_at` (timestamptz, not null)
+- `deleted_at` (timestamptz, nullable)
+
+### 1.5 Calendar
+
+#### `calendar_events`
+
+- `id` (uuid, pk)
+- `space_id` (uuid, fk spaces)
+- `created_by_user_id` (uuid, fk users)
+- `actor` (text, check: `you | partner`)
+- `actor_name` (text, not null)
+- `title` (text, not null)
+- `starts_at` (timestamptz, not null)
+- `ends_at` (timestamptz, not null)
+- `label_preset` (text, check: `Work | Gym | Travel | Date | Family | Other`)
+- `label_custom_text` (text, nullable)
+- `created_at` (timestamptz, not null)
+- `updated_at` (timestamptz, not null)
+- `deleted_at` (timestamptz, nullable)
+
+### 1.6 Preferences
+
+#### `user_preferences`
+
+- `user_id` (uuid, pk, fk users)
+- `theme_id` (text, not null)  -- `sunset-shore | sea-glass | deep-ocean`
+- `updated_at` (timestamptz, not null)
 
 ---
 
-## 3. Notes
-- Use short-TTL signed URLs for download.
-- Location rounding: store rounded lat/lng only, never raw.
-- View-only mode disables all writes and presigns but allows reads and export.
+## 2. Indexes (performance-critical)
+
+```sql
+-- Auth lookups
+create unique index if not exists uq_auth_accounts_provider_subject
+  on auth_accounts (provider, provider_subject);
+
+create index if not exists idx_user_sessions_user_expires
+  on user_sessions (user_id, expires_at)
+  where revoked_at is null;
+
+-- Space membership and invite joins
+create index if not exists idx_space_members_user_state
+  on space_members (user_id, state);
+
+create unique index if not exists uq_space_invites_code_normalized
+  on space_invites (code_normalized);
+
+-- Imported milestone timeline reads
+create index if not exists idx_imported_milestones_space_occurred
+  on imported_milestones (space_id, occurred_at desc, id desc)
+  where deleted_at is null;
+
+-- Moments keyset pagination
+create index if not exists idx_moments_space_occurred_id
+  on moments (space_id, occurred_at desc, id desc)
+  where deleted_at is null;
+
+create index if not exists idx_moments_owner
+  on moments (created_by_user_id, id)
+  where deleted_at is null;
+
+-- Calendar month/day range reads
+create index if not exists idx_calendar_events_space_starts
+  on calendar_events (space_id, starts_at asc)
+  where deleted_at is null;
+
+create index if not exists idx_calendar_events_owner
+  on calendar_events (created_by_user_id, id)
+  where deleted_at is null;
+```
+
+---
+
+## 3. API endpoints (MVP)
+
+### 3.1 Auth (already required by frontend)
+
+- `POST /v1/auth/oauth/start`
+- `POST /v1/auth/oauth/callback`
+- `GET /v1/auth/session`
+- `POST /v1/auth/logout`
+
+### 3.2 Space
+
+- `GET /v1/spaces/current`
+- `POST /v1/spaces`
+- `POST /v1/spaces/join`
+- `PATCH /v1/spaces/current`
+
+### 3.3 Imported milestones
+
+- `GET /v1/spaces/current/imported-milestones`
+- `POST /v1/spaces/current/imported-milestones`
+
+### 3.4 Moments
+
+- `GET /v1/spaces/current/moments?cursor=&limit=`
+- `POST /v1/spaces/current/moments`
+- `PATCH /v1/moments/:id`
+- `DELETE /v1/moments/:id`
+
+### 3.5 Calendar
+
+- `GET /v1/spaces/current/calendar/events?from=&to=`
+- `GET /v1/calendar/events/:id`
+- `POST /v1/spaces/current/calendar/events`
+- `PATCH /v1/calendar/events/:id`
+- `DELETE /v1/calendar/events/:id`
+
+### 3.6 Preferences
+
+- `GET /v1/users/me/preferences`
+- `PATCH /v1/users/me/preferences`
+
+### 3.7 Internal
+
+- `GET /healthz`
+- `GET /readyz`
+
+---
+
+## 4. Authorization rules
+
+- User must be authenticated for all `v1` endpoints except OAuth start/callback.
+- User must be an active member of the target space.
+- Event update/delete allowed only for `created_by_user_id`.
+- Moment update/delete allowed only for `created_by_user_id`.
+- Invite join uses normalized invite code and transitions membership state atomically.
+
+---
+
+## 5. Deferred schema and APIs
+
+Deferred modules from previous docs are intentionally excluded from current MVP schema/API implementation:
+
+- media object registry + presign/complete/download
+- purchases + entitlements
+- storage usage accounting
+- recap materialization
+- export/deletion workflows
+
+They can be added in a later schema version once the current MVP backend is stable.

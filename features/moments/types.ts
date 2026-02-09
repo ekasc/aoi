@@ -7,6 +7,7 @@ export type Moment = {
   title: string;
   body: string;
   occurredAt: string;
+  targetAt?: string | null;
   createdAt: string;
   authorId: string;
   authorRole: MomentAuthorRole;
@@ -19,6 +20,7 @@ export type CreateMomentInput = {
   title?: string;
   body?: string;
   occurredAt?: string;
+  targetAt?: string | null;
   authorId?: string;
   authorRole?: MomentAuthorRole;
   authorName?: string;

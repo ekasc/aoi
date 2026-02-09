@@ -19,8 +19,8 @@ export default function SettingsScreen() {
   const muted = useThemeColor({}, 'muted');
   const background = useThemeColor({}, 'background');
 
-  const handleSignOut = useCallback(() => {
-    signOut();
+  const handleSignOut = useCallback(async () => {
+    await signOut();
     router.replace('/(public)');
   }, [router, signOut]);
   const contentContainerStyle = useMemo(

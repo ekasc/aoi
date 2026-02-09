@@ -1,8 +1,16 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
@@ -26,6 +34,8 @@ function applyTimePart(base: Date, timePart: Date) {
 
 export default function NewCalendarEventScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const isIos = process.env.EXPO_OS === 'ios';
   const { addEvent } = useCalendar();
   const border = useThemeColor({}, 'border');
   const accent = useThemeColor({}, 'accent');
@@ -59,6 +69,14 @@ export default function NewCalendarEventScreen() {
       },
     ],
     [border, surface2, text]
+  );
+  const contentContainerStyle = useMemo(
+    () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
+    [insets.bottom]
+  );
+  const footerStyle = useMemo(
+    () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
+    [insets.bottom]
   );
 
   const handleSave = useCallback(async () => {
@@ -106,172 +124,175 @@ export default function NewCalendarEventScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'New event' }} />
-      <ScrollView
-        style={{ backgroundColor: background }}
-        contentContainerStyle={styles.contentContainer}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        behavior={isIos ? 'padding' : undefined}
+        style={[styles.root, { backgroundColor: background }]}
       >
-        <Surface variant="raised" style={styles.section}>
-          <ThemedText type="meta">Event details</ThemedText>
-          <TextInput
-            accessibilityLabel="Event title"
-            autoCapitalize="sentences"
-            onChangeText={(value) => {
-              setTitle(value);
-              if (error) {
+        <ScrollView
+          contentContainerStyle={contentContainerStyle}
+          contentInsetAdjustmentBehavior="never"
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Surface variant="raised" style={styles.section}>
+            <ThemedText type="meta">Event details</ThemedText>
+            <TextInput
+              accessibilityLabel="Event title"
+              autoCapitalize="sentences"
+              onChangeText={(value) => {
+                setTitle(value);
+                if (error) {
+                  setError('');
+                }
+              }}
+              placeholder="Event title"
+              placeholderTextColor={muted}
+              style={inputStyle}
+              value={title}
+            />
+          </Surface>
+
+          <Surface style={styles.section}>
+            <ThemedText type="meta">Creator</ThemedText>
+            <View style={styles.choiceRow}>
+              {(['you', 'partner'] as const).map((candidate) => {
+                const selected = actor === candidate;
+
+                return (
+                  <Pressable
+                    accessibilityLabel={`Set creator to ${candidate}`}
+                    accessibilityRole="button"
+                    key={candidate}
+                    onPress={() => setActor(candidate)}
+                    style={[
+                      styles.choiceChip,
+                      {
+                        borderColor: selected
+                          ? candidate === 'you'
+                            ? accent
+                            : partnerAccent
+                          : border,
+                        backgroundColor: selected
+                          ? candidate === 'you'
+                            ? accent
+                            : partnerAccent
+                          : surface2,
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      type="caption"
+                      style={{ color: selected ? onAccent : text }}
+                    >
+                      {candidate === 'you' ? 'You' : 'Partner'}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Surface>
+
+          <Surface style={styles.section}>
+            <NativeDateTimeField
+              accessibilityLabel="Choose start date"
+              label="Start date"
+              mode="date"
+              onChange={(value) => {
+                setStartsAt((current) => applyDatePart(current, value));
                 setError('');
-              }
-            }}
-            placeholder="Event title"
-            placeholderTextColor={muted}
-            style={inputStyle}
-            value={title}
-          />
-        </Surface>
+              }}
+              value={startsAt}
+            />
+            <NativeDateTimeField
+              accessibilityLabel="Choose start time"
+              label="Start time"
+              mode="time"
+              onChange={(value) => {
+                setStartsAt((current) => applyTimePart(current, value));
+                setError('');
+              }}
+              value={startsAt}
+            />
+            <ThemedText type="caption" selectable style={{ color: muted }}>
+              {startsAt.toLocaleString('en-US')}
+            </ThemedText>
 
-        <Surface style={styles.section}>
-          <ThemedText type="meta">Creator</ThemedText>
-          <View style={styles.choiceRow}>
-            {(['you', 'partner'] as const).map((candidate) => {
-              const selected = actor === candidate;
+            <NativeDateTimeField
+              accessibilityLabel="Choose end date"
+              label="End date"
+              mode="date"
+              onChange={(value) => {
+                setEndsAt((current) => applyDatePart(current, value));
+                setError('');
+              }}
+              value={endsAt}
+            />
+            <NativeDateTimeField
+              accessibilityLabel="Choose end time"
+              label="End time"
+              mode="time"
+              onChange={(value) => {
+                setEndsAt((current) => applyTimePart(current, value));
+                setError('');
+              }}
+              value={endsAt}
+            />
+            <ThemedText type="caption" selectable style={{ color: muted }}>
+              {endsAt.toLocaleString('en-US')}
+            </ThemedText>
+          </Surface>
 
-              return (
-                <Pressable
-                  accessibilityLabel={`Set creator to ${candidate}`}
-                  accessibilityRole="button"
-                  key={candidate}
-                  onPress={() => setActor(candidate)}
-                  style={[
-                    styles.choiceChip,
-                    {
-                      borderColor: selected
-                        ? candidate === 'you'
-                          ? accent
-                          : partnerAccent
-                        : border,
-                      backgroundColor: selected
-                        ? candidate === 'you'
-                          ? accent
-                          : partnerAccent
-                        : surface2,
-                    },
-                  ]}
-                >
-                  <ThemedText
-                    type="caption"
-                    style={{ color: selected ? onAccent : text }}
+          <Surface style={styles.section}>
+            <ThemedText type="meta">Availability label</ThemedText>
+            <View style={styles.choiceRow}>
+              {CALENDAR_PRESET_LABELS.map((label) => {
+                const selected = presetLabel === label;
+
+                return (
+                  <Pressable
+                    accessibilityLabel={`Set label ${label}`}
+                    accessibilityRole="button"
+                    key={label}
+                    onPress={() => setPresetLabel(label)}
+                    style={[
+                      styles.choiceChip,
+                      {
+                        borderColor: selected ? accent : border,
+                        backgroundColor: selected ? accent : surface2,
+                      },
+                    ]}
                   >
-                    {candidate === 'you' ? 'You' : 'Partner'}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Surface>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: selected ? onAccent : text }}
+                    >
+                      {label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-        <Surface style={styles.section}>
-          <ThemedText type="meta">Start</ThemedText>
-          <DateTimePicker
-            mode="date"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setStartsAt((current) => applyDatePart(current, value));
-            }}
-            value={startsAt}
-          />
-          <DateTimePicker
-            mode="time"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setStartsAt((current) => applyTimePart(current, value));
-            }}
-            value={startsAt}
-          />
-          <ThemedText type="caption" selectable style={{ color: muted }}>
-            {startsAt.toLocaleString('en-US')}
-          </ThemedText>
+            <TextInput
+              accessibilityLabel="Custom label"
+              autoCapitalize="sentences"
+              onChangeText={setCustomLabel}
+              placeholder="Optional custom label"
+              placeholderTextColor={muted}
+              style={inputStyle}
+              value={customLabel}
+            />
+          </Surface>
 
-          <ThemedText type="meta">End</ThemedText>
-          <DateTimePicker
-            mode="date"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setEndsAt((current) => applyDatePart(current, value));
-            }}
-            value={endsAt}
-          />
-          <DateTimePicker
-            mode="time"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setEndsAt((current) => applyTimePart(current, value));
-            }}
-            value={endsAt}
-          />
-          <ThemedText type="caption" selectable style={{ color: muted }}>
-            {endsAt.toLocaleString('en-US')}
-          </ThemedText>
-        </Surface>
+          {error ? (
+            <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+              {error}
+            </ThemedText>
+          ) : null}
+        </ScrollView>
 
-        <Surface style={styles.section}>
-          <ThemedText type="meta">Availability label</ThemedText>
-          <View style={styles.choiceRow}>
-            {CALENDAR_PRESET_LABELS.map((label) => {
-              const selected = presetLabel === label;
-
-              return (
-                <Pressable
-                  accessibilityLabel={`Set label ${label}`}
-                  accessibilityRole="button"
-                  key={label}
-                  onPress={() => setPresetLabel(label)}
-                  style={[
-                    styles.choiceChip,
-                    {
-                      borderColor: selected ? accent : border,
-                      backgroundColor: selected ? accent : surface2,
-                    },
-                  ]}
-                >
-                  <ThemedText
-                    type="caption"
-                    style={{ color: selected ? onAccent : text }}
-                  >
-                    {label}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <TextInput
-            accessibilityLabel="Custom label"
-            autoCapitalize="sentences"
-            onChangeText={setCustomLabel}
-            placeholder="Optional custom label"
-            placeholderTextColor={muted}
-            style={inputStyle}
-            value={customLabel}
-          />
-        </Surface>
-
-        {error ? (
-          <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
-            {error}
-          </ThemedText>
-        ) : null}
-
-        <View style={styles.actionRow}>
+        <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
           <Button
             disabled={isSubmitting}
             label={isSubmitting ? 'Saving…' : 'Save event'}
@@ -279,16 +300,18 @@ export default function NewCalendarEventScreen() {
           />
           <Button label="Cancel" variant="secondary" onPress={() => router.back()} />
         </View>
-      </ScrollView>
+      </KeyboardAvoidingView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   contentContainer: {
     paddingHorizontal: Spacing[16],
     paddingTop: Spacing[16],
-    paddingBottom: Spacing[40],
     gap: Spacing[12],
   },
   section: {
@@ -315,9 +338,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  actionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing[16],
+    paddingTop: Spacing[12],
     gap: Spacing[8],
   },
 });

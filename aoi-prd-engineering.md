@@ -1,197 +1,255 @@
-# Aoi — PRD + Engineering Spec (MVP)
+# Aoi - PRD + Engineering Spec (Updated Scope)
 
 ## 0. Document intent
-This is the source-of-truth spec for Aoi MVP: product requirements, non-goals, and the engineering plan to ship a first release that is scalable by design (tokenized UI, stateless API, direct-to-object storage uploads), without overbuilding.
+
+This document is the current source-of-truth for Aoi MVP scope and implementation strategy.
+
+It supersedes earlier assumptions that included purchases, media upload infrastructure, and recap generation in MVP. The current MVP is centered on relationship setup, timeline + goals, and calendar planning with a performance-ready backend contract.
 
 ---
 
 ## 1. Product Requirements Document (PRD)
 
-### 1.1 Summary
-Aoi is a private, shared relationship scrapbook for two people. It stores photos, short videos, notes, milestones, important dates, and goals, and generates monthly and anniversary recaps. A relationship is treated as a chapter: it can be active, archived, or ended. The app is calm, emotionally neutral, and privacy-first.
+### 1.1 Product summary
 
-### 1.2 Target user
-- Gen Z / Millennial couples who want a private, intentional memory space.
-- Users who dislike social media performance and want a calm, personal archive.
-- Low-frequency users: they add content occasionally and revisit later.
+Aoi is a private app for two people to keep relationship moments and plans together. The product is intentionally calm: no public sharing, no social feed, and no AI features.
 
-### 1.3 Core user stories (MVP)
-**Account**
-- As a user, I can create an account and sign in.
-- As a user, I can delete my account and export my data.
+### 1.2 Target users
 
-**Relationship space**
-- As a user, I can purchase the ability to create a relationship space ($9.99 per relationship).
-- As a user, I can create a relationship space and invite one partner for free.
-- As a partner, I can accept an invite and access the shared relationship view.
-- As either partner, I can archive the relationship (my view becomes read-only).
-- As either partner, I can leave a relationship (my view is disconnected; content ownership rules apply).
+- Couples who want a private shared space
+- Users who want light planning + memory capture in one place
+- Low-frequency creators who return over time
 
-**Moments**
-- As a user, I can add a photo moment with optional location (toggle at upload time).
-- As a user, I can add a short video moment (10–20s) with optional location (toggle).
-- As a user, I can add a note/milestone/date/goal entry.
-- As a user, I can view moments in a timeline.
+### 1.3 Product principles
 
-**Recaps**
-- As a user, I can view a monthly recap (no AI, deterministic selection).
-- As a user, I can view an anniversary recap (no AI, deterministic selection).
-- Recaps stop when the relationship is archived.
+- Private by default
+- Two-person shared context
+- Calm UX over engagement mechanics
+- Predictable behavior over algorithmic behavior
 
-**Storage**
-- As a user, I can view my storage usage.
-- As a user, I can buy additional storage via subscription (post-MVP if needed; MVP may include stub UI).
-- If my subscription ends, I can still view and export, but cannot upload more.
+### 1.4 In-scope MVP flows
 
-**Refunds and revocation**
-- If my purchase is refunded, my entitlement becomes invalid and the app becomes view-only.
-- I can export during a grace period, then data may be deleted per policy.
+#### Access and onboarding
 
-### 1.4 Non-goals (explicit)
-- No chat or messaging.
-- No social feed/sharing.
-- No AI features.
-- No relationship analytics/scoring.
-- No maps UI.
-- No push notifications (MVP).
-- No multiple themes (MVP). One base theme only.
+- Provider sign in with Apple or Google
+- Session restore from secure local storage
+- Relationship onboarding:
+  - create a space with partner metadata
+  - or join with invite code
+- Optional past milestone import during onboarding
+- Required shared theme selection before entering app tabs
 
-### 1.5 Monetization (locked)
-- Free to download.
-- $9.99 one-time IAP per relationship creation.
-- Invite one partner for free.
-- Storage subscription exists for extra capacity (can be shipped after MVP; design for it now).
+#### Main app
 
-### 1.6 Privacy & safety principles
-- Media is owned by the uploader.
-- Users can delete their own content; cannot delete partner’s content.
-- Relationship references content; it does not “own” it.
-- Location is optional per upload and stored at rounded precision.
+- Timeline tab:
+  - text-first moments (`note`, `milestone`, `date`, `goal`)
+  - upcoming goals lane derived from target dates
+- Calendar tab:
+  - event CRUD
+  - actor-aware events (`you` vs `partner`)
+  - month grid with per-day counts
+- Profile tab:
+  - identity details
+  - relationship details
+  - edit relationship details
+  - import milestones later
+- Settings tab:
+  - change theme preset
+  - sign out
 
-### 1.7 Retention policy (conservative)
-- Paid users: retain long-term, no forced deletion due to inactivity.
-- Free users: delete after ~6 months inactivity.
-- Refunded users: 30-day grace for export, then delete after ~90 days.
-- User-initiated deletion overrides retention.
+### 1.5 User stories (current MVP)
 
-### 1.8 MVP success metrics (pragmatic)
-- Activation: % of purchasers who create a relationship + invite partner within 24h.
-- Retention: % of couples who add at least 5 moments within 30 days.
-- Content creation: median moments per relationship after 30 days.
-- Support load: refunds that cause data disputes (should be near zero due to ownership rules).
+#### Auth
+
+- As a user, I can sign in using Apple or Google.
+- As a returning user, I can reopen the app and have my session restored.
+- As a user, I can sign out from profile/settings.
+
+#### Space setup
+
+- As a signed-in user, I can create a relationship space.
+- As a signed-in user, I can join an existing space with an invite code.
+- As a user, I can import previous milestones during onboarding or later.
+
+#### Timeline
+
+- As a user, I can add moments with title/body and optional goal target date.
+- As a user, I can see timeline items sorted chronologically.
+- As a user, I can see upcoming goals grouped separately.
+
+#### Calendar
+
+- As a user, I can create events with start/end times and labels.
+- As a user, I can edit/delete events I created.
+- As a user, I can view partner-created events but cannot edit them.
+
+#### Preferences
+
+- As a user, I can choose and persist a shared theme preset.
+
+### 1.6 Explicitly deferred scope
+
+The following are intentionally deferred from MVP backend delivery:
+
+- Media upload pipeline and media moments
+- Purchases, receipt verification, and entitlement enforcement
+- Storage quota metering and subscriptions
+- Deterministic monthly/anniversary recap services
+- Full export and account deletion backend workflows
+
+### 1.7 Monetization status
+
+Monetization strategy remains a product decision, but billing enforcement is not in current MVP implementation scope.
+
+### 1.8 Privacy and safety baseline
+
+- No social graph/feed/sharing features
+- Authenticated-only data access
+- Membership checks for space-scoped data
+- Ownership checks for user-owned updates/deletes
+
+### 1.9 MVP success metrics (pragmatic)
+
+- Onboarding completion: sign-in -> space setup -> theme selection
+- First-week activation: users who create at least one moment and one calendar event
+- Stability: crash-free sessions and auth/session restore success rate
+- Performance: p95 latency targets met for auth/session, timeline, and calendar APIs
 
 ---
 
 ## 2. Engineering Spec (MVP)
 
-### 2.1 Stack (locked)
+### 2.1 Stack
+
 - Mobile: React Native (Expo)
 - Backend: Go (Gin)
-- DB: Postgres (Neon)
-- Object storage: Cloudflare R2 (S3-compatible)
+- Database: Postgres (Neon)
+- Cache/ratelimiting/idempotency: Redis-compatible store
 - Hosting: Fly.io
-- Upload pattern: presigned URLs, direct-to-R2 uploads
-- API: stateless, horizontally scalable
 
 ### 2.2 Architecture overview
-**Client**
-- Auth + session management
-- Content creation (compress media, request presign, upload, confirm)
-- Timeline rendering
-- Archive/leave flows
-- Export request UI (server generates export manifest or returns signed URLs)
 
-**Backend**
-- Auth (email magic link or email + code; implementation choice)
-- Relationship service: create/invite/join/leave/archive
-- Content service: moments CRUD (visibility via relationship membership)
-- Media service: presign PUT/GET, finalize upload, track usage
-- Entitlements: verify Apple/Google purchase tokens and grant relationship creation rights
-- Retention: scheduled cleanup (refund + inactivity policies)
+#### Mobile (current)
 
-**Storage**
-- R2 bucket: `aoi-media`
-- Lifecycle rules:
-  - deleted objects removed after retention window
+- Local-first state/repositories for space/moments/calendar
+- Remote auth adapter with local stub mode fallback
+- Secure session persistence in `expo-secure-store`
 
-### 2.3 Key engineering constraints
-- Do not stream media through API.
-- Store only object keys in DB, never full URLs.
-- Build adapters for:
-  - object storage client (R2/S3)
-  - receipt validation provider (Apple/Google)
-  - media compression pipeline (Expo wrapper)
-- Theme tokens in one file; no inline colors scattered through components.
+#### Backend (target)
 
-### 2.4 Auth (MVP recommendation)
-- Email code (no passwords).
-- Session access token + refresh token.
-- Rate limit login attempts.
+- Stateless API nodes
+- Modular monolith boundaries:
+  - `auth`
+  - `space`
+  - `milestones`
+  - `moments`
+  - `calendar`
+  - `preferences`
+- Clear permission policy layer for membership and ownership checks
 
-### 2.5 Data ownership model (core)
-- Media rows are owned by a user.
-- A relationship has two members.
-- Timeline is a view over entries visible to both members.
-- Deleting a relationship for one user should not erase the other user’s ownership.
+### 2.3 Contract requirements already in code
 
-### 2.6 Upload flow (canonical)
-1. Client compresses photo/video locally.
-2. Client calls `POST /media/presign`.
-3. Server returns `{object_key, upload_url, headers, expires_at}`.
-4. Client uploads directly to R2.
-5. Client calls `POST /media/complete`.
-6. Server validates object exists, writes media record, updates usage.
-7. Client creates a moment entry referencing `media_id`.
+The following routes are already called by the mobile app and must be preserved:
 
-### 2.7 Entitlements and purchases
-- Client completes IAP.
-- Client sends purchase token/receipt to backend.
-- Backend verifies and issues entitlement:
-  - `relationship_create` (remaining=1)
-- Relationship creation consumes entitlement.
+- `POST /v1/auth/oauth/start`
+- `POST /v1/auth/oauth/callback`
+- `GET /v1/auth/session`
+- `POST /v1/auth/logout`
 
-Refund handling:
-- On app open (or periodic), client refreshes entitlements.
-- Backend checks verification status; if invalid, flips user access state to view-only.
-- Deletion grace period enforced via retention job.
+### 2.4 Target API domains for MVP
 
-### 2.8 Storage quota enforcement
-- Track usage as sum of stored object sizes per user.
-- On upload presign:
-  - deny if user is over quota or in view-only mode
-- On subscription end:
-  - allow reads/exports
-  - deny new uploads
+#### Auth
 
-### 2.9 Recaps generation (deterministic)
-- Monthly recap: select moments within month using deterministic rules:
-  - milestones first
-  - then recent media, capped
-- Anniversary recap: similar, based on relationship start date
-- Cache recap results per period.
+- OAuth start/callback/session/logout
 
-### 2.10 Observability (MVP)
-- Structured logs
-- Basic metrics: upload success/failure, verification outcomes
-- Client error reporting optional.
+#### Space
 
-### 2.11 Security baseline
-- Auth required for all endpoints except login.
-- Membership checks for relationship access.
-- Owner checks for media delete.
-- Signed URLs for downloads, short TTL.
-- Rate limit login, presign, purchase verify.
+- get current space
+- create space
+- join space by invite
+- update space metadata
 
-### 2.12 Release plan (MVP)
-- Phase 1: Auth + base UI shell + tokenized design system
-- Phase 2: Relationship create/invite/join + entitlement verification
-- Phase 3: Media upload + timeline
-- Phase 4: Archive/leave + export + retention job
+#### Imported milestones
+
+- list imported milestones
+- append imported milestones
+
+#### Moments
+
+- list moments (cursor-based)
+- create moment
+- update moment
+- delete moment
+
+#### Calendar
+
+- list events by range
+- get event by id
+- create/update/delete event
+
+#### Preferences
+
+- get user preferences
+- update user preferences (theme id initially)
+
+### 2.5 Data ownership and permission model
+
+- A space has two members.
+- Space membership gates visibility to moments, milestones, and events.
+- Event creator ownership gates event updates/deletes.
+- Moment author ownership gates edit/delete of user-owned moments.
+
+### 2.6 Performance requirements
+
+- Session endpoint optimized for app boot path.
+- Timeline reads use keyset pagination.
+- Calendar reads use indexed time-range queries.
+- Write endpoints support idempotency keys for mobile retries.
+
+### 2.7 Security baseline
+
+- Auth middleware for all non-public routes.
+- Input validation at transport boundary.
+- Request body size limits.
+- Route-level rate limits for auth and invite join paths.
+- No sensitive tokens or raw provider payloads in logs.
+
+### 2.8 Observability baseline
+
+- Structured logs with request id
+- Per-route latency and error metrics
+- DB query timing metrics
+- Tracing hooks for auth/session, timeline list, and calendar range reads
+
+### 2.9 Delivery plan (scope-aligned)
+
+#### Phase 1
+
+- service scaffold, config, health checks
+- auth endpoint parity with mobile contract
+
+#### Phase 2
+
+- space + invite + imported milestone APIs
+
+#### Phase 3
+
+- moments APIs with cursor pagination and ownership checks
+
+#### Phase 4
+
+- calendar APIs with range query optimization and owner-only writes
+
+#### Phase 5
+
+- preferences API
+- performance hardening, load tests, production readiness checks
 
 ---
 
 ## 3. Open questions
-- Exact auth method: email magic link vs email code.
-- Base and paid storage quota numbers.
-- Location rounding strategy (ex: ~1km precision).
-- Age rating decision (16+ vs 18+).
+
+- Should relationship edit permissions be both members or creator-only?
+- Should timeline support hard delete in MVP, or soft delete only?
+- Should imported milestones remain distinct server records or become first-class moments at write time?
+- Should theme be per-user or per-space once backend sync is live?

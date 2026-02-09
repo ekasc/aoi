@@ -1,8 +1,15 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
@@ -27,6 +34,8 @@ function applyTimePart(base: Date, timePart: Date) {
 
 export default function EditCalendarEventScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const isIos = process.env.EXPO_OS === 'ios';
   const { id } = useLocalSearchParams<{ id?: string }>();
   const eventId = Array.isArray(id) ? id[0] : id;
   const { getEventById, updateEvent, deleteEvent } = useCalendar();
@@ -87,6 +96,14 @@ export default function EditCalendarEventScreen() {
       },
     ],
     [border, surface2, text]
+  );
+  const contentContainerStyle = useMemo(
+    () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
+    [insets.bottom]
+  );
+  const footerStyle = useMemo(
+    () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
+    [insets.bottom]
   );
 
   const handleSave = useCallback(async () => {
@@ -151,15 +168,24 @@ export default function EditCalendarEventScreen() {
 
   if (!event) {
     return (
-      <ScrollView
-        style={{ backgroundColor: background }}
-        contentContainerStyle={styles.contentContainer}
-        contentInsetAdjustmentBehavior="automatic"
-      >
-        <Surface style={styles.section}>
-          <ThemedText type="body">Loading event…</ThemedText>
-        </Surface>
-      </ScrollView>
+      <>
+        <Stack.Screen options={{ title: 'Edit event' }} />
+        <View style={[styles.root, { backgroundColor: background }]}>
+          <ScrollView
+            contentContainerStyle={contentContainerStyle}
+            contentInsetAdjustmentBehavior="never"
+            keyboardDismissMode="interactive"
+            showsVerticalScrollIndicator={false}
+          >
+            <Surface style={styles.section}>
+              <ThemedText type="body">Loading event…</ThemedText>
+            </Surface>
+          </ScrollView>
+          <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
+            <Button label="Close" variant="secondary" onPress={() => router.back()} />
+          </View>
+        </View>
+      </>
     );
   }
 
@@ -167,27 +193,32 @@ export default function EditCalendarEventScreen() {
     return (
       <>
         <Stack.Screen options={{ title: 'View event' }} />
-        <ScrollView
-          style={{ backgroundColor: background }}
-          contentContainerStyle={styles.contentContainer}
-          contentInsetAdjustmentBehavior="automatic"
-        >
-          <Surface variant="raised" style={styles.section}>
-            <ThemedText type="meta">Owner-only edit</ThemedText>
-            <ThemedText type="title">{event.title}</ThemedText>
-            <ThemedText type="caption" selectable style={{ color: muted }}>
-              {formatTimeRange(event.startsAt, event.endsAt)}
-            </ThemedText>
-            <ThemedText type="caption" style={{ color: muted }}>
-              {event.label.customText?.trim() || event.label.preset}
-            </ThemedText>
-            <ThemedText type="caption" style={{ color: muted }}>
-              This event was created by {event.actorName}. Only the creator can edit
-              or delete it.
-            </ThemedText>
-          </Surface>
-          <Button label="Done" onPress={() => router.back()} />
-        </ScrollView>
+        <View style={[styles.root, { backgroundColor: background }]}>
+          <ScrollView
+            contentContainerStyle={contentContainerStyle}
+            contentInsetAdjustmentBehavior="never"
+            keyboardDismissMode="interactive"
+            showsVerticalScrollIndicator={false}
+          >
+            <Surface variant="raised" style={styles.section}>
+              <ThemedText type="meta">Owner-only edit</ThemedText>
+              <ThemedText type="title">{event.title}</ThemedText>
+              <ThemedText type="caption" selectable style={{ color: muted }}>
+                {formatTimeRange(event.startsAt, event.endsAt)}
+              </ThemedText>
+              <ThemedText type="caption" style={{ color: muted }}>
+                {event.label.customText?.trim() || event.label.preset}
+              </ThemedText>
+              <ThemedText type="caption" style={{ color: muted }}>
+                This event was created by {event.actorName}. Only the creator can edit
+                or delete it.
+              </ThemedText>
+            </Surface>
+          </ScrollView>
+          <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
+            <Button label="Done" onPress={() => router.back()} />
+          </View>
+        </View>
       </>
     );
   }
@@ -195,130 +226,147 @@ export default function EditCalendarEventScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Edit event' }} />
-      <ScrollView
-        style={{ backgroundColor: background }}
-        contentContainerStyle={styles.contentContainer}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        behavior={isIos ? 'padding' : undefined}
+        style={[styles.root, { backgroundColor: background }]}
       >
-        <Surface variant="raised" style={styles.section}>
-          <ThemedText type="meta">Event details</ThemedText>
-          <TextInput
-            accessibilityLabel="Event title"
-            autoCapitalize="sentences"
-            onChangeText={(value) => {
-              setTitle(value);
-              if (error) {
+        <ScrollView
+          contentContainerStyle={contentContainerStyle}
+          contentInsetAdjustmentBehavior="never"
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Surface variant="raised" style={styles.section}>
+            <ThemedText type="meta">Event details</ThemedText>
+            <TextInput
+              accessibilityLabel="Event title"
+              autoCapitalize="sentences"
+              onChangeText={(value) => {
+                setTitle(value);
+                if (error) {
+                  setError('');
+                }
+              }}
+              placeholder="Event title"
+              placeholderTextColor={muted}
+              style={inputStyle}
+              value={title}
+            />
+
+            <ThemedText type="meta">Start</ThemedText>
+            <NativeDateTimeField
+              accessibilityLabel="Choose start date"
+              label="Start date"
+              mode="date"
+              onChange={(value) => {
+                setStartsAt((current) => applyDatePart(current, value));
                 setError('');
-              }
-            }}
-            placeholder="Event title"
-            placeholderTextColor={muted}
-            style={inputStyle}
-            value={title}
-          />
+              }}
+              value={startsAt}
+            />
+            <NativeDateTimeField
+              accessibilityLabel="Choose start time"
+              label="Start time"
+              mode="time"
+              onChange={(value) => {
+                setStartsAt((current) => applyTimePart(current, value));
+                setError('');
+              }}
+              value={startsAt}
+            />
+            <ThemedText type="caption" selectable style={{ color: muted }}>
+              {startsAt.toLocaleString('en-US')}
+            </ThemedText>
 
-          <DateTimePicker
-            mode="date"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setStartsAt((current) => applyDatePart(current, value));
-            }}
-            value={startsAt}
-          />
-          <DateTimePicker
-            mode="time"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setStartsAt((current) => applyTimePart(current, value));
-            }}
-            value={startsAt}
-          />
+            <ThemedText type="meta">End</ThemedText>
+            <NativeDateTimeField
+              accessibilityLabel="Choose end date"
+              label="End date"
+              mode="date"
+              onChange={(value) => {
+                setEndsAt((current) => applyDatePart(current, value));
+                setError('');
+              }}
+              value={endsAt}
+            />
+            <NativeDateTimeField
+              accessibilityLabel="Choose end time"
+              label="End time"
+              mode="time"
+              onChange={(value) => {
+                setEndsAt((current) => applyTimePart(current, value));
+                setError('');
+              }}
+              value={endsAt}
+            />
+            <ThemedText type="caption" selectable style={{ color: muted }}>
+              {endsAt.toLocaleString('en-US')}
+            </ThemedText>
+          </Surface>
 
-          <DateTimePicker
-            mode="date"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setEndsAt((current) => applyDatePart(current, value));
-            }}
-            value={endsAt}
-          />
-          <DateTimePicker
-            mode="time"
-            onChange={(_, value) => {
-              if (!value) {
-                return;
-              }
-              setEndsAt((current) => applyTimePart(current, value));
-            }}
-            value={endsAt}
-          />
-        </Surface>
+          <Surface style={styles.section}>
+            <ThemedText type="meta">Availability label</ThemedText>
+            <View style={styles.choiceRow}>
+              {CALENDAR_PRESET_LABELS.map((label) => {
+                const selected = presetLabel === label;
 
-        <Surface style={styles.section}>
-          <ThemedText type="meta">Availability label</ThemedText>
-          <View style={styles.choiceRow}>
-            {CALENDAR_PRESET_LABELS.map((label) => {
-              const selected = presetLabel === label;
+                return (
+                  <Button
+                    key={label}
+                    label={label}
+                    onPress={() => setPresetLabel(label)}
+                    size="sm"
+                    variant={selected ? 'primary' : 'secondary'}
+                  />
+                );
+              })}
+            </View>
+            <TextInput
+              accessibilityLabel="Custom label"
+              autoCapitalize="sentences"
+              onChangeText={setCustomLabel}
+              placeholder="Optional custom label"
+              placeholderTextColor={muted}
+              style={inputStyle}
+              value={customLabel}
+            />
+          </Surface>
 
-              return (
-                <Button
-                  key={label}
-                  label={label}
-                  onPress={() => setPresetLabel(label)}
-                  size="sm"
-                  variant={selected ? 'primary' : 'secondary'}
-                />
-              );
-            })}
+          {error ? (
+            <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+              {error}
+            </ThemedText>
+          ) : null}
+        </ScrollView>
+        <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
+          <View style={styles.actionRow}>
+            <Button
+              disabled={isWorking}
+              label={isWorking ? 'Saving…' : 'Save changes'}
+              onPress={handleSave}
+            />
+            <Button
+              disabled={isWorking}
+              label="Delete event"
+              variant="destructive"
+              onPress={handleDelete}
+            />
+            <Button label="Cancel" variant="secondary" onPress={() => router.back()} />
           </View>
-          <TextInput
-            accessibilityLabel="Custom label"
-            autoCapitalize="sentences"
-            onChangeText={setCustomLabel}
-            placeholder="Optional custom label"
-            placeholderTextColor={muted}
-            style={inputStyle}
-            value={customLabel}
-          />
-        </Surface>
-
-        {error ? (
-          <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
-            {error}
-          </ThemedText>
-        ) : null}
-
-        <View style={styles.actionRow}>
-          <Button
-            disabled={isWorking}
-            label={isWorking ? 'Saving…' : 'Save changes'}
-            onPress={handleSave}
-          />
-          <Button
-            disabled={isWorking}
-            label="Delete event"
-            variant="destructive"
-            onPress={handleDelete}
-          />
-          <Button label="Cancel" variant="secondary" onPress={() => router.back()} />
         </View>
-      </ScrollView>
+      </KeyboardAvoidingView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   contentContainer: {
     paddingHorizontal: Spacing[16],
     paddingTop: Spacing[16],
-    paddingBottom: Spacing[40],
     gap: Spacing[12],
   },
   section: {
@@ -337,8 +385,12 @@ const styles = StyleSheet.create({
     gap: Spacing[8],
   },
   actionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    gap: Spacing[8],
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing[16],
+    paddingTop: Spacing[12],
     gap: Spacing[8],
   },
 });

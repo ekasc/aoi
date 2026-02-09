@@ -13,9 +13,14 @@ import { FontFamilies } from '@/constants/typography';
 type LaunchSplashProps = {
   themeName: 'light' | 'dark';
   colors?: BeachThemeColors;
+  relationship?: {
+    youName: string;
+    partnerName: string;
+    sinceLabel: string;
+  } | null;
 };
 
-export function LaunchSplash({ themeName, colors }: LaunchSplashProps) {
+export function LaunchSplash({ themeName, colors, relationship }: LaunchSplashProps) {
   const palette = colors ?? Colors[themeName];
 
   return (
@@ -48,8 +53,20 @@ export function LaunchSplash({ themeName, colors }: LaunchSplashProps) {
               .reduceMotion(ReduceMotion.System)}
             style={[styles.caption, { color: palette.muted }]}
           >
-            a private suite for two
+            {relationship
+              ? `${relationship.youName} & ${relationship.partnerName}`
+              : 'a private suite for two'}
           </Animated.Text>
+          {relationship ? (
+            <Animated.Text
+              entering={FadeInDown.duration(520)
+                .delay(220)
+                .reduceMotion(ReduceMotion.System)}
+              style={[styles.relationshipSince, { color: palette.muted }]}
+            >
+              Since {relationship.sinceLabel}
+            </Animated.Text>
+          ) : null}
         </View>
       </View>
       <Animated.View
@@ -138,6 +155,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
+  },
+  relationshipSince: {
+    fontFamily: FontFamilies.body,
+    fontSize: 12,
+    lineHeight: 18,
+    letterSpacing: 0.25,
   },
   dotRow: {
     position: 'absolute',

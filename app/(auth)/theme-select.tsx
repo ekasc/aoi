@@ -20,11 +20,11 @@ export default function ThemeSelectScreen() {
 
   const handleContinue = useCallback(() => {
     if (status !== 'signed_in') {
-      router.replace('/(auth)/sign-in');
+      router.replace('/(public)');
       return;
     }
 
-    router.replace('/(app)/(tabs)');
+    router.replace('/');
   }, [router, status]);
 
   return (
@@ -38,7 +38,7 @@ export default function ThemeSelectScreen() {
       >
         <Surface variant="raised" style={styles.heroCard}>
           <ThemedText type="meta" style={{ color: muted }} selectable>
-            Step 2 of 2
+            Final step
           </ThemedText>
           <ThemedText type="title" selectable>
             Choose a theme

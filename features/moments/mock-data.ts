@@ -7,6 +7,7 @@ export const mockMoments: Moment[] = [
     title: 'Build monthly recap',
     body: 'Deterministic recap selection is planned once backend and data sync are in place.',
     occurredAt: '2025-12-24T18:10:00.000Z',
+    targetAt: '2026-09-01T09:00:00.000Z',
     createdAt: '2025-12-24T18:15:00.000Z',
     authorId: 'user_partner',
     authorRole: 'partner',

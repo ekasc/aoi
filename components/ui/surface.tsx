@@ -1,6 +1,7 @@
 import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
 
 import { Radii } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/glass-surface';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type SurfaceProps = ViewProps & {
@@ -9,21 +10,19 @@ export type SurfaceProps = ViewProps & {
 
 export function Surface({ style, variant = 'card', ...rest }: SurfaceProps) {
   const pageBackground = useThemeColor({}, 'background');
-  const cardBackground = useThemeColor({}, 'surface');
-  const border = useThemeColor({}, 'border');
   const shadowColor = useThemeColor({}, 'shadow');
-  const background = variant === 'page' ? pageBackground : cardBackground;
+
+  if (variant === 'page') {
+    return <View style={[styles.page, { backgroundColor: pageBackground }, style]} {...rest} />;
+  }
 
   return (
-    <View
+    <GlassSurface
+      effect="regular"
       style={[
-        styles.base,
-        { backgroundColor: background, borderColor: border },
-        variant === 'page' ? styles.page : undefined,
-        variant === 'card' ? styles.card : undefined,
+        styles.card,
         variant === 'raised'
           ? [
-              styles.card,
               styles.raised,
               Platform.select({
                 ios: { shadowColor },
@@ -40,11 +39,8 @@ export function Surface({ style, variant = 'card', ...rest }: SurfaceProps) {
 }
 
 const styles = StyleSheet.create({
-  base: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
   page: {
-    borderWidth: 0,
+    flex: 1,
   },
   card: {
     borderRadius: Radii.lg,

@@ -4,7 +4,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,10 +28,19 @@ import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
+function buildMonthWeeks(days: Date[]) {
+  const weeks: Date[][] = [];
+
+  for (let index = 0; index < days.length; index += 7) {
+    weeks.push(days.slice(index, index + 7));
+  }
+
+  return weeks;
+}
+
 export default function CalendarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const {
     selectedDate,
     visibleMonth,
@@ -53,11 +61,15 @@ export default function CalendarScreen() {
   const background = useThemeColor({}, 'background');
 
   const monthTitle = useMemo(() => formatMonthTitle(visibleMonth), [visibleMonth]);
-  const weekdayLabels = useMemo(
-    () => buildMonthGrid(visibleMonth).slice(0, 7).map(formatWeekdayShort),
-    [visibleMonth]
-  );
   const monthGrid = useMemo(() => buildMonthGrid(visibleMonth), [visibleMonth]);
+  const monthWeeks = useMemo(() => buildMonthWeeks(monthGrid), [monthGrid]);
+  const weekdayLabels = useMemo(
+    () =>
+      (monthWeeks[0] ?? monthGrid.slice(0, 7)).map((day) =>
+        formatWeekdayShort(day)
+      ),
+    [monthGrid, monthWeeks]
+  );
   const selectedDayEvents = useMemo(
     () => eventsForDate(selectedDate),
     [eventsForDate, selectedDate]
@@ -65,16 +77,6 @@ export default function CalendarScreen() {
   const selectedDateTitle = useMemo(
     () => formatDateTitle(selectedDate),
     [selectedDate]
-  );
-  const dayCellSize = useMemo(
-    () =>
-      Math.max(
-        36,
-        Math.floor(
-          (width - Spacing[16] * 2 - Spacing[16] * 2 - Spacing[8] * 6) / 7
-        )
-      ),
-    [width]
   );
 
   const handleSelectDate = useCallback(
@@ -88,7 +90,7 @@ export default function CalendarScreen() {
       styles.contentContainer,
       {
         paddingTop: insets.top + Spacing[8],
-        paddingBottom: insets.bottom + Spacing[56],
+        paddingBottom: insets.bottom + Spacing[16],
       },
     ],
     [insets.bottom, insets.top]
@@ -98,7 +100,7 @@ export default function CalendarScreen() {
     <ScrollView
       style={{ backgroundColor: background }}
       contentContainerStyle={contentContainerStyle}
-      contentInsetAdjustmentBehavior="never"
+      contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.headerRow}>
@@ -124,7 +126,7 @@ export default function CalendarScreen() {
       <Surface variant="raised" style={styles.calendarPanel}>
         <View style={styles.weekdayRow}>
           {weekdayLabels.map((label) => (
-            <View key={label} style={[styles.weekdayCell, { width: dayCellSize }]}>
+            <View key={label} style={styles.weekdayCell}>
               <ThemedText type="meta" style={{ color: muted }}>
                 {label}
               </ThemedText>
@@ -133,62 +135,65 @@ export default function CalendarScreen() {
         </View>
 
         <View style={styles.grid}>
-          {monthGrid.map((day) => {
-            const dayKey = toDayKey(day);
-            const summary = monthSummary[dayKey];
-            const isSelected = isSameDay(day, selectedDate);
-            const isCurrentMonth = isSameMonth(day, visibleMonth);
-            const dayTextColor = isSelected
-              ? onAccent
-              : isCurrentMonth
-                ? textColor
-                : muted;
-            const dayBackground = isSelected ? accent : surface;
-            const count = summary?.total ?? 0;
+          {monthWeeks.map((week, weekIndex) => (
+            <View key={`week-${weekIndex}`} style={styles.weekRow}>
+              {week.map((day) => {
+                const dayKey = toDayKey(day);
+                const summary = monthSummary[dayKey];
+                const isSelected = isSameDay(day, selectedDate);
+                const isCurrentMonth = isSameMonth(day, visibleMonth);
+                const dayTextColor = isSelected
+                  ? onAccent
+                  : isCurrentMonth
+                    ? textColor
+                    : muted;
+                const dayBackground = isSelected ? accent : surface;
+                const count = summary?.total ?? 0;
 
-            return (
-              <Pressable
-                accessibilityLabel={`Select ${formatDateTitle(day)}`}
-                accessibilityRole="button"
-                key={dayKey}
-                onPress={() => handleSelectDate(day)}
-                style={[
-                  styles.dayCell,
-                  {
-                    width: dayCellSize,
-                    borderColor: isSelected ? accent : border,
-                    backgroundColor: dayBackground,
-                    opacity: isCurrentMonth ? 1 : 0.6,
-                  },
-                ]}
-              >
-                <ThemedText type="caption" style={{ color: dayTextColor }}>
-                  {day.getDate()}
-                </ThemedText>
-                {count > 0 ? (
-                  <View style={[styles.countBadge, { backgroundColor: surface2 }]}>
-                    <ThemedText
-                      type="meta"
-                      selectable
-                      style={{ color: muted, fontVariant: ['tabular-nums'] }}
-                    >
-                      {count}
+                return (
+                  <Pressable
+                    accessibilityLabel={`Select ${formatDateTitle(day)}`}
+                    accessibilityRole="button"
+                    key={dayKey}
+                    onPress={() => handleSelectDate(day)}
+                    style={[
+                      styles.dayCell,
+                      {
+                        borderColor: isSelected ? accent : border,
+                        backgroundColor: dayBackground,
+                        opacity: isCurrentMonth ? 1 : 0.6,
+                      },
+                    ]}
+                  >
+                    <ThemedText type="caption" style={{ color: dayTextColor }}>
+                      {day.getDate()}
                     </ThemedText>
-                  </View>
-                ) : null}
-                <View style={styles.actorHintRow}>
-                  {summary?.youCount ? (
-                    <View style={[styles.actorHint, { backgroundColor: accent }]} />
-                  ) : null}
-                  {summary?.partnerCount ? (
-                    <View
-                      style={[styles.actorHint, { backgroundColor: partnerAccent }]}
-                    />
-                  ) : null}
-                </View>
-              </Pressable>
-            );
-          })}
+                    {count > 0 ? (
+                      <View style={[styles.countBadge, { backgroundColor: surface2 }]}>
+                        <ThemedText
+                          type="meta"
+                          selectable
+                          style={{ color: muted, fontVariant: ['tabular-nums'] }}
+                        >
+                          {count}
+                        </ThemedText>
+                      </View>
+                    ) : null}
+                    <View style={styles.actorHintRow}>
+                      {summary?.youCount ? (
+                        <View style={[styles.actorHint, { backgroundColor: accent }]} />
+                      ) : null}
+                      {summary?.partnerCount ? (
+                        <View
+                          style={[styles.actorHint, { backgroundColor: partnerAccent }]}
+                        />
+                      ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
         </View>
       </Surface>
 
@@ -284,14 +289,18 @@ const styles = StyleSheet.create({
     gap: Spacing[8],
   },
   weekdayCell: {
+    flex: 1,
     alignItems: 'center',
   },
   grid: {
+    gap: Spacing[8],
+  },
+  weekRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: Spacing[8],
   },
   dayCell: {
+    flex: 1,
     minHeight: 58,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 14,

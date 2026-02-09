@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
 
@@ -32,8 +32,12 @@ function ThemeSwatch({ accent, partnerAccent, thread }: ThemeSwatchProps) {
   );
 }
 
+let hasPlayedThemeSelectorIntro = false;
+
 export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
   const { selectedThemeId, setSelectedThemeId, mode } = useAoiTheme();
+  const shouldAnimateIntro =
+    process.env.EXPO_OS !== 'android' && !hasPlayedThemeSelectorIntro;
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
   const surface2 = useThemeColor({}, 'surface2');
@@ -47,6 +51,10 @@ export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
     []
   );
 
+  useEffect(() => {
+    hasPlayedThemeSelectorIntro = true;
+  }, []);
+
   return (
     <View style={styles.container}>
       {themes.map((theme, index) => {
@@ -56,9 +64,11 @@ export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
 
         return (
           <Animated.View
-            entering={FadeIn.duration(240)
-              .delay(index * 80)
-              .reduceMotion(ReduceMotion.System)}
+            entering={
+              shouldAnimateIntro
+                ? FadeIn.duration(240).delay(index * 80).reduceMotion(ReduceMotion.System)
+                : undefined
+            }
             key={theme.id}
           >
             <Pressable

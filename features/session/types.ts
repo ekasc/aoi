@@ -1,21 +1,25 @@
-export type SessionStatus = 'signed_out' | 'signed_in';
+import type {
+  AuthProvider,
+  AuthSessionTokens,
+  AuthSessionUser,
+} from '@/features/auth/types';
 
-export type SessionUser = {
-  id: string;
-  email: string;
-  displayName: string;
-};
+export type SessionStatus = 'loading' | 'signed_out' | 'signed_in';
 
-export type VerifyCodeResult = {
+export type SessionUser = AuthSessionUser;
+export type SessionTokens = AuthSessionTokens;
+
+export type SignInResult = {
   ok: boolean;
   error?: string;
 };
 
 export type SessionContextValue = {
   status: SessionStatus;
+  isHydrated: boolean;
   user: SessionUser | null;
-  pendingEmail: string | null;
-  signInStart: (email: string) => void;
-  verifyCode: (code: string) => VerifyCodeResult;
-  signOut: () => void;
+  tokens: SessionTokens | null;
+  signInWithProvider: (provider: AuthProvider) => Promise<SignInResult>;
+  restoreSession: () => Promise<void>;
+  signOut: () => Promise<void>;
 };

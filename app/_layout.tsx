@@ -9,7 +9,9 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 
 import { LaunchSplash } from "@/components/launch-splash";
-import { SessionProvider } from "@/features/session/session-context";
+import { MomentsProvider } from "@/features/moments/moments-context";
+import { SessionProvider, useSession } from "@/features/session/session-context";
+import { SpaceProvider, useSpace } from "@/features/space/space-context";
 import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
 import { useAoiFonts } from "@/hooks/use-aoi-fonts";
 
@@ -20,9 +22,13 @@ export default function RootLayout() {
 
 	return (
 		<SessionProvider>
-			<AoiThemeProvider>
-				<RootNavigation fontsLoaded={fontsLoaded} />
-			</AoiThemeProvider>
+			<SpaceProvider>
+				<AoiThemeProvider>
+					<MomentsProvider>
+						<RootNavigation fontsLoaded={fontsLoaded} />
+					</MomentsProvider>
+				</AoiThemeProvider>
+			</SpaceProvider>
 		</SessionProvider>
 	);
 }
@@ -32,8 +38,15 @@ type RootNavigationProps = {
 };
 
 function RootNavigation({ fontsLoaded }: RootNavigationProps) {
+	const {
+		status: sessionStatus,
+		user,
+		isHydrated: isSessionHydrated,
+	} = useSession();
+	const { status: spaceStatus, space, isHydrated: isSpaceHydrated } = useSpace();
 	const { mode, colors, isHydrated } = useAoiTheme();
 	const themeName = mode === "dark" ? "dark" : "light";
+	const isAndroid = process.env.EXPO_OS === "android";
 	const [showLaunchSplash, setShowLaunchSplash] = useState(true);
 
 	const navigationTheme = useMemo(() => {
@@ -80,8 +93,46 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 		};
 	}, [fontsLoaded, isHydrated]);
 
-	if (!fontsLoaded || !isHydrated || showLaunchSplash) {
-		return <LaunchSplash colors={colors} themeName={themeName} />;
+	const relationship = useMemo(() => {
+		if (
+			sessionStatus !== "signed_in" ||
+			spaceStatus !== "ready" ||
+			!space ||
+			!user
+		) {
+			return null;
+		}
+
+		const relationshipDate = new Date(space.relationshipStartDate);
+		const isValidDate = !Number.isNaN(relationshipDate.getTime());
+
+		return {
+			youName: user.displayName,
+			partnerName: space.partnerName,
+			sinceLabel: isValidDate
+				? relationshipDate.toLocaleDateString("en-US", {
+						month: "long",
+						day: "numeric",
+						year: "numeric",
+				  })
+				: "a shared chapter",
+		};
+	}, [sessionStatus, space, spaceStatus, user]);
+
+	if (
+		!fontsLoaded ||
+		!isHydrated ||
+		!isSessionHydrated ||
+		!isSpaceHydrated ||
+		showLaunchSplash
+	) {
+		return (
+			<LaunchSplash
+				colors={colors}
+				relationship={relationship}
+				themeName={themeName}
+			/>
+		);
 	}
 
 	return (
@@ -98,7 +149,11 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 				<Stack.Screen name="(auth)" options={{ headerShown: false }} />
 				<Stack.Screen name="(app)" options={{ headerShown: false }} />
 			</Stack>
-			<StatusBar style={themeName === "dark" ? "light" : "dark"} />
+			<StatusBar
+				backgroundColor={colors.background}
+				style={themeName === "dark" ? "light" : "dark"}
+				translucent={!isAndroid}
+			/>
 		</NavigationThemeProvider>
 	);
 }

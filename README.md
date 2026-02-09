@@ -1,63 +1,58 @@
 # Aoi
 
-Aoi is a private, shared relationship scrapbook for two people. It stores photos, short videos, notes, milestones, important dates, and goals, and generates monthly and anniversary recaps.
+Aoi is a private relationship app for two people. It combines a shared timeline, lightweight planning, and profile space setup in one calm, private environment.
 
-## Principles
-- No AI features.
-- No social feed, chat, or public sharing.
-- Relationship as a chapter (can be archived/ended).
-- Media owned by uploader; shared visibility via relationship membership.
-- Direct-to-object storage uploads (no media through API).
+## Current Product Scope (Feb 2026)
 
-## Monetization
-- Free to download.
-- $9.99 one-time in-app purchase per relationship creation (invite one partner for free).
-- Optional storage subscription later (extra capacity). If canceled: view-only, export allowed.
+The mobile app currently ships these flows:
 
-## Stack
-- Mobile: React Native (Expo)
-- Backend: Go (Gin)
-- Database: Postgres (Neon)
-- Storage: Cloudflare R2 (S3-compatible)
+- OAuth provider sign in (Apple and Google)
+- Session restore/logout using secure token storage
+- Relationship space onboarding:
+  - create a space (name, partner name, relationship start date)
+  - or join with a 6-character invite code
+- Optional import of past milestones during onboarding
+- Theme selection from three shared presets
+- Main app with four tabs:
+  - Timeline (moments, upcoming goals lane)
+  - Calendar (event planning by person)
+  - Profile (identity + relationship details)
+  - Settings (theme selector + session actions)
+
+## Scope Deferred From Earlier Docs
+
+The codebase has intentionally narrowed MVP scope. These areas are now post-MVP:
+
+- Media upload pipeline (direct-to-object-storage)
+- Purchase/entitlement enforcement
+- Storage quota tiers
+- Deterministic monthly/anniversary recaps
+- Full account export/deletion flows
+
+## Backend Direction
+
+- API: Go + Gin (stateless)
+- DB: Postgres (Neon)
 - Hosting: Fly.io
+- Cache/ratelimiting/idempotency: Redis-compatible store
+- Object storage (deferred module): Cloudflare R2
 
-## Suggested repo layout
-```
-aoi/
-  apps/
-    mobile/                # Expo app
-  services/
-    api/                   # Go Gin API
-  packages/
-    shared/                # shared types, schemas, constants
-  docs/
-    blueprint.md
-    prd-engineering.md
-    db-api.md
-```
+## Required Auth API Contract (Already Used by App)
 
-## Core flows (MVP)
+These auth routes are already called by the app and must remain compatible:
 
-### Upload
-1. Client compresses media locally.
-2. Client requests a presigned upload URL.
-3. Client uploads directly to R2.
-4. Client calls complete endpoint to register media.
-5. Client creates a moment referencing the media.
+- `POST /v1/auth/oauth/start`
+- `POST /v1/auth/oauth/callback`
+- `GET /v1/auth/session`
+- `POST /v1/auth/logout`
 
-### Relationship creation
-1. Client purchases relationship creation entitlement (IAP).
-2. Client verifies purchase with backend.
-3. Client creates relationship (consumes entitlement).
-4. Client generates invite code.
-5. Partner redeems invite code.
+## Core Docs
 
-## Policies (high level)
-- Location optional per upload and stored at rounded precision.
-- Refunds revoke entitlements and switch users to view-only.
-- Retention cleanup runs daily via cron hitting an internal endpoint.
+- `aoi-prd-engineering.md` - updated product + engineering scope
+- `aoi-db-api.md` - updated schema + endpoint plan
+- `go-backend-performance-blueprint.md` - performance-first backend implementation plan
 
-## Docs
-- `docs/blueprint.md` — product scope and constraints
-- `docs/prd-engineering.md` — PRD + engineering spec
-- `docs/db-api.md` — schema + endpoints
+## Repo Notes
+
+- This repository currently contains the Expo mobile app.
+- Backend implementation is planned under `services/api`.

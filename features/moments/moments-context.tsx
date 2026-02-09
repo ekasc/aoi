@@ -3,7 +3,7 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useReducer,
+  useState,
   type PropsWithChildren,
 } from 'react';
 
@@ -13,10 +13,8 @@ import type {
   Moment,
   MomentsContextValue,
 } from '@/features/moments/types';
-
-type MomentsAction =
-  | { type: 'add'; payload: CreateMomentInput }
-  | { type: 'remove'; payload: { id: string } };
+import { useSpace } from '@/features/space/space-context';
+import type { ImportedMilestone } from '@/features/space/types';
 
 function sortMomentsOldestFirst(moments: Moment[]) {
   return [...moments].sort(
@@ -41,6 +39,7 @@ function toMoment(input: CreateMomentInput): Moment {
     title,
     body,
     occurredAt,
+    targetAt: input.targetAt ?? null,
     createdAt: now.toISOString(),
     authorId: input.authorId ?? 'user_you',
     authorRole: input.authorRole ?? 'you',
@@ -49,34 +48,60 @@ function toMoment(input: CreateMomentInput): Moment {
   };
 }
 
-function momentsReducer(state: Moment[], action: MomentsAction): Moment[] {
-  if (action.type === 'add') {
-    const nextMoment = toMoment(action.payload);
-    return sortMomentsOldestFirst([...state, nextMoment]);
-  }
-
-  if (action.type === 'remove') {
-    return state.filter((moment) => moment.id !== action.payload.id);
-  }
-
-  return state;
+function toImportedMoment(milestone: ImportedMilestone): Moment {
+  return {
+    id: milestone.id,
+    type: milestone.type,
+    title: milestone.title,
+    body: milestone.body?.trim() || '',
+    occurredAt: milestone.occurredAt,
+    targetAt: milestone.type === 'goal' ? milestone.targetAt ?? null : null,
+    createdAt: milestone.createdAt,
+    authorId: 'user_you',
+    authorRole: 'you',
+    authorName: 'You',
+  };
 }
 
 const MomentsContext = createContext<MomentsContextValue | undefined>(undefined);
 
 export function MomentsProvider({ children }: PropsWithChildren) {
-  const [moments, dispatch] = useReducer(
-    momentsReducer,
-    mockMoments,
-    sortMomentsOldestFirst
+  const { importedMilestones } = useSpace();
+  const [localMoments, setLocalMoments] = useState<Moment[]>([]);
+  const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
+
+  const importedMoments = useMemo(
+    () => importedMilestones.map(toImportedMoment),
+    [importedMilestones]
   );
+  const moments = useMemo(() => {
+    const byId = new Map<string, Moment>();
+
+    [...mockMoments, ...importedMoments, ...localMoments].forEach((moment) => {
+      if (!hiddenMomentIds.has(moment.id)) {
+        byId.set(moment.id, moment);
+      }
+    });
+
+    return sortMomentsOldestFirst(Array.from(byId.values()));
+  }, [hiddenMomentIds, importedMoments, localMoments]);
 
   const addMoment = useCallback((input: CreateMomentInput) => {
-    dispatch({ type: 'add', payload: input });
+    setLocalMoments((currentMoments) => {
+      const nextMoment = toMoment(input);
+      return sortMomentsOldestFirst([...currentMoments, nextMoment]);
+    });
   }, []);
 
   const removeMoment = useCallback((momentId: string) => {
-    dispatch({ type: 'remove', payload: { id: momentId } });
+    setLocalMoments((currentMoments) =>
+      currentMoments.filter((moment) => moment.id !== momentId)
+    );
+    setHiddenMomentIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      nextIds.add(momentId);
+      return nextIds;
+    });
   }, []);
 
   const value = useMemo(
