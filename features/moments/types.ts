@@ -1,5 +1,6 @@
 export type MomentType = 'note' | 'milestone' | 'date' | 'goal' | 'media';
 export type MomentAuthorRole = 'you' | 'partner';
+export type MomentTag = 'date-idea' | 'milestone' | 'inside-joke' | 'trip';
 
 export type Moment = {
   id: string;
@@ -13,6 +14,7 @@ export type Moment = {
   authorRole: MomentAuthorRole;
   authorName: string;
   mediaPreview?: string;
+  tags?: MomentTag[];
 };
 
 export type CreateMomentInput = {
@@ -25,6 +27,7 @@ export type CreateMomentInput = {
   authorRole?: MomentAuthorRole;
   authorName?: string;
   mediaPreview?: string;
+  tags?: MomentTag[];
 };
 
 export type MomentsContextValue = {

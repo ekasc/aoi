@@ -26,6 +26,7 @@ export type CalendarEvent = {
   label: CalendarLabel;
   createdAt: string;
   updatedAt: string;
+  reminderMinutesBefore?: number[];
 };
 
 export type CreateCalendarEventInput = {
@@ -35,6 +36,7 @@ export type CreateCalendarEventInput = {
   actor: CalendarActor;
   actorName: string;
   label: CalendarLabel;
+  reminderMinutesBefore?: number[];
 };
 
 export type UpdateCalendarEventInput = {
@@ -43,6 +45,7 @@ export type UpdateCalendarEventInput = {
   startsAt: string;
   endsAt: string;
   label: CalendarLabel;
+  reminderMinutesBefore?: number[];
 };
 
 export type CalendarDaySummary = {
@@ -59,11 +62,12 @@ export type CalendarContextValue = {
   visibleMonth: Date;
   monthSummary: CalendarMonthSummary;
   isLoading: boolean;
+  error: string | null;
   setSelectedDate: (date: Date) => void;
   setVisibleMonth: (date: Date) => void;
   addEvent: (input: CreateCalendarEventInput) => Promise<void>;
   updateEvent: (input: UpdateCalendarEventInput) => Promise<void>;
   deleteEvent: (eventId: string) => Promise<void>;
-  eventsForDate: (date: Date) => CalendarEvent[];
+  eventsForDay: Record<string, CalendarEvent[]>;
   getEventById: (eventId: string) => Promise<CalendarEvent | null>;
 };
