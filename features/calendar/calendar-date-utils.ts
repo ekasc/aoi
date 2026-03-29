@@ -94,3 +94,19 @@ export function buildMonthGrid(date: Date) {
 export function isEventOnDate(event: CalendarEvent, date: Date) {
   return toDayKey(new Date(event.startsAt)) === toDayKey(date);
 }
+
+export type WeekBounds = { weekStart: Date; weekEnd: Date };
+
+export function getWeekBounds(now: Date): WeekBounds {
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - now.getDay()); // back to Sunday
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 7);
+  return { weekStart, weekEnd };
+}
+
+export function isInWeek(date: Date, now: Date): boolean {
+  const { weekStart, weekEnd } = getWeekBounds(now);
+  return date >= weekStart && date < weekEnd;
+}
