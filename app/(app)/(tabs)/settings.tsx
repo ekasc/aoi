@@ -59,26 +59,6 @@ export default function SettingsScreen() {
         <ThemeSelector />
       </Surface>
 
-      <Surface variant="raised" style={styles.card}>
-        <ThemedText type="meta">Your data</ThemedText>
-        <Divider style={styles.divider} />
-        <Button label="Take your data with you" variant="secondary" disabled onPress={() => {}} />
-      </Surface>
-
-      <Surface style={styles.card}>
-        <ThemedText type="meta">Account</ThemedText>
-        <Divider style={styles.divider} />
-        <View style={styles.actionStack}>
-          <Button
-            label="Close this chapter"
-            variant="secondary"
-            disabled
-            onPress={() => {}}
-          />
-          <Button label="Delete everything" variant="destructive" disabled onPress={() => {}} />
-        </View>
-      </Surface>
-
       <Surface style={styles.card}>
         <ThemedText type="meta">Session</ThemedText>
         <Divider style={styles.divider} />
@@ -103,8 +83,5 @@ const styles = StyleSheet.create({
   },
   divider: {
     marginVertical: Spacing[12],
-  },
-  actionStack: {
-    gap: Spacing[8],
   },
 });

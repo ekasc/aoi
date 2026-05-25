@@ -1,58 +1,66 @@
-# Aoi
+# Aoi Mobile App
 
-Aoi is a private relationship app for two people. It combines a shared timeline, lightweight planning, and profile space setup in one calm, private environment.
+Aoi is a private relationship app for two people. This repo is the Expo + TypeScript client.
 
-## Current Product Scope (Feb 2026)
+## Current Product Scope (Mar 2026)
 
-The mobile app currently ships these flows:
-
-- OAuth provider sign in (Apple and Google)
+- OAuth provider sign in (Google + Apple)
 - Session restore/logout using secure token storage
-- Relationship space onboarding:
-  - create a space (name, partner name, relationship start date)
-  - or join with a 6-character invite code
-- Optional import of past milestones during onboarding
-- Theme selection from three shared presets
-- Main app with four tabs:
-  - Timeline (moments, upcoming goals lane)
-  - Calendar (event planning by person)
-  - Profile (identity + relationship details)
-  - Settings (theme selector + session actions)
+- Relationship space onboarding (create or join)
+- Optional milestone import
+- Theme selection
+- Main app tabs (timeline, calendar, profile, settings)
 
-## Scope Deferred From Earlier Docs
+## Backend Integration
 
-The codebase has intentionally narrowed MVP scope. These areas are now post-MVP:
-
-- Media upload pipeline (direct-to-object-storage)
-- Purchase/entitlement enforcement
-- Storage quota tiers
-- Deterministic monthly/anniversary recaps
-- Full account export/deletion flows
-
-## Backend Direction
-
-- API: Go + Gin (stateless)
+- Backend runtime: TypeScript + Bun (repo: `../go/aoi-go`)
 - DB: Postgres (Neon)
-- Hosting: Fly.io
-- Cache/ratelimiting/idempotency: Redis-compatible store
-- Object storage (deferred module): Cloudflare R2
+- Object storage: Cloudflare R2
 
-## Required Auth API Contract (Already Used by App)
+## Auth API Contract
 
-These auth routes are already called by the app and must remain compatible:
+The app expects these routes:
 
 - `POST /v1/auth/oauth/start`
 - `POST /v1/auth/oauth/callback`
+- `POST /v1/auth/oauth/native/callback`
 - `GET /v1/auth/session`
 - `POST /v1/auth/logout`
 
-## Core Docs
+Flow mapping:
 
-- `aoi-prd-engineering.md` - updated product + engineering scope
-- `aoi-db-api.md` - updated schema + endpoint plan
-- `go-backend-performance-blueprint.md` - performance-first backend implementation plan
+- Google (iOS + Android): Authorization Code + PKCE (`S256`)
+- Apple iOS: native Sign in with Apple, then `oauth/native/callback`
+- Apple Android: browser `start` + `callback` with `state` + `nonce`
 
-## Repo Notes
+## Environment Variables
 
-- This repository currently contains the Expo mobile app.
-- Backend implementation is planned under `services/api`.
+Default behavior is stub auth (`EXPO_PUBLIC_AUTH_STUB_MODE=true` when unset).
+
+When using real backend auth (`EXPO_PUBLIC_AUTH_STUB_MODE=false`), set:
+
+- `EXPO_PUBLIC_AUTH_API_BASE_URL`
+- `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
+- `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
+- `EXPO_PUBLIC_APPLE_ANDROID_CLIENT_ID`
+
+## Local Commands
+
+```bash
+bun install
+bun run lint
+bun run typecheck
+bun run test:unit
+```
+
+## Mobile E2E (App-Level)
+
+Maestro smoke test (stub mode) is in `e2e/maestro/auth-stub-smoke.yaml`.
+
+1. Install Maestro CLI (one-time): `brew install mobile-dev-inc/tap/maestro`
+2. Start iOS app in stub mode:
+   `EXPO_PUBLIC_AUTH_STUB_MODE=true bun run ios`
+3. Run E2E:
+   `bun run test:e2e:mobile:stub`
+
+Expected result: tap `Continue with Google` and land on `Set up your shared space`.

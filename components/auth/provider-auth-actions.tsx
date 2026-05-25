@@ -6,6 +6,7 @@ import {
 	StyleSheet,
 	Text,
 	View,
+	useColorScheme,
 	type PressableStateCallbackType,
 	type ViewStyle,
 } from "react-native";
@@ -33,8 +34,10 @@ export function ProviderAuthActions({ onSuccess }: ProviderAuthActionsProps) {
 	const [error, setError] = useState("");
 	const [isAppleNativeAvailable, setIsAppleNativeAvailable] = useState(false);
 	const [hasGoogleIconError, setHasGoogleIconError] = useState(false);
+	const colorScheme = useColorScheme();
 	const muted = useThemeColor({}, "muted");
 	const danger = useThemeColor({}, "danger");
+	const googleBorderColor = colorScheme === "dark" ? "#8A8A8A" : "#DADCE0";
 
 	useEffect(() => {
 		let isActive = true;
@@ -94,10 +97,11 @@ export function ProviderAuthActions({ onSuccess }: ProviderAuthActionsProps) {
 	const googleButtonStyle = useCallback(
 		({ pressed }: PressableStateCallbackType): ViewStyle[] => [
 			styles.googleButton,
+			{ borderColor: googleBorderColor },
 			pressed ? styles.pressed : styles.resting,
 			isLoading ? styles.disabled : styles.resting,
 		],
-		[isLoading],
+		[isLoading, googleBorderColor],
 	);
 
 	return (
@@ -168,7 +172,7 @@ export function ProviderAuthActions({ onSuccess }: ProviderAuthActionsProps) {
 				) : (
 					<Text style={styles.googleFallbackIcon}>G</Text>
 				)}
-				<Text style={styles.googleLabel}>Continue with Google</Text>
+				<Text style={[styles.googleLabel, { color: GOOGLE_TEXT_COLOR }]}>Continue with Google</Text>
 			</Pressable>
 
 			<ThemedText
@@ -215,7 +219,6 @@ const styles = StyleSheet.create({
 		minHeight: 50,
 		borderRadius: 24,
 		borderWidth: StyleSheet.hairlineWidth,
-		borderColor: GOOGLE_BORDER_COLOR,
 		backgroundColor: "#FFFFFF",
 		alignItems: "center",
 		justifyContent: "center",
@@ -233,7 +236,6 @@ const styles = StyleSheet.create({
 		fontWeight: "700",
 	},
 	googleLabel: {
-		color: GOOGLE_TEXT_COLOR,
 		fontSize: 16,
 		fontWeight: "600",
 	},

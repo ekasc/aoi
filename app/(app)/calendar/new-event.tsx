@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -19,6 +19,7 @@ import { useCalendar } from '@/features/calendar/calendar-context';
 import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
 import type { CalendarActor, CalendarPresetLabel } from '@/features/calendar/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { useSpace } from '@/features/space/space-context';
 
 function applyDatePart(base: Date, datePart: Date) {
   const next = new Date(base);
@@ -32,11 +33,40 @@ function applyTimePart(base: Date, timePart: Date) {
   return next;
 }
 
+function datePlusOneHour(date: Date) {
+  return new Date(date.getTime() + 60 * 60 * 1000);
+}
+
+function ensureEndAfterStart(startDate: Date, currentEndDate: Date) {
+  if (currentEndDate.getTime() > startDate.getTime()) {
+    return currentEndDate;
+  }
+
+  return datePlusOneHour(startDate);
+}
+
+function getSeedDate(rawDate: string | string[] | undefined) {
+  const dateValue = Array.isArray(rawDate) ? rawDate[0] : rawDate;
+
+  if (!dateValue) {
+    return null;
+  }
+
+  const parsedDate = new Date(dateValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return parsedDate;
+}
+
 export default function NewCalendarEventScreen() {
   const router = useRouter();
+  const { date } = useLocalSearchParams<{ date?: string | string[] }>();
   const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
   const { addEvent } = useCalendar();
+  const { space } = useSpace();
   const border = useThemeColor({}, 'border');
   const accent = useThemeColor({}, 'accent');
   const onAccent = useThemeColor({}, 'onAccent');
@@ -47,17 +77,29 @@ export default function NewCalendarEventScreen() {
   const danger = useThemeColor({}, 'danger');
   const background = useThemeColor({}, 'background');
 
-  const now = useMemo(() => new Date(), []);
-  const inOneHour = useMemo(() => new Date(now.getTime() + 60 * 60 * 1000), [now]);
+  const seedDate = useMemo(() => getSeedDate(date), [date]);
+  const initialStart = useMemo(() => {
+    const currentDate = new Date();
+
+    if (!seedDate) {
+      return currentDate;
+    }
+
+    currentDate.setFullYear(seedDate.getFullYear(), seedDate.getMonth(), seedDate.getDate());
+    currentDate.setHours(9, 0, 0, 0);
+    return currentDate;
+  }, [seedDate]);
+  const initialEnd = useMemo(() => datePlusOneHour(initialStart), [initialStart]);
 
   const [title, setTitle] = useState('');
   const [actor, setActor] = useState<CalendarActor>('you');
   const [presetLabel, setPresetLabel] = useState<CalendarPresetLabel>('Work');
   const [customLabel, setCustomLabel] = useState('');
-  const [startsAt, setStartsAt] = useState(now);
-  const [endsAt, setEndsAt] = useState(inOneHour);
+  const [startsAt, setStartsAt] = useState(initialStart);
+  const [endsAt, setEndsAt] = useState(initialEnd);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isRangeInvalid = endsAt.getTime() <= startsAt.getTime();
 
   const inputStyle = useMemo(
     () => [
@@ -87,7 +129,7 @@ export default function NewCalendarEventScreen() {
       return;
     }
 
-    if (endsAt.getTime() <= startsAt.getTime()) {
+    if (isRangeInvalid) {
       setError('End time must be after start time.');
       return;
     }
@@ -99,7 +141,7 @@ export default function NewCalendarEventScreen() {
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
         actor,
-        actorName: actor === 'you' ? 'You' : 'Alex',
+        actorName: actor === 'you' ? 'You' : space?.partnerName ?? 'Partner',
         label: {
           preset: presetLabel,
           customText: customLabel.trim() || undefined,
@@ -119,6 +161,7 @@ export default function NewCalendarEventScreen() {
     router,
     startsAt,
     title,
+    isRangeInvalid,
   ]);
 
   return (
@@ -155,41 +198,44 @@ export default function NewCalendarEventScreen() {
 
           <Surface style={styles.section}>
             <ThemedText type="meta">Creator</ThemedText>
-            <View style={styles.choiceRow}>
-              {(['you', 'partner'] as const).map((candidate) => {
-                const selected = actor === candidate;
+            <View accessibilityRole="radiogroup">
+              <View style={styles.choiceRow}>
+                {(['you', 'partner'] as const).map((candidate) => {
+                  const selected = actor === candidate;
 
-                return (
-                  <Pressable
-                    accessibilityLabel={`Set creator to ${candidate}`}
-                    accessibilityRole="button"
-                    key={candidate}
-                    onPress={() => setActor(candidate)}
-                    style={[
-                      styles.choiceChip,
-                      {
-                        borderColor: selected
-                          ? candidate === 'you'
-                            ? accent
-                            : partnerAccent
-                          : border,
-                        backgroundColor: selected
-                          ? candidate === 'you'
-                            ? accent
-                            : partnerAccent
-                          : surface2,
-                      },
-                    ]}
-                  >
-                    <ThemedText
-                      type="caption"
-                      style={{ color: selected ? onAccent : text }}
+                  return (
+                    <Pressable
+                      accessibilityLabel={`Set creator to ${candidate}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: selected }}
+                      key={candidate}
+                      onPress={() => setActor(candidate)}
+                      style={[
+                        styles.choiceChip,
+                        {
+                          borderColor: selected
+                            ? candidate === 'you'
+                              ? accent
+                              : partnerAccent
+                            : border,
+                          backgroundColor: selected
+                            ? candidate === 'you'
+                              ? accent
+                              : partnerAccent
+                            : surface2,
+                        },
+                      ]}
                     >
-                      {candidate === 'you' ? 'You' : 'Partner'}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
+                      <ThemedText
+                        type="caption"
+                        style={{ color: selected ? onAccent : text }}
+                      >
+                        {candidate === 'you' ? 'You' : 'Partner'}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           </Surface>
 
@@ -199,7 +245,13 @@ export default function NewCalendarEventScreen() {
               label="Start date"
               mode="date"
               onChange={(value) => {
-                setStartsAt((current) => applyDatePart(current, value));
+                setStartsAt((current) => {
+                  const nextStartDate = applyDatePart(current, value);
+                  setEndsAt((currentEndDate) =>
+                    ensureEndAfterStart(nextStartDate, currentEndDate)
+                  );
+                  return nextStartDate;
+                });
                 setError('');
               }}
               value={startsAt}
@@ -209,7 +261,13 @@ export default function NewCalendarEventScreen() {
               label="Start time"
               mode="time"
               onChange={(value) => {
-                setStartsAt((current) => applyTimePart(current, value));
+                setStartsAt((current) => {
+                  const nextStartDate = applyTimePart(current, value);
+                  setEndsAt((currentEndDate) =>
+                    ensureEndAfterStart(nextStartDate, currentEndDate)
+                  );
+                  return nextStartDate;
+                });
                 setError('');
               }}
               value={startsAt}
@@ -222,6 +280,7 @@ export default function NewCalendarEventScreen() {
               accessibilityLabel="Choose end date"
               label="End date"
               mode="date"
+              minimumDate={startsAt}
               onChange={(value) => {
                 setEndsAt((current) => applyDatePart(current, value));
                 setError('');
@@ -241,37 +300,45 @@ export default function NewCalendarEventScreen() {
             <ThemedText type="caption" selectable style={{ color: muted }}>
               {endsAt.toLocaleString('en-US')}
             </ThemedText>
+            {isRangeInvalid ? (
+              <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+                End time must be after start time.
+              </ThemedText>
+            ) : null}
           </Surface>
 
           <Surface style={styles.section}>
             <ThemedText type="meta">Availability label</ThemedText>
-            <View style={styles.choiceRow}>
-              {CALENDAR_PRESET_LABELS.map((label) => {
-                const selected = presetLabel === label;
+            <View accessibilityRole="radiogroup">
+              <View style={styles.choiceRow}>
+                {CALENDAR_PRESET_LABELS.map((label) => {
+                  const selected = presetLabel === label;
 
-                return (
-                  <Pressable
-                    accessibilityLabel={`Set label ${label}`}
-                    accessibilityRole="button"
-                    key={label}
-                    onPress={() => setPresetLabel(label)}
-                    style={[
-                      styles.choiceChip,
-                      {
-                        borderColor: selected ? accent : border,
-                        backgroundColor: selected ? accent : surface2,
-                      },
-                    ]}
-                  >
-                    <ThemedText
-                      type="caption"
-                      style={{ color: selected ? onAccent : text }}
+                  return (
+                    <Pressable
+                      accessibilityLabel={`Set label ${label}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: selected }}
+                      key={label}
+                      onPress={() => setPresetLabel(label)}
+                      style={[
+                        styles.choiceChip,
+                        {
+                          borderColor: selected ? accent : border,
+                          backgroundColor: selected ? accent : surface2,
+                        },
+                      ]}
                     >
-                      {label}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
+                      <ThemedText
+                        type="caption"
+                        style={{ color: selected ? onAccent : text }}
+                      >
+                        {label}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
             <TextInput
@@ -294,7 +361,7 @@ export default function NewCalendarEventScreen() {
 
         <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
           <Button
-            disabled={isSubmitting}
+            disabled={isSubmitting || isRangeInvalid || title.trim().length === 0}
             label={isSubmitting ? 'Saving…' : 'Save event'}
             onPress={handleSave}
           />

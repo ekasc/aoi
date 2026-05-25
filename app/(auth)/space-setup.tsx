@@ -198,46 +198,50 @@ export default function SpaceSetupScreen() {
           </Surface>
 
           <Surface style={styles.modeCard}>
-            <View style={styles.modeRow}>
-              <Pressable
-                accessibilityLabel="Create a new space"
-                accessibilityRole="button"
-                onPress={() => {
-                  setMode('create');
-                  clearError();
-                }}
-                style={[
-                  styles.modeButton,
-                  {
-                    backgroundColor: mode === 'create' ? accent : surface2,
-                    borderColor: mode === 'create' ? accent : border,
-                  },
-                ]}
-              >
-                <ThemedText type="body" style={{ color: mode === 'create' ? onAccent : text }}>
-                  Create
-                </ThemedText>
-              </Pressable>
+            <View accessibilityRole="radiogroup">
+              <View style={styles.modeRow}>
+                <Pressable
+                  accessibilityLabel="Create a new space"
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: mode === 'create' }}
+                  onPress={() => {
+                    setMode('create');
+                    clearError();
+                  }}
+                  style={[
+                    styles.modeButton,
+                    {
+                      backgroundColor: mode === 'create' ? accent : surface2,
+                      borderColor: mode === 'create' ? accent : border,
+                    },
+                  ]}
+                >
+                  <ThemedText type="body" style={{ color: mode === 'create' ? onAccent : text }}>
+                    Create
+                  </ThemedText>
+                </Pressable>
 
-              <Pressable
-                accessibilityLabel="Join an existing space"
-                accessibilityRole="button"
-                onPress={() => {
-                  setMode('join');
-                  clearError();
-                }}
-                style={[
-                  styles.modeButton,
-                  {
-                    backgroundColor: mode === 'join' ? accent : surface2,
-                    borderColor: mode === 'join' ? accent : border,
-                  },
-                ]}
-              >
-                <ThemedText type="body" style={{ color: mode === 'join' ? onAccent : text }}>
-                  Join
-                </ThemedText>
-              </Pressable>
+                <Pressable
+                  accessibilityLabel="Join an existing space"
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: mode === 'join' }}
+                  onPress={() => {
+                    setMode('join');
+                    clearError();
+                  }}
+                  style={[
+                    styles.modeButton,
+                    {
+                      backgroundColor: mode === 'join' ? accent : surface2,
+                      borderColor: mode === 'join' ? accent : border,
+                    },
+                  ]}
+                >
+                  <ThemedText type="body" style={{ color: mode === 'join' ? onAccent : text }}>
+                    Join
+                  </ThemedText>
+                </Pressable>
+              </View>
             </View>
           </Surface>
 

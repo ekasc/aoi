@@ -8,7 +8,7 @@ import {
 
 import { Radii } from "@/constants/theme";
 import { useThemeColor } from "@/hooks/use-theme-color";
-import { Text } from "@react-navigation/elements";
+import { ThemedText } from "@/components/themed-text";
 
 type IconButtonVariant = "accent" | "secondary" | "ghost" | "accentSecondary";
 
@@ -79,7 +79,7 @@ export function IconButton({
 			]}
 			{...rest}
 		>
-			<Text style={{ fontSize: 25 }}>{`${children}`}</Text>
+			<ThemedText style={{ fontSize: 25 }}>{`${children}`}</ThemedText>
 		</Pressable>
 	);
 }

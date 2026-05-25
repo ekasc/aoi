@@ -16,6 +16,7 @@
   ],
   "exclude": [
     "node_modules",
-    "app-example"
+    "app-example",
+    "tests"
   ]
 }

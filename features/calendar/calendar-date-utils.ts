@@ -101,8 +101,7 @@ export function getWeekBounds(now: Date): WeekBounds {
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - now.getDay()); // back to Sunday
   weekStart.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 7);
+  const weekEnd = addDays(weekStart, 7);
   return { weekStart, weekEnd };
 }
 

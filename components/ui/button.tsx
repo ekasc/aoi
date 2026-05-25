@@ -40,6 +40,7 @@ export function Button({
 	const text = useThemeColor({}, "text");
 	const danger = useThemeColor({}, "danger");
 	const onDanger = useThemeColor({}, "onDanger");
+	const surface2 = useThemeColor({}, "background");
 
 	const variantStyles = useMemo<Record<ButtonVariant, VariantStyles>>(
 		() => ({
@@ -59,8 +60,10 @@ export function Button({
 			},
 			ghost: {
 				container: {
-					backgroundColor: "transparent",
-					borderColor: "transparent",
+					backgroundColor: surface2,
+					borderColor: border,
+					borderStyle: "dashed",
+					borderWidth: 0.85,
 				},
 				label: { color: text },
 			},

@@ -1,6 +1,6 @@
 import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
 
-import { Radii } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/glass-surface';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: Radii.lg,
-    padding: 16,
+    padding: Spacing[16],
   },
   raised: {
     ...Platform.select({

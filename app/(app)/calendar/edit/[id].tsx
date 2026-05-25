@@ -32,6 +32,18 @@ function applyTimePart(base: Date, timePart: Date) {
   return next;
 }
 
+function datePlusOneHour(date: Date) {
+  return new Date(date.getTime() + 60 * 60 * 1000);
+}
+
+function ensureEndAfterStart(startDate: Date, currentEndDate: Date) {
+  if (currentEndDate.getTime() > startDate.getTime()) {
+    return currentEndDate;
+  }
+
+  return datePlusOneHour(startDate);
+}
+
 export default function EditCalendarEventScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -54,6 +66,7 @@ export default function EditCalendarEventScreen() {
   const [endsAt, setEndsAt] = useState(new Date());
   const [error, setError] = useState('');
   const [isWorking, setIsWorking] = useState(false);
+  const isRangeInvalid = endsAt.getTime() <= startsAt.getTime();
 
   const isOwner = event?.actor === 'you';
 
@@ -117,7 +130,7 @@ export default function EditCalendarEventScreen() {
       return;
     }
 
-    if (endsAt.getTime() <= startsAt.getTime()) {
+    if (isRangeInvalid) {
       setError('End time must be after start time.');
       return;
     }
@@ -150,6 +163,7 @@ export default function EditCalendarEventScreen() {
     startsAt,
     title,
     updateEvent,
+    isRangeInvalid,
   ]);
 
   const handleDelete = useCallback(async () => {
@@ -260,7 +274,13 @@ export default function EditCalendarEventScreen() {
               label="Start date"
               mode="date"
               onChange={(value) => {
-                setStartsAt((current) => applyDatePart(current, value));
+                setStartsAt((current) => {
+                  const nextStartDate = applyDatePart(current, value);
+                  setEndsAt((currentEndDate) =>
+                    ensureEndAfterStart(nextStartDate, currentEndDate)
+                  );
+                  return nextStartDate;
+                });
                 setError('');
               }}
               value={startsAt}
@@ -270,7 +290,13 @@ export default function EditCalendarEventScreen() {
               label="Start time"
               mode="time"
               onChange={(value) => {
-                setStartsAt((current) => applyTimePart(current, value));
+                setStartsAt((current) => {
+                  const nextStartDate = applyTimePart(current, value);
+                  setEndsAt((currentEndDate) =>
+                    ensureEndAfterStart(nextStartDate, currentEndDate)
+                  );
+                  return nextStartDate;
+                });
                 setError('');
               }}
               value={startsAt}
@@ -284,6 +310,7 @@ export default function EditCalendarEventScreen() {
               accessibilityLabel="Choose end date"
               label="End date"
               mode="date"
+              minimumDate={startsAt}
               onChange={(value) => {
                 setEndsAt((current) => applyDatePart(current, value));
                 setError('');
@@ -303,6 +330,11 @@ export default function EditCalendarEventScreen() {
             <ThemedText type="caption" selectable style={{ color: muted }}>
               {endsAt.toLocaleString('en-US')}
             </ThemedText>
+            {isRangeInvalid ? (
+              <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+                End time must be after start time.
+              </ThemedText>
+            ) : null}
           </Surface>
 
           <Surface style={styles.section}>
@@ -342,7 +374,7 @@ export default function EditCalendarEventScreen() {
         <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
           <View style={styles.actionRow}>
             <Button
-              disabled={isWorking}
+              disabled={isWorking || isRangeInvalid || title.trim().length === 0}
               label={isWorking ? 'Saving…' : 'Save changes'}
               onPress={handleSave}
             />

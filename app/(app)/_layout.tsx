@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 import { Redirect } from "expo-router";
 import { Stack } from "expo-router/stack";
+import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { useSession } from "@/features/session/session-context";
@@ -23,11 +24,15 @@ export default function AuthenticatedAppLayout() {
 				sheetGrabberVisible: true,
 				sheetAllowedDetents: [0.55, 1.0],
 				contentStyle: { backgroundColor: colors.background },
-		  }
+			}
 		: {};
 
 	if (!isSessionHydrated || status === "loading") {
-		return null;
+		return (
+			<View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
+				<ActivityIndicator color={colors.accent} />
+			</View>
+		);
 	}
 
 	if (status === "signed_out") {
@@ -35,7 +40,11 @@ export default function AuthenticatedAppLayout() {
 	}
 
 	if (!isSpaceHydrated || !isThemeHydrated) {
-		return null;
+		return (
+			<View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
+				<ActivityIndicator color={colors.accent} />
+			</View>
+		);
 	}
 
 	if (spaceStatus !== "ready") {
@@ -53,50 +62,47 @@ export default function AuthenticatedAppLayout() {
 					contentStyle: { backgroundColor: colors.background },
 				}}
 			>
+				<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 				<Stack.Screen
-					name="(tabs)"
-					options={{ headerShown: false }}
+					name="moment/new"
+					options={{
+						title: "Add moment",
+						presentation: "pageSheet",
+						...sheetOptions,
+					}}
 				/>
 				<Stack.Screen
-						name="moment/new"
-						options={{
-							title: "Add moment",
-							presentation: useFormSheet ? "formSheet" : "modal",
-							...sheetOptions,
-						}}
-					/>
+					name="calendar/new-event"
+					options={{
+						title: "New event",
+						presentation: useFormSheet ? "formSheet" : "modal",
+						...sheetOptions,
+					}}
+				/>
 				<Stack.Screen
-						name="calendar/new-event"
-						options={{
-							title: "New event",
-							presentation: useFormSheet ? "formSheet" : "modal",
-							...sheetOptions,
-						}}
-					/>
+					name="calendar/edit/[id]"
+					options={{
+						title: "Edit event",
+						presentation: useFormSheet ? "formSheet" : "modal",
+						...sheetOptions,
+					}}
+				/>
 				<Stack.Screen
-						name="calendar/edit/[id]"
-						options={{
-							title: "Edit event",
-							presentation: useFormSheet ? "formSheet" : "modal",
-							...sheetOptions,
-						}}
-					/>
+					name="profile/edit-relationship"
+					options={{
+						title: "Edit relationship",
+						presentation: useFormSheet ? "formSheet" : "modal",
+						...sheetOptions,
+					}}
+				/>
 				<Stack.Screen
-						name="profile/edit-relationship"
-						options={{
-							title: "Edit relationship",
-							presentation: useFormSheet ? "formSheet" : "modal",
-							...sheetOptions,
-						}}
-					/>
-				<Stack.Screen
-						name="profile/import-milestones"
-						options={{
-							title: "Import milestones",
-							presentation: useFormSheet ? "formSheet" : "modal",
-							...sheetOptions,
-						}}
-					/>
+					name="profile/import-milestones"
+					options={{
+						title: "Import milestones",
+						presentation: useFormSheet ? "formSheet" : "modal",
+						...sheetOptions,
+					}}
+				/>
 			</Stack>
 		</CalendarProvider>
 	);

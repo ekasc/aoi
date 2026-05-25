@@ -109,13 +109,19 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
       try {
         resolvedUser = await authApi.getSession(storedSession.tokens.accessToken);
-      } catch {
+      } catch (err) {
         if (!isAuthStubMode()) {
-          await clearStoredSession();
-          setUser(null);
-          setTokens(null);
-          setStatus('signed_out');
-          return;
+          // Only sign out on auth errors (non-ok HTTP response), not network failures
+          // fetch throws TypeError for network errors; auth API throws Error for HTTP errors
+          const isNetworkError = err instanceof TypeError;
+          if (!isNetworkError) {
+            await clearStoredSession();
+            setUser(null);
+            setTokens(null);
+            setStatus('signed_out');
+            return;
+          }
+          // Network error: stay signed in with stored user data
         }
       }
 
@@ -167,16 +173,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
   const signOut = useCallback(async () => {
     const accessToken = tokens?.accessToken;
+    const refreshToken = tokens?.refreshToken;
 
     if (accessToken) {
-      await authApi.logout(accessToken).catch(() => {});
+      await authApi.logout(accessToken, refreshToken).catch(() => {});
     }
 
     await clearStoredSession().catch(() => {});
     setUser(null);
     setTokens(null);
     setStatus('signed_out');
-  }, [authApi, clearStoredSession, tokens?.accessToken]);
+  }, [authApi, clearStoredSession, tokens?.accessToken, tokens?.refreshToken]);
 
   const value = useMemo<SessionContextValue>(
     () => ({

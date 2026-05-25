@@ -1,10 +1,13 @@
-import { getAuthApiBaseUrl, isAuthStubMode } from '@/features/auth/auth-config';
-import { mockAuthApi } from '@/features/auth/mock-auth-api';
+import { getAuthApiBaseUrl, isAuthStubMode } from './auth-config';
+import { mockAuthApi } from './mock-auth-api';
 import type {
   AuthApi,
+  OAuthCallbackResponse,
   OAuthCallbackRequest,
+  OAuthNativeCallbackRequest,
   OAuthStartRequest,
-} from '@/features/auth/types';
+  SessionResponse,
+} from './types';
 
 class RemoteAuthApi implements AuthApi {
   constructor(private readonly baseUrl: string) {}
@@ -17,10 +20,21 @@ class RemoteAuthApi implements AuthApi {
   }
 
   async oauthCallback(input: OAuthCallbackRequest) {
-    return this.post<Awaited<ReturnType<AuthApi['oauthCallback']>>>(
+    const response = await this.post<OAuthCallbackResponse>(
       '/v1/auth/oauth/callback',
       input
     );
+
+    return this.toAuthSessionPayload(response);
+  }
+
+  async oauthNativeCallback(input: OAuthNativeCallbackRequest) {
+    const response = await this.post<OAuthCallbackResponse>(
+      '/v1/auth/oauth/native/callback',
+      input
+    );
+
+    return this.toAuthSessionPayload(response);
   }
 
   async getSession(accessToken: string) {
@@ -35,15 +49,20 @@ class RemoteAuthApi implements AuthApi {
       throw new Error('Unable to fetch session.');
     }
 
-    return (await response.json()) as Awaited<ReturnType<AuthApi['getSession']>>;
+    const payload = (await response.json()) as SessionResponse;
+    return payload.user;
   }
 
-  async logout(accessToken: string) {
+  async logout(accessToken: string, refreshToken?: string) {
     await fetch(`${this.baseUrl}/v1/auth/logout`, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
       },
+      body: JSON.stringify({
+        refreshToken: refreshToken ?? '',
+      }),
     });
   }
 
@@ -61,6 +80,17 @@ class RemoteAuthApi implements AuthApi {
     }
 
     return (await response.json()) as T;
+  }
+
+  private toAuthSessionPayload(input: OAuthCallbackResponse) {
+    return {
+      user: input.user,
+      tokens: {
+        accessToken: input.accessToken,
+        refreshToken: input.refreshToken,
+        expiresAt: new Date(Date.now() + input.expiresInSec * 1000).toISOString(),
+      },
+    };
   }
 }
 
