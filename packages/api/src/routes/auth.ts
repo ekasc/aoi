@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, isNull } from 'drizzle-orm';
@@ -9,8 +11,12 @@ import { hashToken, randomToken } from '../lib/crypto.js';
 import { unauthorized, notFound, conflict, badRequest, internal } from '../lib/errors.js';
 import { userRowToApi } from '../lib/db.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 const auth = new Hono();
+
+// Rate limiting for auth endpoints: applied to public routes directly
+const authRateLimit = rateLimit({ max: 10, windowSec: 60 });
 
 // ── OAuth Start ──────────────────────────────────────────────────────────
 // Returns the authorization URL the client should open.
@@ -26,7 +32,7 @@ const oauthStartSchema = z.object({
   nonce: z.string().optional(),
 });
 
-auth.post('/v1/auth/oauth/start', zValidator('json', oauthStartSchema), async (c) => {
+auth.post('/v1/auth/oauth/start', authRateLimit, zValidator('json', oauthStartSchema), async (c) => {
   const { provider, platform, clientId, redirectUri, codeChallenge, codeChallengeMethod, nonce } = c.req.valid('json');
 
   const state = randomToken(16);
@@ -86,7 +92,7 @@ const oauthCallbackSchema = z.object({
   codeVerifier: z.string().optional(),
 });
 
-auth.post('/v1/auth/oauth/callback', zValidator('json', oauthCallbackSchema), async (c) => {
+auth.post('/v1/auth/oauth/callback', authRateLimit, zValidator('json', oauthCallbackSchema), async (c) => {
   const { provider, code, state, codeVerifier } = c.req.valid('json');
 
   // Validate state exists and hasn't been consumed
@@ -135,7 +141,7 @@ const oauthNativeCallbackSchema = z.object({
   displayName: z.string().optional(),
 });
 
-auth.post('/v1/auth/oauth/native/callback', zValidator('json', oauthNativeCallbackSchema), async (c) => {
+auth.post('/v1/auth/oauth/native/callback', authRateLimit, zValidator('json', oauthNativeCallbackSchema), async (c) => {
   const { idToken, displayName } = c.req.valid('json');
 
   // In production: verify the idToken (Apple's JWT) using Apple's public keys.
@@ -178,7 +184,7 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
-auth.post('/v1/auth/refresh', zValidator('json', refreshSchema), async (c) => {
+auth.post('/v1/auth/refresh', authRateLimit, zValidator('json', refreshSchema), async (c) => {
   const { refreshToken } = c.req.valid('json');
 
   try {
@@ -238,7 +244,7 @@ auth.post('/v1/auth/refresh', zValidator('json', refreshSchema), async (c) => {
       expiresInSec: 900, // 15 min
     });
   } catch (err) {
-    if (err instanceof Error && err.message.includes('Session')) {
+    if (err instanceof HTTPException) {
       throw err;
     }
     throw unauthorized('Invalid refresh token');
@@ -281,7 +287,7 @@ auth.post('/v1/auth/logout', authMiddleware, zValidator('json', logoutSchema), a
 // ── Shared Logic ─────────────────────────────────────────────────────────
 
 async function handleOAuthUser(
-  c: any,
+  c: Context,
   provider: 'apple' | 'google',
   providerSubject: string,
   email: string,

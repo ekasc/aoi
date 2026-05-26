@@ -234,6 +234,31 @@ export const oauthStates = pgTable('oauth_states', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── Media Objects ──────────────────────────────────────────────────────────
+
+export const mediaObjects = pgTable(
+  'media_objects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    filename: text('filename').notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: text('size_bytes').notNull(), // stored as text to handle large numbers
+    storageKey: text('storage_key').notNull().unique(),
+    uploadState: text('upload_state', { enum: ['pending', 'complete'] }).notNull().default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_media_objects_space').on(table.spaceId),
+  ]
+);
+
 // ── User Preferences ───────────────────────────────────────────────────────
 
 export const userPreferences = pgTable('user_preferences', {

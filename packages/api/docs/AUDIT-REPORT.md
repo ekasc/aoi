@@ -1,124 +1,77 @@
-# Security Audit Report
+# Security Audit Report — Round 2
 
-**Date:** 2026-05-26 @ 02:45 UTC
-**Scope:** `packages/api` — Hono REST API
-**Type:** Web API (CRUD), Auth-heavy, Multi-tenant (space isolation)
+**Date:** 2026-05-26 @ 21:15 UTC
+**Scope:** Re-audit of round 1 fixes + test coverage
+**Type:** API Codebase — Post-fix verification
 
 ## Summary
 
-- **Issues found:** 10
-- **Issues fixed:** 9 (1 critical, 3 high, 4 medium, 0 low)
-- **Issues deferred:** 1 (medium — rate limiting)
+- **New issues found:** 3
+- **Issues fixed:** 3
+- **Tests added:** 51 (36 validation, 15 crypto)
 - **Remaining risk level:** LOW
 
 ---
 
-## Fixed Issues
+## Pass 5: Re-Audit Touched Areas
 
-### AUTH-001 — Refresh Token Theft Detection (CRITICAL)
+### Finding R2-01 — Fragile Error Message Matching (LOW → FIXED)
 
-**Root cause:** The refresh endpoint didn't distinguish between "session doesn't exist" and "session was already revoked (token stolen)". When an attacker reused a rotated refresh token, they got "session not found" instead of triggering theft countermeasures.
+**Root cause:** The refresh handler's catch block used `err.message.includes('Session')` to distinguish between session errors (re-throw) and JWT errors (wrap as "Invalid refresh token"). This would falsely match any error containing "Session" from any library.
 
-**Fix:** The refresh handler now:
-1. Looks up the session by ID regardless of revocation status
-2. If the session is already revoked, it's treated as token theft — ALL sessions for that user are revoked
-3. User is forced to re-authenticate with a clear theft message
+**Fix:** Changed to `err instanceof HTTPException` — only re-throw errors from our own error factories. All other errors (jose verification failures, etc.) get wrapped properly.
 
-**Files changed:** `src/routes/auth.ts` (refresh handler, lines 186-218)
-
-**Similar patterns checked:** Logout also revokes sessions but is user-initiated — no theft signal needed there.
+**Files changed:** `src/routes/auth.ts` (catch block)
 
 ---
 
-### AUTH-002 — OAuth State Validation (HIGH)
+### Finding R2-02 — `c: any` in handleOAuthUser (LOW → FIXED)
 
-**Root cause:** The `/v1/auth/oauth/start` generated a `state` parameter but never stored it. The `/v1/auth/oauth/callback` endpoint accepted any non-empty state string with no verification. This enabled CSRF on the OAuth callback.
+**Root cause:** `handleOAuthUser` used `c: any` as its first parameter, bypassing TypeScript type safety on the Hono context object.
 
-**Fix:**
-1. Added `oauth_states` table to Drizzle schema with state as PK, provider, codeVerifier, nonce, expiresAt, consumedAt
-2. `oauth_start` now inserts the state with a 10-minute TTL
-3. `oauth_callback` now validates state exists, matches provider, and hasn't expired/been consumed
-4. State is marked consumed on use (one-time use enforced)
+**Fix:** Changed to `c: Context` (imported from `hono`).
 
-**Files changed:** `src/db/schema.ts` (new oauth_states table), `src/routes/auth.ts` (oauth_start + oauth_callback handlers)
-
-**Similar patterns checked:** The Apple native callback doesn't use state (uses idToken + nonce instead) — no fix needed there.
+**Files changed:** `src/routes/auth.ts` (function signature)
 
 ---
 
-### DATA-001 — Unvalidated Date Inputs (HIGH)
+### Finding R2-03 — No Test Coverage for Validation (MEDIUM → FIXED)
 
-**Root cause:** Cursor, from, to, occurredAt, targetAt, startsAt, endsAt parameters accepted any string. `new Date('invalid')` produces `Invalid Date`, causing SQL errors or unexpected query behavior.
+**Root cause:** Round 1 fixes had zero test coverage. No tests existed for Zod schema validation, input size limits, or crypto utilities.
 
-**Fix:** Added `z.string().datetime({ offset: true })` validation to all user-provided date parameters:
-- `GET /v1/spaces/current/moments?cursor=`
-- `GET /v1/spaces/current/calendar/events?from=&to=`
-- `POST /v1/spaces/current/moments` (occurredAt, targetAt)
-- `PATCH /v1/moments/:id` (occurredAt, targetAt)
-- `POST /v1/spaces/current/calendar/events` (startsAt, endsAt)
-- `PATCH /v1/calendar/events/:id` (startsAt, endsAt)
-- `POST /v1/spaces/current/imported-milestones` (occurredAt, targetAt)
+**Fix:** Added 51 tests across 2 test files:
 
-**Files changed:** `src/routes/moments.ts`, `src/routes/calendar.ts`, `src/routes/milestones.ts`
+| Test file | Tests | What's covered |
+|---|---|---|
+| `src/__tests__/validation.test.ts` | 36 | Date format validation (valid/invalid/boundary), input size limits (max lengths, empty strings), OAuth schema validation (providers, URLs, state), space schema (name lengths), moment schema (defaults, types, body limits), calendar event schema (labels, actors, date validation) |
+| `src/__tests__/crypto.test.ts` | 15 | Token generation (length, uniqueness, hex), SHA-256 hashing (deterministic, length), invite codes (6-char, allowed chars only, no ambiguous chars, uniqueness), code normalization (uppercase, space removal) |
 
-**Similar patterns checked:** All 15 `new Date(input.*)` call sites inspected. All now have validated inputs.
+**Verification:** `npx vitest run` — 51/51 passing (400ms)
 
 ---
 
-### AUTHZ-001 — Missing Active Space Check on Resource Update/Delete (HIGH)
+## Remaining Risks (unchanged)
 
-**Root cause:** PATCH and DELETE handlers for moments and calendar events checked resource ownership (`createdByUserId`) but not active space membership. A user who had left a space could still modify their old resources.
-
-**Fix:** Added space membership verification (must be `state='active'`) before allowing update/delete on:
-- `PATCH /v1/moments/:id`
-- `DELETE /v1/moments/:id`
-- `PATCH /v1/calendar/events/:id`
-- `DELETE /v1/calendar/events/:id`
-
-**Files changed:** `src/routes/moments.ts`, `src/routes/calendar.ts`
-
-**Similar patterns checked:** `GET /v1/calendar/events/:id` already had this check. Milestones have no update/delete endpoints. Space creation and join already check for existing membership.
+1. **Rate limiting not implemented** — deferred to infrastructure level
+2. **OAuth provider integration is stubbed** — real token exchange not wired
+3. **No input sanitization** — React Native handles text safely in MVP
+4. **No DB encryption at rest** — acceptable for MVP
+5. **Stateless access tokens cannot be server-revoked** — by design (15min TTL)
 
 ---
 
-### SIZE-001 — Missing Input Size Limits (MEDIUM)
+## Stop Conditions Check
 
-**Root cause:** Moment body, milestone body, calendar event title/actorName had no maximum length constraints, allowing potential abuse.
+All stop conditions from the security skill are met:
 
-**Fix:** Added Zod `.max()` constraints:
-- Moment title: 500 chars
-- Moment body: 10,000 chars
-- Moment mediaPreview: 2,000 chars
-- Calendar event title: 500 chars
-- Calendar event actorName: 200 chars
-- Calendar event label customText: 200 chars
-- Milestone title: 500 chars (already had this)
-- Milestone body: 10,000 chars
+| Condition | Status |
+|---|---|
+| Critical issues fixed or blocked | ✅ |
+| High issues fixed or blocked | ✅ |
+| Known correctness bugs fixed or blocked | ✅ |
+| Relevant verification passes | ✅ (typecheck + 51 tests) |
+| Touched areas re-audited | ✅ |
+| Repeated bug patterns searched | ✅ (date validation in all routes, membership checks across all handlers) |
+| Remaining risks documented | ✅ |
 
-**Files changed:** `src/routes/moments.ts`, `src/routes/calendar.ts`, `src/routes/milestones.ts`
-
----
-
-## Deferred Issues
-
-### RATE-001 — No Rate Limiting (MEDIUM)
-
-No rate limiting on any endpoints including auth (5 req/min per IP as spec'd in architecture doc) and invite code attempts. Adding rate limiting requires either a middleware with in-memory store or Redis. Appropriate for a follow-up when deploying to production.
-
-**Workaround:** Cloudflare or reverse proxy rate limiting can be applied at the infrastructure level.
-
----
-
-## Verification
-
-All fixes verified with:
-- `npx tsc --noEmit` — clean (0 errors)
-- `node --import tsx src/index.ts` — server starts (tested with health endpoints)
-
-## Remaining Risks
-
-1. **No rate limiting** — mitigated by infrastructure-level limits
-2. **OAuth provider integration is stubbed** — real token exchange + idToken verification not yet implemented. The OAuth callback flow is correct for the stub but needs provider API calls before production use.
-3. **No input sanitization on text fields** — moments/events/milestones accept arbitrary text (up to 10K chars). If rendered in web views, could present XSS risk. Currently mobile-only renders in React Native which handles text safely.
-4. **No database encryption at rest** — user data stored as plaintext in Postgres. Acceptable for MVP but worth encrypting sensitive fields (mediaPreview URLs) before public launch.
-5. **Logout doesn't revoke access tokens** — access tokens are short-lived (15 min) and stateless, so they can't be server-revoked. Acceptable by design.
+**Stopping audit loop.**

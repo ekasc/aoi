@@ -3,12 +3,14 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import type { ApiError } from '@aoi/shared';
 import { authMiddleware } from './middleware/auth.js';
+import { rateLimit } from './middleware/rate-limit.js';
 import { auth } from './routes/auth.js';
 import { spacesRouter } from './routes/spaces.js';
 import { momentsRouter } from './routes/moments.js';
 import { calendarRouter } from './routes/calendar.js';
 import { milestonesRouter } from './routes/milestones.js';
 import { preferencesRouter } from './routes/preferences.js';
+import { mediaRouter } from './routes/media.js';
 
 const app = new Hono();
 
@@ -32,6 +34,14 @@ app.route('/', auth);
 
 app.use('/v1/*', authMiddleware);
 
+// ── General rate limiting (100 req/min per authenticated user) ──────────
+
+app.use('/v1/*', rateLimit({
+  max: 100,
+  windowSec: 60,
+  keyFn: (c) => c.var.userId ?? 'unknown',
+}));
+
 // ── Protected routes ────────────────────────────────────────────────────
 
 app.route('/', spacesRouter);
@@ -39,6 +49,7 @@ app.route('/', momentsRouter);
 app.route('/', calendarRouter);
 app.route('/', milestonesRouter);
 app.route('/', preferencesRouter);
+app.route('/', mediaRouter);
 
 // ── Global error handler ─────────────────────────────────────────────────
 

@@ -15,15 +15,7 @@ import {
 	startOfMonth,
 	toDayKey,
 } from "@/features/calendar/calendar-date-utils";
-import {
-	countCalendarEvents,
-	deleteEvent as deleteCalendarEvent,
-	getEventById as getCalendarEventById,
-	initCalendarDb,
-	insertEvent,
-	listEventsInMonth,
-	updateEvent as updateCalendarEvent,
-} from "@/features/calendar/calendar-repository";
+import { isStubMode } from "@/features/api-client";
 import { createCalendarSeed } from "@/features/calendar/calendar-seed";
 import type {
 	CalendarContextValue,
@@ -32,6 +24,25 @@ import type {
 	CreateCalendarEventInput,
 	UpdateCalendarEventInput,
 } from "@/features/calendar/types";
+
+// Choose calendar implementation based on stub mode
+import * as _calendarImpl from "@/features/calendar/calendar-repository";
+import * as _remoteCalendarImpl from "@/features/calendar/remote-calendar-repository";
+
+const _useRemote = !isStubMode();
+
+const initCalendarDb = _useRemote ? _remoteCalendarImpl.initCalendarDb : _calendarImpl.initCalendarDb;
+const countCalendarEvents = _useRemote ? _remoteCalendarImpl.countCalendarEvents : _calendarImpl.countCalendarEvents;
+const listEventsInMonth = _useRemote ? _remoteCalendarImpl.listEventsInMonth : _calendarImpl.listEventsInMonth;
+const insertEvent = _useRemote ? _remoteCalendarImpl.insertEvent : _calendarImpl.insertEvent;
+const updateEvent = _useRemote ? _remoteCalendarImpl.updateEvent : _calendarImpl.updateEvent;
+const deleteEvent = _useRemote ? _remoteCalendarImpl.deleteEvent : _calendarImpl.deleteEvent;
+const getEventById = _useRemote ? _remoteCalendarImpl.getEventById : _calendarImpl.getEventById;
+
+// Keep aliases used throughout this file
+const deleteCalendarEvent: typeof deleteEvent = deleteEvent;
+const updateCalendarEvent: typeof updateEvent = updateEvent;
+const getCalendarEventById: typeof getEventById = getEventById;
 
 const CalendarContext = createContext<CalendarContextValue | undefined>(
 	undefined,
