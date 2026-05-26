@@ -1,0 +1,32 @@
+{
+  "name": "@aoi/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:push": "drizzle-kit push",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aoi/shared": "workspace:*",
+    "@hono/node-server": "^2.0.4",
+    "@hono/zod-validator": "^0.4.0",
+    "drizzle-orm": "^0.40.0",
+    "hono": "^4.7.0",
+    "jose": "^6.0.0",
+    "postgres": "^3.4.5",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.30.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.9.3"
+  }
+}

@@ -5,40 +5,35 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 ## Build / Run / Lint / Test
 
 ### Install
-- Preferred (bun): `bun install`
-- Alternative (npm): `npm install`
+- `pnpm install`
 
 ### Dev server
-- Start Metro: `bun run start` (alias: `expo start`)
-- Start with cache clear (when stuck): `bunx expo start -c`
+- Start Metro: `pnpm run start` (alias: `expo start`)
+- Start with cache clear (when stuck): `npx expo start -c`
 
 ### Run on platforms
-- iOS (native build + run): `bun run ios` (alias: `expo run:ios`)
-- Android (native build + run): `bun run android` (alias: `expo run:android`)
-- Web: `bun run web` (alias: `expo start --web`)
+- iOS (native build + run): `pnpm run ios` (alias: `expo run:ios`)
+- Android (native build + run): `pnpm run android` (alias: `expo run:android`)
+- Web: `pnpm run web` (alias: `expo start --web`)
 
 ### Lint
-- Lint all: `bun run lint`
+- Lint all: `pnpm run lint`
 - Lint a single file (forward args to eslint via expo):
-  - `bun run lint -- app/(tabs)/index.tsx`
+  - `pnpm run lint -- app/(tabs)/index.tsx`
 
 ### Typecheck
-- No dedicated script yet; run:
-  - `bunx tsc --noEmit`
+- `pnpm run typecheck`
 
 ### Tests
-- No unit/e2e test runner is configured in this repo right now (no `test` script, no Jest/Vitest).
-- If you add Jest later, standard single-test commands look like:
-  - Run one file: `bunx jest path/to/foo.test.ts`
-  - Run one test name: `bunx jest -t "renders empty state"`
-- If you add Playwright later (web-only E2E), typical single-test commands look like:
-  - Run one spec: `bunx playwright test tests/foo.spec.ts`
-  - Run by title: `bunx playwright test -g "can sign in"`
+- Run all unit tests: `pnpm run test:unit`
+- Watch mode: `pnpm run test:unit:watch`
+- Run one file: `npx vitest run tests/path/to/file.test.ts`
+- Run one test name: `npx vitest run -t "renders empty state"`
 
-### “Build”
+### Build
 - There is no EAS config (`eas.json`) in this repo yet.
 - For web-only static output, Expo supports exports; if/when needed:
-  - `bunx expo export --platform web`
+  - `npx expo export --platform web`
 
 ## Repo Facts (from codebase)
 - Expo Router routes live in `app/` with `_layout.tsx` and route groups like `app/(tabs)/...`.
@@ -62,7 +57,7 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 ### General
 - Be conservative with diffs: do not reformat unrelated code.
 - Formatting is currently mixed (tabs/double-quotes in `app/_layout.tsx`, 2-spaces/single-quotes elsewhere).
-  - For edits: match the existing file’s style.
+  - For edits: match the existing file's style.
   - For new files: prefer 2-space indent + single quotes.
 - No formatter is configured (no Prettier/Biome). If you add one, run it only on touched files.
 
@@ -107,27 +102,32 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 - Respect reduced-motion where possible; avoid essential meaning conveyed only by animation.
 
 ### Error handling
-- Don’t leave `alert(...)` in production flows (starter templates use it in examples).
-- For async actions, handle loading + error states explicitly (don’t swallow errors).
+- Don't leave `alert(...)` in production flows (starter templates use it in examples).
+- For async actions, handle loading + error states explicitly (don't swallow errors).
 - When adding API calls, surface user-safe messages and log detailed context only in dev.
 - Prefer a small shared error shape for API failures (e.g. `{ code, message }`) and avoid leaking stack traces to UI.
 
 ### Security / privacy (project goals)
 - Never commit secrets; keep tokens/keys in env and ensure `.env*.local` stays untracked.
 - Treat user media + location as sensitive:
-  - Don’t log object keys, URLs, or location coordinates.
+  - Don't log object keys, URLs, or location coordinates.
   - If you add uploads later, ensure EXIF/location metadata is stripped unless explicitly opted-in.
 - Avoid persisting sensitive tokens in plain AsyncStorage; prefer platform-secure storage (e.g. `expo-secure-store`) when you implement auth.
 
 ### Git hygiene
 - Do not commit `node_modules/`, `.expo/`, or generated native folders.
 - Keep changes scoped; avoid drive-by formatting.
-- Before committing, run: `bun run lint` and `bunx tsc --noEmit`.
+- Before committing, run: `pnpm run lint` and `pnpm run typecheck`.
 
 ### Environment & configuration
 - App config lives in `app.json`; prefer `expo.extra` for non-secret runtime config.
 - Never commit secrets; prefer EAS/CI secrets or local `.env*.local` files (already gitignored).
 - When adding env access in code, fail fast with clear errors if required values are missing.
+
+### Animations
+- Prefer `moti` (from `moti` package) over raw Reanimated for declarative animations — `Moti.View`, `MotiPressable`, `AnimatePresence`.
+- Raw Reanimated (`useSharedValue`, `useAnimatedStyle`, `withTiming`) is fine for continuous gesture-driven or scroll-driven animations where Moti doesn't fit.
+- Respect reduced motion via `useReducedMotion()` from Reanimated.
 
 ### Performance (mobile)
 - Avoid expensive work in render; memoize list rows and keep props stable.

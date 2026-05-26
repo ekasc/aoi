@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { getWeekBounds, isInWeek } from '../../../features/calendar/calendar-date-utils';
 
 describe('getWeekBounds', () => {
