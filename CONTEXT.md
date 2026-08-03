@@ -68,7 +68,9 @@ features/             Feature modules (state, repos, API clients — NOT React-r
                       remote repositories, ISO-week mapping (question-of-the-week.ts)
   time-together/      Pure derivations (days together, moments kept) for the
                       quiet profile line — no state, no storage
-  squeeze/            Wordless signal (stub-simulated delivery)
+  squeeze/            Wordless signal (real push in remote, simulated in stub)
+  push/               Push backbone: token registration (register-push-token,
+                      push-api) + PushProvider receive routing (push-context)
 hooks/                use-theme-color, use-color-scheme, use-aoi-fonts
 constants/            theme.ts (Spacing/Radii/Motion), theme-presets.ts, typography.ts
 packages/api/         Hono + Drizzle + Postgres backend (own package.json, vitest, tsconfig)
@@ -133,8 +135,25 @@ partner's name on the profile tab (moved here from the timeline hero in the
 "Calm the UI" pass) → haptic + `POST /v1/squeezes` (remote) or simulated
 delivery (stub). Receive: full-screen partner-accent pulse overlay
 (`SqueezeOverlay`) + success haptic.
-**Delivery is stub-simulated** (partner replies ~4s after you send) until
-push notifications exist. The receive path is fully built and real.
+**Delivery is real push in remote mode**: the API pushes to the partner's
+device and `PushProvider` lights up the overlay via `useSqueeze().receiveSqueeze`.
+The route is fire-and-forget and stores nothing (a squeeze leaves no
+record; an offline partner simply misses it). Stub mode keeps the simulated
+reply loop (~4s) for offline dev.
+
+### Push notifications
+The delivery backbone. Devices register Expo tokens once per session
+(`POST /v1/push/tokens`, upsert; token re-registered by another user is
+reassigned — tokens are device-scoped; `DELETE` on sign-out, no existence
+leaks). `sendPushToUser` batches to the Expo endpoint (injectable via
+`EXPO_PUSH_ENDPOINT`/`setPushEndpoint`), removes tokens whose tickets report
+`DeviceNotRegistered`/`InvalidPushToken`, and swallows ALL failures — push
+must never break a request. `notifyPartnerInSpace(spaceId, fromUserId, kind)`
+is the reusable hook for partner-facing features. Payloads carry
+`data.kind` + fixed vague copy only — NEVER moment text or any content.
+Kinds: `squeeze | moment_added | moment_edited | moment_deleted`. Client
+receive routing lives in `features/push/push-context.tsx`; the foreground
+handler (banner visible, never sound) is set globally in `app/_layout.tsx`.
 
 ### Partner details / "The little things"
 Small concrete facts about the partner (coffee order, their song, the way
@@ -294,7 +313,9 @@ RootLayout (app/_layout.tsx)
     PartnerDetailsProvider
       SomedayProvider
         QuestionProvider
-          SqueezeProvider    (+ <SqueezeOverlay/> mounted here)
+          SqueezeProvider
+            PushProvider     (token registration + push receive routing;
+                              + <SqueezeOverlay/> mounted here)
 ```
 
 Navigation redirects: signed out → `(public)`; no space → `(auth)/space-setup`;
@@ -333,15 +354,19 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/spaces/current/question` (+ `/answer`) | one question this week: GET returns the ISO week's question + both answer states (partner's answer content only when BOTH answered — the reveal gate; partner timing never surfaced); PUT upserts the viewer's answer for the server-computed week (≤500 chars) |
 | `/v1/spaces/current/milestones`, preferences | list/append, theme prefs |
 | `/v1/media/upload-url`, `/v1/media/:id/complete`, `/download-url` | presigned R2; images + audio; EXIF stripped server-side via sharp (images only) |
-| `/v1/squeezes` | **NOT IMPLEMENTED** — client calls it in remote mode; add it when building push |
+| `/v1/push/tokens` | POST registers (upsert) the caller's Expo push token (format-validated, reassigns on device hand-off); DELETE unregisters it (sign-out); identical responses whether or not a row existed — no existence leaks |
+| `/v1/squeezes` | fire-and-forget push to the other space member via `notifyPartnerInSpace`; stores nothing; rate limited 10/min per sender |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0006_*` adds the `weekly_answers` table (spaceId/userId/weekKey/
+Latest: `0007_*` adds the `push_tokens` table (user-owned,
+`expo_push_token` unique, `platform`, `last_seen_at`; user FK cascades —
+tokens are ephemeral device artifacts, removed outright when dead);
+`0006_*` adds the `weekly_answers` table (spaceId/userId/weekKey/
 questionId/answer + timestamps; unique per (space, user, week) for upsert,
 indexed by (space, week)) backing the "one question this week" reveal gate;
-`0005_*` adds the `someday_items` table (title/note/category +
-nullable `checked_at` / `checked_by_user_id` for soft check-off and undo;
-category check constraint `place | food | film | other`); `0004_*` adds
+`0005_*` adds the `someday_items` table (title/note/category + nullable
+`checked_at` / `checked_by_user_id` for soft check-off and undo; category
+check constraint `place | food | film | other`); `0004_*` adds
 calendar_events `reminder_minutes_before` (jsonb) + `all_day` / `together`
 booleans (default false); `0003_*` added the `space_activity` change-log
 table (kind check constraint: `moment_deleted | moment_edited`). Run
@@ -449,17 +474,22 @@ no simulated partner — the reveal waits for a real second voice).
 
 **Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
 provenance), calendar, the Someday list, spaces, preferences, media upload
-pipeline, and the weekly-question reveal gate (`weekly_answers`) — against
-packages/api.
+pipeline, push backbone (token registration, squeeze delivery, moment-change
+notifications), and the weekly-question reveal gate (`weekly_answers`) —
+against packages/api.
 
 **Known gaps / seams:**
 
-- Push notifications: none. Squeeze delivery + true resurface delivery need
-  expo-notifications push + `/v1/squeezes` endpoint + token registration.
+- Push backbone exists but delivery is best-effort: squeezes are
+  fire-and-forget (offline partner misses them — no replay), and
+  notifications only reach devices that registered a token with permission
+  granted.
+- Resurface delivery is still local-notification-only; the push backbone is
+  the hook to make it server-driven.
 - Calendar reminders are device-scoped: `reminderMinutesBefore` schedules
   silent local notifications only on the device that saved the event.
   Partner-created events, reinstalls, and second devices get no reminders
-  until push exists.
+  until reminders are delivered through the push backbone.
 - Partner details are device-local — no API table yet.
 - E2E encryption tiers: designed, not built.
 - No deployment target for the API (no Dockerfile/hosting config). CI exists

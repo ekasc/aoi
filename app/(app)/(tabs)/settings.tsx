@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
+import { unregisterPushToken } from '@/features/push/push-api';
 import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -26,6 +27,9 @@ export default function SettingsScreen() {
   const handleSignOut = useCallback(async () => {
     setSignOutError('');
     try {
+      // Quietly let go of this device's push registration first (the access
+      // token is still valid at this point). Failures are swallowed inside.
+      await unregisterPushToken();
       await signOut();
       router.replace('/(public)');
     } catch {

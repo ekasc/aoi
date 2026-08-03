@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
+import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
 import { useSession } from "@/features/session/session-context";
 import { SomedayProvider } from "@/features/someday/someday-context";
@@ -65,96 +66,98 @@ export default function AuthenticatedAppLayout() {
 			<PartnerDetailsProvider>
 				<SomedayProvider>
 					<QuestionProvider>
-					<SqueezeProvider>
-						<SqueezeOverlay />
-						<Stack
-							screenOptions={{
-								contentStyle: { backgroundColor: colors.background },
-							}}
-						>
-							<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-							<Stack.Screen
-								name="moment/new"
-								options={{
-									title: "Add moment",
-									presentation: "pageSheet",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="moment/trace"
-								options={{
-									title: "Keep this",
-									presentation: "pageSheet",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="calendar/new-event"
-								options={{
-									title: "New event",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="calendar/edit/[id]"
-								options={{
-									title: "Edit event",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="profile/edit-relationship"
-								options={{
-									title: "Edit relationship",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="profile/import-milestones"
-								options={{
-									title: "Import milestones",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="profile/little-things"
-								options={{
-									title: "The little things",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="someday"
-								options={{
-									title: "Someday",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="memory-wall"
-								options={{
-									title: "Memory wall",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-							<Stack.Screen
-								name="question"
-								options={{
-									title: "This week",
-									presentation: useFormSheet ? "formSheet" : "modal",
-									...sheetOptions,
-								}}
-							/>
-						</Stack>
-					</SqueezeProvider>
+						<SqueezeProvider>
+							<PushProvider>
+								<SqueezeOverlay />
+								<Stack
+									screenOptions={{
+										contentStyle: { backgroundColor: colors.background },
+									}}
+								>
+									<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+									<Stack.Screen
+										name="moment/new"
+										options={{
+											title: "Add moment",
+											presentation: "pageSheet",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="moment/trace"
+										options={{
+											title: "Keep this",
+											presentation: "pageSheet",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="calendar/new-event"
+										options={{
+											title: "New event",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="calendar/edit/[id]"
+										options={{
+											title: "Edit event",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="profile/edit-relationship"
+										options={{
+											title: "Edit relationship",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="profile/import-milestones"
+										options={{
+											title: "Import milestones",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="profile/little-things"
+										options={{
+											title: "The little things",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="someday"
+										options={{
+											title: "Someday",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="memory-wall"
+										options={{
+											title: "Memory wall",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="question"
+										options={{
+											title: "This week",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+								</Stack>
+							</PushProvider>
+						</SqueezeProvider>
 					</QuestionProvider>
 				</SomedayProvider>
 			</PartnerDetailsProvider>

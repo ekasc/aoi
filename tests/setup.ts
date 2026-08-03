@@ -110,6 +110,11 @@ vi.mock('expo-notifications', () => ({
   getAllScheduledNotificationsAsync: async () => [],
   cancelScheduledNotificationAsync: async () => {},
   setNotificationHandler: () => {},
+  // Push APIs — physical-device only in real life; the guards under test
+  // must survive these defaults.
+  getExpoPushTokenAsync: async () => ({ data: 'ExpoPushToken[mock-device-token]' }),
+  addNotificationReceivedListener: () => ({ remove: () => {} }),
+  removeNotificationSubscriptionAsync: async () => {},
   SchedulableTriggerInputTypes: { DATE: 'date', TIME_INTERVAL: 'timeInterval' },
 }));
 
