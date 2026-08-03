@@ -150,6 +150,8 @@ function MomentCardComponent({ moment, onLongPress }: MomentCardProps) {
 		<Surface variant="raised" style={cardStyle}>
 			<View style={styles.metaRow}>
 				<View
+					accessible
+					accessibilityRole="text"
 					accessibilityLabel={
 						isYou ? "Added by you" : `Added by ${moment.authorName}`
 					}

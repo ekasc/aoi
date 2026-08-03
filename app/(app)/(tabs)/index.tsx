@@ -463,7 +463,6 @@ export default function TimelineScreen() {
 					</ThemedText>
 				</View>
 				<IconButton
-					accessibilityLabel="Capture a moment"
 					label="Capture a moment"
 					onPress={handleOpenCompose}
 					variant="accent"
