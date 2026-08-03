@@ -48,8 +48,8 @@ vi.mock('@/components/ui/surface', () => ({
 }));
 
 vi.mock('@/components/ui/icon-button', () => ({
-  IconButton: ({ children, onPress, accessibilityLabel, disabled }: any) => (
-    <button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>
+  IconButton: ({ children, onPress, accessibilityLabel, label, disabled }: any) => (
+    <button aria-label={accessibilityLabel ?? label} disabled={disabled} onClick={onPress}>
       {children}
     </button>
   ),

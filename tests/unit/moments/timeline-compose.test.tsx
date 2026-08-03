@@ -100,8 +100,8 @@ vi.mock('@/components/ui/button', () => ({
 }));
 
 vi.mock('@/components/ui/icon-button', () => ({
-  IconButton: ({ children, onPress, accessibilityLabel }: any) => (
-    <button aria-label={accessibilityLabel} onClick={onPress}>
+  IconButton: ({ children, onPress, accessibilityLabel, label }: any) => (
+    <button aria-label={accessibilityLabel ?? label} onClick={onPress}>
       {children}
     </button>
   ),
