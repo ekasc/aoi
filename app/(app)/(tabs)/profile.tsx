@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
@@ -5,11 +6,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
-import { Divider } from "@/components/ui/divider";
+import { IconButton } from "@/components/ui/icon-button";
 import { Surface } from "@/components/ui/surface";
 import { Spacing } from "@/constants/theme";
 import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
+import { useSqueeze } from "@/features/squeeze/squeeze-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 function formatRelationshipDate(value: string) {
@@ -26,15 +28,32 @@ function formatRelationshipDate(value: string) {
 	});
 }
 
-function InfoRow({ label, value, muted }: { label: string; value: string; muted: string }) {
+function InfoRow({
+	label,
+	value,
+	caption,
+	muted,
+}: {
+	label: string;
+	value: string;
+	caption?: string;
+	muted: string;
+}) {
 	return (
 		<View style={styles.infoRow}>
 			<ThemedText type="caption" style={{ color: muted, width: 80 }}>
 				{label}
 			</ThemedText>
-			<ThemedText type="body" selectable style={styles.infoValue}>
-				{value}
-			</ThemedText>
+			<View style={styles.infoValue}>
+				<ThemedText type="body" selectable>
+					{value}
+				</ThemedText>
+				{caption ? (
+					<ThemedText type="caption" selectable style={{ color: muted }}>
+						{caption}
+					</ThemedText>
+				) : null}
+			</View>
 		</View>
 	);
 }
@@ -44,6 +63,7 @@ export default function ProfileScreen() {
 	const insets = useSafeAreaInsets();
 	const { user, signOut } = useSession();
 	const { space, status: spaceStatus } = useSpace();
+	const { sendSqueeze, isSending: isSqueezeSending } = useSqueeze();
 	const muted = useThemeColor({}, "muted");
 	const background = useThemeColor({}, "background");
 	const accent = useThemeColor({}, "accent");
@@ -69,6 +89,10 @@ export default function ProfileScreen() {
 	const handleLittleThings = useCallback(() => {
 		router.push("/(app)/profile/little-things");
 	}, [router]);
+
+	const handleSqueeze = useCallback(() => {
+		void sendSqueeze();
+	}, [sendSqueeze]);
 
 	const handleSignOut = useCallback(async () => {
 		await signOut();
@@ -125,42 +149,60 @@ export default function ProfileScreen() {
 			contentInsetAdjustmentBehavior="never"
 			showsVerticalScrollIndicator={false}
 		>
-			<View style={styles.hero}>
-				<ThemedText type="meta" style={{ color: muted }}>
-					About you
-				</ThemedText>
-				<ThemedText type="title" selectable>
-					Profile
-				</ThemedText>
-			</View>
+			<ThemedText type="title" selectable style={styles.hero}>
+				Profile
+			</ThemedText>
 
 			<Surface variant="raised" style={styles.card}>
-				<ThemedText type="meta">You</ThemedText>
-				<Divider style={styles.divider} />
-				<InfoRow label="Name" value={user?.displayName ?? "Unknown user"} muted={muted} />
-				<View style={styles.rowSpacer} />
-				<InfoRow label="Email" value={user?.email ?? "No email"} muted={muted} />
+				<ThemedText type="meta" style={styles.cardHeading}>
+					You
+				</ThemedText>
+				<InfoRow
+					label="Name"
+					value={user?.displayName ?? "Unknown user"}
+					caption={user?.email ?? "No email"}
+					muted={muted}
+				/>
 			</Surface>
 
 			<Surface variant="raised" style={styles.card}>
-				<ThemedText type="meta">Your space</ThemedText>
-				<Divider style={styles.divider} />
-				<InfoRow label="Space" value={space?.name ?? "No space configured"} muted={muted} />
-				<View style={styles.rowSpacer} />
-				<InfoRow label="Partner" value={space?.partnerName ?? "Not available"} muted={muted} />
-				<View style={styles.rowSpacer} />
+				<ThemedText type="meta" style={styles.cardHeading}>
+					Your space
+				</ThemedText>
 				<InfoRow
-					label="Since"
-					value={space ? formatRelationshipDate(space.relationshipStartDate) : "Not available"}
+					label="Space"
+					value={space?.name ?? "No space configured"}
+					caption={
+						space
+							? `Together since ${formatRelationshipDate(space.relationshipStartDate)}`
+							: undefined
+					}
 					muted={muted}
 				/>
-				<View style={styles.rowSpacer} />
-				<InfoRow label="Code" value={space?.inviteCode ?? "Not available"} muted={muted} />
+				<View style={styles.infoRow}>
+					<ThemedText type="caption" style={{ color: muted, width: 80 }}>
+						Partner
+					</ThemedText>
+					<ThemedText type="body" selectable style={styles.partnerName}>
+						{space?.partnerName ?? "Not available"}
+					</ThemedText>
+					<IconButton
+						accessibilityLabel={`Send a squeeze to ${space?.partnerName ?? "your partner"}`}
+						disabled={isSqueezeSending}
+						label="Send a squeeze"
+						onPress={handleSqueeze}
+						variant="ghost"
+					>
+						<Ionicons color={accent} name="heart" size={20} />
+					</IconButton>
+				</View>
+				<InfoRow label="Invite" value={space?.inviteCode ?? "Not available"} muted={muted} />
 			</Surface>
 
 			<Surface style={styles.card}>
-				<ThemedText type="meta">Actions</ThemedText>
-				<Divider style={styles.divider} />
+				<ThemedText type="meta" style={styles.cardHeading}>
+					Actions
+				</ThemedText>
 				<View style={styles.actionStack}>
 					<Button
 						label="Edit relationship"
@@ -195,11 +237,13 @@ const styles = StyleSheet.create({
 		paddingBottom: Spacing[24],
 	},
 	hero: {
-		gap: Spacing[8],
 		marginBottom: Spacing[4],
 	},
 	card: {
-		gap: Spacing[4],
+		gap: Spacing[12],
+	},
+	cardHeading: {
+		marginBottom: Spacing[4],
 	},
 	infoRow: {
 		flexDirection: "row",
@@ -207,12 +251,10 @@ const styles = StyleSheet.create({
 	},
 	infoValue: {
 		flex: 1,
+		gap: Spacing[4],
 	},
-	rowSpacer: {
-		height: Spacing[8],
-	},
-	divider: {
-		marginVertical: Spacing[12],
+	partnerName: {
+		flex: 1,
 	},
 	actionStack: {
 		gap: Spacing[8],

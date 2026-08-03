@@ -29,7 +29,9 @@ vi.mock('react-native', () => {
             )
           )
         : ListEmptyComponent
-          ? React.createElement(ListEmptyComponent)
+          ? React.isValidElement(ListEmptyComponent)
+            ? ListEmptyComponent
+            : React.createElement(ListEmptyComponent)
           : null
     );
   return {
