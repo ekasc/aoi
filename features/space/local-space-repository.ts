@@ -69,9 +69,11 @@ export const localSpaceRepository: SpaceRepository = {
       id: `space_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
       name: input.name.trim(),
       createdByUserId: input.createdByUserId,
+      yourName: input.yourName?.trim() || 'You',
       partnerName: input.partnerName.trim(),
       relationshipStartDate: input.relationshipStartDate,
       inviteCode,
+      photoUri: input.photoUri || undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -121,6 +123,10 @@ export const localSpaceRepository: SpaceRepository = {
   },
 
   async clearSpaceForUser(userId: string) {
+    await AsyncStorage.multiRemove([spaceUserKey(userId), spaceMilestonesKey(userId)]);
+  },
+
+  async leaveSpace(userId: string) {
     await AsyncStorage.multiRemove([spaceUserKey(userId), spaceMilestonesKey(userId)]);
   },
 

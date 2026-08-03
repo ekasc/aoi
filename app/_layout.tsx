@@ -1,12 +1,9 @@
-import {
-	DarkTheme,
-	DefaultTheme,
-	ThemeProvider as NavigationThemeProvider,
-} from "@react-navigation/native";
 import { Stack } from "expo-router/stack";
+import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import type { PropsWithChildren } from "react";
 
 import { LaunchSplash } from "@/components/launch-splash";
 import { MomentsProvider } from "@/features/moments/moments-context";
@@ -16,6 +13,68 @@ import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
 import { useAoiFonts } from "@/hooks/use-aoi-fonts";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// Memories arrive quietly: show banners when the app is open, never sound.
+Notifications.setNotificationHandler({
+	handleNotification: async () => ({
+		shouldShowBanner: true,
+		shouldShowList: true,
+		shouldPlaySound: false,
+		shouldSetBadge: false,
+	}),
+});
+
+// Inline React Navigation theme objects (replacing @react-navigation/native import)
+type NavigationColors = {
+  primary: string;
+  background: string;
+  card: string;
+  text: string;
+  border: string;
+  notification: string;
+};
+
+type NavigationTheme = {
+  dark: boolean;
+  colors: NavigationColors;
+  fonts: any;
+};
+
+const NavigationDefaultTheme: NavigationTheme = {
+  dark: false,
+  colors: {
+    primary: '#007AFF',
+    background: '#F2F2F7',
+    card: '#FFFFFF',
+    text: '#000000',
+    border: '#C6C6C8',
+    notification: '#FF3B30',
+  },
+  fonts: {},
+};
+
+const NavigationDarkTheme: NavigationTheme = {
+  dark: true,
+  colors: {
+    primary: '#0A84FF',
+    background: '#000000',
+    card: '#1C1C1E',
+    text: '#FFFFFF',
+    border: '#38383A',
+    notification: '#FF453A',
+  },
+  fonts: {},
+};
+
+const NavigationThemeContext = createContext<NavigationTheme>(NavigationDefaultTheme);
+
+function NavigationThemeProvider({ children, value }: PropsWithChildren<{ value: NavigationTheme }>) {
+  return (
+    <NavigationThemeContext.Provider value={value}>
+      {children}
+    </NavigationThemeContext.Provider>
+  );
+}
 
 export default function RootLayout() {
 	const { fontsLoaded } = useAoiFonts();
@@ -46,11 +105,10 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 	const { status: spaceStatus, space, isHydrated: isSpaceHydrated } = useSpace();
 	const { mode, colors, isHydrated } = useAoiTheme();
 	const themeName = mode === "dark" ? "dark" : "light";
-	const isAndroid = process.env.EXPO_OS === "android";
 	const [showLaunchSplash, setShowLaunchSplash] = useState(true);
 
 	const navigationTheme = useMemo(() => {
-		const baseTheme = mode === "dark" ? DarkTheme : DefaultTheme;
+		const baseTheme = mode === "dark" ? NavigationDarkTheme : NavigationDefaultTheme;
 
 		return {
 			...baseTheme,
@@ -150,9 +208,7 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 				<Stack.Screen name="(app)" options={{ headerShown: false }} />
 			</Stack>
 			<StatusBar
-				backgroundColor={colors.background}
 				style={themeName === "dark" ? "light" : "dark"}
-				translucent={!isAndroid}
 			/>
 		</NavigationThemeProvider>
 	);

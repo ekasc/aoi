@@ -1,3 +1,5 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -13,7 +15,9 @@ import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MomentCard } from "@/components/moments/moment-card";
+import { ResurfaceCard } from "@/components/moments/resurface-card";
 import { ThemedText } from "@/components/themed-text";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Surface } from "@/components/ui/surface";
 import { Motion, Spacing } from "@/constants/theme";
@@ -22,7 +26,10 @@ import {
 	isUpcomingGoal,
 } from "@/features/moments/moment-goal-utils";
 import { useMoments } from "@/features/moments/moments-context";
+import { findResurfaces } from "@/features/moments/resurface";
+import { useResurfaceNotification } from "@/features/moments/use-resurface-notification";
 import type { Moment } from "@/features/moments/types";
+import { useSqueeze } from "@/features/squeeze/squeeze-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { useSpace } from "@/features/space/space-context";
 
@@ -89,7 +96,6 @@ function formatTimelineContextLabel(occurredAt: string) {
 export default function TimelineScreen() {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
-	const isAndroid = process.env.EXPO_OS === "android";
 	const { moments } = useMoments();
 	const listRef = useRef<FlatList<Moment> | null>(null);
 	const now = useMemo(() => new Date(), []);
@@ -99,8 +105,14 @@ export default function TimelineScreen() {
 	const surface = useThemeColor({}, "surface");
 	const surface2 = useThemeColor({}, "surface2");
 	const accent = useThemeColor({}, "accent");
+	const onAccent = useThemeColor({}, "onAccent");
 	const background = useThemeColor({}, "background");
 	const { space } = useSpace();
+	const { sendSqueeze, isSending: isSqueezeSending } = useSqueeze();
+	const resurfaces = useMemo(() => findResurfaces(moments, now), [moments, now]);
+
+	useResurfaceNotification(moments);
+
 	const upcomingGoals = useMemo(
 		() =>
 			moments
@@ -117,7 +129,6 @@ export default function TimelineScreen() {
 	const [contextLabel, setContextLabel] = useState(
 		upcomingGoals.length > 0 ? "Upcoming goals" : periodLabel,
 	);
-	const shouldAnimateSections = !isAndroid;
 
 	useEffect(() => {
 		setContextLabel(
@@ -139,6 +150,14 @@ export default function TimelineScreen() {
 		router.push("/(app)/moment/new");
 	}, [router]);
 
+	const handleTrace = useCallback(() => {
+		router.push("/(app)/moment/trace");
+	}, [router]);
+
+	const handleSqueeze = useCallback(() => {
+		void sendSqueeze();
+	}, [sendSqueeze]);
+
 	const keyExtractor = useCallback((item: Moment) => item.id, []);
 	const renderItem = useCallback(
 		({ item }: ListRenderItemInfo<Moment>) => <MomentCard moment={item} />,
@@ -156,12 +175,43 @@ export default function TimelineScreen() {
 				<ThemedText type="title" style={styles.emptyTitle}>
 					Start your timeline
 				</ThemedText>
-				<ThemedText type="caption">
-					Add milestones and notes from your story.
+				<ThemedText type="body" style={{ color: muted, marginBottom: Spacing[8] }}>
+					Tap the + button to add your first moment.
 				</ThemedText>
+				<View style={styles.emptyHints}>
+					<ThemedText type="meta" style={{ color: muted }}>
+						Notes
+					</ThemedText>
+					<ThemedText type="caption" style={{ color: muted }}>
+						Write a quick thought or memory.
+					</ThemedText>
+				</View>
+				<View style={styles.emptyHints}>
+					<ThemedText type="meta" style={{ color: muted }}>
+						Milestones
+					</ThemedText>
+					<ThemedText type="caption" style={{ color: muted }}>
+						First date, moving in, engagements — the big ones.
+					</ThemedText>
+				</View>
+				<View style={styles.emptyHints}>
+					<ThemedText type="meta" style={{ color: muted }}>
+						Goals
+					</ThemedText>
+					<ThemedText type="caption" style={{ color: muted }}>
+						Plans you&apos;re working toward together.
+					</ThemedText>
+				</View>
+				<View style={styles.emptyCta}>
+					<Button
+						label="Add your first moment"
+						onPress={handleAddMoment}
+						variant="secondary"
+					/>
+				</View>
 			</Surface>
 		),
-		[border, surface],
+		[border, muted, surface, handleAddMoment],
 	);
 
 	const railStyle = useMemo(
@@ -245,15 +295,14 @@ export default function TimelineScreen() {
 	return (
 		<View style={rootStyle}>
 			<Animated.View
-				entering={
-					shouldAnimateSections
-						? FadeInDown.duration(Motion.slow)
-								.delay(20)
-								.reduceMotion(ReduceMotion.System)
-						: undefined
-				}
+				entering={FadeInDown.duration(Motion.slow)
+					.delay(20)
+					.reduceMotion(ReduceMotion.System)}
 				style={styles.heroRow}
 			>
+				{space?.photoUri ? (
+					<Image source={{ uri: space.photoUri }} style={styles.heroPhoto} contentFit="cover" />
+				) : null}
 				<View style={styles.heroText}>
 					<ThemedText type="meta" selectable>
 						{space?.name}
@@ -265,25 +314,51 @@ export default function TimelineScreen() {
 						{periodLabel}
 					</ThemedText>
 				</View>
+				<View style={styles.heroActions}>
+					<IconButton
+					accessibilityLabel={`Send a squeeze to ${space?.partnerName ?? "your partner"}`}
+					disabled={isSqueezeSending}
+					label="Send a squeeze"
+					onPress={handleSqueeze}
+					variant="secondary"
+				>
+					<Ionicons color={accent} name="heart" size={20} />
+					</IconButton>
+					<IconButton
+					accessibilityLabel="Keep a quick trace"
+					label="Trace"
+					onPress={handleTrace}
+					variant="secondary"
+				>
+					<Ionicons color={accent} name="flash-outline" size={20} />
+					</IconButton>
 				<IconButton
 					accessibilityLabel="Add a new moment"
 					variant="accent"
 					label="Add moment"
 					onPress={handleAddMoment}
 				>
-					+
+					<Ionicons color={onAccent} name="add" size={24} />
 				</IconButton>
+				</View>
 			</Animated.View>
+
+			{resurfaces.length > 0 ? (
+				<Animated.View
+					entering={FadeInDown.duration(Motion.base)
+						.delay(50)
+						.reduceMotion(ReduceMotion.System)}
+					style={styles.resurfaceWrap}
+				>
+					<ResurfaceCard resurfaces={resurfaces} />
+				</Animated.View>
+			) : null}
 
 			{upcomingGoals.length > 0 ? (
 				<Animated.View
-					entering={
-						shouldAnimateSections
-							? FadeInDown.duration(Motion.base)
-									.delay(70)
-									.reduceMotion(ReduceMotion.System)
-							: undefined
-					}
+					entering={FadeInDown.duration(Motion.base)
+						.delay(70)
+						.reduceMotion(ReduceMotion.System)}
 				>
 					<Surface variant="raised" style={styles.upcomingLane}>
 						<View style={styles.upcomingHeader}>
@@ -377,13 +452,28 @@ const styles = StyleSheet.create({
 		flex: 1,
 		paddingHorizontal: Spacing[16],
 		paddingBottom: Spacing[0],
-		gap: Spacing[12],
+		gap: Spacing[8],
 	},
 	heroRow: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: Spacing[12],
+		marginBottom: Spacing[4],
+	},
+	heroActions: {
+		alignItems: "center",
+		flexDirection: "row",
+		gap: Spacing[8],
+	},
+	resurfaceWrap: {
+		marginHorizontal: Spacing[16],
+		marginBottom: Spacing[8],
+	},
+	heroPhoto: {
+		width: 44,
+		height: 44,
+		borderRadius: 22,
 	},
 	heroText: {
 		flex: 1,
@@ -396,9 +486,10 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		justifyContent: "space-between",
 		alignItems: "center",
+		marginBottom: Spacing[4],
 	},
 	upcomingStack: {
-		gap: Spacing[8],
+		gap: Spacing[12],
 	},
 	upcomingRow: {
 		flexDirection: "row",
@@ -461,15 +552,25 @@ const styles = StyleSheet.create({
 	contentContainer: {
 		gap: Spacing[8],
 		paddingBottom: Spacing[24],
-		paddingTop: Spacing[12],
+		paddingTop: Spacing[16],
 	},
 	listSpacer: {
 		height: Spacing[8],
 	},
 	emptyState: {
 		marginHorizontal: Spacing[16],
+		gap: Spacing[4],
 	},
 	emptyTitle: {
-		marginBottom: Spacing[8],
+		marginBottom: Spacing[4],
+	},
+	emptyHints: {
+		flexDirection: "row",
+		gap: Spacing[8],
+		alignItems: "baseline",
+		marginTop: Spacing[4],
+	},
+	emptyCta: {
+		marginTop: Spacing[16],
 	},
 });

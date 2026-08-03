@@ -36,8 +36,7 @@ let hasPlayedThemeSelectorIntro = false;
 
 export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
   const { selectedThemeId, setSelectedThemeId, mode } = useAoiTheme();
-  const shouldAnimateIntro =
-    process.env.EXPO_OS !== 'android' && !hasPlayedThemeSelectorIntro;
+  const shouldAnimateIntro = !hasPlayedThemeSelectorIntro;
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
   const surface2 = useThemeColor({}, 'surface2');

@@ -1,9 +1,12 @@
+import { Image } from "expo-image";
 import { memo, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 
+import { AudioPlayer } from "@/components/media/audio-player";
 import { ThemedText } from "@/components/themed-text";
 import { Divider } from "@/components/ui/divider";
 import { Surface } from "@/components/ui/surface";
+import { Spacing } from "@/constants/theme";
 import { getGoalHorizon } from "@/features/moments/moment-goal-utils";
 import type { Moment, MomentType } from "@/features/moments/types";
 import { useThemeColor } from "@/hooks/use-theme-color";
@@ -18,6 +21,7 @@ const MOMENT_TYPE_LABELS: Record<MomentType, string> = {
 	date: "Date",
 	goal: "Goal",
 	media: "Media",
+	trace: "Trace",
 };
 
 function formatDateLabel(value: string) {
@@ -64,10 +68,11 @@ function MomentCardComponent({ moment }: MomentCardProps) {
 	const onAccent = useThemeColor({}, "onAccent");
 	const text = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
-	const title = moment.title?.trim() || "Untitled moment";
-	const body = moment.body?.trim() || "No details added yet.";
 	const isYou = moment.authorRole === "you";
 	const isGoal = moment.type === "goal";
+	const isTrace = moment.type === "trace";
+	const title = moment.title?.trim() || (isTrace ? "" : "Untitled moment");
+	const body = moment.body?.trim() || (isTrace ? "" : "No details added yet.");
 	const goalHorizon = useMemo(() => getGoalHorizon(moment), [moment]);
 	const goalTargetLabel = useMemo(
 		() => formatGoalTargetLabel(moment.targetAt),
@@ -145,9 +150,21 @@ function MomentCardComponent({ moment }: MomentCardProps) {
 					</ThemedText>
 				</View>
 				<Divider style={styles.divider} />
-				<ThemedText type="title" style={titleStyle}>
-					{title}
-				</ThemedText>
+				{title ? (
+					<ThemedText type="title" style={titleStyle}>
+						{title}
+					</ThemedText>
+				) : null}
+				{moment.mediaPreview ? (
+					<View style={[styles.mediaContainer, { borderColor: border }]}>
+						<Image
+							source={{ uri: moment.mediaPreview }}
+							style={styles.mediaImage}
+							contentFit="cover"
+							transition={200}
+						/>
+					</View>
+				) : null}
 				{isGoal ? (
 					<View style={styles.goalMetaRow}>
 						<View
@@ -168,9 +185,14 @@ function MomentCardComponent({ moment }: MomentCardProps) {
 						</ThemedText>
 					</View>
 				) : null}
-				<ThemedText type="body" style={bodyStyle}>
-					{body}
-				</ThemedText>
+				{moment.audioUri ? (
+					<AudioPlayer uri={moment.audioUri} />
+				) : null}
+				{body ? (
+					<ThemedText type="body" style={bodyStyle}>
+						{body}
+					</ThemedText>
+				) : null}
 			</Surface>
 		</View>
 	);
@@ -235,16 +257,16 @@ const styles = StyleSheet.create({
 		letterSpacing: 0.2,
 	},
 	divider: {
-		marginVertical: 10,
+		marginVertical: Spacing[8],
 	},
 	title: {
-		marginBottom: 6,
+		marginBottom: Spacing[4],
 	},
 	goalMetaRow: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 8,
-		marginBottom: 6,
+		marginBottom: Spacing[4],
 	},
 	goalPill: {
 		borderRadius: 999,
@@ -254,5 +276,15 @@ const styles = StyleSheet.create({
 	},
 	body: {
 		opacity: 1,
+	},
+	mediaContainer: {
+		borderRadius: 12,
+		overflow: "hidden",
+		borderWidth: StyleSheet.hairlineWidth,
+		marginBottom: Spacing[8],
+	},
+	mediaImage: {
+		width: "100%",
+		height: 180,
 	},
 });

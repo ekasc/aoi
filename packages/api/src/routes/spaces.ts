@@ -71,7 +71,7 @@ spacesRouter.get('/v1/spaces/current', async (c) => {
 const createSpaceSchema = z.object({
   name: z.string().min(1).max(200),
   partnerName: z.string().min(1).max(200),
-  relationshipStartDate: z.string().min(1), // ISO date string YYYY-MM-DD
+  relationshipStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format'),
 });
 
 spacesRouter.post('/v1/spaces', zValidator('json', createSpaceSchema), async (c) => {
@@ -227,7 +227,7 @@ spacesRouter.post('/v1/spaces/join', zValidator('json', joinSpaceSchema), async 
 const updateSpaceSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   partnerName: z.string().min(1).max(200).optional(),
-  relationshipStartDate: z.string().optional(),
+  relationshipStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
 });
 
 spacesRouter.patch('/v1/spaces/current', zValidator('json', updateSpaceSchema), async (c) => {
@@ -263,7 +263,7 @@ spacesRouter.patch('/v1/spaces/current', zValidator('json', updateSpaceSchema), 
     throw forbidden('Only the space creator can update space details');
   }
 
-  const updateData: Record<string, any> = {};
+  const updateData: Partial<typeof spaces.$inferInsert> = {};
   if (updates.name) updateData.name = updates.name;
   if (updates.relationshipStartDate) updateData.relationshipStartDate = updates.relationshipStartDate;
   updateData.updatedAt = new Date();

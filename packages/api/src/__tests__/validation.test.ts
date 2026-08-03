@@ -275,6 +275,95 @@ describe('moment CRUD validation', () => {
   });
 });
 
+// ── Media upload schema tests ────────────────────────────────────────────
+
+const ALLOWED_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+  'image/heic',
+  'image/heif',
+] as const;
+
+const uploadUrlSchema = z.object({
+  filename: z.string().min(1).max(255),
+  mimeType: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine(
+      (val) => (ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(val),
+      { message: 'Unsupported MIME type' }
+    ),
+  sizeBytes: z.number().int().positive().max(100 * 1024 * 1024),
+});
+
+describe('media upload validation', () => {
+  it('accepts valid image MIME types', () => {
+    for (const mime of ALLOWED_IMAGE_MIME_TYPES) {
+      expect(
+        uploadUrlSchema.parse({
+          filename: 'photo.jpg',
+          mimeType: mime,
+          sizeBytes: 1000,
+        }).mimeType
+      ).toBe(mime);
+    }
+  });
+
+  it('rejects non-image MIME types', () => {
+    expect(() =>
+      uploadUrlSchema.parse({
+        filename: 'document.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 1000,
+      })
+    ).toThrow('Unsupported MIME type');
+  });
+
+  it('rejects empty mime type', () => {
+    expect(() =>
+      uploadUrlSchema.parse({
+        filename: 'photo.jpg',
+        mimeType: '',
+        sizeBytes: 1000,
+      })
+    ).toThrow();
+  });
+
+  it('rejects oversized file', () => {
+    expect(() =>
+      uploadUrlSchema.parse({
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: 101 * 1024 * 1024,
+      })
+    ).toThrow();
+  });
+
+  it('rejects zero-size file', () => {
+    expect(() =>
+      uploadUrlSchema.parse({
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: 0,
+      })
+    ).toThrow();
+  });
+
+  it('rejects negative size', () => {
+    expect(() =>
+      uploadUrlSchema.parse({
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: -1,
+      })
+    ).toThrow();
+  });
+});
+
 // ── Calendar event schema tests ─────────────────────────────────────────
 
 const createEventSchema = z.object({

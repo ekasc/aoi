@@ -145,7 +145,7 @@ export default function CalendarScreen() {
 				<Button label="Add event" onPress={handleAddEvent} />
 			</View>
 
-			<Surface variant="raised" style={styles.calendarPanel}>
+			<Surface variant="glass" style={styles.calendarPanel}>
 				<View style={styles.weekdayRow}>
 					{weekdayLabels.map((label) => (
 						<View key={label} style={styles.weekdayCell}>
@@ -275,7 +275,7 @@ export default function CalendarScreen() {
 
 			{!isLoading && selectedDayEvents.length === 0 ? (
 				<Surface style={styles.emptyState}>
-					<ThemedText type="body">No plans yet. Add something to look forward to.</ThemedText>
+					<ThemedText type="body" style={{ color: muted }}>No plans yet.</ThemedText>
 					<Button
 						accessibilityLabel={`Add event for ${selectedDateTitle}`}
 						label="Add event"
@@ -356,13 +356,14 @@ const styles = StyleSheet.create({
 	contentContainer: {
 		paddingHorizontal: Spacing[16],
 		paddingBottom: Spacing[24],
-		gap: Spacing[12],
+		gap: Spacing[16],
 	},
 	headerRow: {
 		flexDirection: "row",
 		justifyContent: "space-between",
 		alignItems: "center",
 		gap: Spacing[12],
+		marginBottom: Spacing[4],
 	},
 	monthNav: {
 		flexDirection: "row",
@@ -418,6 +419,7 @@ const styles = StyleSheet.create({
 	},
 	agendaHeader: {
 		gap: Spacing[4],
+		marginTop: Spacing[4],
 	},
 	emptyState: {
 		gap: Spacing[4],

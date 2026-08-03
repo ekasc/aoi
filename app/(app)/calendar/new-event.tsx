@@ -135,6 +135,7 @@ export default function NewCalendarEventScreen() {
     }
 
     setIsSubmitting(true);
+    setError('');
     try {
       await addEvent({
         title: trimmedTitle,
@@ -149,6 +150,8 @@ export default function NewCalendarEventScreen() {
       });
 
       router.back();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create event');
     } finally {
       setIsSubmitting(false);
     }

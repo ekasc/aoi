@@ -2,39 +2,28 @@ import { getAuthApiBaseUrl, isAuthStubMode } from './auth-config';
 import { mockAuthApi } from './mock-auth-api';
 import type {
   AuthApi,
-  OAuthCallbackResponse,
-  OAuthCallbackRequest,
-  OAuthNativeCallbackRequest,
-  OAuthStartRequest,
-  SessionResponse,
+  AuthSessionPayload,
+  WorkOSAuthorizeRequest,
+  WorkOSCallbackRequest,
+  WorkOSAppleNativeRequest,
 } from './types';
 
 class RemoteAuthApi implements AuthApi {
   constructor(private readonly baseUrl: string) {}
 
-  async oauthStart(input: OAuthStartRequest) {
-    return this.post<Awaited<ReturnType<AuthApi['oauthStart']>>>(
-      '/v1/auth/oauth/start',
+  async workosAuthorize(input: WorkOSAuthorizeRequest) {
+    return this.post<Awaited<ReturnType<AuthApi['workosAuthorize']>>>(
+      '/v1/auth/workos/authorize',
       input
     );
   }
 
-  async oauthCallback(input: OAuthCallbackRequest) {
-    const response = await this.post<OAuthCallbackResponse>(
-      '/v1/auth/oauth/callback',
-      input
-    );
-
-    return this.toAuthSessionPayload(response);
+  async workosCallback(input: WorkOSCallbackRequest) {
+    return this.post<AuthSessionPayload>('/v1/auth/workos/callback', input);
   }
 
-  async oauthNativeCallback(input: OAuthNativeCallbackRequest) {
-    const response = await this.post<OAuthCallbackResponse>(
-      '/v1/auth/oauth/native/callback',
-      input
-    );
-
-    return this.toAuthSessionPayload(response);
+  async workosAppleNative(input: WorkOSAppleNativeRequest) {
+    return this.post<AuthSessionPayload>('/v1/auth/workos/apple', input);
   }
 
   async getSession(accessToken: string) {
@@ -49,7 +38,7 @@ class RemoteAuthApi implements AuthApi {
       throw new Error('Unable to fetch session.');
     }
 
-    const payload = (await response.json()) as SessionResponse;
+    const payload = (await response.json()) as AuthSessionPayload;
     return payload.user;
   }
 
@@ -60,9 +49,18 @@ class RemoteAuthApi implements AuthApi {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({
-        refreshToken: refreshToken ?? '',
-      }),
+      body: JSON.stringify(
+        refreshToken ? { refreshToken } : {}
+      ),
+    });
+  }
+
+  async deleteAccount(accessToken: string) {
+    await fetch(`${this.baseUrl}/v1/auth/account`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
     });
   }
 
@@ -80,17 +78,6 @@ class RemoteAuthApi implements AuthApi {
     }
 
     return (await response.json()) as T;
-  }
-
-  private toAuthSessionPayload(input: OAuthCallbackResponse) {
-    return {
-      user: input.user,
-      tokens: {
-        accessToken: input.accessToken,
-        refreshToken: input.refreshToken,
-        expiresAt: new Date(Date.now() + input.expiresInSec * 1000).toISOString(),
-      },
-    };
   }
 }
 

@@ -71,12 +71,13 @@ momentsRouter.get('/v1/spaces/current/moments', zValidator('query', listMomentsS
 // ── Create moment ────────────────────────────────────────────────────────
 
 const createMomentSchema = z.object({
-  type: z.enum(['note', 'milestone', 'date', 'goal', 'media']),
+  type: z.enum(['note', 'milestone', 'date', 'goal', 'media', 'trace']),
   title: z.string().max(500).optional().default(''),
   body: z.string().max(10000).optional().default(''),
   occurredAt: z.string().datetime({ offset: true }).optional(),
   targetAt: z.string().datetime({ offset: true }).nullable().optional(),
-  mediaPreview: z.string().max(2000).nullable().optional(),
+  mediaPreview: z.string().url().max(2000).nullable().optional(),
+  audioUri: z.string().url().max(2000).nullable().optional(),
 });
 
 momentsRouter.post('/v1/spaces/current/moments', zValidator('json', createMomentSchema), async (c) => {
@@ -102,6 +103,7 @@ momentsRouter.post('/v1/spaces/current/moments', zValidator('json', createMoment
       occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
       targetAt: input.targetAt ? new Date(input.targetAt) : null,
       mediaPreview: input.mediaPreview ?? null,
+      audioUri: input.audioUri ?? null,
     })
     .returning();
 
@@ -111,15 +113,16 @@ momentsRouter.post('/v1/spaces/current/moments', zValidator('json', createMoment
 // ── Update moment ────────────────────────────────────────────────────────
 
 const updateMomentSchema = z.object({
-  type: z.enum(['note', 'milestone', 'date', 'goal', 'media']).optional(),
+  type: z.enum(['note', 'milestone', 'date', 'goal', 'media', 'trace']).optional(),
   title: z.string().max(500).optional(),
   body: z.string().max(10000).optional(),
   occurredAt: z.string().datetime({ offset: true }).optional(),
   targetAt: z.string().datetime({ offset: true }).nullable().optional(),
-  mediaPreview: z.string().max(2000).nullable().optional(),
+  mediaPreview: z.string().url().max(2000).nullable().optional(),
+  audioUri: z.string().url().max(2000).nullable().optional(),
 });
 
-momentsRouter.patch('/v1/moments/:id', zValidator('json', updateMomentSchema), async (c) => {
+momentsRouter.patch('/v1/moments/:id', zValidator('param', z.object({ id: z.string().uuid() })), zValidator('json', updateMomentSchema), async (c) => {
   const userId = c.var.userId;
   const momentId = c.req.param('id');
 
@@ -155,13 +158,14 @@ momentsRouter.patch('/v1/moments/:id', zValidator('json', updateMomentSchema), a
   }
 
   const input = c.req.valid('json');
-  const updateData: Record<string, any> = { updatedAt: new Date() };
+  const updateData: Partial<typeof moments.$inferInsert> = { updatedAt: new Date() };
   if (input.type !== undefined) updateData.type = input.type;
   if (input.title !== undefined) updateData.title = input.title;
   if (input.body !== undefined) updateData.body = input.body;
   if (input.occurredAt !== undefined) updateData.occurredAt = new Date(input.occurredAt);
   if (input.targetAt !== undefined) updateData.targetAt = input.targetAt ? new Date(input.targetAt) : null;
   if (input.mediaPreview !== undefined) updateData.mediaPreview = input.mediaPreview;
+  if (input.audioUri !== undefined) updateData.audioUri = input.audioUri;
 
   const [updated] = await db
     .update(moments)
@@ -174,7 +178,7 @@ momentsRouter.patch('/v1/moments/:id', zValidator('json', updateMomentSchema), a
 
 // ── Delete moment (soft delete) ──────────────────────────────────────────
 
-momentsRouter.delete('/v1/moments/:id', async (c) => {
+momentsRouter.delete('/v1/moments/:id', zValidator('param', z.object({ id: z.string().uuid() })), async (c) => {
   const userId = c.var.userId;
   const momentId = c.req.param('id');
 

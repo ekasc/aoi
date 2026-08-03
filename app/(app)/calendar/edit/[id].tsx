@@ -66,6 +66,7 @@ export default function EditCalendarEventScreen() {
   const [endsAt, setEndsAt] = useState(new Date());
   const [error, setError] = useState('');
   const [isWorking, setIsWorking] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const isRangeInvalid = endsAt.getTime() <= startsAt.getTime();
 
   const isOwner = event?.actor === 'you';
@@ -78,18 +79,24 @@ export default function EditCalendarEventScreen() {
     let isActive = true;
 
     async function loadEvent() {
-      const foundEvent = await getEventById(eventId);
+      try {
+        const foundEvent = await getEventById(eventId);
 
-      if (!isActive || !foundEvent) {
-        return;
+        if (!isActive || !foundEvent) {
+          return;
+        }
+
+        setEvent(foundEvent);
+        setTitle(foundEvent.title);
+        setPresetLabel(foundEvent.label.preset);
+        setCustomLabel(foundEvent.label.customText ?? '');
+        setStartsAt(new Date(foundEvent.startsAt));
+        setEndsAt(new Date(foundEvent.endsAt));
+      } catch {
+        if (isActive) {
+          setLoadError('Unable to load this event.');
+        }
       }
-
-      setEvent(foundEvent);
-      setTitle(foundEvent.title);
-      setPresetLabel(foundEvent.label.preset);
-      setCustomLabel(foundEvent.label.customText ?? '');
-      setStartsAt(new Date(foundEvent.startsAt));
-      setEndsAt(new Date(foundEvent.endsAt));
     }
 
     void loadEvent();
@@ -136,6 +143,7 @@ export default function EditCalendarEventScreen() {
     }
 
     setIsWorking(true);
+    setError('');
     try {
       await updateEvent({
         id: eventId,
@@ -149,6 +157,8 @@ export default function EditCalendarEventScreen() {
       });
 
       router.back();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save event');
     } finally {
       setIsWorking(false);
     }
@@ -172,9 +182,12 @@ export default function EditCalendarEventScreen() {
     }
 
     setIsWorking(true);
+    setError('');
     try {
       await deleteEvent(eventId);
       router.back();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete event');
     } finally {
       setIsWorking(false);
     }
@@ -192,7 +205,18 @@ export default function EditCalendarEventScreen() {
             showsVerticalScrollIndicator={false}
           >
             <Surface style={styles.section}>
-              <ThemedText type="body">Loading event…</ThemedText>
+              {loadError ? (
+                <>
+                  <ThemedText type="title" style={{ color: danger }}>
+                    {loadError}
+                  </ThemedText>
+                  <ThemedText type="caption" style={{ color: muted }}>
+                    Check your connection and try again.
+                  </ThemedText>
+                </>
+              ) : (
+                <ThemedText type="body">Loading event…</ThemedText>
+              )}
             </Surface>
           </ScrollView>
           <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>

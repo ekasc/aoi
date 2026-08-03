@@ -5,58 +5,49 @@ import { mockAuthApi } from '../../../features/auth/mock-auth-api';
 const redirectUri = 'aoi://auth/oauth-callback';
 
 describe('mockAuthApi', () => {
-  test('oauth start and callback returns a valid session', async () => {
-    const start = await mockAuthApi.oauthStart({
+  test('workos authorize and callback return a valid session', async () => {
+    const authorize = await mockAuthApi.workosAuthorize({
       provider: 'google',
-      platform: 'ios',
-      clientId: 'google-ios-client-id',
       redirectUri,
-      codeChallenge: 'test-code-challenge',
-      codeChallengeMethod: 'S256',
     });
 
-    expect(start.state).toContain('st_');
-    expect(start.authorizationUrl).toContain('mock-auth.aoi.local');
+    expect(authorize.authorizationUrl).toContain('mock-auth.aoi.local');
+    expect(authorize.authorizationUrl).toContain(encodeURIComponent(redirectUri));
 
-    const session = await mockAuthApi.oauthCallback({
-      provider: 'google',
-      platform: 'ios',
-      state: start.state,
-      code: 'test-auth-code',
-      codeVerifier: 'test-code-verifier',
-    });
+    const session = await mockAuthApi.workosCallback({ code: 'test-auth-code' });
 
-    expect(session.user.email).toBe('google-user@aoi.local');
+    expect(session.user.email).toBe('alex@gmail.com');
     expect(session.tokens.accessToken).toContain('stub_google_');
 
     const restored = await mockAuthApi.getSession(session.tokens.accessToken);
     expect(restored.id).toBe(session.user.id);
   });
 
-  test('oauth callback rejects unknown state', async () => {
+  test('workos apple native rejects missing idToken or nonce', async () => {
     await expect(
-      mockAuthApi.oauthCallback({
-        provider: 'google',
-        platform: 'android',
-        state: 'missing-state',
-        code: 'test-auth-code',
-        codeVerifier: 'test-code-verifier',
+      mockAuthApi.workosAppleNative({
+        idToken: '   ',
+        nonce: 'apple-nonce',
       })
-    ).rejects.toThrow('Invalid auth state');
+    ).rejects.toThrow('idToken and nonce are required.');
+
+    await expect(
+      mockAuthApi.workosAppleNative({
+        idToken: 'apple-id-token',
+        nonce: '',
+      })
+    ).rejects.toThrow('idToken and nonce are required.');
   });
 
   test('apple native callback creates session and supports logout', async () => {
-    const session = await mockAuthApi.oauthNativeCallback({
-      provider: 'apple',
-      platform: 'ios',
+    const session = await mockAuthApi.workosAppleNative({
       idToken: 'apple-id-token',
       nonce: 'apple-nonce',
       displayName: 'Aoi Tester',
-      avatarUrl: 'https://example.com/avatar.png',
     });
 
-    expect(session.user.displayName).toBe('Aoi Tester');
-    expect(session.user.avatarUrl).toBe('https://example.com/avatar.png');
+    expect(session.user.email).toBe('jordan@icloud.com');
+    expect(session.tokens.accessToken).toContain('stub_apple_');
 
     await mockAuthApi.logout(session.tokens.accessToken, session.tokens.refreshToken);
 

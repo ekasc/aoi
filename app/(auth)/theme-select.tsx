@@ -8,13 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
 import { useSession } from '@/features/session/session-context';
-import { useAoiTheme } from '@/features/theme/theme-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function ThemeSelectScreen() {
   const router = useRouter();
   const { status } = useSession();
-  const { selectedTheme } = useAoiTheme();
   const muted = useThemeColor({}, 'muted');
   const background = useThemeColor({}, 'background');
 
@@ -44,7 +42,7 @@ export default function ThemeSelectScreen() {
             Choose a theme
           </ThemedText>
           <ThemedText type="caption" style={{ color: muted }} selectable>
-            This look is for both of you.
+            This look is for both of you. Pick the one that feels like your space.
           </ThemedText>
         </Surface>
 
@@ -52,11 +50,14 @@ export default function ThemeSelectScreen() {
           <ThemeSelector />
         </Surface>
 
-        <View style={styles.footer}>
-          <ThemedText type="caption" style={{ color: muted }} selectable>
-            Selected: {selectedTheme.name}
+        <View style={styles.readyCard}>
+          <ThemedText type="title" style={styles.readyTitle}>
+            Your space is ready
           </ThemedText>
-          <Button label="Continue" onPress={handleContinue} />
+          <ThemedText type="body" style={{ color: muted }}>
+            Start adding moments to your shared timeline — each one is a page in your story.
+          </ThemedText>
+          <Button label="Start your timeline" onPress={handleContinue} />
         </View>
       </ScrollView>
     </>
@@ -76,7 +77,12 @@ const styles = StyleSheet.create({
   selectorCard: {
     gap: Spacing[8],
   },
-  footer: {
+  readyCard: {
     gap: Spacing[8],
+    paddingTop: Spacing[8],
+  },
+  readyTitle: {
+    fontSize: 26,
+    lineHeight: 32,
   },
 });

@@ -1,4 +1,4 @@
-export type MomentType = 'note' | 'milestone' | 'date' | 'goal' | 'media';
+export type MomentType = 'note' | 'milestone' | 'date' | 'goal' | 'media' | 'trace';
 export type MomentAuthorRole = 'you' | 'partner';
 
 export type Moment = {
@@ -14,6 +14,7 @@ export type Moment = {
   authorRole: MomentAuthorRole;
   authorName: string;
   mediaPreview?: string | null;
+  audioUri?: string | null;
 };
 
 export type CreateMomentRequest = {
@@ -23,6 +24,7 @@ export type CreateMomentRequest = {
   occurredAt?: string;
   targetAt?: string | null;
   mediaPreview?: string | null;
+  audioUri?: string | null;
 };
 
 export type UpdateMomentRequest = {
@@ -32,6 +34,7 @@ export type UpdateMomentRequest = {
   occurredAt?: string;
   targetAt?: string | null;
   mediaPreview?: string | null;
+  audioUri?: string | null;
 };
 
 export type MomentListResponse = {

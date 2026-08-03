@@ -185,6 +185,21 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setStatus('signed_out');
   }, [authApi, clearStoredSession, tokens?.accessToken, tokens?.refreshToken]);
 
+  const deleteAccountFn = useCallback(async () => {
+    const accessToken = tokens?.accessToken;
+
+    try {
+      if (accessToken) {
+        await authApi.deleteAccount(accessToken);
+      }
+    } finally {
+      await clearStoredSession().catch(() => {});
+      setUser(null);
+      setTokens(null);
+      setStatus('signed_out');
+    }
+  }, [authApi, clearStoredSession, tokens?.accessToken]);
+
   const value = useMemo<SessionContextValue>(
     () => ({
       status,
@@ -194,12 +209,14 @@ export function SessionProvider({ children }: PropsWithChildren) {
       signInWithProvider,
       restoreSession,
       signOut,
+      deleteAccount: deleteAccountFn,
     }),
     [
       isHydrated,
       restoreSession,
       signInWithProvider,
       signOut,
+      deleteAccountFn,
       status,
       tokens,
       user,

@@ -1,5 +1,8 @@
-import { Stack, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
+import { Stack, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -7,18 +10,21 @@ import {
   StyleSheet,
   TextInput,
   View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ThemedText } from '@/components/themed-text';
-import { Button } from '@/components/ui/button';
-import { Surface } from '@/components/ui/surface';
-import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
-import { Spacing } from '@/constants/theme';
-import { useSession } from '@/features/session/session-context';
-import { isInviteCodeFormat, normalizeInviteCode } from '@/features/space/invite-code';
-import { useSpace } from '@/features/space/space-context';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { ThemedText } from "@/components/themed-text";
+import { Button } from "@/components/ui/button";
+import { Surface } from "@/components/ui/surface";
+import { NativeDateTimeField } from "@/components/forms/native-date-time-field";
+import { Spacing } from "@/constants/theme";
+import { isStubMode } from "@/features/api-client";
+import { useMediaUpload } from "@/features/media/use-media-upload";
+import type { SessionUser } from "@/features/session/types";
+import { useSession } from "@/features/session/session-context";
+import { isInviteCodeFormat, normalizeInviteCode } from "@/features/space/invite-code";
+import { useSpace } from "@/features/space/space-context";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 type SpaceMode = 'create' | 'join';
 
@@ -30,12 +36,31 @@ function getErrorMessage(value: unknown, fallback: string) {
   return fallback;
 }
 
+function deriveName(user: SessionUser | null): string {
+  if (!user) return '';
+
+  const displayName = user.displayName?.trim();
+  if (displayName) return displayName;
+
+  const email = user.email?.trim();
+  if (email) {
+    const localPart = email.split('@')[0];
+    return localPart
+      .split(/[._-]/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  return '';
+}
+
 export default function SpaceSetupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
   const { user, signOut } = useSession();
   const { createSpace, joinSpace } = useSpace();
+  const { uploadImage, state: uploadState } = useMediaUpload();
 
   const border = useThemeColor({}, 'border');
   const surface2 = useThemeColor({}, 'surface2');
@@ -47,12 +72,14 @@ export default function SpaceSetupScreen() {
   const background = useThemeColor({}, 'background');
 
   const [mode, setMode] = useState<SpaceMode>('create');
-  const [spaceName, setSpaceName] = useState('Our space');
+  const [yourName, setYourName] = useState(deriveName(user));
   const [partnerName, setPartnerName] = useState('');
+  const [spaceName, setSpaceName] = useState('Our space');
   const [inviteCode, setInviteCode] = useState('');
   const [relationshipStartDate, setRelationshipStartDate] = useState(() => new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
 
   const inputStyle = useMemo(
     () => [
@@ -88,6 +115,24 @@ export default function SpaceSetupScreen() {
     }
   }, [error]);
 
+  const handlePickPhoto = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      setPhotoUri(result.assets[0].uri);
+      clearError();
+    }
+  }, [clearError]);
+
+  const handleRemovePhoto = useCallback(() => {
+    setPhotoUri(null);
+  }, []);
+
   const handleCreateSpace = useCallback(async () => {
     if (!user) {
       router.replace('/(public)');
@@ -95,10 +140,16 @@ export default function SpaceSetupScreen() {
     }
 
     const trimmedSpaceName = spaceName.trim();
+    const trimmedYourName = yourName.trim();
     const trimmedPartnerName = partnerName.trim();
 
     if (!trimmedSpaceName) {
       setError('Space name is required.');
+      return;
+    }
+
+    if (!trimmedYourName) {
+      setError('Your name is required.');
       return;
     }
 
@@ -115,11 +166,26 @@ export default function SpaceSetupScreen() {
     try {
       setIsSubmitting(true);
       clearError();
+
+      let resolvedPhotoUri = photoUri;
+
+      if (photoUri && !isStubMode()) {
+        const uploadedUrl = await uploadImage({ uri: photoUri, mimeType: 'image/jpeg' });
+        if (!uploadedUrl) {
+          setError('Failed to upload photo. Please try again.');
+          setIsSubmitting(false);
+          return;
+        }
+        resolvedPhotoUri = uploadedUrl;
+      }
+
       await createSpace({
         name: trimmedSpaceName,
         createdByUserId: user.id,
+        yourName: trimmedYourName,
         partnerName: trimmedPartnerName,
         relationshipStartDate: relationshipStartDate.toISOString(),
+        photoUri: resolvedPhotoUri ?? undefined,
       });
       router.replace('/(auth)/space-import');
     } catch (caughtError) {
@@ -131,10 +197,13 @@ export default function SpaceSetupScreen() {
     clearError,
     createSpace,
     partnerName,
+    photoUri,
     relationshipStartDate,
     router,
     spaceName,
+    uploadImage,
     user,
+    yourName,
   ]);
 
   const handleJoinSpace = useCallback(async () => {
@@ -171,6 +240,9 @@ export default function SpaceSetupScreen() {
     void handleJoinSpace();
   }, [handleCreateSpace, handleJoinSpace, mode]);
 
+  const previewLabel = `${yourName.trim() || 'You'} and ${partnerName.trim() || '...'}`;
+  const isUploading = uploadState === 'uploading' || uploadState === 'confirming';
+
   return (
     <>
       <Stack.Screen options={{ title: 'Relationship setup', headerBackVisible: false }} />
@@ -185,17 +257,49 @@ export default function SpaceSetupScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Surface variant="raised" style={styles.heroCard}>
-            <ThemedText type="meta" style={{ color: muted }} selectable>
-              Step 1 of 3
+          <View style={styles.previewSection}>
+            <Pressable
+              accessibilityLabel={photoUri ? 'Change couple photo' : 'Add couple photo'}
+              accessibilityRole="button"
+              disabled={isSubmitting}
+              onPress={handlePickPhoto}
+              style={[styles.photoCircle, { borderColor: border, backgroundColor: surface2 }]}
+            >
+              {photoUri ? (
+                <Image source={{ uri: photoUri }} style={styles.photoImage} contentFit="cover" />
+              ) : (
+                <Ionicons color={muted} name="camera-outline" size={28} />
+              )}
+            </Pressable>
+            {photoUri ? (
+              <Pressable
+                accessibilityLabel="Remove photo"
+                accessibilityRole="button"
+                disabled={isSubmitting}
+                onPress={handleRemovePhoto}
+                style={styles.photoRemove}
+              >
+                <ThemedText type="caption" style={{ color: muted }}>Remove</ThemedText>
+              </Pressable>
+            ) : (
+              <ThemedText type="caption" style={{ color: muted, marginTop: Spacing[4] }}>
+                Add a photo
+              </ThemedText>
+            )}
+
+            <ThemedText
+              type="display"
+              selectable={false}
+              style={styles.previewName}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {previewLabel}
             </ThemedText>
-            <ThemedText type="title" selectable>
-              Set up your shared space
+            <ThemedText type="meta" style={{ color: muted }}>
+              Your shared space
             </ThemedText>
-            <ThemedText type="caption" style={{ color: muted }} selectable>
-              Create one together or join with an invite code.
-            </ThemedText>
-          </Surface>
+          </View>
 
           <Surface style={styles.modeCard}>
             <View accessibilityRole="radiogroup">
@@ -216,6 +320,12 @@ export default function SpaceSetupScreen() {
                     },
                   ]}
                 >
+                  <Ionicons
+                    color={mode === 'create' ? onAccent : muted}
+                    name="add-circle-outline"
+                    size={20}
+                    style={styles.modeIcon}
+                  />
                   <ThemedText type="body" style={{ color: mode === 'create' ? onAccent : text }}>
                     Create
                   </ThemedText>
@@ -237,6 +347,12 @@ export default function SpaceSetupScreen() {
                     },
                   ]}
                 >
+                  <Ionicons
+                    color={mode === 'join' ? onAccent : muted}
+                    name="enter-outline"
+                    size={20}
+                    style={styles.modeIcon}
+                  />
                   <ThemedText type="body" style={{ color: mode === 'join' ? onAccent : text }}>
                     Join
                   </ThemedText>
@@ -248,18 +364,26 @@ export default function SpaceSetupScreen() {
           <Surface variant="raised" style={styles.formCard}>
             {mode === 'create' ? (
               <>
+                <ThemedText type="meta">Your name</ThemedText>
                 <TextInput
-                  accessibilityLabel="Space name"
+                  accessibilityLabel="Your name"
                   autoCapitalize="words"
                   onChangeText={(value) => {
-                    setSpaceName(value);
+                    setYourName(value);
                     clearError();
                   }}
-                  placeholder="Space name"
+                  placeholder="Your name"
                   placeholderTextColor={muted}
                   style={inputStyle}
-                  value={spaceName}
+                  value={yourName}
                 />
+                <ThemedText type="caption" style={{ color: muted }}>
+                  How we&apos;ll refer to you in your space.
+                </ThemedText>
+
+                <View style={styles.fieldSpacer} />
+
+                <ThemedText type="meta">Partner&apos;s name</ThemedText>
                 <TextInput
                   accessibilityLabel="Partner name"
                   autoCapitalize="words"
@@ -267,11 +391,35 @@ export default function SpaceSetupScreen() {
                     setPartnerName(value);
                     clearError();
                   }}
-                  placeholder="Partner name"
+                  placeholder="Their name"
                   placeholderTextColor={muted}
                   style={inputStyle}
                   value={partnerName}
                 />
+                <ThemedText type="caption" style={{ color: muted }}>
+                  We&apos;ll label their moments with this name.
+                </ThemedText>
+
+                <View style={styles.fieldSpacer} />
+
+                <ThemedText type="meta">Space name</ThemedText>
+                <TextInput
+                  accessibilityLabel="Space name"
+                  autoCapitalize="words"
+                  onChangeText={(value) => {
+                    setSpaceName(value);
+                    clearError();
+                  }}
+                  placeholder="e.g. Our world"
+                  placeholderTextColor={muted}
+                  style={inputStyle}
+                  value={spaceName}
+                />
+                <ThemedText type="caption" style={{ color: muted }}>
+                  What you&apos;ll call your shared space.
+                </ThemedText>
+
+                <View style={styles.fieldSpacer} />
 
                 <NativeDateTimeField
                   accessibilityLabel="Choose relationship start date"
@@ -283,9 +431,13 @@ export default function SpaceSetupScreen() {
                   }}
                   value={relationshipStartDate}
                 />
+                <ThemedText type="caption" style={{ color: muted }}>
+                  Your timeline will begin from this day.
+                </ThemedText>
               </>
             ) : (
               <>
+                <ThemedText type="meta">Invite code</ThemedText>
                 <TextInput
                   accessibilityLabel="Invite code"
                   autoCapitalize="characters"
@@ -294,13 +446,13 @@ export default function SpaceSetupScreen() {
                     setInviteCode(normalizeInviteCode(value));
                     clearError();
                   }}
-                  placeholder="Invite code"
+                  placeholder="Enter 6-character code"
                   placeholderTextColor={muted}
                   style={inputStyle}
                   value={inviteCode}
                 />
                 <ThemedText type="caption" style={{ color: muted }} selectable>
-                  Ask your partner for their 6-character code.
+                  Ask your partner to share their invite code from their space settings.
                 </ThemedText>
               </>
             )}
@@ -315,9 +467,9 @@ export default function SpaceSetupScreen() {
 
         <View style={[footerStyle, { backgroundColor: background }]}>
           <Button
-            disabled={isSubmitting}
+            disabled={isSubmitting || isUploading}
             label={
-              isSubmitting
+              isSubmitting || isUploading
                 ? mode === 'create'
                   ? 'Creating...'
                   : 'Joining...'
@@ -344,10 +496,35 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: Spacing[16],
-    gap: Spacing[12],
+    gap: Spacing[16],
   },
-  heroCard: {
-    gap: Spacing[8],
+  previewSection: {
+    alignItems: 'center',
+    gap: Spacing[4],
+    paddingVertical: Spacing[8],
+  },
+  photoCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  photoImage: {
+    width: 88,
+    height: 88,
+  },
+  photoRemove: {
+    marginTop: Spacing[4],
+  },
+  previewName: {
+    fontSize: 34,
+    lineHeight: 40,
+    letterSpacing: -0.5,
+    marginTop: Spacing[8],
+    textAlign: 'center',
   },
   modeCard: {
     gap: Spacing[8],
@@ -357,8 +534,9 @@ const styles = StyleSheet.create({
     gap: Spacing[8],
   },
   modeButton: {
-    minHeight: 44,
+    minHeight: 48,
     flex: 1,
+    flexDirection: 'row',
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 14,
     alignItems: 'center',
@@ -366,8 +544,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[12],
     paddingVertical: Spacing[12],
   },
+  modeIcon: {
+    marginRight: 6,
+  },
   formCard: {
-    gap: Spacing[12],
+    gap: Spacing[4],
+  },
+  fieldSpacer: {
+    height: Spacing[8],
   },
   input: {
     minHeight: 44,
@@ -380,6 +564,6 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing[16],
     paddingTop: Spacing[12],
-    gap: Spacing[8],
+    gap: Spacing[12],
   },
 });

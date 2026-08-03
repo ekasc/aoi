@@ -1,13 +1,15 @@
-export type SpaceStatus = 'none' | 'ready' | 'loading';
+export type SpaceStatus = 'none' | 'ready' | 'loading' | 'error';
 export type SpaceMemberRole = 'you' | 'partner';
 
 export type RelationshipSpace = {
   id: string;
   name: string;
   createdByUserId: string;
+  yourName: string;
   partnerName: string;
   relationshipStartDate: string;
   inviteCode: string;
+  photoUri?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -15,8 +17,10 @@ export type RelationshipSpace = {
 export type CreateSpaceInput = {
   name: string;
   createdByUserId: string;
+  yourName: string;
   partnerName: string;
   relationshipStartDate: string;
+  photoUri?: string;
 };
 
 export type JoinSpaceInput = {
@@ -52,6 +56,7 @@ export type SpaceRepository = {
     input: UpdateSpaceInput
   ) => Promise<RelationshipSpace | null>;
   clearSpaceForUser: (userId: string) => Promise<void>;
+  leaveSpace: (userId: string) => Promise<void>;
   getImportedMilestonesForUser: (userId: string) => Promise<ImportedMilestone[]>;
   appendImportedMilestonesForUser: (
     userId: string,
@@ -69,6 +74,7 @@ export type SpaceContextValue = {
   joinSpace: (input: JoinSpaceInput) => Promise<RelationshipSpace>;
   updateSpace: (input: UpdateSpaceInput) => Promise<RelationshipSpace | null>;
   clearSpace: () => Promise<void>;
+  leaveSpace: () => Promise<void>;
   importMilestones: (
     inputs: ImportedMilestoneInput[]
   ) => Promise<ImportedMilestone[]>;

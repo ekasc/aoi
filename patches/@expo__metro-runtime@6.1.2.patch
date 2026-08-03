@@ -1,0 +1,16 @@
+diff --git a/package.json b/package.json
+index 900e0c569ae11c80685c4ac738464499780fc0d9..0e8f02f553c27d210f42bb2350884552a57d08d8 100644
+--- a/package.json
++++ b/package.json
+@@ -3,6 +3,11 @@
+   "version": "6.1.2",
+   "description": "Tools for making advanced Metro bundler features work",
+   "sideEffects": true,
++  "exports": {
++    ".": "./src/index.ts",
++    "./error-overlay": "./error-overlay.js",
++    "./async-require": "./async-require.js"
++  },
+   "main": "src/index.ts",
+   "types": "build",
+   "homepage": "https://github.com/expo/expo/tree/main/packages/@expo/metro-runtime",

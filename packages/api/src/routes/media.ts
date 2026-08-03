@@ -1,16 +1,32 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
-import { eq, and, isNull } from 'drizzle-orm';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { eq, and, isNull } from 'drizzle-orm';
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { zValidator } from '@hono/zod-validator';
+import sharp from 'sharp';
+import { z } from 'zod';
+
 import { db } from '../db/index.js';
 import { mediaObjects, spaceMembers } from '../db/schema.js';
-import { badRequest, notFound, forbidden } from '../lib/errors.js';
+import { badRequest, internal, notFound, forbidden } from '../lib/errors.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 const mediaRouter = new Hono();
 
+// Stricter rate limit for upload endpoints to prevent presigned URL abuse
+const uploadRateLimit = rateLimit({
+  max: 20,
+  windowSec: 60,
+  keyFn: (c) => c.var.userId ?? 'unknown',
+});
+
 // ── R2 Client ────────────────────────────────────────────────────────────
+
+/** Strip characters that could interfere with HTTP header parsing */
+function sanitizeFilename(name: string): string {
+  return name.replace(/["\n\r\\;]/g, '_').substring(0, 255);
+}
 
 function getR2Client(): S3Client {
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -45,13 +61,44 @@ async function getActiveSpaceId(userId: string): Promise<string | null> {
 
 // ── Request upload URL ───────────────────────────────────────────────────
 
+const ALLOWED_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+  'image/heic',
+  'image/heif',
+] as const;
+
+// Voice traces: device-recorded audio formats only.
+const ALLOWED_AUDIO_MIME_TYPES = [
+  'audio/m4a',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/wav',
+] as const;
+
+const ALLOWED_MEDIA_MIME_TYPES: readonly string[] = [
+  ...ALLOWED_IMAGE_MIME_TYPES,
+  ...ALLOWED_AUDIO_MIME_TYPES,
+];
+
 const uploadUrlSchema = z.object({
   filename: z.string().min(1).max(255),
-  mimeType: z.string().min(1).max(100),
+  mimeType: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine(
+      (val) => ALLOWED_MEDIA_MIME_TYPES.includes(val),
+      { message: `Unsupported MIME type. Allowed: ${ALLOWED_MEDIA_MIME_TYPES.join(', ')}` }
+    ),
   sizeBytes: z.number().int().positive().max(100 * 1024 * 1024), // max 100MB
 });
 
-mediaRouter.post('/v1/media/upload-url', zValidator('json', uploadUrlSchema), async (c) => {
+mediaRouter.post('/v1/media/upload-url', uploadRateLimit, zValidator('json', uploadUrlSchema), async (c) => {
   const userId = c.var.userId;
   const spaceId = await getActiveSpaceId(userId);
 
@@ -100,7 +147,40 @@ mediaRouter.post('/v1/media/upload-url', zValidator('json', uploadUrlSchema), as
 
 // ── Confirm upload complete ──────────────────────────────────────────────
 
-mediaRouter.post('/v1/media/:id/complete', async (c) => {
+async function stripExifForMedia(media: typeof mediaObjects.$inferSelect, r2: S3Client): Promise<void> {
+  if (!media.mimeType.startsWith('image/')) return;
+
+  try {
+    const getCommand = new GetObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: media.storageKey,
+    });
+
+    const { Body } = await r2.send(getCommand);
+    if (!Body) return;
+
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of Body as AsyncIterable<Uint8Array>) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    const stripped = await sharp(buffer).toBuffer();
+
+    const putCommand = new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: media.storageKey,
+      Body: stripped,
+      ContentType: media.mimeType,
+    });
+
+    await r2.send(putCommand);
+  } catch (err) {
+    console.warn('EXIF stripping failed for media', media.id, err instanceof Error ? err.message : err);
+  }
+}
+
+mediaRouter.post('/v1/media/:id/complete', uploadRateLimit, zValidator('param', z.object({ id: z.string().uuid() })), async (c) => {
   const userId = c.var.userId;
   const mediaId = c.req.param('id');
 
@@ -122,17 +202,41 @@ mediaRouter.post('/v1/media/:id/complete', async (c) => {
     throw badRequest('Upload is already completed');
   }
 
+  // Verify stored object's ContentType matches what was claimed
+  const r2 = getR2Client();
+  try {
+    const headCommand = new HeadObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: media.storageKey,
+    });
+    const headResult = await r2.send(headCommand);
+    const storedType = headResult.ContentType;
+    if (storedType && storedType !== media.mimeType) {
+      await db
+        .update(mediaObjects)
+        .set({ uploadState: 'failed' })
+        .where(eq(mediaObjects.id, mediaId));
+      throw badRequest('Uploaded content type does not match declared MIME type');
+    }
+  } catch (err) {
+    if (err instanceof HTTPException) throw err;
+    throw internal('Failed to verify uploaded content');
+  }
+
   await db
     .update(mediaObjects)
     .set({ uploadState: 'complete' })
     .where(eq(mediaObjects.id, mediaId));
+
+  // Strip EXIF metadata server-side for image privacy (best-effort, fire-and-forget)
+  void stripExifForMedia(media, r2);
 
   return c.json({ ok: true });
 });
 
 // ── Get download URL ─────────────────────────────────────────────────────
 
-mediaRouter.get('/v1/media/:id/download-url', async (c) => {
+mediaRouter.get('/v1/media/:id/download-url', zValidator('param', z.object({ id: z.string().uuid() })), async (c) => {
   const userId = c.var.userId;
   const mediaId = c.req.param('id');
 
@@ -171,7 +275,7 @@ mediaRouter.get('/v1/media/:id/download-url', async (c) => {
   const command = new GetObjectCommand({
     Bucket: R2_BUCKET,
     Key: media.storageKey,
-    ResponseContentDisposition: `inline; filename="${media.filename}"`,
+    ResponseContentDisposition: `inline; filename="${sanitizeFilename(media.filename)}"`,
   });
 
   const downloadUrl = await getSignedUrl(r2, command, { expiresIn: 3600 });
