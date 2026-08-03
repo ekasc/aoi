@@ -8,7 +8,7 @@ import {
   BeachThemes,
   type BeachThemeId,
 } from '@/constants/theme-presets';
-import { Spacing } from '@/constants/theme';
+import { Motion, Spacing } from '@/constants/theme';
 import { useAoiTheme } from '@/features/theme/theme-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -65,7 +65,7 @@ export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
           <Animated.View
             entering={
               shouldAnimateIntro
-                ? FadeIn.duration(240).delay(index * 80).reduceMotion(ReduceMotion.System)
+                ? FadeIn.duration(Motion.base).delay(index * 80).reduceMotion(ReduceMotion.System)
                 : undefined
             }
             key={theme.id}

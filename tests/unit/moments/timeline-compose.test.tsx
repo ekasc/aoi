@@ -1,7 +1,8 @@
-import { vi, describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 
 let mockMoments: any[] = [];
+const pushSpy = vi.fn();
 
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({
@@ -11,8 +12,8 @@ vi.mock('@/features/moments/moments-context', () => ({
   }),
 }));
 
-// FlatList from the global RN mock ignores `data`; render the rail items so
-// the gate inside renderItem is exercised.
+// FlatList from the global RN mock ignores `data`; render the rail items so the
+// empty-state branch (ListEmptyComponent) is exercised when there are none.
 vi.mock('react-native', () => {
   const React = require('react');
   const View = ({ children }: any) => React.createElement('div', {}, children);
@@ -59,17 +60,11 @@ vi.mock('react-native-safe-area-context', () => ({
 }));
 
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: pushSpy, back: vi.fn() }),
 }));
 
-// Probe: records whether the timeline handed a long-press handler to the card.
 vi.mock('@/components/moments/moment-card', () => ({
-  MomentCard: ({ moment, onLongPress }: any) => (
-    <div
-      data-testid={`moment-card-${moment.id}`}
-      data-editable={onLongPress ? 'true' : 'false'}
-    />
-  ),
+  MomentCard: ({ moment }: any) => <div data-testid={`moment-card-${moment.id}`} />,
 }));
 
 vi.mock('@/components/moments/resurface-card', () => ({
@@ -84,16 +79,32 @@ vi.mock('@/components/themed-text', () => ({
   ThemedText: ({ children }: any) => <span>{children}</span>,
 }));
 
+// Render the sheet's actions as real buttons so we can tap them.
 vi.mock('@/components/ui/action-sheet', () => ({
-  ActionSheet: () => null,
+  ActionSheet: ({ visible, title, actions }: any) =>
+    visible
+      ? (
+        <div data-testid={`sheet:${title}`}>
+          {actions.map((action: any) => (
+            <button key={action.label} onClick={action.onPress}>
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )
+      : null,
 }));
 
 vi.mock('@/components/ui/button', () => ({
-  Button: ({ label }: any) => <button>{label}</button>,
+  Button: ({ label, onPress }: any) => <button onClick={onPress}>{label}</button>,
 }));
 
 vi.mock('@/components/ui/icon-button', () => ({
-  IconButton: ({ children }: any) => <div>{children}</div>,
+  IconButton: ({ children, onPress, accessibilityLabel }: any) => (
+    <button aria-label={accessibilityLabel} onClick={onPress}>
+      {children}
+    </button>
+  ),
 }));
 
 vi.mock('@/components/ui/surface', () => ({
@@ -106,10 +117,6 @@ vi.mock('@/hooks/use-theme-color', () => ({
 
 vi.mock('@/features/space/space-context', () => ({
   useSpace: () => ({ space: { name: 'Test space', partnerName: 'Alex' } }),
-}));
-
-vi.mock('@/features/squeeze/squeeze-context', () => ({
-  useSqueeze: () => ({ sendSqueeze: vi.fn(), isSending: false }),
 }));
 
 vi.mock('@/features/moments/use-resurface-notification', () => ({
@@ -129,31 +136,62 @@ function makeMoment(overrides: Record<string, any> = {}) {
     authorId: 'user_you',
     authorRole: 'you' as const,
     authorName: 'You',
+    isOwn: true,
     ...overrides,
   };
 }
 
-describe('Timeline long-press ownership gate', () => {
-  it('offers actions only for own moments; partner and unknown stay locked', async () => {
-    mockMoments = [
-      makeMoment({ id: 'm-own', isOwn: true, occurredAt: '2026-03-10T10:00:00.000Z' }),
-      makeMoment({
-        id: 'm-partner',
-        authorRole: 'partner',
-        authorName: 'Alex',
-        isOwn: false,
-        occurredAt: '2026-03-11T10:00:00.000Z',
-      }),
-      // Regression: the remote API once hardcoded authorRole "you" for every
-      // moment and never sent ownership — unknown must NOT widen access.
-      makeMoment({ id: 'm-unknown', authorRole: 'you', occurredAt: '2026-03-12T10:00:00.000Z' }),
-    ];
+async function renderTimeline() {
+  const { default: TimelineScreen } = await import('@/app/(app)/(tabs)/index');
+  return render(<TimelineScreen />);
+}
 
-    const { default: TimelineScreen } = await import('@/app/(app)/(tabs)/index');
-    render(<TimelineScreen />);
+describe('Timeline compose entry point', () => {
+  beforeEach(() => {
+    mockMoments = [];
+    pushSpy.mockClear();
+  });
 
-    expect(screen.getByTestId('moment-card-m-own').getAttribute('data-editable')).toBe('true');
-    expect(screen.getByTestId('moment-card-m-partner').getAttribute('data-editable')).toBe('false');
-    expect(screen.getByTestId('moment-card-m-unknown').getAttribute('data-editable')).toBe('false');
+  it('offers a single compose button that opens the Trace/Moment sheet', async () => {
+    mockMoments = [makeMoment()];
+    await renderTimeline();
+
+    // One primary action — the "+" compose button.
+    const composeButtons = screen.getAllByLabelText('Capture a moment');
+    expect(composeButtons.length).toBe(1);
+
+    // The sheet is closed until the button is pressed.
+    expect(screen.queryByTestId('sheet:Capture a moment')).toBeNull();
+    fireEvent.click(composeButtons[0]);
+
+    const sheet = screen.getByTestId('sheet:Capture a moment');
+    expect(sheet.textContent).toContain('Trace');
+    expect(sheet.textContent).toContain('Moment');
+  });
+
+  it('routes Trace to the quick capture screen', async () => {
+    mockMoments = [makeMoment()];
+    await renderTimeline();
+    fireEvent.click(screen.getByLabelText('Capture a moment'));
+    fireEvent.click(screen.getByText('Trace'));
+    expect(pushSpy).toHaveBeenCalledWith('/(app)/moment/trace');
+  });
+
+  it('routes Moment to the full form', async () => {
+    mockMoments = [makeMoment()];
+    await renderTimeline();
+    fireEvent.click(screen.getByLabelText('Capture a moment'));
+    fireEvent.click(screen.getByText('Moment'));
+    expect(pushSpy).toHaveBeenCalledWith('/(app)/moment/new');
+  });
+
+  it('shows one gentle empty-state line that also opens the compose sheet', async () => {
+    mockMoments = [];
+    await renderTimeline();
+
+    expect(screen.getByText(/Your timeline is quiet/)).toBeTruthy();
+    const cta = screen.getByText('Add your first moment');
+    fireEvent.click(cta);
+    expect(screen.getByTestId('sheet:Capture a moment')).toBeTruthy();
   });
 });

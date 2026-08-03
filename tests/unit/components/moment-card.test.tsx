@@ -21,12 +21,13 @@ vi.mock('@/components/ui/surface', () => ({
   Surface: ({ children, style }: any) => <div style={flattenStyle(style)}>{children}</div>,
 }));
 
-vi.mock('@/components/ui/divider', () => ({
-  Divider: ({ style }: any) => <hr style={flattenStyle(style)} />,
-}));
-
 vi.mock('@/hooks/use-theme-color', () => ({
-  useThemeColor: () => '#000000',
+  // Distinct accent/partnerAccent so authorship (the dot) is observable.
+  useThemeColor: (_overrides: any, name: string) => {
+    if (name === 'accent') return '#ACCENT';
+    if (name === 'partnerAccent') return '#PARTNER';
+    return '#000000';
+  },
 }));
 
 vi.mock('@/features/moments/moment-goal-utils', () => ({
@@ -50,6 +51,11 @@ function makeMoment(overrides: Record<string, any> = {}) {
   };
 }
 
+/** The author dot is the only authorship marker now — find it by its label. */
+function findAuthorDot(container: HTMLElement, label: string) {
+  return container.querySelector(`[accessibilitylabel="${label}"]`);
+}
+
 describe('MomentCard', () => {
   it('renders title and body', () => {
     render(<MomentCard moment={makeMoment()} />);
@@ -67,44 +73,62 @@ describe('MomentCard', () => {
     expect(screen.getByText('No details added yet.')).toBeTruthy();
   });
 
-  it('renders author badge for "you" role', () => {
-    render(<MomentCard moment={makeMoment({ authorRole: 'you' })} />);
-    expect(screen.getByText('You')).toBeTruthy();
+  it('marks authorship with an accent dot for the "you" role', () => {
+    const { container } = render(<MomentCard moment={makeMoment({ authorRole: 'you' })} />);
+    expect(findAuthorDot(container, 'Added by you')).toBeTruthy();
+    expect(findAuthorDot(container, 'Added by Alex')).toBeNull();
   });
 
-  it('renders partner name for "partner" role', () => {
-    render(<MomentCard moment={makeMoment({ authorRole: 'partner', authorName: 'Alex' })} />);
-    expect(screen.getByText('Alex')).toBeTruthy();
+  it('marks authorship with a partnerAccent dot for the "partner" role', () => {
+    const { container } = render(
+      <MomentCard moment={makeMoment({ authorRole: 'partner', authorName: 'Alex' })} />
+    );
+    expect(findAuthorDot(container, 'Added by Alex')).toBeTruthy();
+    expect(findAuthorDot(container, 'Added by you')).toBeNull();
   });
 
-  it('includes type label in meta string', () => {
+  it('shows no type label for note moments', () => {
     render(<MomentCard moment={makeMoment({ type: 'note' })} />);
-    expect(screen.getByText(/Note/)).toBeTruthy();
+    expect(screen.queryByText('Note')).toBeNull();
   });
 
-  it('includes goal type and horizon in meta string', () => {
-    render(<MomentCard moment={makeMoment({
-      type: 'goal',
-      title: 'Build feature',
-      body: 'Work in progress',
-      // midday UTC keeps local-timezone formatting on the same calendar day in CI
-      targetAt: '2026-05-31T12:00:00.000Z',
-    })} />);
+  it('shows the small date in the corner', () => {
+    render(<MomentCard moment={makeMoment()} />);
+    expect(screen.getByText(/Mar 15, 2026/)).toBeTruthy();
+  });
+
+  it('shows the goal type label and horizon', () => {
+    render(
+      <MomentCard
+        moment={makeMoment({
+          type: 'goal',
+          title: 'Build feature',
+          body: 'Work in progress',
+          // midday UTC keeps local-timezone formatting on the same calendar day in CI
+          targetAt: '2026-05-31T12:00:00.000Z',
+        })}
+      />
+    );
+    expect(screen.getByText('Goal')).toBeTruthy();
     expect(screen.getAllByText(/near-term/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/May 31, 2026/)).toBeTruthy();
   });
 
-  it('includes media type in meta string', () => {
+  it('shows the media type label', () => {
     render(
       <MomentCard moment={makeMoment({ type: 'media', mediaPreview: 'https://cdn.example.com/img.jpg' })} />
     );
-    expect(screen.getByText(/Media/)).toBeTruthy();
-    expect(screen.getByText(/MAR 15, 2026/)).toBeTruthy();
+    expect(screen.getByText('Media')).toBeTruthy();
   });
 
-  it('includes milestone type in meta string', () => {
+  it('shows the milestone type label', () => {
     render(<MomentCard moment={makeMoment({ type: 'milestone' })} />);
-    expect(screen.getByText(/Milestone/)).toBeTruthy();
+    expect(screen.getByText('Milestone')).toBeTruthy();
+  });
+
+  it('shows the trace type label', () => {
+    render(<MomentCard moment={makeMoment({ type: 'trace', title: '', body: 'a quick thought' })} />);
+    expect(screen.getByText('Trace')).toBeTruthy();
   });
 
   it('shows the edited marker when updatedAt is more than 1s after createdAt', () => {
