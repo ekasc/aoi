@@ -6,6 +6,7 @@ import { ActivityIndicator, View } from "react-native";
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
 import { useSession } from "@/features/session/session-context";
+import { SomedayProvider } from "@/features/someday/someday-context";
 import { useSpace } from "@/features/space/space-context";
 import { SqueezeProvider } from "@/features/squeeze/squeeze-context";
 import { useAoiTheme } from "@/features/theme/theme-context";
@@ -61,7 +62,8 @@ export default function AuthenticatedAppLayout() {
 	return (
 		<CalendarProvider>
 			<PartnerDetailsProvider>
-				<SqueezeProvider>
+				<SomedayProvider>
+					<SqueezeProvider>
 			<SqueezeOverlay />
 			<Stack
 				screenOptions={{
@@ -125,8 +127,17 @@ export default function AuthenticatedAppLayout() {
 						...sheetOptions,
 					}}
 				/>
+				<Stack.Screen
+					name="someday"
+					options={{
+						title: "Someday",
+						presentation: useFormSheet ? "formSheet" : "modal",
+						...sheetOptions,
+					}}
+				/>
 			</Stack>
-				</SqueezeProvider>
+					</SqueezeProvider>
+				</SomedayProvider>
 			</PartnerDetailsProvider>
 		</CalendarProvider>
 	);

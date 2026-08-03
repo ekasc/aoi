@@ -41,6 +41,7 @@ app/                  Expo Router routes (route groups below)
   (app)/moment/       new.tsx (full form), trace.tsx (5-second capture)
   (app)/calendar/     new-event.tsx, edit/[id].tsx
   (app)/profile/      edit-relationship, import-milestones, little-things
+  (app)/someday.tsx   the shared Someday list
 components/           Reusable UI (kebab-case files)
   ui/                 Primitives: button, icon-button, surface, divider,
                       glass-surface, android-glass-surface
@@ -59,6 +60,8 @@ features/             Feature modules (state, repos, API clients — NOT React-r
   theme/              Theme context (beach-inspired presets, light + dark)
   media/              useMediaUpload (presigned R2 flow)
   partner-details/    "The little things" (device-local for now)
+  someday/            Someday list context + local (AsyncStorage) / remote
+                      repositories, shared ordering (someday-order.ts)
   squeeze/            Wordless signal (stub-simulated delivery)
 hooks/                use-theme-color, use-color-scheme, use-aoi-fonts
 constants/            theme.ts (Spacing/Radii/Motion), theme-presets.ts, typography.ts
@@ -128,6 +131,19 @@ Small concrete facts about the partner (coffee order, their song, the way
 they laugh). Categories: `favorite | habit | quirk | words | other`. Screen:
 `app/(app)/profile/little-things.tsx`. **Device-local** (AsyncStorage) — no
 API surface yet.
+
+### Someday list
+The couple's shared wish list: places to go, restaurants to try, films to
+watch. Items have a title, optional note, and category
+(`place | food | film | other`). Check-off is **soft and shared**: EITHER
+partner can check off an item (sets `checkedAt` + `checkedByUserId`), and
+undo clears them — no hard deletes, no DELETE route. Canonical order (API
+and both repos): open items first (newest first), then checked items (most
+recently checked first). Screen `app/(app)/someday.tsx`, entered from a
+button on the profile tab; sections "Someday" and "Done together" (shows who
+checked + when). Stub mode is AsyncStorage-local; remote mode uses
+`GET/POST /v1/spaces/current/someday` + `PATCH /v1/someday/:id` and
+re-fetches on app focus so partner changes appear.
 
 ### Calendar Event
 Scheduling block with start/end, actor (`you`/`partner`), label preset.
@@ -221,7 +237,8 @@ RootLayout (app/_layout.tsx)
 (app)/_layout.tsx adds, when authenticated:
   CalendarProvider
     PartnerDetailsProvider
-      SqueezeProvider        (+ <SqueezeOverlay/> mounted here)
+      SomedayProvider
+        SqueezeProvider      (+ <SqueezeOverlay/> mounted here)
 ```
 
 Navigation redirects: signed out → `(public)`; no space → `(auth)/space-setup`;
@@ -256,15 +273,18 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/moments/:id` | PATCH/DELETE (own only, soft-delete); writes `space_activity` row in the same transaction |
 | `/v1/spaces/current/activity` | change log (tombstones): last 7 days, cap 50, desc; optional `since` ISO param; fact + actor only, never content |
 | `/v1/spaces/current/calendar/events`, `/v1/calendar/events/:id` | range query (overlaps from/to), CRUD; events carry optional `reminderMinutesBefore` (jsonb, ≤8 ints 0–2880; empty array on PATCH clears), `allDay`, `together` |
+| `/v1/spaces/current/someday`, `/v1/someday/:id` | shared Someday list: list/create; PATCH checks off (`checked: true`), undoes (`checked: false`), or edits title/note/category — either member may do all of it; only meaningful transitions write |
 | `/v1/spaces/current/milestones`, preferences | list/append, theme prefs |
 | `/v1/media/upload-url`, `/v1/media/:id/complete`, `/download-url` | presigned R2; images + audio; EXIF stripped server-side via sharp (images only) |
 | `/v1/squeezes` | **NOT IMPLEMENTED** — client calls it in remote mode; add it when building push |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0004_*` adds calendar_events `reminder_minutes_before` (jsonb) +
-`all_day` / `together` booleans (default false); `0003_*` added the
-`space_activity` change-log table (kind check constraint:
-`moment_deleted | moment_edited`). Run
+Latest: `0005_*` adds the `someday_items` table (title/note/category +
+nullable `checked_at` / `checked_by_user_id` for soft check-off and undo;
+category check constraint `place | food | film | other`); `0004_*` adds
+calendar_events `reminder_minutes_before` (jsonb) + `all_day` / `together`
+booleans (default false); `0003_*` added the `space_activity` change-log
+table (kind check constraint: `moment_deleted | moment_edited`). Run
 `pnpm --filter @aoi/api run db:migrate` after schema changes. JWT via
 `jose`, token hashing in `src/lib/crypto.ts`.
 
@@ -361,13 +381,13 @@ media (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 **Working end-to-end (stub):** auth screens, space onboarding, timeline with
 traces + resurface + goals lane, calendar CRUD + reminders (local
 notifications) + countdown lane + anniversaries + agenda view + all-day
-events, profile, settings, the little things, squeeze loop (simulated
-reply), voice traces (local), media picking, moments edit/delete +
-tombstones (local synthesis).
+events, profile, settings, the little things, the Someday list
+(device-local), squeeze loop (simulated reply), voice traces (local), media
+picking, moments edit/delete + tombstones (local synthesis).
 
 **Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
-provenance), calendar, spaces, preferences, media upload pipeline — against
-packages/api.
+provenance), calendar, the Someday list, spaces, preferences, media upload
+pipeline — against packages/api.
 
 **Known gaps / seams:**
 
