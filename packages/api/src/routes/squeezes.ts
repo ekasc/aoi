@@ -29,7 +29,10 @@ squeezesRouter.post('/v1/squeezes', squeezeRateLimit, async (c) => {
     throw badRequest('You must have an active space to send a squeeze');
   }
 
-  await notifyPartnerInSpace(spaceId, userId, 'squeeze');
+  // Fire-and-forget, matching the moments routes: a slow or hung push
+  // endpoint must never stall the 202 — a squeeze that misses delivery
+  // simply stays a quiet thought.
+  void notifyPartnerInSpace(spaceId, userId, 'squeeze');
 
   return c.json({ ok: true }, 202);
 });

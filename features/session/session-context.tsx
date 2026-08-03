@@ -15,6 +15,7 @@ import {
   OAuthClientError,
   signInWithOAuthProvider,
 } from '@/features/auth/oauth-client';
+import { unregisterPushToken } from '@/features/push/push-api';
 import type {
   SessionContextValue,
   SessionStatus,
@@ -174,6 +175,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const signOut = useCallback(async () => {
     const accessToken = tokens?.accessToken;
     const refreshToken = tokens?.refreshToken;
+
+    // Single choke point for letting go of this device's push registration —
+    // every sign-out path goes through here, while the access token is still
+    // valid. Failures are swallowed inside (tender-error policy), and the
+    // call is idempotent, so a repeated sign-out never double-unregisters.
+    await unregisterPushToken().catch(() => {});
 
     if (accessToken) {
       await authApi.logout(accessToken, refreshToken).catch(() => {});

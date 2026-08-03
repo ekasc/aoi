@@ -19,7 +19,7 @@ export const PUSH_NOTIFICATION_KINDS = [
 
 export type PushNotificationKind = (typeof PUSH_NOTIFICATION_KINDS)[number];
 
-/** The only structured data a push ever carries (plus optional kind extras). */
+/** The only structured data a push ever carries — kind only, never content. */
 export type PushNotificationData = {
   kind: PushNotificationKind;
 };

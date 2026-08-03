@@ -26,14 +26,14 @@ beforeEach(() => {
 
 describe('registerDevicePushToken', () => {
   it('registers the Expo token with the detected platform', async () => {
-    await registerDevicePushToken();
+    await expect(registerDevicePushToken()).resolves.toBe(true);
     // The RN mock reports Platform.OS === 'ios'.
     expect(pushApiMock.registerPushToken).toHaveBeenCalledWith(VALID_TOKEN, 'ios');
   });
 
   it('skips registration when permission is not granted', async () => {
     notificationsMock.requestPermissionsAsync.mockResolvedValue({ granted: false });
-    await registerDevicePushToken();
+    await expect(registerDevicePushToken()).resolves.toBe(false);
     expect(pushApiMock.registerPushToken).not.toHaveBeenCalled();
   });
 
@@ -41,18 +41,19 @@ describe('registerDevicePushToken', () => {
     notificationsMock.getExpoPushTokenAsync.mockRejectedValue(
       new Error('Cannot get push token on a simulator')
     );
-    await expect(registerDevicePushToken()).resolves.toBeUndefined();
+    await expect(registerDevicePushToken()).resolves.toBe(false);
     expect(pushApiMock.registerPushToken).not.toHaveBeenCalled();
   });
 
   it('ignores tokens that fail the format check', async () => {
     notificationsMock.getExpoPushTokenAsync.mockResolvedValue({ data: 'not-a-token' });
-    await registerDevicePushToken();
+    await expect(registerDevicePushToken()).resolves.toBe(false);
     expect(pushApiMock.registerPushToken).not.toHaveBeenCalled();
   });
 
   it('swallows API failures — registration never surfaces an error', async () => {
     pushApiMock.registerPushToken.mockRejectedValue(new Error('offline'));
-    await expect(registerDevicePushToken()).resolves.toBeUndefined();
+    // false, not a throw — so the caller knows to retry later.
+    await expect(registerDevicePushToken()).resolves.toBe(false);
   });
 });

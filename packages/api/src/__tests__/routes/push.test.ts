@@ -114,6 +114,17 @@ describe('POST /v1/push/tokens', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 400 for an over-long token (no multi-MB strings)', async () => {
+    const jwt = await getTestJwt();
+    const overLongToken = `ExpoPushToken[${'a'.repeat(250)}]`; // > 200 chars
+    const res = await app.fetch(req('POST', '/v1/push/tokens', {
+      jwt, body: { expoPushToken: overLongToken, platform: 'ios' },
+    }));
+    expect(res.status).toBe(400);
+    // Rejected before any write is attempted.
+    expect(insertValuesCalls).toHaveLength(0);
+  });
+
   it('upserts a legacy ExponentPushToken and echoes a minimal shape', async () => {
     const jwt = await getTestJwt();
     mockReturningResult = [pushTokenRow()];
@@ -172,6 +183,16 @@ describe('DELETE /v1/push/tokens', () => {
       jwt, body: { expoPushToken: 'garbage' },
     }));
     expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for an over-long token (no multi-MB strings)', async () => {
+    const jwt = await getTestJwt();
+    const overLongToken = `ExpoPushToken[${'a'.repeat(250)}]`; // > 200 chars
+    const res = await app.fetch(req('DELETE', '/v1/push/tokens', {
+      jwt, body: { expoPushToken: overLongToken },
+    }));
+    expect(res.status).toBe(400);
+    expect(deleteWhereCalls).toHaveLength(0);
   });
 
   it('removes only the caller\'s own registration', async () => {

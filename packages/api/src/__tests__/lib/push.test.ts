@@ -190,6 +190,43 @@ describe('sendPushToUser', () => {
     expect(getPushEndpoint()).toBe('https://relay.aoi.test/push/send');
     expect(fetchMock.mock.calls[0][0]).toBe('https://relay.aoi.test/push/send');
   });
+
+  it('gives the Expo fetch a timeout signal so a hung endpoint cannot stall callers', async () => {
+    mockSelectQueue.push([tokenRow('ExpoPushToken[device-a]')]);
+
+    await sendPushToUser(TEST_USER_ID, { title: 't', body: 'b' });
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal.aborted).toBe(false);
+  });
+
+  it('swallows abort failures when a hung endpoint hits the timeout', async () => {
+    mockSelectQueue.push([tokenRow('ExpoPushToken[device-a]')]);
+    // What a hung Expo endpoint produces once the 10s abort fires.
+    fetchMock.mockRejectedValue(
+      new DOMException('This operation was aborted', 'AbortError')
+    );
+
+    await expect(
+      sendPushToUser(TEST_USER_ID, { title: 't', body: 'b' })
+    ).resolves.toBeUndefined();
+    expect(deleteWhereCalls).toHaveLength(0);
+  });
+
+  it('still delivers later batches when an earlier batch fails', async () => {
+    const rows = Array.from({ length: 150 }, (_, i) => tokenRow(`ExpoPushToken[device-${i}]`));
+    mockSelectQueue.push(rows);
+    fetchMock
+      .mockRejectedValueOnce(new Error('first batch blew up'))
+      .mockResolvedValueOnce(pushResponse([{ id: 't-2', status: 'ok' }]));
+
+    await sendPushToUser(TEST_USER_ID, { title: 't', body: 'b' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The second batch (the remaining 50 tokens) still goes out.
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toHaveLength(50);
+  });
 });
 
 describe('notifyPartnerInSpace', () => {

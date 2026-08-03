@@ -8,6 +8,7 @@ const notificationsMock = vi.hoisted(() => ({
   requestPermissionsAsync: vi.fn(),
   getExpoPushTokenAsync: vi.fn(),
   addNotificationReceivedListener: vi.fn(),
+  addNotificationResponseReceivedListener: vi.fn(),
   setNotificationHandler: vi.fn(),
 }));
 
@@ -29,6 +30,9 @@ vi.mock('@/features/moments/moments-context', () => ({
 const VALID_TOKEN = 'ExpoPushToken[context-test-token-123]';
 
 let receivedListener: ((notification: unknown) => void) | null = null;
+let responseListener: ((response: unknown) => void) | null = null;
+let removeReceived: ReturnType<typeof vi.fn> | null = null;
+let removeResponse: ReturnType<typeof vi.fn> | null = null;
 
 function SqueezeProbe() {
   const { incomingSqueeze } = useSqueeze();
@@ -51,20 +55,40 @@ function deliver(data: unknown) {
   });
 }
 
+// Simulates the user tapping a notification that arrived while the app was
+// backgrounded/killed.
+function deliverResponse(data: unknown) {
+  act(() => {
+    responseListener?.({ notification: { request: { content: { data } } } });
+  });
+}
+
 beforeEach(() => {
   receivedListener = null;
+  responseListener = null;
+  removeReceived = null;
+  removeResponse = null;
   apiClientMock.isStubMode.mockReturnValue(false);
   apiClientMock.apiFetch.mockClear();
   momentsMock.refresh.mockClear();
   notificationsMock.requestPermissionsAsync.mockReset();
   notificationsMock.getExpoPushTokenAsync.mockReset();
   notificationsMock.addNotificationReceivedListener.mockReset();
+  notificationsMock.addNotificationResponseReceivedListener.mockReset();
   notificationsMock.requestPermissionsAsync.mockResolvedValue({ granted: true });
   notificationsMock.getExpoPushTokenAsync.mockResolvedValue({ data: VALID_TOKEN });
   notificationsMock.addNotificationReceivedListener.mockImplementation(
     (callback: (notification: unknown) => void) => {
       receivedListener = callback;
-      return { remove: vi.fn() };
+      removeReceived = vi.fn();
+      return { remove: removeReceived };
+    }
+  );
+  notificationsMock.addNotificationResponseReceivedListener.mockImplementation(
+    (callback: (response: unknown) => void) => {
+      responseListener = callback;
+      removeResponse = vi.fn();
+      return { remove: removeResponse };
     }
   );
 });
@@ -75,6 +99,9 @@ describe('PushProvider in stub mode', () => {
     const view = renderProvider();
     expect(apiClientMock.apiFetch).not.toHaveBeenCalled();
     expect(notificationsMock.addNotificationReceivedListener).not.toHaveBeenCalled();
+    expect(
+      notificationsMock.addNotificationResponseReceivedListener
+    ).not.toHaveBeenCalled();
     view.unmount();
   });
 });
@@ -133,5 +160,51 @@ describe('PushProvider receive handling (remote)', () => {
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
+  });
+});
+
+describe('PushProvider response handling (backgrounded/killed)', () => {
+  it('lights up the squeeze overlay when the user taps a backgrounded squeeze push', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(responseListener).not.toBeNull());
+
+    deliverResponse({ kind: 'squeeze' });
+
+    await waitFor(() =>
+      expect(view.getByTestId('squeeze').textContent).toBe('incoming')
+    );
+    view.unmount();
+  });
+
+  it('refreshes moments when the user taps a backgrounded moment_* push', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(responseListener).not.toBeNull());
+
+    deliverResponse({ kind: 'moment_edited' });
+    await waitFor(() => expect(momentsMock.refresh).toHaveBeenCalledTimes(1));
+    view.unmount();
+  });
+
+  it('ignores unknown kinds tapped from the notification tray', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(responseListener).not.toBeNull());
+
+    deliverResponse({ kind: 'location_request' });
+    deliverResponse('garbage');
+
+    await act(async () => {});
+    expect(momentsMock.refresh).not.toHaveBeenCalled();
+    expect(view.getByTestId('squeeze').textContent).toBe('quiet');
+    view.unmount();
+  });
+
+  it('removes both listeners on unmount', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(responseListener).not.toBeNull());
+
+    view.unmount();
+
+    expect(removeReceived).toHaveBeenCalledTimes(1);
+    expect(removeResponse).toHaveBeenCalledTimes(1);
   });
 });

@@ -16,9 +16,14 @@ const pushRouter = new Hono();
 // different user is reassigned to them (tokens are device-scoped). The
 // single upsert statement makes both cases atomic — no read-then-write race.
 
+// Capped length: a real Expo token is short, and the cap keeps an
+// authenticated caller from storing/forwarding multi-MB strings.
+const PUSH_TOKEN_MAX_LENGTH = 200;
+
 const registerPushTokenSchema = z.object({
   expoPushToken: z
     .string()
+    .max(PUSH_TOKEN_MAX_LENGTH, { message: 'Push token is too long' })
     .refine(isExpoPushToken, { message: 'Invalid push token format' }),
   platform: z.enum(PUSH_TOKEN_PLATFORMS).default('unknown'),
 });
@@ -59,6 +64,7 @@ pushRouter.post(
 const unregisterPushTokenSchema = z.object({
   expoPushToken: z
     .string()
+    .max(PUSH_TOKEN_MAX_LENGTH, { message: 'Push token is too long' })
     .refine(isExpoPushToken, { message: 'Invalid push token format' }),
 });
 

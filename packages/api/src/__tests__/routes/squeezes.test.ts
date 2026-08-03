@@ -1,5 +1,12 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { app, getTestJwt, req, TEST_USER_ID, TEST_SPACE_ID } from '../helpers/test-app.js';
+import {
+  app,
+  getTestJwt,
+  req,
+  TEST_USER_ID,
+  TEST_OTHER_USER_ID,
+  TEST_SPACE_ID,
+} from '../helpers/test-app.js';
 import { db } from '../../db/index.js';
 import { notifyPartnerInSpace } from '../../lib/push.js';
 
@@ -75,5 +82,24 @@ describe('POST /v1/squeezes', () => {
     // Exactly one read (the space lookup). The mocked db intentionally
     // exposes no insert/update/delete — any write attempt would throw.
     expect(vi.mocked(db.select)).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 429 on the 11th squeeze within a minute (per sender)', async () => {
+    // A fresh sender keeps this test independent of the shared per-user
+    // rate-limit store entries created by the tests above.
+    const jwt = await getTestJwt(TEST_OTHER_USER_ID);
+
+    for (let i = 0; i < 10; i++) {
+      mockSelectQueue.push([spaceMemberRow({ userId: TEST_OTHER_USER_ID })]);
+      const res = await app.fetch(req('POST', '/v1/squeezes', { jwt, body: {} }));
+      expect(res.status).toBe(202);
+    }
+
+    const res = await app.fetch(req('POST', '/v1/squeezes', { jwt, body: {} }));
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error.code).toBe('TOO_MANY_REQUESTS');
+    // The blocked squeeze never reaches delivery.
+    expect(notifyPartnerInSpace).toHaveBeenCalledTimes(10);
   });
 });

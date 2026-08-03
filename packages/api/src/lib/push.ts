@@ -32,6 +32,9 @@ export function setPushEndpoint(nextEndpoint: string): void {
 // Expo accepts up to 100 messages per request.
 const PUSH_BATCH_SIZE = 100;
 
+// A hung Expo endpoint must never stall callers — abort the request instead.
+const PUSH_FETCH_TIMEOUT_MS = 10_000;
+
 // Ticket errors that mean the token itself is dead (device uninstalled the
 // app, token invalidated). Other errors ("MessageTooBig", rate limits, ...)
 // are transient — keep the token.
@@ -81,6 +84,7 @@ async function postToExpo(
     method: 'POST',
     headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip, deflate', 'Content-Type': 'application/json' },
     body: JSON.stringify(messages),
+    signal: AbortSignal.timeout(PUSH_FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -189,12 +193,15 @@ export async function sendPushToUser(
  * Notify the OTHER active member of a two-person space. The reusable hook
  * every partner-facing feature (squeezes, moments, and future location
  * requests/proposals) delivers through. Never throws.
+ *
+ * Deliberately takes NO data parameter: payloads carry the kind only. If a
+ * future kind ever needs extras, re-add it deliberately — never as an
+ * open-ended hole in the privacy contract.
  */
 export async function notifyPartnerInSpace(
   spaceId: string,
   fromUserId: string,
-  kind: PushNotificationKind,
-  data: Record<string, string> = {}
+  kind: PushNotificationKind
 ): Promise<void> {
   try {
     const members = await db
@@ -215,7 +222,7 @@ export async function notifyPartnerInSpace(
     await sendPushToUser(partner.userId, {
       title: copy.title,
       body: copy.body,
-      data: { kind, ...data },
+      data: { kind },
     });
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {

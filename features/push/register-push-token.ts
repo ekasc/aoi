@@ -25,13 +25,17 @@ function currentPlatform(): PushTokenPlatform {
  * push token, and hand it to the API. Every failure is swallowed —
  * simulators, missing push configuration, denied permission, and offline
  * moments all just mean no pushes, never an error.
+ *
+ * Returns whether the token was actually registered, so callers can retry
+ * after a failure (e.g. an offline boot) instead of giving up for the
+ * session.
  */
-export async function registerDevicePushToken(): Promise<void> {
+export async function registerDevicePushToken(): Promise<boolean> {
   try {
     const permission = await Notifications.requestPermissionsAsync();
 
     if (!permission.granted) {
-      return;
+      return false;
     }
 
     // Throws on simulators and without a physical-device project — guarded
@@ -39,11 +43,13 @@ export async function registerDevicePushToken(): Promise<void> {
     const token = await Notifications.getExpoPushTokenAsync();
 
     if (!isExpoPushToken(token.data)) {
-      return;
+      return false;
     }
 
     await registerPushToken(token.data, currentPlatform());
+    return true;
   } catch {
     // Deliberately silent (tender-error policy).
+    return false;
   }
 }
