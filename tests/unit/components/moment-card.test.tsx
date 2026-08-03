@@ -87,7 +87,8 @@ describe('MomentCard', () => {
       type: 'goal',
       title: 'Build feature',
       body: 'Work in progress',
-      targetAt: '2026-06-01T00:00:00.000Z',
+      // midday UTC keeps local-timezone formatting on the same calendar day in CI
+      targetAt: '2026-05-31T12:00:00.000Z',
     })} />);
     expect(screen.getAllByText(/near-term/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/May 31, 2026/)).toBeTruthy();
