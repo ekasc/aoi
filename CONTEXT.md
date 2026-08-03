@@ -78,7 +78,22 @@ pnpm workspace: root app + `packages/*`. The app consumes `@aoi/shared` via
 A timestamped relationship artifact. Types: `note | milestone | date | goal |
 media | trace`. Has title (may be empty for traces), body, authorRole
 (`you`/`partner`), optional `mediaPreview` (image URL) and `audioUri` (voice
-trace URL). Shown on the timeline rail.
+trace URL). Shown on the timeline rail. Full CRUD: long-press your own moment
+→ action sheet (Edit / Delete). Edit screen `app/(app)/moment/edit/[id].tsx`
+shares `MomentForm` (`components/moments/moment-form.tsx`) with the new-moment
+screen. Cards show a quiet "Edited" meta tag when `updatedAt > createdAt`
+(+1s tolerance). Delete is a soft-delete behind a confirmation sheet.
+
+### Space activity / Tombstone
+Generic per-space change log (`space_activity` table): kind
+(`moment_deleted | moment_edited`), actor, occurredAt — **never content**
+(privacy: fact + who only). Rows are written in the same transaction as the
+moment change. `GET /v1/spaces/current/activity` returns at most the last
+7 days (capped 50, newest first). The timeline merges `moment_deleted` items
+into the rail as **tombstones** — a muted, non-interactive marker "{Name}
+removed a moment", shown for 7 days, so deletions are honest without drama.
+Remote mode re-fetches moments + activity on app focus (AppState listener,
+no polling); stub mode synthesizes tombstones from local deletes.
 
 ### Trace ⚡ (new)
 A zero-decision capture: text, photo, and/or ≤30s voice — no type picker, no
@@ -194,14 +209,16 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/auth/{session,refresh,logout,account}` | refresh rotates + theft detection |
 | `/v1/spaces/...` | create, join by invite, current, update |
 | `/v1/spaces/current/moments` | keyset pagination (cursor = occurredAt), create incl. `type:'trace'`, `audioUri` |
-| `/v1/moments/:id` | PATCH/DELETE (own only, soft-delete) |
+| `/v1/moments/:id` | PATCH/DELETE (own only, soft-delete); writes `space_activity` row in the same transaction |
+| `/v1/spaces/current/activity` | change log (tombstones): last 7 days, cap 50, desc; optional `since` ISO param; fact + actor only, never content |
 | `/v1/spaces/current/calendar`, `/v1/calendar-events/:id` | range query, CRUD |
 | `/v1/spaces/current/milestones`, preferences | list/append, theme prefs |
 | `/v1/media/upload-url`, `/v1/media/:id/complete`, `/download-url` | presigned R2; images + audio; EXIF stripped server-side via sharp (images only) |
 | `/v1/squeezes` | **NOT IMPLEMENTED** — client calls it in remote mode; add it when building push |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0002_*` adds moments.type `'trace'` + `audio_uri`. Run
+Latest: `0003_*` adds the `space_activity` change-log table (kind check
+constraint: `moment_deleted | moment_edited`). Run
 `pnpm --filter @aoi/api run db:migrate` after schema changes. JWT via
 `jose`, token hashing in `src/lib/crypto.ts`.
 
@@ -297,10 +314,12 @@ media (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 
 **Working end-to-end (stub):** auth screens, space onboarding, timeline with
 traces + resurface + goals lane, calendar CRUD, profile, settings, the little
-things, squeeze loop (simulated reply), voice traces (local), media picking.
+things, squeeze loop (simulated reply), voice traces (local), media picking,
+moments edit/delete + tombstones (local synthesis).
 
-**Working (remote):** auth (WorkOS), moments, calendar, spaces, preferences,
-media upload pipeline — against packages/api.
+**Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
+provenance), calendar, spaces, preferences, media upload pipeline — against
+packages/api.
 
 **Known gaps / seams:**
 

@@ -12,6 +12,7 @@ export const mockMoments: Moment[] = [
     authorId: 'user_partner',
     authorRole: 'partner',
     authorName: 'Alex',
+    isOwn: false,
   },
   {
     id: 'm_2026_0114_milestone',
@@ -23,6 +24,7 @@ export const mockMoments: Moment[] = [
     authorId: 'user_you',
     authorRole: 'you',
     authorName: 'You',
+    isOwn: true,
   },
   {
     id: 'm_2026_0208_note',
@@ -34,5 +36,6 @@ export const mockMoments: Moment[] = [
     authorId: 'user_partner',
     authorRole: 'partner',
     authorName: 'Alex',
+    isOwn: false,
   },
 ];

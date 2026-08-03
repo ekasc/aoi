@@ -4,4 +4,5 @@ export * from './space.js';
 export * from './moment.js';
 export * from './calendar.js';
 export * from './preferences.js';
+export * from './activity.js';
 export * from './api.js';

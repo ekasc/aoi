@@ -187,6 +187,33 @@ export const moments = pgTable(
   ]
 );
 
+// ── Space Activity (change log) ───────────────────────────────────────────
+// Generic per-space change log powering provenance surfaces (tombstones,
+// "edited" notices). Lean by design: fact + actor only, never content.
+
+export const spaceActivity = pgTable(
+  'space_activity',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    actorUserId: uuid('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+    kind: text('kind', { enum: ['moment_deleted', 'moment_edited'] }).notNull(),
+    subjectId: uuid('subject_id'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_space_activity_space_occurred').on(table.spaceId, table.occurredAt),
+    check(
+      'ck_space_activity_kind',
+      sql`${table.kind} in ('moment_deleted', 'moment_edited')`
+    ),
+  ]
+);
+
 // ── Calendar Events ────────────────────────────────────────────────────────
 
 export const calendarEvents = pgTable(

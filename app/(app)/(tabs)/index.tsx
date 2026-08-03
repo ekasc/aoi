@@ -16,7 +16,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MomentCard } from "@/components/moments/moment-card";
 import { ResurfaceCard } from "@/components/moments/resurface-card";
+import { TombstoneMarker } from "@/components/moments/tombstone-marker";
 import { ThemedText } from "@/components/themed-text";
+import { ActionSheet } from "@/components/ui/action-sheet";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Surface } from "@/components/ui/surface";
@@ -26,12 +28,33 @@ import {
 	isUpcomingGoal,
 } from "@/features/moments/moment-goal-utils";
 import { useMoments } from "@/features/moments/moments-context";
+import { isOwnMoment } from "@/features/moments/ownership";
 import { findResurfaces } from "@/features/moments/resurface";
 import { useResurfaceNotification } from "@/features/moments/use-resurface-notification";
-import type { Moment } from "@/features/moments/types";
+import type {
+	Moment,
+	SpaceActivityItem,
+} from "@/features/moments/types";
 import { useSqueeze } from "@/features/squeeze/squeeze-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { useSpace } from "@/features/space/space-context";
+
+/** Tombstones share the API's 7-day retention window. */
+const TOMBSTONE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+type RailItem =
+	| {
+			kind: "moment";
+			key: string;
+			occurredAt: string;
+			moment: Moment;
+	  }
+	| {
+			kind: "tombstone";
+			key: string;
+			occurredAt: string;
+			tombstone: SpaceActivityItem;
+	  };
 
 function ListSpacer() {
 	return <View style={styles.listSpacer} />;
@@ -96,8 +119,12 @@ function formatTimelineContextLabel(occurredAt: string) {
 export default function TimelineScreen() {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
-	const { moments } = useMoments();
-	const listRef = useRef<FlatList<Moment> | null>(null);
+	const { moments, activity, removeMoment } = useMoments();
+	const listRef = useRef<FlatList<RailItem> | null>(null);
+	const [actionMoment, setActionMoment] = useState<Moment | null>(null);
+	const [confirmMoment, setConfirmMoment] = useState<Moment | null>(null);
+	const [isRemoving, setIsRemoving] = useState(false);
+	const [removeError, setRemoveError] = useState("");
 	const now = useMemo(() => new Date(), []);
 	const thread = useThemeColor({}, "thread");
 	const muted = useThemeColor({}, "muted");
@@ -124,6 +151,51 @@ export default function TimelineScreen() {
 		() => moments.filter((moment) => !isUpcomingGoal(moment, now)),
 		[moments, now],
 	);
+	const tombstones = useMemo(
+		() =>
+			activity.filter((item) => {
+				if (item.kind !== "moment_deleted") {
+					return false;
+				}
+				const occurredAt = new Date(item.occurredAt).getTime();
+				return (
+					!Number.isNaN(occurredAt) &&
+					occurredAt >= now.getTime() - TOMBSTONE_RETENTION_MS
+				);
+			}),
+		[activity, now],
+	);
+	const railItems = useMemo(() => {
+		const items: RailItem[] = [
+			...timelineMoments.map(
+				(moment): RailItem => ({
+					kind: "moment",
+					key: `moment:${moment.id}`,
+					occurredAt: moment.occurredAt,
+					moment,
+				}),
+			),
+			...tombstones.map(
+				(tombstone): RailItem => ({
+					kind: "tombstone",
+					key: `tombstone:${tombstone.id}`,
+					occurredAt: tombstone.occurredAt,
+					tombstone,
+				}),
+			),
+		];
+
+		return items.sort(
+			(left, right) =>
+				new Date(left.occurredAt).getTime() -
+				new Date(right.occurredAt).getTime(),
+		);
+	}, [timelineMoments, tombstones]);
+	const momentsById = useMemo(() => {
+		const byId = new Map<string, Moment>();
+		moments.forEach((moment) => byId.set(moment.id, moment));
+		return byId;
+	}, [moments]);
 	const [hasInitialScroll, setHasInitialScroll] = useState(false);
 	const periodLabel = useMemo(() => formatPeriodLabel(new Date()), []);
 	const [contextLabel, setContextLabel] = useState(
@@ -138,7 +210,7 @@ export default function TimelineScreen() {
 
 	useEffect(() => {
 		setHasInitialScroll(false);
-	}, [timelineMoments.length]);
+	}, [railItems.length]);
 
 	const setContextLabelSafely = useCallback((nextLabel: string) => {
 		setContextLabel((currentLabel) =>
@@ -158,10 +230,106 @@ export default function TimelineScreen() {
 		void sendSqueeze();
 	}, [sendSqueeze]);
 
-	const keyExtractor = useCallback((item: Moment) => item.id, []);
+	const keyExtractor = useCallback((item: RailItem) => item.key, []);
+
+	const handleMomentLongPress = useCallback(
+		(momentId: string) => {
+			const moment = momentsById.get(momentId);
+			if (moment) {
+				setActionMoment(moment);
+			}
+		},
+		[momentsById],
+	);
+
 	const renderItem = useCallback(
-		({ item }: ListRenderItemInfo<Moment>) => <MomentCard moment={item} />,
-		[],
+		({ item }: ListRenderItemInfo<RailItem>) => {
+			if (item.kind === "tombstone") {
+				return <TombstoneMarker actorName={item.tombstone.actorName} />;
+			}
+
+			return (
+				<MomentCard
+					moment={item.moment}
+					onLongPress={
+						isOwnMoment(item.moment)
+							? handleMomentLongPress
+							: undefined
+					}
+				/>
+			);
+		},
+		[handleMomentLongPress],
+	);
+
+	const handleCloseActionSheet = useCallback(() => {
+		setActionMoment(null);
+	}, []);
+
+	const handleEditMoment = useCallback(() => {
+		if (!actionMoment) {
+			return;
+		}
+		const momentToEdit = actionMoment;
+		setActionMoment(null);
+		router.push(`/(app)/moment/edit/${momentToEdit.id}`);
+	}, [actionMoment, router]);
+
+	const handleRequestDelete = useCallback(() => {
+		setConfirmMoment(actionMoment);
+		setRemoveError("");
+		setActionMoment(null);
+	}, [actionMoment]);
+
+	const actionSheetActions = useMemo(
+		() => [
+			{ label: "Edit", onPress: handleEditMoment },
+			{
+				label: "Delete",
+				onPress: handleRequestDelete,
+				variant: "destructive" as const,
+			},
+		],
+		[handleEditMoment, handleRequestDelete],
+	);
+
+	const handleCloseConfirmSheet = useCallback(() => {
+		if (isRemoving) {
+			return;
+		}
+		setConfirmMoment(null);
+		setRemoveError("");
+	}, [isRemoving]);
+
+	const handleConfirmDelete = useCallback(async () => {
+		if (!confirmMoment || isRemoving) {
+			return;
+		}
+		setIsRemoving(true);
+		setRemoveError("");
+		try {
+			await removeMoment(confirmMoment.id);
+			setConfirmMoment(null);
+		} catch {
+			// Tender-error policy: gentle message, no stack traces.
+			setRemoveError("Couldn't remove this moment right now. Try again?");
+		} finally {
+			setIsRemoving(false);
+		}
+	}, [confirmMoment, isRemoving, removeMoment]);
+
+	const confirmSheetActions = useMemo(
+		() => [
+			{
+				label: isRemoving ? "Removing…" : "Remove",
+				onPress: () => {
+					void handleConfirmDelete();
+				},
+				variant: "destructive" as const,
+			},
+			{ label: "Cancel", onPress: handleCloseConfirmSheet },
+		],
+		[handleCloseConfirmSheet, handleConfirmDelete, isRemoving],
 	);
 
 	const emptyState = useMemo(
@@ -247,17 +415,17 @@ export default function TimelineScreen() {
 	);
 
 	const onViewableItemsChanged = useCallback(
-		({ viewableItems }: { viewableItems: ViewToken<Moment>[] }) => {
+		({ viewableItems }: { viewableItems: ViewToken<RailItem>[] }) => {
 			const firstVisibleMoment = viewableItems.find(
-				(item) => item.isViewable,
+				(item) => item.isViewable && item.item.kind === "moment",
 			)?.item;
 
-			if (!firstVisibleMoment) {
+			if (!firstVisibleMoment || firstVisibleMoment.kind !== "moment") {
 				return;
 			}
 
 			setContextLabelSafely(
-				formatTimelineContextLabel(firstVisibleMoment.occurredAt),
+				formatTimelineContextLabel(firstVisibleMoment.moment.occurredAt),
 			);
 		},
 		[setContextLabelSafely],
@@ -269,7 +437,7 @@ export default function TimelineScreen() {
 	);
 
 	const handleContentSizeChange = useCallback(() => {
-		if (hasInitialScroll || timelineMoments.length === 0) {
+		if (hasInitialScroll || railItems.length === 0) {
 			return;
 		}
 
@@ -277,7 +445,7 @@ export default function TimelineScreen() {
 			listRef.current?.scrollToEnd({ animated: false });
 		});
 		setHasInitialScroll(true);
-	}, [hasInitialScroll, timelineMoments.length]);
+	}, [hasInitialScroll, railItems.length]);
 
 	const handleScroll = useCallback(
 		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -431,7 +599,7 @@ export default function TimelineScreen() {
 					ref={listRef}
 					contentInsetAdjustmentBehavior="automatic"
 					contentContainerStyle={contentContainerStyle}
-					data={timelineMoments}
+					data={railItems}
 					ItemSeparatorComponent={ListSpacer}
 					keyExtractor={keyExtractor}
 					ListEmptyComponent={emptyState}
@@ -443,6 +611,24 @@ export default function TimelineScreen() {
 					viewabilityConfig={viewabilityConfig}
 				/>
 			</View>
+
+			<ActionSheet
+				actions={actionSheetActions}
+				onClose={handleCloseActionSheet}
+				title={actionMoment?.title?.trim() || "This moment"}
+				visible={actionMoment !== null}
+			/>
+
+			<ActionSheet
+				actions={confirmSheetActions}
+				description={
+					removeError ||
+					"This moment will be removed from your shared timeline"
+				}
+				onClose={handleCloseConfirmSheet}
+				title="Remove this moment?"
+				visible={confirmMoment !== null}
+			/>
 		</View>
 	);
 }

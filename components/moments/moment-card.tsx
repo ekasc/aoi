@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { memo, useMemo } from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { AudioPlayer } from "@/components/media/audio-player";
 import { ThemedText } from "@/components/themed-text";
@@ -13,7 +13,27 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 
 export type MomentCardProps = {
 	moment: Moment;
+	/** Present only for the viewer's own moments; long-press opens actions. */
+	onLongPress?: (momentId: string) => void;
 };
+
+/** Ignore clock skew / write latency under one second. */
+const EDITED_TOLERANCE_MS = 1000;
+
+function isEditedMoment(moment: Moment): boolean {
+	if (!moment.updatedAt) {
+		return false;
+	}
+
+	const createdAt = new Date(moment.createdAt).getTime();
+	const updatedAt = new Date(moment.updatedAt).getTime();
+
+	if (Number.isNaN(createdAt) || Number.isNaN(updatedAt)) {
+		return false;
+	}
+
+	return updatedAt - createdAt > EDITED_TOLERANCE_MS;
+}
 
 const MOMENT_TYPE_LABELS: Record<MomentType, string> = {
 	note: "Note",
@@ -58,7 +78,7 @@ function formatGoalTargetLabel(targetAt?: string | null) {
 	});
 }
 
-function MomentCardComponent({ moment }: MomentCardProps) {
+function MomentCardComponent({ moment, onLongPress }: MomentCardProps) {
 	const accent = useThemeColor({}, "accent");
 	const partnerAccent = useThemeColor({}, "partnerAccent");
 	const warning = useThemeColor({}, "warning");
@@ -123,12 +143,78 @@ function MomentCardComponent({ moment }: MomentCardProps) {
 	const titleStyle = useMemo(() => [styles.title, { color: text }], [text]);
 	const bodyStyle = useMemo(() => [styles.body, { color: text }], [text]);
 
+	const isEdited = useMemo(() => isEditedMoment(moment), [moment]);
+
 	const meta = useMemo(
 		() =>
 			`${formatDateLabel(moment.occurredAt)}  ·  ${
 				MOMENT_TYPE_LABELS[moment.type]
-			}${isGoal ? `  ·  ${goalHorizon}` : ""}`,
-		[goalHorizon, isGoal, moment.occurredAt, moment.type],
+			}${isGoal ? `  ·  ${goalHorizon}` : ""}${isEdited ? "  ·  Edited" : ""}`,
+		[goalHorizon, isEdited, isGoal, moment.occurredAt, moment.type],
+	);
+
+	const handleLongPress = useMemo(
+		() => (onLongPress ? () => onLongPress(moment.id) : undefined),
+		[moment.id, onLongPress],
+	);
+
+	const card = (
+		<Surface variant="raised" style={cardStyle}>
+			<View style={styles.metaRow}>
+				<View style={badgeStyle}>
+					<ThemedText type="meta" style={badgeLabelStyle}>
+						{isYou ? "You" : moment.authorName}
+					</ThemedText>
+				</View>
+				<ThemedText type="meta" style={metaStyle}>
+					{meta}
+				</ThemedText>
+			</View>
+			<Divider style={styles.divider} />
+			{title ? (
+				<ThemedText type="title" style={titleStyle}>
+					{title}
+				</ThemedText>
+			) : null}
+			{moment.mediaPreview ? (
+				<View style={[styles.mediaContainer, { borderColor: border }]}>
+					<Image
+						source={{ uri: moment.mediaPreview }}
+						style={styles.mediaImage}
+						contentFit="cover"
+						transition={200}
+					/>
+				</View>
+			) : null}
+			{isGoal ? (
+				<View style={styles.goalMetaRow}>
+					<View
+						style={[
+							styles.goalPill,
+							{
+								borderColor: warning,
+								backgroundColor: surface2,
+							},
+						]}
+					>
+						<ThemedText type="meta" style={{ color: warning }}>
+							{goalHorizon}
+						</ThemedText>
+					</View>
+					<ThemedText type="caption" style={{ color: muted }}>
+						{goalTargetLabel}
+					</ThemedText>
+				</View>
+			) : null}
+			{moment.audioUri ? (
+				<AudioPlayer uri={moment.audioUri} />
+			) : null}
+			{body ? (
+				<ThemedText type="body" style={bodyStyle}>
+					{body}
+				</ThemedText>
+			) : null}
+		</Surface>
 	);
 
 	return (
@@ -138,62 +224,19 @@ function MomentCardComponent({ moment }: MomentCardProps) {
 				importantForAccessibility="no-hide-descendants"
 				style={knotStyle}
 			/>
-			<Surface variant="raised" style={cardStyle}>
-				<View style={styles.metaRow}>
-					<View style={badgeStyle}>
-						<ThemedText type="meta" style={badgeLabelStyle}>
-							{isYou ? "You" : moment.authorName}
-						</ThemedText>
-					</View>
-					<ThemedText type="meta" style={metaStyle}>
-						{meta}
-					</ThemedText>
-				</View>
-				<Divider style={styles.divider} />
-				{title ? (
-					<ThemedText type="title" style={titleStyle}>
-						{title}
-					</ThemedText>
-				) : null}
-				{moment.mediaPreview ? (
-					<View style={[styles.mediaContainer, { borderColor: border }]}>
-						<Image
-							source={{ uri: moment.mediaPreview }}
-							style={styles.mediaImage}
-							contentFit="cover"
-							transition={200}
-						/>
-					</View>
-				) : null}
-				{isGoal ? (
-					<View style={styles.goalMetaRow}>
-						<View
-							style={[
-								styles.goalPill,
-								{
-									borderColor: warning,
-									backgroundColor: surface2,
-								},
-							]}
-						>
-							<ThemedText type="meta" style={{ color: warning }}>
-								{goalHorizon}
-							</ThemedText>
-						</View>
-						<ThemedText type="caption" style={{ color: muted }}>
-							{goalTargetLabel}
-						</ThemedText>
-					</View>
-				) : null}
-				{moment.audioUri ? (
-					<AudioPlayer uri={moment.audioUri} />
-				) : null}
-				{body ? (
-					<ThemedText type="body" style={bodyStyle}>
-						{body}
-					</ThemedText>
-				) : null}
-			</Surface>
+			{handleLongPress ? (
+				<Pressable
+					accessibilityHint="Hold to edit or remove this moment"
+					accessibilityRole="button"
+					delayLongPress={400}
+					onLongPress={handleLongPress}
+					style={styles.longPressWrap}
+				>
+					{card}
+				</Pressable>
+			) : (
+				card
+			)}
 		</View>
 	);
 }
@@ -223,6 +266,9 @@ const styles = StyleSheet.create({
 		width: 14,
 		height: 14,
 		marginTop: 16,
+	},
+	longPressWrap: {
+		flex: 1,
 	},
 	card: {
 		flex: 1,

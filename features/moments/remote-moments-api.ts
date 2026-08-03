@@ -1,5 +1,10 @@
 import { apiFetch } from '@/features/api-client';
-import type { Moment, CreateMomentInput } from '@/features/moments/types';
+import type {
+  CreateMomentInput,
+  Moment,
+  SpaceActivityResponse,
+  UpdateMomentInput,
+} from '@/features/moments/types';
 
 export interface MomentListResponse {
   moments: Moment[];
@@ -34,11 +39,19 @@ export async function createMoment(input: CreateMomentInput): Promise<Moment> {
 
 export async function updateMoment(
   momentId: string,
-  input: Partial<CreateMomentInput>
+  input: UpdateMomentInput
 ): Promise<Moment> {
   return apiFetch<Moment>(`/v1/moments/${momentId}`, {
     method: 'PATCH',
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      occurredAt: input.occurredAt,
+      targetAt: input.targetAt,
+      mediaPreview: input.mediaPreview,
+      audioUri: input.audioUri,
+    }),
   });
 }
 
@@ -46,4 +59,8 @@ export async function deleteMoment(momentId: string): Promise<void> {
   await apiFetch(`/v1/moments/${momentId}`, {
     method: 'DELETE',
   });
+}
+
+export async function fetchActivity(): Promise<SpaceActivityResponse> {
+  return apiFetch<SpaceActivityResponse>('/v1/spaces/current/activity');
 }
