@@ -1,10 +1,14 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { app, getTestJwt, req, TEST_USER_ID, TEST_SPACE_ID } from '../helpers/test-app.js';
 
 vi.stubEnv('JWT_SECRET', 'test-jwt-secret-for-testing');
 vi.stubEnv('CORS_ORIGIN', '*');
 
 const mockSelectQueue: any[][] = [];
+const deleteCalls: unknown[] = [];
+let mockDeleteWhereError: Error | null = null;
 
 function selectChain() {
   return {
@@ -17,14 +21,29 @@ function selectChain() {
   };
 }
 
+function deleteChain() {
+  return {
+    where: vi.fn((predicate: unknown) => {
+      deleteCalls.push(predicate);
+      if (mockDeleteWhereError) {
+        return Promise.reject(mockDeleteWhereError);
+      }
+      return Promise.resolve([]);
+    }),
+  };
+}
+
 vi.mock('../../db/index.js', () => ({
   db: {
     select: vi.fn(() => selectChain()),
+    delete: vi.fn(() => deleteChain()),
   },
 }));
 
 beforeEach(() => {
   mockSelectQueue.length = 0;
+  deleteCalls.length = 0;
+  mockDeleteWhereError = null;
 });
 
 function spaceMemberRow(overrides: Record<string, unknown> = {}) {
@@ -116,5 +135,45 @@ describe('GET /v1/spaces/current/activity', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.activity).toEqual([]);
+  });
+
+  // Retention purge. The helper DB here is a mock chain (no real rows), so
+  // determinism comes from asserting the exact purge statement issued: rows
+  // older than the cutoff for this space are deleted on read, which is what
+  // removes them from every subsequent call.
+  it('purges rows older than the 7-day retention window for the current space', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()], [activityRow()]);
+    const res = await app.fetch(req('GET', '/v1/spaces/current/activity', { jwt }));
+    expect(res.status).toBe(200);
+    expect(deleteCalls).toHaveLength(1);
+
+    const rendered = new PgDialect().sqlToQuery(deleteCalls[0] as SQL);
+    expect(rendered.sql).toBe(
+      '("space_activity"."space_id" = $1 and "space_activity"."occurred_at" < $2)'
+    );
+    expect(rendered.params[0]).toBe(TEST_SPACE_ID);
+    // Cutoff is the 7-day retention boundary evaluated at request time.
+    const cutoff = new Date(rendered.params[1] as string);
+    const expectedCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    expect(Math.abs(cutoff.getTime() - expectedCutoff)).toBeLessThan(5000);
+  });
+
+  it('does not purge when the user has no active space', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([]);
+    const res = await app.fetch(req('GET', '/v1/spaces/current/activity', { jwt }));
+    expect(res.status).toBe(200);
+    expect(deleteCalls).toHaveLength(0);
+  });
+
+  it('still responds when the best-effort purge fails', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()], [activityRow()]);
+    mockDeleteWhereError = new Error('db unavailable');
+    const res = await app.fetch(req('GET', '/v1/spaces/current/activity', { jwt }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.activity).toHaveLength(1);
   });
 });

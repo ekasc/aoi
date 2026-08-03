@@ -160,60 +160,60 @@ function MomentCardComponent({ moment, onLongPress }: MomentCardProps) {
 
 	const card = (
 		<Surface variant="raised" style={cardStyle}>
-				<View style={styles.metaRow}>
-					<View style={badgeStyle}>
-						<ThemedText type="meta" style={badgeLabelStyle}>
-							{isYou ? "You" : moment.authorName}
-						</ThemedText>
-					</View>
-					<ThemedText type="meta" style={metaStyle}>
-						{meta}
+			<View style={styles.metaRow}>
+				<View style={badgeStyle}>
+					<ThemedText type="meta" style={badgeLabelStyle}>
+						{isYou ? "You" : moment.authorName}
 					</ThemedText>
 				</View>
-				<Divider style={styles.divider} />
-				{title ? (
-					<ThemedText type="title" style={titleStyle}>
-						{title}
-					</ThemedText>
-				) : null}
-				{moment.mediaPreview ? (
-					<View style={[styles.mediaContainer, { borderColor: border }]}>
-						<Image
-							source={{ uri: moment.mediaPreview }}
-							style={styles.mediaImage}
-							contentFit="cover"
-							transition={200}
-						/>
-					</View>
-				) : null}
-				{isGoal ? (
-					<View style={styles.goalMetaRow}>
-						<View
-							style={[
-								styles.goalPill,
-								{
-									borderColor: warning,
-									backgroundColor: surface2,
-								},
-							]}
-						>
-							<ThemedText type="meta" style={{ color: warning }}>
-								{goalHorizon}
-							</ThemedText>
-						</View>
-						<ThemedText type="caption" style={{ color: muted }}>
-							{goalTargetLabel}
+				<ThemedText type="meta" style={metaStyle}>
+					{meta}
+				</ThemedText>
+			</View>
+			<Divider style={styles.divider} />
+			{title ? (
+				<ThemedText type="title" style={titleStyle}>
+					{title}
+				</ThemedText>
+			) : null}
+			{moment.mediaPreview ? (
+				<View style={[styles.mediaContainer, { borderColor: border }]}>
+					<Image
+						source={{ uri: moment.mediaPreview }}
+						style={styles.mediaImage}
+						contentFit="cover"
+						transition={200}
+					/>
+				</View>
+			) : null}
+			{isGoal ? (
+				<View style={styles.goalMetaRow}>
+					<View
+						style={[
+							styles.goalPill,
+							{
+								borderColor: warning,
+								backgroundColor: surface2,
+							},
+						]}
+					>
+						<ThemedText type="meta" style={{ color: warning }}>
+							{goalHorizon}
 						</ThemedText>
 					</View>
-				) : null}
-				{moment.audioUri ? (
-					<AudioPlayer uri={moment.audioUri} />
-				) : null}
-				{body ? (
-					<ThemedText type="body" style={bodyStyle}>
-						{body}
+					<ThemedText type="caption" style={{ color: muted }}>
+						{goalTargetLabel}
 					</ThemedText>
-				) : null}
+				</View>
+			) : null}
+			{moment.audioUri ? (
+				<AudioPlayer uri={moment.audioUri} />
+			) : null}
+			{body ? (
+				<ThemedText type="body" style={bodyStyle}>
+					{body}
+				</ThemedText>
+			) : null}
 		</Surface>
 	);
 

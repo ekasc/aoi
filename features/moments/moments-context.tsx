@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
@@ -25,6 +26,7 @@ import type {
   SpaceActivityItem,
   UpdateMomentInput,
 } from '@/features/moments/types';
+import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
 import type { ImportedMilestone } from '@/features/space/types';
 
@@ -52,6 +54,7 @@ function toLocalMoment(input: CreateMomentInput): Moment {
   const occurredAt = input.occurredAt ?? now.toISOString();
   const title = normalizeText(input.title) || 'Untitled moment';
   const body = normalizeText(input.body);
+  const authorRole = input.authorRole ?? 'you';
 
   return {
     id: `moment_${now.getTime()}_${Math.floor(Math.random() * 100000)}`,
@@ -63,8 +66,10 @@ function toLocalMoment(input: CreateMomentInput): Moment {
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     authorId: input.authorId ?? 'user_you',
-    authorRole: input.authorRole ?? 'you',
+    authorRole,
     authorName: input.authorName ?? 'You',
+    // Stub-mode ownership mirrors the authorRole semantics used at creation.
+    isOwn: authorRole === 'you',
     mediaPreview: input.mediaPreview,
     audioUri: input.audioUri ?? null,
   };
@@ -83,6 +88,8 @@ function toImportedMoment(milestone: ImportedMilestone): Moment {
     authorId: 'user_you',
     authorRole: 'you',
     authorName: 'You',
+    // Milestones are imported by the current user for their own space.
+    isOwn: true,
   };
 }
 
@@ -103,11 +110,23 @@ function useRemoteMoments(): MomentsContextValue {
   const [activity, setActivity] = useState<SpaceActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Request-sequence guards: overlapping focus refreshes can resolve out of
+  // order, and only the newest request may write state (never let a stale
+  // response overwrite fresh data).
+  const momentsRequestSeq = useRef(0);
+  const activityRequestSeq = useRef(0);
+  const hasMomentsData = useRef(false);
 
   const loadMoments = useCallback(async () => {
-    try {
+    const requestId = ++momentsRequestSeq.current;
+    // Background refreshes stay silent once data exists — no spinner flicker
+    // on every app focus.
+    if (!hasMomentsData.current) {
       setIsLoading(true);
-      setError(null);
+    }
+    setError(null);
+
+    try {
       const allMoments: Moment[] = [];
       let cursor: string | undefined;
 
@@ -117,17 +136,30 @@ function useRemoteMoments(): MomentsContextValue {
         cursor = response.nextCursor;
       } while (cursor);
 
+      if (requestId !== momentsRequestSeq.current) {
+        return; // A newer request is in flight — drop this stale response.
+      }
+      hasMomentsData.current = true;
       setMoments(sortMomentsOldestFirst(allMoments));
     } catch (err) {
+      if (requestId !== momentsRequestSeq.current) {
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to load moments');
     } finally {
-      setIsLoading(false);
+      if (requestId === momentsRequestSeq.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   const loadActivity = useCallback(async () => {
+    const requestId = ++activityRequestSeq.current;
     try {
       const response = await fetchActivity();
+      if (requestId !== activityRequestSeq.current) {
+        return; // Stale response — a newer request owns the state.
+      }
       setActivity(response.activity);
     } catch {
       // Activity is provenance only — keep whatever we already have.
@@ -207,6 +239,7 @@ function useRemoteMoments(): MomentsContextValue {
 // ── Stub (local) implementation ──────────────────────────────────────────
 
 function useStubMoments(): MomentsContextValue {
+  const { user } = useSession();
   const { importedMilestones } = useSpace();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
@@ -294,17 +327,19 @@ function useStubMoments(): MomentsContextValue {
       nextIds.add(momentId);
       return nextIds;
     });
-    // Synthesize the tombstone the remote API would record.
+    // Synthesize the tombstone the remote API would record. Remote mode
+    // returns the actor's display name, so match that when we know it.
+    const actorName = user?.displayName?.trim() || 'You';
     setLocalActivity((currentActivity) => [
       {
         id: `activity_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
         kind: 'moment_deleted',
-        actorName: 'You',
+        actorName,
         occurredAt: new Date().toISOString(),
       },
       ...currentActivity,
     ]);
-  }, []);
+  }, [user?.displayName]);
 
   const refresh = useCallback(async () => {
     // Local data is always current — nothing to sync in stub mode.

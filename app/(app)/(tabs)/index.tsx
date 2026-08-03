@@ -28,6 +28,7 @@ import {
 	isUpcomingGoal,
 } from "@/features/moments/moment-goal-utils";
 import { useMoments } from "@/features/moments/moments-context";
+import { isOwnMoment } from "@/features/moments/ownership";
 import { findResurfaces } from "@/features/moments/resurface";
 import { useResurfaceNotification } from "@/features/moments/use-resurface-notification";
 import type {
@@ -251,7 +252,7 @@ export default function TimelineScreen() {
 				<MomentCard
 					moment={item.moment}
 					onLongPress={
-						item.moment.authorRole === "you"
+						isOwnMoment(item.moment)
 							? handleMomentLongPress
 							: undefined
 					}

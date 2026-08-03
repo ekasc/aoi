@@ -63,7 +63,7 @@ momentsRouter.get('/v1/spaces/current/moments', zValidator('query', listMomentsS
     : undefined;
 
   return c.json({
-    moments: items.map(momentRowToApi),
+    moments: items.map((row) => momentRowToApi(row, userId)),
     nextCursor,
   });
 });
@@ -107,20 +107,32 @@ momentsRouter.post('/v1/spaces/current/moments', zValidator('json', createMoment
     })
     .returning();
 
-  return c.json(momentRowToApi(moment), 201);
+  return c.json(momentRowToApi(moment, userId), 201);
 });
 
 // ── Update moment ────────────────────────────────────────────────────────
 
-const updateMomentSchema = z.object({
-  type: z.enum(['note', 'milestone', 'date', 'goal', 'media', 'trace']).optional(),
-  title: z.string().max(500).optional(),
-  body: z.string().max(10000).optional(),
-  occurredAt: z.string().datetime({ offset: true }).optional(),
-  targetAt: z.string().datetime({ offset: true }).nullable().optional(),
-  mediaPreview: z.string().url().max(2000).nullable().optional(),
-  audioUri: z.string().url().max(2000).nullable().optional(),
-});
+const updateMomentSchema = z
+  .object({
+    type: z.enum(['note', 'milestone', 'date', 'goal', 'media', 'trace']).optional(),
+    title: z.string().max(500).optional(),
+    body: z.string().max(10000).optional(),
+    occurredAt: z.string().datetime({ offset: true }).optional(),
+    targetAt: z.string().datetime({ offset: true }).nullable().optional(),
+    mediaPreview: z.string().url().max(2000).nullable().optional(),
+    audioUri: z.string().url().max(2000).nullable().optional(),
+  })
+  .refine(
+    (input) =>
+      input.type !== undefined ||
+      input.title !== undefined ||
+      input.body !== undefined ||
+      input.occurredAt !== undefined ||
+      input.targetAt !== undefined ||
+      input.mediaPreview !== undefined ||
+      input.audioUri !== undefined,
+    { message: 'At least one moment field must be provided' }
+  );
 
 momentsRouter.patch('/v1/moments/:id', zValidator('param', z.object({ id: z.string().uuid() })), zValidator('json', updateMomentSchema), async (c) => {
   const userId = c.var.userId;
@@ -168,11 +180,19 @@ momentsRouter.patch('/v1/moments/:id', zValidator('param', z.object({ id: z.stri
   if (input.audioUri !== undefined) updateData.audioUri = input.audioUri;
 
   const [updated] = await db.transaction(async (tx) => {
+    // Authoritative guard inside the transaction: a moment soft-deleted
+    // between the check above and this update is never mutated (and never
+    // produces an activity row).
     const updatedRows = await tx
       .update(moments)
       .set(updateData)
-      .where(eq(moments.id, momentId))
+      .where(and(eq(moments.id, momentId), isNull(moments.deletedAt)))
       .returning();
+
+    // No row affected → the moment vanished (already soft-deleted).
+    if (updatedRows.length === 0) {
+      return updatedRows;
+    }
 
     await tx.insert(spaceActivity).values({
       spaceId: existing.spaceId,
@@ -184,7 +204,11 @@ momentsRouter.patch('/v1/moments/:id', zValidator('param', z.object({ id: z.stri
     return updatedRows;
   });
 
-  return c.json(momentRowToApi(updated));
+  if (!updated) {
+    throw notFound('Moment not found');
+  }
+
+  return c.json(momentRowToApi(updated, userId));
 });
 
 // ── Delete moment (soft delete) ──────────────────────────────────────────
@@ -224,11 +248,18 @@ momentsRouter.delete('/v1/moments/:id', zValidator('param', z.object({ id: z.str
     throw forbidden('You are not an active member of this space');
   }
 
-  await db.transaction(async (tx) => {
-    await tx
+  const deletedRows = await db.transaction(async (tx) => {
+    // Authoritative guard inside the transaction: an already-soft-deleted
+    // moment is never deleted twice (and never produces a second tombstone).
+    const rows = await tx
       .update(moments)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(moments.id, momentId));
+      .where(and(eq(moments.id, momentId), isNull(moments.deletedAt)))
+      .returning();
+
+    if (rows.length === 0) {
+      return rows;
+    }
 
     await tx.insert(spaceActivity).values({
       spaceId: existing.spaceId,
@@ -236,7 +267,13 @@ momentsRouter.delete('/v1/moments/:id', zValidator('param', z.object({ id: z.str
       kind: 'moment_deleted',
       subjectId: momentId,
     });
+
+    return rows;
   });
+
+  if (deletedRows.length === 0) {
+    throw notFound('Moment not found');
+  }
 
   return c.json({ ok: true });
 });

@@ -14,6 +14,11 @@ export type Moment = {
   authorId: string;
   authorRole: MomentAuthorRole;
   authorName: string;
+  /**
+   * Per-request ownership signal from the API (author user id vs viewer).
+   * Optional for locally constructed moments; unknown must mean "not own".
+   */
+  isOwn?: boolean;
   mediaPreview?: string;
   audioUri?: string | null;
   tags?: MomentTag[];

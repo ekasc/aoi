@@ -9,9 +9,16 @@ vi.mock('@/features/space/space-context', () => ({
   useSpace: () => ({ importedMilestones: [] }),
 }));
 
+let mockSessionUser: { displayName: string } | null = { displayName: 'Jordan' };
+
+vi.mock('@/features/session/session-context', () => ({
+  useSession: () => ({ user: mockSessionUser }),
+}));
+
 describe('useMoments (stub)', () => {
   beforeEach(() => {
     vi.resetModules();
+    mockSessionUser = { displayName: 'Jordan' };
   });
 
   it('returns moments from mock data', async () => {
@@ -147,11 +154,57 @@ describe('useMoments (stub)', () => {
     expect(result.current.activity).toHaveLength(1);
     const tombstone = result.current.activity[0];
     expect(tombstone.kind).toBe('moment_deleted');
-    expect(tombstone.actorName).toBe('You');
+    // Parity with remote mode: the actor's display name, not a hardcoded 'You'.
+    expect(tombstone.actorName).toBe('Jordan');
     // Privacy: the tombstone carries fact + actor only.
     expect(Object.keys(tombstone).sort()).toEqual(
       ['actorName', 'id', 'kind', 'occurredAt'].sort(),
     );
+  });
+
+  it('falls back to "You" in the tombstone when no session user is available', async () => {
+    mockSessionUser = null;
+    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
+
+    const { result } = renderHook(() => useMoments(), {
+      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
+    });
+
+    await waitFor(() => {
+      expect(result.current.moments.length).toBeGreaterThan(0);
+    });
+
+    const idToRemove = result.current.moments[0].id;
+
+    await act(async () => {
+      await result.current.removeMoment(idToRemove);
+    });
+
+    expect(result.current.activity[0].actorName).toBe('You');
+  });
+
+  it('derives isOwn from authorRole for stub moments', async () => {
+    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
+
+    const { result } = renderHook(() => useMoments(), {
+      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
+    });
+
+    await waitFor(() => {
+      expect(result.current.moments.length).toBeGreaterThan(0);
+    });
+
+    const own = result.current.moments.find((m) => m.authorRole === 'you');
+    const partner = result.current.moments.find((m) => m.authorRole === 'partner');
+    expect(own?.isOwn).toBe(true);
+    expect(partner?.isOwn).toBe(false);
+
+    // Locally created moments are the current user's own.
+    await act(async () => {
+      await result.current.addMoment({ type: 'note', title: 'Mine' });
+    });
+    const created = result.current.moments.find((m) => m.title === 'Mine');
+    expect(created?.isOwn).toBe(true);
   });
 
   it('refresh resolves without mutating local stub data', async () => {

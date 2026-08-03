@@ -16,21 +16,24 @@ export function activityRowToApi(row: {
 }
 
 /** Convert DB row to API shape for moments */
-export function momentRowToApi(row: {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  occurredAt: Date;
-  targetAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-  createdByUserId: string;
-  authorRole: string;
-  authorName: string;
-  mediaPreview: string | null;
-  audioUri?: string | null;
-}) {
+export function momentRowToApi(
+  row: {
+    id: string;
+    type: string;
+    title: string;
+    body: string;
+    occurredAt: Date;
+    targetAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    createdByUserId: string;
+    authorRole: string;
+    authorName: string;
+    mediaPreview: string | null;
+    audioUri?: string | null;
+  },
+  viewerUserId: string
+) {
   return {
     id: row.id,
     type: row.type as any,
@@ -43,6 +46,9 @@ export function momentRowToApi(row: {
     authorId: row.createdByUserId,
     authorRole: row.authorRole as any,
     authorName: row.authorName,
+    // Per-request ownership: only the requesting user's own moments are
+    // editable/deletable on the client.
+    isOwn: row.createdByUserId === viewerUserId,
     mediaPreview: row.mediaPreview,
     audioUri: row.audioUri ?? null,
   };

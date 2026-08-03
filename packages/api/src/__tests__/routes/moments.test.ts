@@ -135,6 +135,18 @@ describe('POST /v1/spaces/current/moments', () => {
     }));
     expect(res.status).toBe(201);
   });
+
+  it('returns isOwn true on the created moment', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()]);
+    mockReturningResult = [momentRow()];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
+      jwt, body: { type: 'note', title: 'Hello' },
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.isOwn).toBe(true);
+  });
 });
 
 describe('GET /v1/spaces/current/moments', () => {
@@ -164,6 +176,24 @@ describe('GET /v1/spaces/current/moments', () => {
     expect(body).toHaveProperty('moments');
     expect(body.moments.length).toBe(10);
     expect(body.nextCursor).toBeTruthy();
+  });
+
+  it('marks isOwn true for the author and false for the partner per row', async () => {
+    const jwt = await getTestJwt();
+    const own = momentRow();
+    const partner = momentRow({
+      id: '00000000-0000-0000-0000-000000000021',
+      createdByUserId: TEST_OTHER_USER_ID,
+      authorRole: 'partner' as const,
+      authorName: 'Alex',
+      occurredAt: new Date('2026-03-14T10:00:00Z'),
+    });
+    mockSelectQueue.push([spaceMemberRow()], [own, partner]);
+    const res = await app.fetch(req('GET', '/v1/spaces/current/moments', { jwt }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.moments[0].isOwn).toBe(true);
+    expect(body.moments[1].isOwn).toBe(false);
   });
 
   it('returns empty moments for empty DB', async () => {
@@ -226,6 +256,39 @@ describe('PATCH /v1/moments/:id', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 400 for an empty patch (no known fields)', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
+      jwt, body: {},
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 and records no activity when the moment was deleted mid-flight', async () => {
+    const jwt = await getTestJwt();
+    // Pre-checks pass, but the transactional UPDATE (with isNull(deletedAt))
+    // affects no row because the moment was soft-deleted concurrently.
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [];
+    const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
+      jwt, body: { title: 'Updated' },
+    }));
+    expect(res.status).toBe(404);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('returns isOwn true in the PATCH response for the author', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [momentRow({ title: 'Updated' })];
+    const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
+      jwt, body: { title: 'Updated' },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.isOwn).toBe(true);
+  });
+
   it('records a moment_edited activity row in the same transaction', async () => {
     const jwt = await getTestJwt();
     mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
@@ -277,6 +340,7 @@ describe('DELETE /v1/moments/:id', () => {
   it('returns 200 for valid delete', async () => {
     const jwt = await getTestJwt();
     mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [momentRow({ deletedAt: new Date() })];
     const res = await app.fetch(req('DELETE', `/v1/moments/${TEST_MOMENT_ID}`, { jwt }));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -286,6 +350,7 @@ describe('DELETE /v1/moments/:id', () => {
   it('records a moment_deleted activity row in the same transaction', async () => {
     const jwt = await getTestJwt();
     mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [momentRow({ deletedAt: new Date() })];
     const res = await app.fetch(req('DELETE', `/v1/moments/${TEST_MOMENT_ID}`, { jwt }));
     expect(res.status).toBe(200);
     expect(insertCalls).toHaveLength(1);
@@ -295,6 +360,17 @@ describe('DELETE /v1/moments/:id', () => {
       kind: 'moment_deleted',
       subjectId: TEST_MOMENT_ID,
     });
+  });
+
+  it('returns 404 and records no activity when the moment was already deleted', async () => {
+    const jwt = await getTestJwt();
+    // Pre-checks pass, but the transactional UPDATE (with isNull(deletedAt))
+    // affects no row because the moment was soft-deleted concurrently.
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [];
+    const res = await app.fetch(req('DELETE', `/v1/moments/${TEST_MOMENT_ID}`, { jwt }));
+    expect(res.status).toBe(404);
+    expect(insertCalls).toHaveLength(0);
   });
 
   it('does not record activity when the moment belongs to someone else', async () => {

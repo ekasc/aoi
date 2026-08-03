@@ -61,10 +61,6 @@ export async function deleteMoment(momentId: string): Promise<void> {
   });
 }
 
-export async function fetchActivity(since?: string): Promise<SpaceActivityResponse> {
-  let path = '/v1/spaces/current/activity';
-  if (since) {
-    path += `?since=${encodeURIComponent(since)}`;
-  }
-  return apiFetch<SpaceActivityResponse>(path);
+export async function fetchActivity(): Promise<SpaceActivityResponse> {
+  return apiFetch<SpaceActivityResponse>('/v1/spaces/current/activity');
 }

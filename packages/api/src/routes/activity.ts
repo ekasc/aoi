@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and, gte, desc } from 'drizzle-orm';
+import { eq, and, gte, lt, desc } from 'drizzle-orm';
 import type { SpaceActivityResponse } from '@aoi/shared';
 import { db } from '../db/index.js';
 import { spaceActivity, spaceMembers, users } from '../db/schema.js';
@@ -74,6 +74,21 @@ activityRouter.get(
     const activity = rows
       .filter((row) => row.occurredAt.getTime() >= windowStart.getTime())
       .map(activityRowToApi);
+
+    // Inline retention purge: the feed never shows rows older than 7 days,
+    // so prune them cheaply on read. Best-effort — never fail the request.
+    try {
+      await db
+        .delete(spaceActivity)
+        .where(
+          and(
+            eq(spaceActivity.spaceId, membership[0].spaceId),
+            lt(spaceActivity.occurredAt, oldestAllowed)
+          )
+        );
+    } catch {
+      // Purge is housekeeping only; the read above already succeeded.
+    }
 
     const response: SpaceActivityResponse = { activity };
     return c.json(response);

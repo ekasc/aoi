@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
 import { Spacing } from "@/constants/theme";
 import { useMoments } from "@/features/moments/moments-context";
+import { isOwnMoment } from "@/features/moments/ownership";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 export default function EditMomentScreen() {
@@ -90,7 +91,7 @@ export default function EditMomentScreen() {
 		);
 	}
 
-	if (moment.authorRole !== "you") {
+	if (!isOwnMoment(moment)) {
 		return (
 			<>
 				<Stack.Screen options={{ title: "Edit moment" }} />
