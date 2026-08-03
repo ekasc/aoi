@@ -136,6 +136,28 @@ describe('GET /v1/spaces/current/calendar/events', () => {
     expect(body[0].together).toBe(false);
     expect(body[0].reminderMinutesBefore).toBeUndefined();
   });
+
+  it('serializes isOwn relative to the requester, not the actor', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push(
+      [spaceMemberRow()],
+      [
+        eventRow(),
+        // Self-created event "about" the partner: still own.
+        eventRow({ id: '00000000-0000-0000-0000-000000000031', actor: 'partner', actorName: 'Alex' }),
+        // Partner-created event: not own, whatever the actor says.
+        eventRow({ id: '00000000-0000-0000-0000-000000000032', createdByUserId: TEST_OTHER_USER_ID }),
+      ]
+    );
+    const res = await app.fetch(
+      req('GET', '/v1/spaces/current/calendar/events?from=2026-03-01T00:00:00Z&to=2026-03-31T23:59:59Z', { jwt })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].isOwn).toBe(true);
+    expect(body[1].isOwn).toBe(true);
+    expect(body[2].isOwn).toBe(false);
+  });
 });
 
 describe('GET /v1/calendar/events/:id', () => {
@@ -172,7 +194,21 @@ describe('GET /v1/calendar/events/:id', () => {
       together: true,
       allDay: false,
       reminderMinutesBefore: [10, 60],
+      isOwn: true,
     });
+  });
+
+  it('marks a partner-created event as not own for a member', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push(
+      [eventRow({ createdByUserId: TEST_OTHER_USER_ID, actor: 'you', actorName: 'You' })],
+      [spaceMemberRow()]
+    );
+    const res = await app.fetch(req('GET', `/v1/calendar/events/${TEST_EVENT_ID}`, { jwt }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // actor says "you" but the creator is the partner: not editable.
+    expect(body.isOwn).toBe(false);
   });
 });
 
@@ -216,7 +252,20 @@ describe('POST /v1/spaces/current/calendar/events', () => {
     }));
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body).toMatchObject({ id: TEST_EVENT_ID });
+    expect(body).toMatchObject({ id: TEST_EVENT_ID, isOwn: true });
+  });
+
+  it('returns 400 when endsAt is not strictly after startsAt', async () => {
+    const jwt = await getTestJwt();
+    const equal = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: { title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T10:00:00Z', actor: 'you', actorName: 'You', label: { preset: 'Date' } },
+    }));
+    expect(equal.status).toBe(400);
+
+    const inverted = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: { title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T09:00:00Z', actor: 'you', actorName: 'You', label: { preset: 'Date' } },
+    }));
+    expect(inverted.status).toBe(400);
   });
 
   it('round-trips reminderMinutesBefore, allDay and together', async () => {
@@ -269,6 +318,17 @@ describe('POST /v1/spaces/current/calendar/events', () => {
         title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z',
         actor: 'you', actorName: 'You', label: { preset: 'Date' },
         reminderMinutesBefore: [0, 5, 10, 15, 30, 60, 120, 240, 1440],
+      },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for duplicate reminder offsets', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: {
+        title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z',
+        actor: 'you', actorName: 'You', label: { preset: 'Date' }, reminderMinutesBefore: [30, 30],
       },
     }));
     expect(res.status).toBe(400);
@@ -337,6 +397,34 @@ describe('PATCH /v1/calendar/events/:id', () => {
     const jwt = await getTestJwt();
     const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
       jwt, body: { reminderMinutesBefore: [-5] },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for duplicate reminder offsets', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { reminderMinutesBefore: [30, 30] },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when a partial update would make endsAt <= startsAt', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow()], [spaceMemberRow()]);
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      // Existing event starts at 10:00Z — ending at 09:00Z is invalid.
+      jwt, body: { endsAt: '2026-03-15T09:00:00Z' },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when updated startsAt crosses the existing endsAt', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow()], [spaceMemberRow()]);
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      // Existing event ends at 11:00Z — starting at noon is invalid.
+      jwt, body: { startsAt: '2026-03-15T12:00:00Z' },
     }));
     expect(res.status).toBe(400);
   });

@@ -4,7 +4,7 @@ import { useCallback, useMemo } from 'react';
 
 import {
   buildEventReminderTriggers,
-  REMINDER_IDENTIFIER_PREFIX,
+  reminderIdentifiersForEvent,
   type RemindableEvent,
 } from '@/features/calendar/event-reminders';
 
@@ -14,21 +14,6 @@ export type EventRemindersApi = {
   /** Cancel all scheduled reminders for an event id (delete path). */
   cancelEventReminders: (eventId: string) => Promise<void>;
 };
-
-function isReminderForEvent(
-  notification: Notifications.NotificationRequest,
-  eventId: string
-): boolean {
-  const data = notification.content?.data ?? {};
-  if (data.eventId === eventId) {
-    return true;
-  }
-  const identifier = data.identifier;
-  return (
-    typeof identifier === 'string' &&
-    identifier.startsWith(`${REMINDER_IDENTIFIER_PREFIX}.${eventId}.`)
-  );
-}
 
 /**
  * Quiet local reminders for calendar events. Mirrors the resurface
@@ -40,12 +25,11 @@ export function useEventReminders(): EventRemindersApi {
   const cancelEventReminders = useCallback(async (eventId: string) => {
     try {
       const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      const matches = scheduled.filter((notification) =>
-        isReminderForEvent(notification, eventId)
-      );
-      await Promise.all(
-        matches.map((notification) =>
-          Notifications.cancelScheduledNotificationAsync(notification.identifier)
+      const identifiers = reminderIdentifiersForEvent(scheduled, eventId);
+      // allSettled: one failed cancel must never leave the others scheduled.
+      await Promise.allSettled(
+        identifiers.map((identifier) =>
+          Notifications.cancelScheduledNotificationAsync(identifier)
         )
       );
     } catch {
@@ -56,17 +40,18 @@ export function useEventReminders(): EventRemindersApi {
   const rescheduleEventReminders = useCallback(
     async (event: RemindableEvent) => {
       try {
+        // Cancelling needs no permission, so clear stale triggers first —
+        // otherwise a revoked permission would leak old reminders on edits
+        // and deletes.
+        await cancelEventReminders(event.id);
+
         const permission = await Notifications.requestPermissionsAsync();
         if (!permission.granted) {
           return;
         }
 
-        // Exact rescheduling: clear every previous reminder for this event
-        // (including offsets that were removed), then schedule the future ones.
-        await cancelEventReminders(event.id);
-
         const triggers = buildEventReminderTriggers(event);
-        await Promise.all(
+        await Promise.allSettled(
           triggers.map((trigger) =>
             Notifications.scheduleNotificationAsync({
               content: {

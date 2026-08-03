@@ -4,9 +4,12 @@ import {
   buildEventReminderTriggers,
   formatReminderBody,
   formatReminderDayPhrase,
+  isReminderForEvent,
   REMINDER_IDENTIFIER_PREFIX,
   reminderIdentifier,
+  reminderIdentifiersForEvent,
   type RemindableEvent,
+  type ScheduledReminderLike,
 } from '@/features/calendar/event-reminders';
 
 // Fixed "now": Mon Aug 3, 2026 at noon local time.
@@ -157,5 +160,69 @@ describe('buildEventReminderTriggers', () => {
       reminderMinutesBefore: [10, 10],
     });
     expect(buildEventReminderTriggers(event, NOW)).toHaveLength(1);
+  });
+});
+
+describe('isReminderForEvent', () => {
+  it('matches notifications whose data carries the event id', () => {
+    const notification: ScheduledReminderLike = {
+      identifier: 'native-id-1',
+      content: { data: { eventId: 'evt_1', offsetMinutes: 30 } },
+    };
+    expect(isReminderForEvent(notification, 'evt_1')).toBe(true);
+    expect(isReminderForEvent(notification, 'evt_2')).toBe(false);
+  });
+
+  it('matches notifications whose data identifier encodes the event id', () => {
+    const notification: ScheduledReminderLike = {
+      identifier: 'native-id-2',
+      content: { data: { identifier: reminderIdentifier('evt_1', 0) } },
+    };
+    expect(isReminderForEvent(notification, 'evt_1')).toBe(true);
+    expect(isReminderForEvent(notification, 'evt_10')).toBe(false);
+  });
+
+  it('never matches reminders from other subsystems or events', () => {
+    const otherSubsystem: ScheduledReminderLike = {
+      identifier: 'native-id-3',
+      content: { data: { identifier: 'aoi.resurface.evt_1.60' } },
+    };
+    const otherEvent: ScheduledReminderLike = {
+      identifier: 'native-id-4',
+      content: { data: { eventId: 'evt_9', identifier: reminderIdentifier('evt_9', 10) } },
+    };
+    expect(isReminderForEvent(otherSubsystem, 'evt_1')).toBe(false);
+    expect(isReminderForEvent(otherEvent, 'evt_1')).toBe(false);
+  });
+
+  it('treats missing content or data as not a match', () => {
+    expect(isReminderForEvent({ identifier: 'native-id-5' }, 'evt_1')).toBe(false);
+    expect(
+      isReminderForEvent({ identifier: 'native-id-6', content: {} }, 'evt_1')
+    ).toBe(false);
+    expect(
+      isReminderForEvent({ identifier: 'native-id-7', content: { data: null } }, 'evt_1')
+    ).toBe(false);
+    // A non-string identifier in the payload must not crash the matcher.
+    expect(
+      isReminderForEvent(
+        { identifier: 'native-id-8', content: { data: { identifier: 42 } } },
+        'evt_1'
+      )
+    ).toBe(false);
+  });
+});
+
+describe('reminderIdentifiersForEvent', () => {
+  it('returns only the native identifiers belonging to the event', () => {
+    const scheduled: ScheduledReminderLike[] = [
+      { identifier: 'n1', content: { data: { eventId: 'evt_1' } } },
+      { identifier: 'n2', content: { data: { eventId: 'evt_2' } } },
+      { identifier: 'n3', content: { data: { identifier: reminderIdentifier('evt_1', 30) } } },
+      { identifier: 'n4', content: { data: { identifier: 'aoi.resurface.evt_1.60' } } },
+      { identifier: 'n5' },
+    ];
+    expect(reminderIdentifiersForEvent(scheduled, 'evt_1')).toEqual(['n1', 'n3']);
+    expect(reminderIdentifiersForEvent(scheduled, 'evt_missing')).toEqual([]);
   });
 });

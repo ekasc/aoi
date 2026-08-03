@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppState, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -98,7 +98,22 @@ export default function CalendarScreen() {
 		[selectedDate],
 	);
 
-	const now = useMemo(() => new Date(), []);
+	const [now, setNow] = useState(() => new Date());
+
+	// Recompute "now" whenever the app returns to focus so countdown and
+	// agenda labels never stay frozen across midnight.
+	useEffect(() => {
+		const subscription = AppState.addEventListener(
+			"change",
+			(nextAppState) => {
+				if (nextAppState === "active") {
+					setNow(new Date());
+				}
+			},
+		);
+		return () => subscription.remove();
+	}, []);
+
 	const countdownLabel = useMemo(
 		() => formatCountdownLabel(findCountdownEvent(upcomingEvents, now)),
 		[now, upcomingEvents],
@@ -240,8 +255,11 @@ export default function CalendarScreen() {
 									? accent
 									: surface;
 								const count = summary?.total ?? 0;
-								const anniversaryKind =
-									anniversaryMarkersByDay[dayKey];
+								// Dots belong to the visible month only —
+								// never on adjacent-month grid cells.
+								const anniversaryKind = isCurrentMonth
+									? anniversaryMarkersByDay[dayKey]
+									: undefined;
 
 								return (
 									<Pressable

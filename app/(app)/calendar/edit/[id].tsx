@@ -118,7 +118,10 @@ export default function EditCalendarEventScreen() {
     setTogether((current) => !current);
   }, []);
 
-  const isOwner = event?.actor === 'you';
+  // Ownership comes from the server (creator user id vs viewer). `actor`
+  // alone can't say — a user can create an event "about" their partner.
+  // Unknown (missing) must mean not editable.
+  const isOwner = event?.isOwn === true;
 
   useEffect(() => {
     if (!eventId) {
@@ -143,6 +146,9 @@ export default function EditCalendarEventScreen() {
         setEndsAt(new Date(foundEvent.endsAt));
         setAllDay(foundEvent.allDay ?? false);
         setTogether(foundEvent.together ?? false);
+        // The UI intentionally manages a single reminder offset while the
+        // contract allows arrays; save below replaces whatever was stored
+        // with a 0-or-1-element array, making this screen the source of truth.
         setReminderOffset(foundEvent.reminderMinutesBefore?.[0] ?? null);
       } catch {
         if (isActive) {
@@ -308,8 +314,7 @@ export default function EditCalendarEventScreen() {
                 {event.label.customText?.trim() || event.label.preset}
               </ThemedText>
               <ThemedText type="caption" style={{ color: muted }}>
-                This event was created by {event.actorName}. Only the creator can edit
-                or delete it.
+                Only the person who created this event can edit or delete it.
               </ThemedText>
             </Surface>
           </ScrollView>

@@ -64,21 +64,25 @@ export function momentRowToApi(
 }
 
 /** Convert DB row to API shape for calendar events */
-export function calendarEventRowToApi(row: {
-  id: string;
-  title: string;
-  startsAt: Date;
-  endsAt: Date;
-  actor: string;
-  actorName: string;
-  labelPreset: string;
-  labelCustomText: string | null;
-  reminderMinutesBefore?: number[] | null;
-  allDay?: boolean;
-  together?: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
+export function calendarEventRowToApi(
+  row: {
+    id: string;
+    createdByUserId: string;
+    title: string;
+    startsAt: Date;
+    endsAt: Date;
+    actor: string;
+    actorName: string;
+    labelPreset: string;
+    labelCustomText: string | null;
+    reminderMinutesBefore?: number[] | null;
+    allDay?: boolean;
+    together?: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  viewerUserId: string
+) {
   const label = row.labelPreset === 'Other' && row.labelCustomText
     ? { preset: 'Other' as const, customText: row.labelCustomText }
     : { preset: row.labelPreset as any };
@@ -99,6 +103,10 @@ export function calendarEventRowToApi(row: {
     reminderMinutesBefore,
     allDay: row.allDay ?? false,
     together: row.together ?? false,
+    // Per-request ownership: only the requesting user's own events are
+    // editable/deletable on the client (actor alone can't say — a user can
+    // create an event "about" their partner).
+    isOwn: row.createdByUserId === viewerUserId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

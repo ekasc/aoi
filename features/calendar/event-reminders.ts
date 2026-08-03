@@ -34,6 +34,41 @@ export function reminderIdentifier(eventId: string, offsetMinutes: number): stri
   return `${REMINDER_IDENTIFIER_PREFIX}.${eventId}.${offsetMinutes}`;
 }
 
+/** Minimal shape of a scheduled notification needed for matching. */
+export type ScheduledReminderLike = {
+  identifier: string;
+  content?: { data?: Record<string, unknown> | null } | null;
+};
+
+/**
+ * True when a scheduled notification belongs to an event — either its data
+ * payload carries the event id, or its deterministic identifier encodes it.
+ */
+export function isReminderForEvent(
+  notification: ScheduledReminderLike,
+  eventId: string
+): boolean {
+  const data = notification.content?.data ?? {};
+  if (data.eventId === eventId) {
+    return true;
+  }
+  const identifier = data.identifier;
+  return (
+    typeof identifier === 'string' &&
+    identifier.startsWith(`${REMINDER_IDENTIFIER_PREFIX}.${eventId}.`)
+  );
+}
+
+/** Identifiers of the scheduled notifications that belong to an event. */
+export function reminderIdentifiersForEvent(
+  notifications: readonly ScheduledReminderLike[],
+  eventId: string
+): string[] {
+  return notifications
+    .filter((notification) => isReminderForEvent(notification, eventId))
+    .map((notification) => notification.identifier);
+}
+
 function capitalize(value: string): string {
   if (!value) {
     return value;

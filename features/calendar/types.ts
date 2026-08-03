@@ -31,6 +31,11 @@ export type CalendarEvent = {
   allDay?: boolean;
   /** The couple is jointly involved — counts toward the countdown lane. */
   together?: boolean;
+  /**
+   * Per-request ownership signal from the API (creator user id vs viewer).
+   * Optional for locally constructed events; unknown must mean "not own".
+   */
+  isOwn?: boolean;
 };
 
 export type CreateCalendarEventInput = {

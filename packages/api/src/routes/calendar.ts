@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and, isNull, gte, lte } from 'drizzle-orm';
+import { eq, and, isNull, gte, lt } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { calendarEvents, spaceMembers } from '../db/schema.js';
 import { badRequest, notFound, forbidden } from '../lib/errors.js';
@@ -39,6 +39,7 @@ calendarRouter.get('/v1/spaces/current/calendar/events', zValidator('query', lis
     return c.json([]);
   }
 
+  // Half-open window [from, to): matches the local repository's range query.
   const rows = await db
     .select()
     .from(calendarEvents)
@@ -47,12 +48,12 @@ calendarRouter.get('/v1/spaces/current/calendar/events', zValidator('query', lis
         eq(calendarEvents.spaceId, spaceId),
         isNull(calendarEvents.deletedAt),
         gte(calendarEvents.endsAt, new Date(from)),
-        lte(calendarEvents.startsAt, new Date(to))
+        lt(calendarEvents.startsAt, new Date(to))
       )
     )
     .orderBy(calendarEvents.startsAt);
 
-  return c.json(rows.map(calendarEventRowToApi));
+  return c.json(rows.map((row) => calendarEventRowToApi(row, userId)));
 });
 
 // ── Get single event ─────────────────────────────────────────────────────
@@ -89,31 +90,40 @@ calendarRouter.get('/v1/calendar/events/:id', zValidator('param', z.object({ id:
     throw notFound('Event not found');
   }
 
-  return c.json(calendarEventRowToApi(event));
+  return c.json(calendarEventRowToApi(event, userId));
 });
 
 // ── Create event ─────────────────────────────────────────────────────────
 
 // Quiet reminders: minutes before the event starts. Bounded so a single
-// event can never schedule an unreasonable number of notifications.
+// event can never schedule an unreasonable number of notifications, and
+// deduplicated so `[30, 30]` can't double-schedule the same reminder.
 const reminderMinutesSchema = z
   .array(z.number().int().min(0).max(2880))
-  .max(8);
+  .max(8)
+  .refine((offsets) => new Set(offsets).size === offsets.length, {
+    message: 'Reminder offsets must be unique',
+  });
 
-const createEventSchema = z.object({
-  title: z.string().min(1).max(500),
-  startsAt: z.string().datetime({ offset: true }),
-  endsAt: z.string().datetime({ offset: true }),
-  actor: z.enum(['you', 'partner']),
-  actorName: z.string().min(1).max(200),
-  label: z.object({
-    preset: z.enum(['Work', 'Gym', 'Travel', 'Date', 'Family', 'Other']),
-    customText: z.string().max(200).optional(),
-  }),
-  reminderMinutesBefore: reminderMinutesSchema.optional(),
-  allDay: z.boolean().optional(),
-  together: z.boolean().optional(),
-});
+const createEventSchema = z
+  .object({
+    title: z.string().min(1).max(500),
+    startsAt: z.string().datetime({ offset: true }),
+    endsAt: z.string().datetime({ offset: true }),
+    actor: z.enum(['you', 'partner']),
+    actorName: z.string().min(1).max(200),
+    label: z.object({
+      preset: z.enum(['Work', 'Gym', 'Travel', 'Date', 'Family', 'Other']),
+      customText: z.string().max(200).optional(),
+    }),
+    reminderMinutesBefore: reminderMinutesSchema.optional(),
+    allDay: z.boolean().optional(),
+    together: z.boolean().optional(),
+  })
+  .refine(
+    (input) => new Date(input.endsAt).getTime() > new Date(input.startsAt).getTime(),
+    { message: 'endsAt must be after startsAt' }
+  );
 
 calendarRouter.post('/v1/spaces/current/calendar/events', zValidator('json', createEventSchema), async (c) => {
   const userId = c.var.userId;
@@ -148,7 +158,7 @@ calendarRouter.post('/v1/spaces/current/calendar/events', zValidator('json', cre
     })
     .returning();
 
-  return c.json(calendarEventRowToApi(event), 201);
+  return c.json(calendarEventRowToApi(event, userId), 201);
 });
 
 // ── Update event ─────────────────────────────────────────────────────────
@@ -202,6 +212,17 @@ calendarRouter.patch('/v1/calendar/events/:id', zValidator('param', z.object({ i
   }
 
   const input = c.req.valid('json');
+
+  // Validate the merged range: partial updates must never produce an event
+  // that ends before (or exactly when) it starts.
+  const nextStartsAt =
+    input.startsAt !== undefined ? new Date(input.startsAt) : existing.startsAt;
+  const nextEndsAt =
+    input.endsAt !== undefined ? new Date(input.endsAt) : existing.endsAt;
+  if (nextEndsAt.getTime() <= nextStartsAt.getTime()) {
+    throw badRequest('endsAt must be after startsAt');
+  }
+
   const updateData: Partial<typeof calendarEvents.$inferInsert> = { updatedAt: new Date() };
   if (input.title !== undefined) updateData.title = input.title;
   if (input.startsAt !== undefined) updateData.startsAt = new Date(input.startsAt);
@@ -224,7 +245,7 @@ calendarRouter.patch('/v1/calendar/events/:id', zValidator('param', z.object({ i
     .where(eq(calendarEvents.id, eventId))
     .returning();
 
-  return c.json(calendarEventRowToApi(updated));
+  return c.json(calendarEventRowToApi(updated, userId));
 });
 
 // ── Delete event (soft delete) ───────────────────────────────────────────

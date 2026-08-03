@@ -373,6 +373,10 @@ packages/api.
 
 - Push notifications: none. Squeeze delivery + true resurface delivery need
   expo-notifications push + `/v1/squeezes` endpoint + token registration.
+- Calendar reminders are device-scoped: `reminderMinutesBefore` schedules
+  silent local notifications only on the device that saved the event.
+  Partner-created events, reinstalls, and second devices get no reminders
+  until push exists.
 - Partner details are device-local — no API table yet.
 - E2E encryption tiers: designed, not built.
 - No deployment target for the API (no Dockerfile/hosting config). CI exists

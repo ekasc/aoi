@@ -53,6 +53,10 @@ function toCalendarEvent(row: CalendarEventRow): CalendarEvent {
       : undefined,
     allDay: row.all_day === 1,
     together: row.together === 1,
+    // Stub mode has no user accounts: the actor is the only ownership
+    // signal, keeping the pre-existing "you-created events are editable"
+    // behavior.
+    isOwn: row.actor === 'you',
   };
 }
 
@@ -145,8 +149,8 @@ export async function listEventsForDay(dayStartIso: string, dayEndIso: string) {
 }
 
 /**
- * Events that overlap a time window — used by the agenda lane. Matches the
- * API's range query semantics (event overlaps [from, to]).
+ * Events that overlap a half-open time window [from, to) — used by the
+ * agenda lane. Matches the API's range query semantics.
  */
 export async function listEventsInRange(fromIso: string, toIso: string) {
   const db = await getDatabase();
