@@ -6,4 +6,5 @@ export * from './calendar.js';
 export * from './preferences.js';
 export * from './activity.js';
 export * from './someday.js';
+export * from './question.js';
 export * from './api.js';

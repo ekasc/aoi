@@ -5,6 +5,7 @@ import {
   timestamp,
   date,
   boolean,
+  integer,
   jsonb,
   uniqueIndex,
   index,
@@ -282,6 +283,39 @@ export const somedayItems = pgTable(
       'ck_someday_items_category',
       sql`${table.category} in ('place', 'food', 'film', 'other')`
     ),
+  ]
+);
+
+// ── Weekly Answers ───────────────────────────────────────────────────────
+// "One question this week": each partner privately answers one handcrafted
+// question per ISO week. Answers reveal to the couple only when BOTH have
+// answered — the gate is enforced at read time, never stored revealed.
+
+export const weeklyAnswers = pgTable(
+  'weekly_answers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** ISO week key, e.g. `2026-W32`. */
+    weekKey: text('week_key').notNull(),
+    /** Snapshot of the question served that week (index into the question bank). */
+    questionId: integer('question_id').notNull(),
+    answer: text('answer').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_weekly_answers_space_user_week').on(
+      table.spaceId,
+      table.userId,
+      table.weekKey
+    ),
+    index('idx_weekly_answers_space_week').on(table.spaceId, table.weekKey),
   ]
 );
 

@@ -159,6 +159,21 @@ export function somedayItemRowToApi(
   };
 }
 
+/**
+ * Convert a weekly-answer DB row to its API shape. The reveal gate (partner
+ * answers stay hidden until both partners have answered) is applied in the
+ * route, never here — this serializer only normalizes one row.
+ */
+export function weeklyAnswerRowToApi(row: {
+  answer: string;
+  updatedAt: Date;
+}): { answer: string; updatedAt: string } {
+  return {
+    answer: row.answer,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 /** Convert DB row to API shape for users */
 export function userRowToApi(row: {
   id: string;

@@ -9,9 +9,15 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Surface } from "@/components/ui/surface";
 import { Spacing } from "@/constants/theme";
+import { useMoments } from "@/features/moments/moments-context";
 import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
 import { useSqueeze } from "@/features/squeeze/squeeze-context";
+import {
+	formatDaysTogether,
+	formatMomentsKept,
+	getDaysTogether,
+} from "@/features/time-together/time-together";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 function formatRelationshipDate(value: string) {
@@ -64,9 +70,15 @@ export default function ProfileScreen() {
 	const { user, signOut } = useSession();
 	const { space, status: spaceStatus } = useSpace();
 	const { sendSqueeze, isSending: isSqueezeSending } = useSqueeze();
+	const { moments } = useMoments();
 	const muted = useThemeColor({}, "muted");
 	const background = useThemeColor({}, "background");
 	const accent = useThemeColor({}, "accent");
+	const daysTogether = useMemo(
+		() => getDaysTogether(space?.relationshipStartDate, new Date()),
+		[space?.relationshipStartDate],
+	);
+	const momentsKept = moments.length;
 	const contentContainerStyle = useMemo(
 		() => [
 			styles.contentContainer,
@@ -97,6 +109,14 @@ export default function ProfileScreen() {
 	const handleSqueeze = useCallback(() => {
 		void sendSqueeze();
 	}, [sendSqueeze]);
+
+	const handleMemoryWall = useCallback(() => {
+		router.push("/(app)/memory-wall");
+	}, [router]);
+
+	const handleQuestion = useCallback(() => {
+		router.push("/(app)/question");
+	}, [router]);
 
 	const handleSignOut = useCallback(async () => {
 		await signOut();
@@ -156,6 +176,21 @@ export default function ProfileScreen() {
 			<ThemedText type="title" selectable style={styles.hero}>
 				Profile
 			</ThemedText>
+
+			{daysTogether !== null ? (
+				<Surface variant="raised" style={styles.card}>
+					<ThemedText type="meta">Time together</ThemedText>
+					<Divider style={styles.divider} />
+					<ThemedText type="title" selectable>
+						{formatDaysTogether(daysTogether)}
+					</ThemedText>
+					{momentsKept > 0 ? (
+						<ThemedText type="caption" style={{ color: muted }}>
+							{formatMomentsKept(momentsKept)}
+						</ThemedText>
+					) : null}
+				</Surface>
+			) : null}
 
 			<Surface variant="raised" style={styles.card}>
 				<ThemedText type="meta" style={styles.cardHeading}>
@@ -226,6 +261,16 @@ export default function ProfileScreen() {
 					<Button
 						label="Someday list"
 						onPress={handleSomeday}
+						variant="secondary"
+					/>
+					<Button
+						label="Memory wall"
+						onPress={handleMemoryWall}
+						variant="secondary"
+					/>
+					<Button
+						label="This week's question"
+						onPress={handleQuestion}
 						variant="secondary"
 					/>
 					<Button

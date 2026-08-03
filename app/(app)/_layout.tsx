@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
+import { QuestionProvider } from "@/features/question/question-context";
 import { useSession } from "@/features/session/session-context";
 import { SomedayProvider } from "@/features/someday/someday-context";
 import { useSpace } from "@/features/space/space-context";
@@ -63,6 +64,7 @@ export default function AuthenticatedAppLayout() {
 		<CalendarProvider>
 			<PartnerDetailsProvider>
 				<SomedayProvider>
+					<QuestionProvider>
 					<SqueezeProvider>
 						<SqueezeOverlay />
 						<Stack
@@ -135,8 +137,25 @@ export default function AuthenticatedAppLayout() {
 									...sheetOptions,
 								}}
 							/>
+							<Stack.Screen
+								name="memory-wall"
+								options={{
+									title: "Memory wall",
+									presentation: useFormSheet ? "formSheet" : "modal",
+									...sheetOptions,
+								}}
+							/>
+							<Stack.Screen
+								name="question"
+								options={{
+									title: "This week",
+									presentation: useFormSheet ? "formSheet" : "modal",
+									...sheetOptions,
+								}}
+							/>
 						</Stack>
 					</SqueezeProvider>
+					</QuestionProvider>
 				</SomedayProvider>
 			</PartnerDetailsProvider>
 		</CalendarProvider>
