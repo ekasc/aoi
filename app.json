@@ -49,7 +49,17 @@
       "expo-web-browser",
       "expo-notifications",
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Aoi uses your position only while you have location sharing turned on, so your partner can see you're on your way.",
+          "locationAlwaysAndWhenInUsePermission": "Aoi shares your position while Live sharing is on, so your partner knows you'll be home soon. You can turn it off at any time.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      "expo-task-manager"
     ],
     "experiments": {
       "typedRoutes": true,

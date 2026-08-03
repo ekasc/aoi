@@ -8,4 +8,5 @@ export * from './activity.js';
 export * from './someday.js';
 export * from './question.js';
 export * from './push.js';
+export * from './location.js';
 export * from './api.js';

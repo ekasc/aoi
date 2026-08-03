@@ -5,6 +5,11 @@ import { StatusBar } from "expo-status-bar";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { PropsWithChildren } from "react";
 
+// Defines the Live-mode background location task before anything else can
+// run — Expo requires the task to exist at app scope (including cold starts
+// launched by the OS for location updates).
+import "@/features/location/background-task";
+
 import { LaunchSplash } from "@/components/launch-splash";
 import { MomentsProvider } from "@/features/moments/moments-context";
 import { SessionProvider, useSession } from "@/features/session/session-context";

@@ -3,6 +3,7 @@ import { parsePushNotificationData } from '@aoi/shared';
 import { useEffect, type PropsWithChildren } from 'react';
 
 import { isStubMode } from '@/features/api-client';
+import { useLocation } from '@/features/location/location-context';
 import { useMoments } from '@/features/moments/moments-context';
 import { registerDevicePushToken } from '@/features/push/register-push-token';
 import { useSqueeze } from '@/features/squeeze/squeeze-context';
@@ -30,6 +31,11 @@ let registeredThisSession = false;
 export function PushProvider({ children }: PropsWithChildren) {
   const { receiveSqueeze } = useSqueeze();
   const { refresh } = useMoments();
+  const {
+    receiveRequest,
+    refreshPartnerLocation,
+    handlePartnerStopped,
+  } = useLocation();
 
   useEffect(() => {
     if (isStubMode() || registeredThisSession) {
@@ -56,12 +62,30 @@ export function PushProvider({ children }: PropsWithChildren) {
     const routePushData = (rawData: unknown) => {
       const data = parsePushNotificationData(rawData);
 
-      if (!data) {
+if (!data) {
         return; // Unknown kinds are never acted on.
       }
 
       if (data.kind === 'squeeze') {
         receiveSqueeze();
+        return;
+      }
+
+      if (data.kind === 'location_request') {
+        // A gentle ask — the approval prompt appears if both opted in.
+        receiveRequest();
+        return;
+      }
+
+      if (data.kind === 'location_granted') {
+        // They shared once — quietly fetch the current position.
+        void refreshPartnerLocation();
+        return;
+      }
+
+      if (data.kind === 'location_stopped') {
+        // They paused or opted out — clear the pin without ceremony.
+        handlePartnerStopped();
         return;
       }
 
@@ -75,7 +99,7 @@ export function PushProvider({ children }: PropsWithChildren) {
       (notification) => routePushData(notification.request.content.data)
     );
 
-    // The user tapped a notification that arrived while the app was
+// The user tapped a notification that arrived while the app was
     // backgrounded/killed — light up the same routing.
     const responseSubscription =
       Notifications.addNotificationResponseReceivedListener((response) =>
@@ -86,7 +110,13 @@ export function PushProvider({ children }: PropsWithChildren) {
       receivedSubscription.remove();
       responseSubscription.remove();
     };
-  }, [receiveSqueeze, refresh]);
+  }, [
+    handlePartnerStopped,
+    receiveRequest,
+    receiveSqueeze,
+    refresh,
+    refreshPartnerLocation,
+  ]);
 
   return <>{children}</>;
 }

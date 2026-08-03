@@ -7,6 +7,7 @@ import {
   boolean,
   integer,
   jsonb,
+  doublePrecision,
   uniqueIndex,
   index,
   check,
@@ -97,6 +98,12 @@ export const spaceMembers = pgTable(
     state: text('state', { enum: ['active', 'left'] }).notNull().default('active'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
     leftAt: timestamp('left_at', { withTimezone: true }),
+    // Opt-in to location sharing. NULL = not consented (the default for
+    // everyone, always). Set to the opt-in moment when consented; clearing
+    // it back to NULL is a one-tap revocation that also deletes any share
+    // row. Stored here (not in a separate consents table) because one row
+    // per (space, user) already exists — the simplest correct design.
+    locationConsentAt: timestamp('location_consent_at', { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.spaceId, table.userId] }),
@@ -316,6 +323,61 @@ export const weeklyAnswers = pgTable(
       table.weekKey
     ),
     index('idx_weekly_answers_space_week').on(table.spaceId, table.weekKey),
+  ]
+);
+
+// ── Location Shares ──────────────────────────────────────────────────────
+// EPHEMERAL BY DESIGN: at most ONE row per user — the single latest live
+// position. Upsert-on-report; the row is DELETED outright on stop, consent
+// revocation, or expiry. No history, no trails, no soft deletes — stopping
+// leaves nothing behind. Served only under both-consent + freshness gates,
+// and one-time grants (`on_request_granted`) are marked consumed after one
+// read so they can never be polled repeatedly. Coordinates must never reach
+// logs or error strings.
+
+export const locationShares = pgTable(
+  'location_shares',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    mode: text('mode', {
+      enum: ['live', 'until_arrive', 'on_request_granted'],
+    }).notNull(),
+    /** Optional geofenced destination for `until_arrive`: {name, latitude, longitude, radiusMeters}. */
+    destination: jsonb('destination').$type<{
+      name: string;
+      latitude: number;
+      longitude: number;
+      radiusMeters: number;
+    }>(),
+    latitude: doublePrecision('latitude').notNull(),
+    longitude: doublePrecision('longitude').notNull(),
+    accuracyMeters: doublePrecision('accuracy_meters'),
+    reportedAt: timestamp('reported_at', { withTimezone: true }).notNull(),
+    /** Set when a one-time grant has been served once — never served again. */
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      'ck_location_shares_mode',
+      sql`${table.mode} in ('live', 'until_arrive', 'on_request_granted')`
+    ),
+    check(
+      'ck_location_shares_latitude',
+      sql`${table.latitude} between -90 and 90`
+    ),
+    check(
+      'ck_location_shares_longitude',
+      sql`${table.longitude} between -180 and 180`
+    ),
   ]
 );
 

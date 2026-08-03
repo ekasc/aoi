@@ -126,6 +126,38 @@ vi.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success' },
 }));
 
+vi.mock('expo-location', () => ({
+  Accuracy: { Balanced: 3 },
+  requestForegroundPermissionsAsync: async () => ({ granted: false }),
+  requestBackgroundPermissionsAsync: async () => ({ granted: false }),
+  isBackgroundLocationAvailableAsync: async () => false,
+  getCurrentPositionAsync: async () => ({
+    coords: { latitude: 0, longitude: 0, accuracy: 0 },
+  }),
+  watchPositionAsync: async () => ({ remove: () => {} }),
+  startLocationUpdatesAsync: async () => {},
+  stopLocationUpdatesAsync: async () => {},
+  hasStartedLocationUpdatesAsync: async () => false,
+}));
+
+vi.mock('expo-task-manager', () => ({
+  defineTask: () => {},
+}));
+
+vi.mock('react-native-maps', () => {
+  const React = require('react');
+  const MapView = ({ children, style, ...props }: any) =>
+    React.createElement('div', { style: flattenStyle(style), 'data-testid': 'map-view', ...props }, children);
+  const Marker = (props: any) =>
+    React.createElement('span', { 'data-testid': 'map-marker', ...props });
+
+  return {
+    __esModule: true,
+    default: MapView,
+    Marker,
+  };
+});
+
 class MockAsyncStorage {
   store = new Map<string, string>();
 

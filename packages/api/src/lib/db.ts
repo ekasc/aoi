@@ -1,4 +1,7 @@
 import type {
+  LocationShareDestination,
+  LocationShareMode,
+  PartnerLocationShare,
   SomedayAuthorRole,
   SomedayCategory,
   SomedayItem,
@@ -171,6 +174,31 @@ export function weeklyAnswerRowToApi(row: {
   return {
     answer: row.answer,
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Convert a location-share DB row to the partner-facing API shape.
+ *
+ * Privacy note: this serializer is the ONLY place a stored position becomes
+ * an API response, and it is always invoked behind the both-consent +
+ * freshness gates in the location route. It never logs anything.
+ */
+export function locationShareRowToApi(row: {
+  mode: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number | null;
+  reportedAt: Date;
+  destination: LocationShareDestination | null;
+}): PartnerLocationShare {
+  return {
+    mode: row.mode as LocationShareMode,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    accuracyMeters: row.accuracyMeters,
+    reportedAt: row.reportedAt.toISOString(),
+    destination: row.destination ?? null,
   };
 }
 

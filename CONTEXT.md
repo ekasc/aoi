@@ -44,12 +44,15 @@ app/                  Expo Router routes (route groups below)
   (app)/someday.tsx   the shared Someday list
   (app)/memory-wall.tsx  the memory wall (photo + voice album)
   (app)/question.tsx  "one question this week" ritual
+  (app)/location.tsx  location consent + sharing controls (default OFF)
+  (app)/partner-map.tsx  single-pin partner map (no trails, no history)
 components/           Reusable UI (kebab-case files)
   ui/                 Primitives: button, icon-button, surface, divider,
                       glass-surface, android-glass-surface
   moments/            moment-card, resurface-card
   media/              media-picker, upload-progress, voice-recorder, audio-player
   squeeze/            squeeze-overlay
+  location/           partner-map (single pin), location-request-prompt
 features/             Feature modules (state, repos, API clients — NOT React-router stuff)
   api-client.ts       Authenticated fetch + token refresh/retry
   auth/               AuthApi interface, remote (WorkOS) + mock impls, config
@@ -71,11 +74,16 @@ features/             Feature modules (state, repos, API clients — NOT React-r
   squeeze/            Wordless signal (real push in remote, simulated in stub)
   push/               Push backbone: token registration (register-push-token,
                       push-api) + PushProvider receive routing (push-context)
+  location/           Bounded location sharing: context, stub (local-location-
+                      repository) + remote repos, pure rules (location-state),
+                      approval state machine (approval), background-task
+                      (Live-mode-only OS task; registered in app/_layout.tsx)
 hooks/                use-theme-color, use-color-scheme, use-aoi-fonts
 constants/            theme.ts (Spacing/Radii/Motion), theme-presets.ts, typography.ts
 packages/api/         Hono + Drizzle + Postgres backend (own package.json, vitest, tsconfig)
 packages/shared/      @aoi/shared — API contract types (moment, calendar, space, auth, api,
-                      question incl. ISO-week helpers + the 20-question bank)
+                      question incl. ISO-week helpers + the 20-question bank,
+                      push kinds, location sharing incl. shared freshness rules)
 tests/unit/           Frontend vitest tests (RN mocked to DOM — see tests/setup.ts)
 e2e/maestro/          auth-stub-smoke.yaml
 patches/              pnpm patches: expo-router (ctx ignore), @expo/metro-runtime (exports)
@@ -148,12 +156,39 @@ reassigned — tokens are device-scoped; `DELETE` on sign-out, no existence
 leaks). `sendPushToUser` batches to the Expo endpoint (injectable via
 `EXPO_PUSH_ENDPOINT`/`setPushEndpoint`), removes tokens whose tickets report
 `DeviceNotRegistered`/`InvalidPushToken`, and swallows ALL failures — push
-must never break a request. `notifyPartnerInSpace(spaceId, fromUserId, kind)`
+must never break a request. `notifyPartnerInSpace(spaceId, fromUserId, kind, data, fromName?)`
 is the reusable hook for partner-facing features. Payloads carry
-`data.kind` + fixed vague copy only — NEVER moment text or any content.
-Kinds: `squeeze | moment_added | moment_edited | moment_deleted`. Client
+`data.kind` + fixed vague copy only — NEVER moment text, locations, or any
+content (location pushes may carry the sender's display name in the copy —
+never coordinates).
+Kinds: `squeeze | moment_added | moment_edited | moment_deleted |
+location_request | location_granted | location_stopped`. Client
 receive routing lives in `features/push/push-context.tsx`; the foreground
 handler (banner visible, never sound) is set globally in `app/_layout.tsx`.
+
+### Location sharing ("they'll be home soon", never tracking)
+Optional, consensual, BOUNDED sharing — default OFF. **Both partners must
+explicitly opt in before anything flows** (consent stored as
+`space_members.location_consent_at`; revoking deletes any live row); either
+can pause/stop in ONE tap, no confirmation dialogs, no guilt copy. Three
+modes: `live` (the ONLY mode using background location), `until_arrive`
+(foreground watch that auto-stops inside the destination geofence), and
+`on_request_granted` (partner asks → gentle approval prompt
+(`LocationRequestPrompt`) → ONE-time share, consumed on first read, 5-minute
+window). The server keeps ONLY the single latest position per user
+(`location_shares`, `userId` unique, upsert-on-report, purged on
+stop/expiry/revoke — no history, no trails), and coordinates NEVER appear in
+logs or error strings (word-only validation messages; payloads carry kind +
+names only). GET serves the partner's row only under both-consent + freshness
+(15 min live/until_arrive, 5 min grant); everything else is a calm
+`{ location: null }` — no existence leaks. Request route is rate-limited
+3/min and mutuality-gated. Entry point: ONE quiet row on the profile tab →
+`app/(app)/location.tsx`; partner view is `app/(app)/partner-map.tsx`
+(single pin, no trails). Archived/locked spaces: hard-off. Stub mode
+simulates the partner (consents ~2.5 s after you opt in, grants a fixed
+place ~3 s after a request) via `features/location/local-location-repository.ts`
+— plainly documented as simulated, never touches GPS or network. Tender-error
+policy applies throughout: a location that fails to send is silently absorbed.
 
 ### Partner details / "The little things"
 Small concrete facts about the partner (coffee order, their song, the way
@@ -314,8 +349,10 @@ RootLayout (app/_layout.tsx)
       SomedayProvider
         QuestionProvider
           SqueezeProvider
-            PushProvider     (token registration + push receive routing;
-                              + <SqueezeOverlay/> mounted here)
+            LocationProvider (consent/sharing state; stub vs remote repo)
+              PushProvider   (token registration + push receive routing;
+                              + <SqueezeOverlay/> + <LocationRequestPrompt/>
+                              mounted here)
 ```
 
 Navigation redirects: signed out → `(public)`; no space → `(auth)/space-setup`;
@@ -356,9 +393,18 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/media/upload-url`, `/v1/media/:id/complete`, `/download-url` | presigned R2; images + audio; EXIF stripped server-side via sharp (images only) |
 | `/v1/push/tokens` | POST registers (upsert) the caller's Expo push token (format-validated, reassigns on device hand-off); DELETE unregisters it (sign-out); identical responses whether or not a row existed — no existence leaks |
 | `/v1/squeezes` | fire-and-forget push to the other space member via `notifyPartnerInSpace`; stores nothing; rate limited 10/min per sender |
+| `/v1/spaces/current/location` | GET returns the PARTNER's latest share only when both consented AND fresh (15 min live/until_arrive, 5 min grant — grants are consumed on first read); otherwise a calm `{ location: null }`; stale rows purged on read |
+| `/v1/spaces/current/location/share` | POST upserts the caller's single row (server-assigned `reportedAt`); notifies `location_granted` for one-time grants; word-only 400s (coordinates never echoed) |
+| `/v1/spaces/current/location/stop` | DELETE idempotent — same calm 200 whether or not a row existed; notifies `location_stopped` only when one did |
+| `/v1/spaces/current/location/consent` | POST `{ consented }` — opting out deletes any live row + notifies; response carries both consent flags (mutuality is the feature) |
+| `/v1/spaces/current/location/request` | POST asks the partner for a one-time share (notifies `location_request` with sender name only); mutuality-gated; rate limited 3/min |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0007_*` adds the `push_tokens` table (user-owned,
+Latest: `0008_*` adds the `location_shares` table (`user_id` unique — at
+most ONE ephemeral row per user, `mode` check constraint, nullable
+`destination` jsonb, `consumed_at` for one-time grants, latitude/longitude
+range checks) and `space_members.location_consent_at` (the both-consent
+gate); `0007_*` adds the `push_tokens` table (user-owned,
 `expo_push_token` unique, `platform`, `last_seen_at`; user FK cascades —
 tokens are ephemeral device artifacts, removed outright when dead);
 `0006_*` adds the `weekly_answers` table (spaceId/userId/weekKey/
@@ -431,7 +477,8 @@ row-to-API serializer (`src/lib/db.ts`) → frontend feature types.
 
 - Root: `pnpm run test:unit` (vitest, happy-dom). RN is mocked to DOM
   elements in `tests/setup.ts`; `expo-audio`, `expo-notifications`,
-  `expo-haptics`, `@expo/vector-icons`, expo-sqlite, etc. are mocked there —
+  `expo-haptics`, `expo-location`, `expo-task-manager`, `react-native-maps`,
+  `@expo/vector-icons`, expo-sqlite, etc. are mocked there —
   **add new native-module mocks there** when importing new Expo modules in
   tested component trees. Vitest env sets `EXPO_PUBLIC_AUTH_STUB_MODE=true`
   (config-level `env` — not `test.env`, removed in Vitest 4).
@@ -469,13 +516,18 @@ notifications) + countdown lane + anniversaries + agenda view + all-day
 events, profile, settings, the little things, the Someday list
 (device-local), squeeze loop (simulated reply), voice traces (local), media
 picking, moments edit/delete + tombstones (local synthesis), time-together
-profile line, memory wall, and "one question this week" (device-local answers;
-no simulated partner — the reveal waits for a real second voice).
+profile line, memory wall, "one question this week" (device-local answers;
+no simulated partner — the reveal waits for a real second voice), and
+location sharing — honestly simulated: the pretend partner consents a couple
+of seconds after you opt in and grants a fixed, plainly-simulated place when
+asked (no real GPS, nothing leaves the device).
 
 **Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
 provenance), calendar, the Someday list, spaces, preferences, media upload
 pipeline, push backbone (token registration, squeeze delivery, moment-change
-notifications), and the weekly-question reveal gate (`weekly_answers`) —
+and location-request/granted/stopped notifications), the weekly-question
+reveal gate (`weekly_answers`), and bounded location sharing (both-consent
+gate, three modes, one-time grants, freshness-purged single row) —
 against packages/api.
 
 **Known gaps / seams:**
@@ -491,6 +543,10 @@ against packages/api.
   Partner-created events, reinstalls, and second devices get no reminders
   until reminders are delivered through the push backbone.
 - Partner details are device-local — no API table yet.
+- Location sharing depends on device-level OS permission grants: Live asks
+  for background ("always") permission and falls back to a foreground watch
+  if declined; simulators/Expo Go may not deliver background fixes, so real
+  verification needs a physical device.
 - E2E encryption tiers: designed, not built.
 - No deployment target for the API (no Dockerfile/hosting config). CI exists
   (`.github/workflows/ci.yml`: lint, typecheck, tests, API build). `eas.json`
