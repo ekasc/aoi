@@ -105,6 +105,37 @@ describe('GET /v1/spaces/current/calendar/events', () => {
       expect(body[0]).toMatchObject({ id: TEST_EVENT_ID, title: 'Test event' });
     }
   });
+
+  it('serializes reminderMinutesBefore, allDay and together', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push(
+      [spaceMemberRow()],
+      [eventRow({ reminderMinutesBefore: [30], allDay: true, together: true })]
+    );
+    const res = await app.fetch(
+      req('GET', '/v1/spaces/current/calendar/events?from=2026-03-01T00:00:00Z&to=2026-03-31T23:59:59Z', { jwt })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0]).toMatchObject({
+      reminderMinutesBefore: [30],
+      allDay: true,
+      together: true,
+    });
+  });
+
+  it('defaults allDay/together to false and omits empty reminders', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()], [eventRow()]);
+    const res = await app.fetch(
+      req('GET', '/v1/spaces/current/calendar/events?from=2026-03-01T00:00:00Z&to=2026-03-31T23:59:59Z', { jwt })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].allDay).toBe(false);
+    expect(body[0].together).toBe(false);
+    expect(body[0].reminderMinutesBefore).toBeUndefined();
+  });
 });
 
 describe('GET /v1/calendar/events/:id', () => {
@@ -125,6 +156,23 @@ describe('GET /v1/calendar/events/:id', () => {
     mockSelectQueue.push([eventRow({ spaceId: TEST_SPACE_ID })], []);
     const res = await app.fetch(req('GET', `/v1/calendar/events/${TEST_EVENT_ID}`, { jwt }));
     expect(res.status).toBe(404);
+  });
+
+  it('returns the serialized event for a member of the space', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push(
+      [eventRow({ together: true, reminderMinutesBefore: [10, 60] })],
+      [spaceMemberRow()]
+    );
+    const res = await app.fetch(req('GET', `/v1/calendar/events/${TEST_EVENT_ID}`, { jwt }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      id: TEST_EVENT_ID,
+      together: true,
+      allDay: false,
+      reminderMinutesBefore: [10, 60],
+    });
   });
 });
 
@@ -170,6 +218,61 @@ describe('POST /v1/spaces/current/calendar/events', () => {
     const body = await res.json();
     expect(body).toMatchObject({ id: TEST_EVENT_ID });
   });
+
+  it('round-trips reminderMinutesBefore, allDay and together', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()]);
+    mockReturningResult = [eventRow({ reminderMinutesBefore: [10, 60], allDay: true, together: true })];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: {
+        title: 'Visit', startsAt: '2026-03-15T00:00:00Z', endsAt: '2026-03-16T00:00:00Z',
+        actor: 'you', actorName: 'You', label: { preset: 'Date' },
+        reminderMinutesBefore: [10, 60], allDay: true, together: true,
+      },
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      id: TEST_EVENT_ID,
+      reminderMinutesBefore: [10, 60],
+      allDay: true,
+      together: true,
+    });
+  });
+
+  it('returns 400 for a reminder offset above the maximum', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: {
+        title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z',
+        actor: 'you', actorName: 'You', label: { preset: 'Date' }, reminderMinutesBefore: [5000],
+      },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for a non-integer reminder offset', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: {
+        title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z',
+        actor: 'you', actorName: 'You', label: { preset: 'Date' }, reminderMinutesBefore: [2.5],
+      },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for too many reminder offsets', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: {
+        title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z',
+        actor: 'you', actorName: 'You', label: { preset: 'Date' },
+        reminderMinutesBefore: [0, 5, 10, 15, 30, 60, 120, 240, 1440],
+      },
+    }));
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('PATCH /v1/calendar/events/:id', () => {
@@ -200,6 +303,42 @@ describe('PATCH /v1/calendar/events/:id', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty('id');
+  });
+
+  it('round-trips reminderMinutesBefore, allDay and together on update', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow()], [spaceMemberRow()]);
+    mockReturningResult = [eventRow({ reminderMinutesBefore: [30], allDay: false, together: true })];
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { reminderMinutesBefore: [30], allDay: false, together: true },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      reminderMinutesBefore: [30],
+      allDay: false,
+      together: true,
+    });
+  });
+
+  it('clears reminders when reminderMinutesBefore is an empty array', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow({ reminderMinutesBefore: [30] })], [spaceMemberRow()]);
+    mockReturningResult = [eventRow({ reminderMinutesBefore: null })];
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { reminderMinutesBefore: [] },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.reminderMinutesBefore).toBeUndefined();
+  });
+
+  it('returns 400 for a negative reminder offset', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { reminderMinutesBefore: [-5] },
+    }));
+    expect(res.status).toBe(400);
   });
 });
 

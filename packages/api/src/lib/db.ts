@@ -73,12 +73,20 @@ export function calendarEventRowToApi(row: {
   actorName: string;
   labelPreset: string;
   labelCustomText: string | null;
+  reminderMinutesBefore?: number[] | null;
+  allDay?: boolean;
+  together?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }) {
   const label = row.labelPreset === 'Other' && row.labelCustomText
     ? { preset: 'Other' as const, customText: row.labelCustomText }
     : { preset: row.labelPreset as any };
+
+  const reminderMinutesBefore =
+    Array.isArray(row.reminderMinutesBefore) && row.reminderMinutesBefore.length > 0
+      ? row.reminderMinutesBefore
+      : undefined;
 
   return {
     id: row.id,
@@ -88,6 +96,9 @@ export function calendarEventRowToApi(row: {
     actor: row.actor as any,
     actorName: row.actorName,
     label,
+    reminderMinutesBefore,
+    allDay: row.allDay ?? false,
+    together: row.together ?? false,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

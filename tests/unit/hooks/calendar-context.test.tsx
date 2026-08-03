@@ -173,4 +173,52 @@ describe('useCalendar (stub)', () => {
     const updated = result.current.events.find((e: any) => e.id === original!.id);
     expect(updated?.title).toBe('Updated title');
   });
+
+  it('round-trips allDay, together and reminderMinutesBefore on create and update', async () => {
+    const { CalendarProvider, useCalendar } = await import('@/features/calendar/calendar-context');
+
+    const { result } = renderHook(() => useCalendar(), {
+      wrapper: ({ children }) => <CalendarProvider>{children}</CalendarProvider>,
+    });
+
+    await waitForReady(result);
+
+    await act(async () => {
+      await result.current.addEvent({
+        title: 'All-day visit',
+        startsAt: '2026-09-01T00:00:00.000Z',
+        endsAt: '2026-09-02T00:00:00.000Z',
+        actor: 'you',
+        actorName: 'You',
+        label: { preset: 'Date' },
+        reminderMinutesBefore: [30],
+        allDay: true,
+        together: true,
+      });
+    });
+
+    const added = result.current.events.find((e: any) => e.title === 'All-day visit');
+    expect(added).toBeTruthy();
+    expect(added!.allDay).toBe(true);
+    expect(added!.together).toBe(true);
+    expect(added!.reminderMinutesBefore).toEqual([30]);
+
+    await act(async () => {
+      await result.current.updateEvent({
+        id: added!.id,
+        title: 'All-day visit',
+        startsAt: '2026-09-01T00:00:00.000Z',
+        endsAt: '2026-09-02T00:00:00.000Z',
+        label: { preset: 'Date' },
+        reminderMinutesBefore: [],
+        allDay: false,
+        together: false,
+      });
+    });
+
+    const updated = result.current.events.find((e: any) => e.id === added!.id);
+    expect(updated?.allDay).toBe(false);
+    expect(updated?.together).toBe(false);
+    expect(updated?.reminderMinutesBefore).toBeUndefined();
+  });
 });

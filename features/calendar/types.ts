@@ -27,6 +27,10 @@ export type CalendarEvent = {
   createdAt: string;
   updatedAt: string;
   reminderMinutesBefore?: number[];
+  /** All-day event: no time-of-day; UI shows "All day" instead of times. */
+  allDay?: boolean;
+  /** The couple is jointly involved — counts toward the countdown lane. */
+  together?: boolean;
 };
 
 export type CreateCalendarEventInput = {
@@ -37,6 +41,8 @@ export type CreateCalendarEventInput = {
   actorName: string;
   label: CalendarLabel;
   reminderMinutesBefore?: number[];
+  allDay?: boolean;
+  together?: boolean;
 };
 
 export type UpdateCalendarEventInput = {
@@ -46,6 +52,8 @@ export type UpdateCalendarEventInput = {
   endsAt: string;
   label: CalendarLabel;
   reminderMinutesBefore?: number[];
+  allDay?: boolean;
+  together?: boolean;
 };
 
 export type CalendarDaySummary = {
@@ -58,6 +66,11 @@ export type CalendarMonthSummary = Record<string, CalendarDaySummary>;
 
 export type CalendarContextValue = {
   events: CalendarEvent[];
+  /**
+   * Events overlapping the upcoming window (today → ~30 days ahead), across
+   * month boundaries. Feeds the countdown lane and the agenda view.
+   */
+  upcomingEvents: CalendarEvent[];
   selectedDate: Date;
   visibleMonth: Date;
   monthSummary: CalendarMonthSummary;

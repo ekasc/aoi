@@ -94,6 +94,12 @@ calendarRouter.get('/v1/calendar/events/:id', zValidator('param', z.object({ id:
 
 // ── Create event ─────────────────────────────────────────────────────────
 
+// Quiet reminders: minutes before the event starts. Bounded so a single
+// event can never schedule an unreasonable number of notifications.
+const reminderMinutesSchema = z
+  .array(z.number().int().min(0).max(2880))
+  .max(8);
+
 const createEventSchema = z.object({
   title: z.string().min(1).max(500),
   startsAt: z.string().datetime({ offset: true }),
@@ -104,6 +110,9 @@ const createEventSchema = z.object({
     preset: z.enum(['Work', 'Gym', 'Travel', 'Date', 'Family', 'Other']),
     customText: z.string().max(200).optional(),
   }),
+  reminderMinutesBefore: reminderMinutesSchema.optional(),
+  allDay: z.boolean().optional(),
+  together: z.boolean().optional(),
 });
 
 calendarRouter.post('/v1/spaces/current/calendar/events', zValidator('json', createEventSchema), async (c) => {
@@ -130,6 +139,12 @@ calendarRouter.post('/v1/spaces/current/calendar/events', zValidator('json', cre
         ? 'Other'
         : input.label.preset,
       labelCustomText: input.label.preset === 'Other' ? (input.label.customText ?? null) : null,
+      reminderMinutesBefore:
+        input.reminderMinutesBefore && input.reminderMinutesBefore.length > 0
+          ? input.reminderMinutesBefore
+          : null,
+      allDay: input.allDay ?? false,
+      together: input.together ?? false,
     })
     .returning();
 
@@ -146,6 +161,9 @@ const updateEventSchema = z.object({
     preset: z.enum(['Work', 'Gym', 'Travel', 'Date', 'Family', 'Other']),
     customText: z.string().max(200).optional(),
   }).optional(),
+  reminderMinutesBefore: reminderMinutesSchema.optional(),
+  allDay: z.boolean().optional(),
+  together: z.boolean().optional(),
 });
 
 calendarRouter.patch('/v1/calendar/events/:id', zValidator('param', z.object({ id: z.string().uuid() })), zValidator('json', updateEventSchema), async (c) => {
@@ -192,6 +210,13 @@ calendarRouter.patch('/v1/calendar/events/:id', zValidator('param', z.object({ i
     updateData.labelPreset = input.label.preset;
     updateData.labelCustomText = input.label.preset === 'Other' ? (input.label.customText ?? null) : null;
   }
+  if (input.reminderMinutesBefore !== undefined) {
+    // An empty array explicitly clears any previously scheduled reminders.
+    updateData.reminderMinutesBefore =
+      input.reminderMinutesBefore.length > 0 ? input.reminderMinutesBefore : null;
+  }
+  if (input.allDay !== undefined) updateData.allDay = input.allDay;
+  if (input.together !== undefined) updateData.together = input.together;
 
   const [updated] = await db
     .update(calendarEvents)

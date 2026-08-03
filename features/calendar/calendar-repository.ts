@@ -17,6 +17,8 @@ type CalendarEventRow = {
   label_preset: CalendarPresetLabel;
   label_custom_text: string | null;
   reminder_minutes: string | null;
+  all_day: number | null;
+  together: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -49,6 +51,8 @@ function toCalendarEvent(row: CalendarEventRow): CalendarEvent {
     reminderMinutesBefore: row.reminder_minutes
       ? (JSON.parse(row.reminder_minutes) as number[])
       : undefined,
+    allDay: row.all_day === 1,
+    together: row.together === 1,
   };
 }
 
@@ -70,6 +74,8 @@ export async function initCalendarDb() {
       label_preset TEXT NOT NULL,
       label_custom_text TEXT,
       reminder_minutes TEXT,
+      all_day INTEGER NOT NULL DEFAULT 0,
+      together INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -81,14 +87,25 @@ export async function initCalendarDb() {
     ON calendar_events(actor);
   `);
 
-  // Migration: add reminder_minutes column to existing installs
+  // Migration: add newer columns to existing installs
   const columns = await db.getAllAsync<{ name: string }>(
     `PRAGMA table_info(calendar_events)`
   );
-  const hasReminderColumn = columns.some((col) => col.name === 'reminder_minutes');
-  if (!hasReminderColumn) {
+  const columnNames = new Set(columns.map((col) => col.name));
+
+  if (!columnNames.has('reminder_minutes')) {
     await db.execAsync(
       `ALTER TABLE calendar_events ADD COLUMN reminder_minutes TEXT`
+    );
+  }
+  if (!columnNames.has('all_day')) {
+    await db.execAsync(
+      `ALTER TABLE calendar_events ADD COLUMN all_day INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (!columnNames.has('together')) {
+    await db.execAsync(
+      `ALTER TABLE calendar_events ADD COLUMN together INTEGER NOT NULL DEFAULT 0`
     );
   }
 }
@@ -127,6 +144,23 @@ export async function listEventsForDay(dayStartIso: string, dayEndIso: string) {
   return rows.map(toCalendarEvent);
 }
 
+/**
+ * Events that overlap a time window — used by the agenda lane. Matches the
+ * API's range query semantics (event overlaps [from, to]).
+ */
+export async function listEventsInRange(fromIso: string, toIso: string) {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<CalendarEventRow>(
+    `SELECT * FROM calendar_events
+     WHERE starts_at < ? AND ends_at >= ?
+     ORDER BY starts_at ASC`,
+    toIso,
+    fromIso
+  );
+
+  return rows.map(toCalendarEvent);
+}
+
 export async function getEventById(eventId: string) {
   const db = await getDatabase();
   const row = await db.getFirstAsync<CalendarEventRow>(
@@ -148,8 +182,9 @@ export async function insertEvent(input: CreateCalendarEventInput) {
   await db.runAsync(
     `INSERT INTO calendar_events (
       id, title, starts_at, ends_at, actor, actor_name,
-      label_preset, label_custom_text, reminder_minutes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      label_preset, label_custom_text, reminder_minutes,
+      all_day, together, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     input.title.trim(),
     input.startsAt,
@@ -159,6 +194,8 @@ export async function insertEvent(input: CreateCalendarEventInput) {
     input.label.preset,
     input.label.customText?.trim() || null,
     reminderJson,
+    input.allDay ? 1 : 0,
+    input.together ? 1 : 0,
     now,
     now
   );
@@ -177,7 +214,7 @@ export async function updateEvent(input: UpdateCalendarEventInput) {
     `UPDATE calendar_events
      SET title = ?, starts_at = ?, ends_at = ?,
          label_preset = ?, label_custom_text = ?,
-         reminder_minutes = ?, updated_at = ?
+         reminder_minutes = ?, all_day = ?, together = ?, updated_at = ?
      WHERE id = ?`,
     input.title.trim(),
     input.startsAt,
@@ -185,6 +222,8 @@ export async function updateEvent(input: UpdateCalendarEventInput) {
     input.label.preset,
     input.label.customText?.trim() || null,
     reminderJson,
+    input.allDay ? 1 : 0,
+    input.together ? 1 : 0,
     now,
     input.id
   );
