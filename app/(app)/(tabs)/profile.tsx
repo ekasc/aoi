@@ -90,6 +90,10 @@ export default function ProfileScreen() {
 		router.push("/(app)/profile/little-things");
 	}, [router]);
 
+	const handleSomeday = useCallback(() => {
+		router.push("/(app)/someday");
+	}, [router]);
+
 	const handleSqueeze = useCallback(() => {
 		void sendSqueeze();
 	}, [sendSqueeze]);
@@ -217,6 +221,11 @@ export default function ProfileScreen() {
 					<Button
 						label="The little things"
 						onPress={handleLittleThings}
+						variant="secondary"
+					/>
+					<Button
+						label="Someday list"
+						onPress={handleSomeday}
 						variant="secondary"
 					/>
 					<Button

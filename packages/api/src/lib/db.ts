@@ -1,4 +1,10 @@
-import type { SpaceActivityItem, SpaceActivityKind } from '@aoi/shared';
+import type {
+  SomedayAuthorRole,
+  SomedayCategory,
+  SomedayItem,
+  SpaceActivityItem,
+  SpaceActivityKind,
+} from '@aoi/shared';
 
 /** Convert DB row to API shape for space activity (fact + actor only — never content) */
 export function activityRowToApi(row: {
@@ -109,6 +115,47 @@ export function calendarEventRowToApi(
     isOwn: row.createdByUserId === viewerUserId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Convert DB row to API shape for someday items.
+ *
+ * Authorship (`createdByRole`, `checkedByRole`) is computed per request from
+ * user ids relative to the viewer — the two people in a space are always
+ * either "you" or "partner".
+ */
+export function somedayItemRowToApi(
+  row: {
+    id: string;
+    title: string;
+    note: string | null;
+    category: string;
+    createdByUserId: string;
+    createdAt: Date;
+    checkedAt: Date | null;
+    checkedByUserId: string | null;
+  },
+  viewerUserId: string
+): SomedayItem {
+  const createdByRole: SomedayAuthorRole =
+    row.createdByUserId === viewerUserId ? 'you' : 'partner';
+  const checkedByRole: SomedayAuthorRole | null =
+    row.checkedAt === null || row.checkedByUserId === null
+      ? null
+      : row.checkedByUserId === viewerUserId
+        ? 'you'
+        : 'partner';
+
+  return {
+    id: row.id,
+    title: row.title,
+    note: row.note ?? undefined,
+    category: row.category as SomedayCategory,
+    createdByRole,
+    createdAt: row.createdAt.toISOString(),
+    checkedAt: row.checkedAt?.toISOString() ?? null,
+    checkedByRole,
   };
 }
 

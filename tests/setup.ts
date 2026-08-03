@@ -116,8 +116,43 @@ vi.mock('expo-notifications', () => ({
 vi.mock('expo-haptics', () => ({
   impactAsync: async () => {},
   notificationAsync: async () => {},
-  ImpactFeedbackStyle: { Medium: 'medium' },
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
   NotificationFeedbackType: { Success: 'success' },
+}));
+
+class MockAsyncStorage {
+  store = new Map<string, string>();
+
+  async getItem(key: string): Promise<string | null> {
+    return this.store.has(key) ? (this.store.get(key) as string) : null;
+  }
+
+  async setItem(key: string, value: string): Promise<void> {
+    this.store.set(key, value);
+  }
+
+  async removeItem(key: string): Promise<void> {
+    this.store.delete(key);
+  }
+
+  async clear(): Promise<void> {
+    this.store.clear();
+  }
+}
+
+const mockAsyncStorageSingleton = new MockAsyncStorage();
+
+// Typed global handles so unit tests can inspect/reset the singleton mocks
+// without casting through `any`.
+declare global {
+  var __mockAsyncStorage: MockAsyncStorage;
+  var __mockDb: MockSQLiteDb;
+}
+
+globalThis.__mockAsyncStorage = mockAsyncStorageSingleton;
+
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: mockAsyncStorageSingleton,
 }));
 
 vi.mock('expo-asset', () => ({
@@ -244,7 +279,7 @@ class MockSQLiteDb {
 }
 
 const mockDbSingleton = new MockSQLiteDb();
-(globalThis as any).__mockDb = mockDbSingleton;
+globalThis.__mockDb = mockDbSingleton;
 
 vi.mock('expo-sqlite', () => ({
   openDatabaseAsync: async () => mockDbSingleton,

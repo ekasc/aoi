@@ -254,6 +254,37 @@ export const calendarEvents = pgTable(
   ]
 );
 
+// ── Someday Items ─────────────────────────────────────────────────────────
+// The couple's shared "someday" list: places to go, tables for two, films to
+// watch. Check-offs are soft (checkedAt/checkedByUserId) and undoable; there
+// is no hard delete.
+
+export const somedayItems = pgTable(
+  'someday_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    title: text('title').notNull(),
+    note: text('note'),
+    category: text('category', { enum: ['place', 'food', 'film', 'other'] }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    checkedAt: timestamp('checked_at', { withTimezone: true }),
+    checkedByUserId: uuid('checked_by_user_id').references(() => users.id),
+  },
+  (table) => [
+    index('idx_someday_items_space').on(table.spaceId),
+    check(
+      'ck_someday_items_category',
+      sql`${table.category} in ('place', 'food', 'film', 'other')`
+    ),
+  ]
+);
+
 // ── OAuth States ──────────────────────────────────────────────────────────
 
 export const oauthStates = pgTable('oauth_states', {
