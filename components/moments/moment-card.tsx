@@ -4,7 +4,6 @@ import { Pressable, StyleSheet, View } from "react-native";
 
 import { AudioPlayer } from "@/components/media/audio-player";
 import { ThemedText } from "@/components/themed-text";
-import { Divider } from "@/components/ui/divider";
 import { Surface } from "@/components/ui/surface";
 import { Spacing } from "@/constants/theme";
 import { getGoalHorizon } from "@/features/moments/moment-goal-utils";
@@ -51,13 +50,11 @@ function formatDateLabel(value: string) {
 		return "Date TBD";
 	}
 
-	return date
-		.toLocaleDateString("en-US", {
-			month: "short",
-			day: "2-digit",
-			year: "numeric",
-		})
-		.toUpperCase();
+	return date.toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
 }
 
 function formatGoalTargetLabel(targetAt?: string | null) {
@@ -85,11 +82,11 @@ function MomentCardComponent({ moment, onLongPress }: MomentCardProps) {
 	const border = useThemeColor({}, "border");
 	const surface = useThemeColor({}, "surface");
 	const surface2 = useThemeColor({}, "surface2");
-	const onAccent = useThemeColor({}, "onAccent");
 	const text = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
 	const isYou = moment.authorRole === "you";
 	const isGoal = moment.type === "goal";
+	const isNote = moment.type === "note";
 	const isTrace = moment.type === "trace";
 	const title = moment.title?.trim() || (isTrace ? "" : "Untitled moment");
 	const body = moment.body?.trim() || (isTrace ? "" : "No details added yet.");
@@ -126,18 +123,12 @@ function MomentCardComponent({ moment, onLongPress }: MomentCardProps) {
 		],
 		[accent, isGoal, isYou, partnerAccent, surface, surface2],
 	);
-	const badgeStyle = useMemo(
+	const authorDotStyle = useMemo(
 		() => [
-			styles.badge,
-			{
-				backgroundColor: isYou ? accent : partnerAccent,
-			},
+			styles.authorDot,
+			{ backgroundColor: isYou ? accent : partnerAccent },
 		],
 		[accent, isYou, partnerAccent],
-	);
-	const badgeLabelStyle = useMemo(
-		() => [styles.badgeLabel, { color: isYou ? onAccent : text }],
-		[isYou, onAccent, text],
 	);
 	const metaStyle = useMemo(() => [styles.meta, { color: muted }], [muted]);
 	const titleStyle = useMemo(() => [styles.title, { color: text }], [text]);
@@ -145,12 +136,9 @@ function MomentCardComponent({ moment, onLongPress }: MomentCardProps) {
 
 	const isEdited = useMemo(() => isEditedMoment(moment), [moment]);
 
-	const meta = useMemo(
-		() =>
-			`${formatDateLabel(moment.occurredAt)}  ·  ${
-				MOMENT_TYPE_LABELS[moment.type]
-			}${isGoal ? `  ·  ${goalHorizon}` : ""}${isEdited ? "  ·  Edited" : ""}`,
-		[goalHorizon, isEdited, isGoal, moment.occurredAt, moment.type],
+	const dateLabel = useMemo(
+		() => formatDateLabel(moment.occurredAt),
+		[moment.occurredAt],
 	);
 
 	const handleLongPress = useMemo(
@@ -161,16 +149,25 @@ function MomentCardComponent({ moment, onLongPress }: MomentCardProps) {
 	const card = (
 		<Surface variant="raised" style={cardStyle}>
 			<View style={styles.metaRow}>
-				<View style={badgeStyle}>
-					<ThemedText type="meta" style={badgeLabelStyle}>
-						{isYou ? "You" : moment.authorName}
+				<View
+					accessible
+					accessibilityRole="text"
+					accessibilityLabel={
+						isYou ? "Added by you" : `Added by ${moment.authorName}`
+					}
+					style={authorDotStyle}
+				/>
+				{!isNote ? (
+					<ThemedText type="meta" style={metaStyle}>
+						{MOMENT_TYPE_LABELS[moment.type]}
 					</ThemedText>
-				</View>
+				) : null}
+				<View style={styles.metaSpacer} />
 				<ThemedText type="meta" style={metaStyle}>
-					{meta}
+					{dateLabel}
+					{isEdited ? " · Edited" : ""}
 				</ThemedText>
 			</View>
-			<Divider style={styles.divider} />
 			{title ? (
 				<ThemedText type="title" style={titleStyle}>
 					{title}
@@ -286,24 +283,21 @@ const styles = StyleSheet.create({
 	},
 	metaRow: {
 		flexDirection: "row",
-		justifyContent: "space-between",
 		alignItems: "center",
-		gap: 8,
+		gap: Spacing[8],
+		marginBottom: Spacing[8],
+	},
+	metaSpacer: {
+		flex: 1,
+	},
+	authorDot: {
+		width: 8,
+		height: 8,
+		borderRadius: 999,
 	},
 	meta: {
 		flexShrink: 1,
 		textAlign: "right",
-	},
-	badge: {
-		borderRadius: 999,
-		paddingHorizontal: 10,
-		paddingVertical: 4,
-	},
-	badgeLabel: {
-		letterSpacing: 0.2,
-	},
-	divider: {
-		marginVertical: Spacing[8],
 	},
 	title: {
 		marginBottom: Spacing[4],

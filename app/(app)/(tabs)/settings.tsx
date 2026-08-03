@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemeSelector } from '@/components/theme/theme-selector';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
-import { Divider } from '@/components/ui/divider';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
 import { useSession } from '@/features/session/session-context';
@@ -18,7 +17,6 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { signOut, deleteAccount } = useSession();
   const { leaveSpace, space } = useSpace();
-  const muted = useThemeColor({}, 'muted');
   const background = useThemeColor({}, 'background');
   const danger = useThemeColor({}, 'danger');
   const [signOutError, setSignOutError] = useState('');
@@ -99,24 +97,21 @@ export default function SettingsScreen() {
       contentInsetAdjustmentBehavior="never"
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.hero}>
-        <ThemedText type="meta" style={{ color: muted }}>
-          Your space
-        </ThemedText>
-        <ThemedText type="title" selectable>
-          Settings
-        </ThemedText>
-      </View>
+      <ThemedText type="title" selectable style={styles.hero}>
+        Settings
+      </ThemedText>
 
       <Surface variant="raised" style={styles.card}>
-        <ThemedText type="meta">Appearance</ThemedText>
-        <Divider style={styles.divider} />
+        <ThemedText type="meta" style={styles.cardHeading}>
+          Appearance
+        </ThemedText>
         <ThemeSelector showDescriptions={false} />
       </Surface>
 
       <Surface style={styles.card}>
-        <ThemedText type="meta">Session</ThemedText>
-        <Divider style={styles.divider} />
+        <ThemedText type="meta" style={styles.cardHeading}>
+          Session
+        </ThemedText>
         <Button label="Sign out" variant="secondary" onPress={handleSignOut} />
         {signOutError ? (
           <ThemedText
@@ -128,8 +123,7 @@ export default function SettingsScreen() {
           </ThemedText>
         ) : null}
 
-        <View style={styles.leaveSection}>
-          <Divider style={styles.sectionDivider} />
+        <View style={styles.spaceSection}>
           <Button
             label="Leave space"
             variant="secondary"
@@ -144,10 +138,6 @@ export default function SettingsScreen() {
               {leaveError}
             </ThemedText>
           ) : null}
-        </View>
-
-        <View style={styles.deleteSection}>
-          <Divider style={styles.sectionDivider} />
           <Button
             label="Delete account"
             variant="destructive"
@@ -175,22 +165,16 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[24],
   },
   hero: {
-    gap: Spacing[8],
     marginBottom: Spacing[4],
   },
   card: {
-    gap: Spacing[4],
+    gap: Spacing[8],
   },
-  divider: {
-    marginVertical: Spacing[12],
+  cardHeading: {
+    marginBottom: Spacing[4],
   },
-  leaveSection: {
-    marginTop: Spacing[4],
-  },
-  deleteSection: {
-    marginTop: Spacing[4],
-  },
-  sectionDivider: {
-    marginBottom: Spacing[8],
+  spaceSection: {
+    gap: Spacing[8],
+    marginTop: Spacing[8],
   },
 });

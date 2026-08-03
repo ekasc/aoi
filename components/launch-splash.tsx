@@ -6,7 +6,7 @@ import Animated, {
   ReduceMotion,
 } from 'react-native-reanimated';
 
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Motion, Spacing } from '@/constants/theme';
 import type { BeachThemeColors } from '@/constants/theme-presets';
 import { FontFamilies } from '@/constants/typography';
 
@@ -25,8 +25,8 @@ export function LaunchSplash({ themeName, colors, relationship }: LaunchSplashPr
 
   return (
     <Animated.View
-      entering={FadeIn.duration(420).reduceMotion(ReduceMotion.System)}
-      exiting={FadeOut.duration(380).reduceMotion(ReduceMotion.System)}
+      entering={FadeIn.duration(Motion.slow).reduceMotion(ReduceMotion.System)}
+      exiting={FadeOut.duration(Motion.slow).reduceMotion(ReduceMotion.System)}
       style={[styles.container, { backgroundColor: palette.background }]}
     >
       <View style={[styles.orb, styles.orbTop, { borderColor: palette.border }]} />
@@ -40,7 +40,7 @@ export function LaunchSplash({ themeName, colors, relationship }: LaunchSplashPr
       <View style={[styles.frame, { borderColor: palette.border, backgroundColor: palette.surface }]}>
         <View style={[styles.innerFrame, { borderColor: palette.thread }]}>
           <Animated.Text
-            entering={FadeInDown.duration(500)
+            entering={FadeInDown.duration(Motion.slow)
               .delay(80)
               .reduceMotion(ReduceMotion.System)}
             style={[styles.mark, { color: palette.text }]}
@@ -48,7 +48,7 @@ export function LaunchSplash({ themeName, colors, relationship }: LaunchSplashPr
             Aoi
           </Animated.Text>
           <Animated.Text
-            entering={FadeInDown.duration(520)
+            entering={FadeInDown.duration(Motion.slow)
               .delay(150)
               .reduceMotion(ReduceMotion.System)}
             style={[styles.caption, { color: palette.muted }]}
@@ -59,7 +59,7 @@ export function LaunchSplash({ themeName, colors, relationship }: LaunchSplashPr
           </Animated.Text>
           {relationship ? (
             <Animated.Text
-              entering={FadeInDown.duration(520)
+              entering={FadeInDown.duration(Motion.slow)
                 .delay(220)
                 .reduceMotion(ReduceMotion.System)}
               style={[styles.relationshipSince, { color: palette.muted }]}
@@ -70,7 +70,7 @@ export function LaunchSplash({ themeName, colors, relationship }: LaunchSplashPr
         </View>
       </View>
       <Animated.View
-        entering={FadeIn.duration(520).delay(260).reduceMotion(ReduceMotion.System)}
+        entering={FadeIn.duration(Motion.slow).delay(260).reduceMotion(ReduceMotion.System)}
         style={styles.dotRow}
       >
         <View style={[styles.dot, { backgroundColor: palette.accent }]} />

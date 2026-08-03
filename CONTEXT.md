@@ -102,9 +102,10 @@ no polling); stub mode synthesizes tombstones from local deletes.
 
 ### Trace ⚡ (new)
 A zero-decision capture: text, photo, and/or ≤30s voice — no type picker, no
-title. Stored as a moment with `type: 'trace'`. Entry point: flash button in
-timeline hero → `app/(app)/moment/trace.tsx`. Design intent: capture must
-happen *in the instant* you think of your partner.
+title. Stored as a moment with `type: 'trace'`. Entry point: the single "+"
+compose button in the timeline hero opens a sheet (*Trace* / *Moment*); Trace
+→ `app/(app)/moment/trace.tsx`. Design intent: capture must happen *in the
+instant* you think of your partner.
 
 ### Resurface ("On this day")
 Moments whose month/day matches today and are ≥1 year old. Computed by pure
@@ -120,9 +121,11 @@ Uploads through the same presigned media pipeline (audio MIME types allowed;
 EXIF stripping skips non-images).
 
 ### Squeeze ❤ (new)
-A wordless "thinking of you" signal. Send: heart button in timeline hero →
-haptic + `POST /v1/squeezes` (remote) or simulated delivery (stub). Receive:
-full-screen partner-accent pulse overlay (`SqueezeOverlay`) + success haptic.
+A wordless "thinking of you" signal. Send: quiet heart button beside the
+partner's name on the profile tab (moved here from the timeline hero in the
+"Calm the UI" pass) → haptic + `POST /v1/squeezes` (remote) or simulated
+delivery (stub). Receive: full-screen partner-accent pulse overlay
+(`SqueezeOverlay`) + success haptic.
 **Delivery is stub-simulated** (partner replies ~4s after you send) until
 push notifications exist. The receive path is fully built and real.
 

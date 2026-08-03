@@ -35,7 +35,6 @@ import type {
 	Moment,
 	SpaceActivityItem,
 } from "@/features/moments/types";
-import { useSqueeze } from "@/features/squeeze/squeeze-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { useSpace } from "@/features/space/space-context";
 
@@ -123,6 +122,7 @@ export default function TimelineScreen() {
 	const listRef = useRef<FlatList<RailItem> | null>(null);
 	const [actionMoment, setActionMoment] = useState<Moment | null>(null);
 	const [confirmMoment, setConfirmMoment] = useState<Moment | null>(null);
+	const [composeOpen, setComposeOpen] = useState(false);
 	const [isRemoving, setIsRemoving] = useState(false);
 	const [removeError, setRemoveError] = useState("");
 	const now = useMemo(() => new Date(), []);
@@ -135,7 +135,6 @@ export default function TimelineScreen() {
 	const onAccent = useThemeColor({}, "onAccent");
 	const background = useThemeColor({}, "background");
 	const { space } = useSpace();
-	const { sendSqueeze, isSending: isSqueezeSending } = useSqueeze();
 	const resurfaces = useMemo(() => findResurfaces(moments, now), [moments, now]);
 
 	useResurfaceNotification(moments);
@@ -218,17 +217,31 @@ export default function TimelineScreen() {
 		);
 	}, []);
 
-	const handleAddMoment = useCallback(() => {
-		router.push("/(app)/moment/new");
-	}, [router]);
+	const handleOpenCompose = useCallback(() => {
+		setComposeOpen(true);
+	}, []);
 
-	const handleTrace = useCallback(() => {
+	const handleCloseCompose = useCallback(() => {
+		setComposeOpen(false);
+	}, []);
+
+	const handleComposeTrace = useCallback(() => {
+		setComposeOpen(false);
 		router.push("/(app)/moment/trace");
 	}, [router]);
 
-	const handleSqueeze = useCallback(() => {
-		void sendSqueeze();
-	}, [sendSqueeze]);
+	const handleComposeMoment = useCallback(() => {
+		setComposeOpen(false);
+		router.push("/(app)/moment/new");
+	}, [router]);
+
+	const composeSheetActions = useMemo(
+		() => [
+			{ label: "Trace", onPress: handleComposeTrace },
+			{ label: "Moment", onPress: handleComposeMoment },
+		],
+		[handleComposeMoment, handleComposeTrace],
+	);
 
 	const keyExtractor = useCallback((item: RailItem) => item.key, []);
 
@@ -340,46 +353,19 @@ export default function TimelineScreen() {
 					{ borderColor: border, backgroundColor: surface },
 				]}
 			>
-				<ThemedText type="title" style={styles.emptyTitle}>
-					Start your timeline
+				<ThemedText type="body" style={{ color: muted }}>
+					Your timeline is quiet — keep something together.
 				</ThemedText>
-				<ThemedText type="body" style={{ color: muted, marginBottom: Spacing[8] }}>
-					Tap the + button to add your first moment.
-				</ThemedText>
-				<View style={styles.emptyHints}>
-					<ThemedText type="meta" style={{ color: muted }}>
-						Notes
-					</ThemedText>
-					<ThemedText type="caption" style={{ color: muted }}>
-						Write a quick thought or memory.
-					</ThemedText>
-				</View>
-				<View style={styles.emptyHints}>
-					<ThemedText type="meta" style={{ color: muted }}>
-						Milestones
-					</ThemedText>
-					<ThemedText type="caption" style={{ color: muted }}>
-						First date, moving in, engagements — the big ones.
-					</ThemedText>
-				</View>
-				<View style={styles.emptyHints}>
-					<ThemedText type="meta" style={{ color: muted }}>
-						Goals
-					</ThemedText>
-					<ThemedText type="caption" style={{ color: muted }}>
-						Plans you&apos;re working toward together.
-					</ThemedText>
-				</View>
 				<View style={styles.emptyCta}>
 					<Button
 						label="Add your first moment"
-						onPress={handleAddMoment}
+						onPress={handleOpenCompose}
 						variant="secondary"
 					/>
 				</View>
 			</Surface>
 		),
-		[border, muted, surface, handleAddMoment],
+		[border, muted, surface, handleOpenCompose],
 	);
 
 	const railStyle = useMemo(
@@ -472,43 +458,17 @@ export default function TimelineScreen() {
 					<Image source={{ uri: space.photoUri }} style={styles.heroPhoto} contentFit="cover" />
 				) : null}
 				<View style={styles.heroText}>
-					<ThemedText type="meta" selectable>
-						{space?.name}
-					</ThemedText>
 					<ThemedText type="title" selectable>
 						Your moments
 					</ThemedText>
-					<ThemedText type="caption" style={{ color: muted }}>
-						{periodLabel}
-					</ThemedText>
 				</View>
-				<View style={styles.heroActions}>
-					<IconButton
-					accessibilityLabel={`Send a squeeze to ${space?.partnerName ?? "your partner"}`}
-					disabled={isSqueezeSending}
-					label="Send a squeeze"
-					onPress={handleSqueeze}
-					variant="secondary"
-				>
-					<Ionicons color={accent} name="heart" size={20} />
-					</IconButton>
-					<IconButton
-					accessibilityLabel="Keep a quick trace"
-					label="Trace"
-					onPress={handleTrace}
-					variant="secondary"
-				>
-					<Ionicons color={accent} name="flash-outline" size={20} />
-					</IconButton>
 				<IconButton
-					accessibilityLabel="Add a new moment"
+					label="Capture a moment"
+					onPress={handleOpenCompose}
 					variant="accent"
-					label="Add moment"
-					onPress={handleAddMoment}
 				>
 					<Ionicons color={onAccent} name="add" size={24} />
 				</IconButton>
-				</View>
 			</Animated.View>
 
 			{resurfaces.length > 0 ? (
@@ -613,6 +573,14 @@ export default function TimelineScreen() {
 			</View>
 
 			<ActionSheet
+				actions={composeSheetActions}
+				description="A quick trace, or the full story."
+				onClose={handleCloseCompose}
+				title="Capture a moment"
+				visible={composeOpen}
+			/>
+
+			<ActionSheet
 				actions={actionSheetActions}
 				onClose={handleCloseActionSheet}
 				title={actionMoment?.title?.trim() || "This moment"}
@@ -646,11 +614,6 @@ const styles = StyleSheet.create({
 		justifyContent: "space-between",
 		gap: Spacing[12],
 		marginBottom: Spacing[4],
-	},
-	heroActions: {
-		alignItems: "center",
-		flexDirection: "row",
-		gap: Spacing[8],
 	},
 	resurfaceWrap: {
 		marginHorizontal: Spacing[16],
@@ -747,16 +710,7 @@ const styles = StyleSheet.create({
 		marginHorizontal: Spacing[16],
 		gap: Spacing[4],
 	},
-	emptyTitle: {
-		marginBottom: Spacing[4],
-	},
-	emptyHints: {
-		flexDirection: "row",
-		gap: Spacing[8],
-		alignItems: "baseline",
-		marginTop: Spacing[4],
-	},
 	emptyCta: {
-		marginTop: Spacing[16],
+		marginTop: Spacing[8],
 	},
 });
