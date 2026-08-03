@@ -462,7 +462,6 @@ describe('POST /v1/spaces/current/location/share', () => {
       TEST_SPACE_ID,
       TEST_USER_ID,
       'location_granted',
-      {},
       'Mara'
     );
   });
@@ -644,13 +643,13 @@ describe('POST /v1/spaces/current/location/request', () => {
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ ok: true });
     expect(notifyPartnerInSpace).toHaveBeenCalledTimes(1);
-    const [spaceId, fromUserId, kind, data] = vi.mocked(notifyPartnerInSpace).mock.calls[0];
+    const [spaceId, fromUserId, kind, fromName] = vi.mocked(notifyPartnerInSpace).mock.calls[0];
     expect(spaceId).toBe(TEST_SPACE_ID);
     expect(fromUserId).toBe(TEST_USER_ID);
     expect(kind).toBe('location_request');
-    // The data payload is empty by construction — coordinates never ride
-    // along in a push.
-    expect(data).toEqual({});
+    // Only the sender's name personalizes the copy — coordinates never ride
+    // along in a push (the payload is kind-only by construction).
+    expect(fromName).toBe('Mara');
     expect(JSON.stringify(vi.mocked(notifyPartnerInSpace).mock.calls[0])).not.toMatch(
       /35\.658|139\.74/
     );

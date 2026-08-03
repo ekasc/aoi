@@ -32,6 +32,13 @@ vi.mock('@/features/api-client', () => apiClientMock);
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ refresh: momentsMock.refresh }),
 }));
+vi.mock('@/features/location/location-context', () => ({
+  useLocation: () => ({
+    receiveRequest: () => {},
+    refreshPartnerLocation: async () => {},
+    handlePartnerStopped: () => {},
+  }),
+}));
 vi.mock('@/features/push/push-api', () => pushApiMock);
 
 const VALID_TOKEN = 'ExpoPushToken[registration-test-token]';
