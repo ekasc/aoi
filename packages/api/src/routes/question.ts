@@ -11,6 +11,7 @@ import { db } from '../db/index.js';
 import { spaceMembers, users, weeklyAnswers } from '../db/schema.js';
 import { badRequest } from '../lib/errors.js';
 import { weeklyAnswerRowToApi } from '../lib/db.js';
+import { getActiveSpaceId } from '../lib/space.js';
 
 const questionRouter = new Hono();
 
@@ -19,20 +20,6 @@ const questionRouter = new Hono();
 // space's resources could leak — cross-space access is impossible by
 // construction (mirrors the /current routes in someday.ts).
 
-// ── Helper: get user's active space ──────────────────────────────────────
-
-async function getActiveSpaceId(userId: string): Promise<string | null> {
-  const membership = await db
-    .select()
-    .from(spaceMembers)
-    .where(
-      and(eq(spaceMembers.userId, userId), eq(spaceMembers.state, 'active'))
-    )
-    .limit(1);
-
-  return membership.length > 0 ? membership[0].spaceId : null;
-}
-
 // ── Helper: assemble the current-question response ───────────────────────
 // The reveal gate lives here: the partner's answer content is only included
 // when BOTH partners have answered this week. The partner's answer timing
@@ -40,9 +27,10 @@ async function getActiveSpaceId(userId: string): Promise<string | null> {
 
 async function buildCurrentQuestionResponse(
   userId: string,
-  spaceId: string | null
+  spaceId: string | null,
+  now: Date
 ): Promise<WeeklyQuestionResponse> {
-  const week = getWeeklyQuestionForDate(new Date());
+  const week = getWeeklyQuestionForDate(now);
 
   if (!spaceId) {
     return {
@@ -111,8 +99,9 @@ questionRouter.get('/v1/spaces/current/question', async (c) => {
   const userId = c.var.userId;
 
   const spaceId = await getActiveSpaceId(userId);
+  const now = new Date();
 
-  return c.json(await buildCurrentQuestionResponse(userId, spaceId));
+  return c.json(await buildCurrentQuestionResponse(userId, spaceId, now));
 });
 
 // ── Upsert your own answer for this week ─────────────────────────────────
@@ -136,7 +125,8 @@ questionRouter.put(
       );
     }
 
-    const week = getWeeklyQuestionForDate(new Date());
+    const now = new Date();
+    const week = getWeeklyQuestionForDate(now);
     const { answer } = c.req.valid('json');
 
     await db
@@ -150,10 +140,10 @@ questionRouter.put(
       })
       .onConflictDoUpdate({
         target: [weeklyAnswers.spaceId, weeklyAnswers.userId, weeklyAnswers.weekKey],
-        set: { answer, updatedAt: new Date() },
+        set: { answer, updatedAt: now },
       });
 
-    return c.json(await buildCurrentQuestionResponse(userId, spaceId));
+    return c.json(await buildCurrentQuestionResponse(userId, spaceId, now));
   }
 );
 

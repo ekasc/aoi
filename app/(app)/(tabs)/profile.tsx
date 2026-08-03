@@ -74,9 +74,10 @@ export default function ProfileScreen() {
 	const muted = useThemeColor({}, "muted");
 	const background = useThemeColor({}, "background");
 	const accent = useThemeColor({}, "accent");
+	const todayKey = new Date().toDateString();
 	const daysTogether = useMemo(
-		() => getDaysTogether(space?.relationshipStartDate, new Date()),
-		[space?.relationshipStartDate],
+		() => getDaysTogether(space?.relationshipStartDate, new Date(todayKey)),
+		[space?.relationshipStartDate, todayKey],
 	);
 	const momentsKept = moments.length;
 	const contentContainerStyle = useMemo(
