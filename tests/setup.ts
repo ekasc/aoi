@@ -141,7 +141,15 @@ class MockAsyncStorage {
 }
 
 const mockAsyncStorageSingleton = new MockAsyncStorage();
-(globalThis as any).__mockAsyncStorage = mockAsyncStorageSingleton;
+
+// Typed global handles so unit tests can inspect/reset the singleton mocks
+// without casting through `any`.
+declare global {
+  var __mockAsyncStorage: MockAsyncStorage;
+  var __mockDb: MockSQLiteDb;
+}
+
+globalThis.__mockAsyncStorage = mockAsyncStorageSingleton;
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: mockAsyncStorageSingleton,
@@ -271,7 +279,7 @@ class MockSQLiteDb {
 }
 
 const mockDbSingleton = new MockSQLiteDb();
-(globalThis as any).__mockDb = mockDbSingleton;
+globalThis.__mockDb = mockDbSingleton;
 
 vi.mock('expo-sqlite', () => ({
   openDatabaseAsync: async () => mockDbSingleton,

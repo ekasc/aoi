@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { sortSomedayItems } from '@aoi/shared';
 
-import { sortSomedayItems } from '@/features/someday/someday-order';
 import {
   SOMEDAY_CATEGORIES,
+  SOMEDAY_NOTE_MAX_LENGTH,
+  SOMEDAY_TITLE_MAX_LENGTH,
   type CreateSomedayItemInput,
   type SomedayItem,
   type SomedayRepository,
@@ -76,6 +78,39 @@ function createId(): string {
   return `someday_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 }
 
+// Mirrors the API's zod validation (trim + min/max) so the stub rejects the
+// same inputs the server rejects with a 400 — no silent divergence.
+function assertValidTitle(rawTitle: string): string {
+  const title = rawTitle.trim();
+
+  if (!title) {
+    throw new Error('Someday items need a title');
+  }
+  if (title.length > SOMEDAY_TITLE_MAX_LENGTH) {
+    throw new Error(
+      `Someday titles are limited to ${SOMEDAY_TITLE_MAX_LENGTH} characters`
+    );
+  }
+
+  return title;
+}
+
+function assertValidNote(rawNote: string | undefined): string | undefined {
+  if (rawNote === undefined) {
+    return undefined;
+  }
+
+  const note = rawNote.trim();
+
+  if (note.length > SOMEDAY_NOTE_MAX_LENGTH) {
+    throw new Error(
+      `Someday notes are limited to ${SOMEDAY_NOTE_MAX_LENGTH} characters`
+    );
+  }
+
+  return note ? note : undefined;
+}
+
 /**
  * Device-local Someday list for stub mode. A single device means a single
  * author, so new items and check-offs are always attributed to "you"; the
@@ -90,17 +125,13 @@ export function createLocalSomedayRepository(userId: string): SomedayRepository 
     },
 
     async add(input: CreateSomedayItemInput) {
-      const title = input.title.trim();
+      const title = assertValidTitle(input.title);
+      const note = assertValidNote(input.note);
 
-      if (!title) {
-        throw new Error('Someday items need a title');
-      }
-
-      const note = input.note?.trim();
       const item: SomedayItem = {
         id: createId(),
         title,
-        note: note ? note : undefined,
+        note,
         category: input.category ?? 'other',
         createdByRole: 'you',
         createdAt: new Date().toISOString(),
@@ -114,6 +145,14 @@ export function createLocalSomedayRepository(userId: string): SomedayRepository 
     },
 
     async update(itemId, input) {
+      // Validation mirrors the API's PATCH schema and runs first, exactly
+      // like the server's zod validator: a blank or oversized title/note
+      // rejects with a throw instead of the server's 400.
+      const nextTitle =
+        input.title !== undefined ? assertValidTitle(input.title) : undefined;
+      const nextNote =
+        input.note !== undefined ? assertValidNote(input.note) : undefined;
+
       const items = await readItems(key);
       const index = items.findIndex((item) => item.id === itemId);
 
@@ -123,15 +162,11 @@ export function createLocalSomedayRepository(userId: string): SomedayRepository 
 
       const next: SomedayItem = { ...items[index] };
 
-      if (input.title !== undefined) {
-        const title = input.title.trim();
-        if (title) {
-          next.title = title;
-        }
+      if (nextTitle !== undefined) {
+        next.title = nextTitle;
       }
       if (input.note !== undefined) {
-        const note = input.note.trim();
-        next.note = note ? note : undefined;
+        next.note = nextNote;
       }
       if (input.category !== undefined) {
         next.category = input.category;

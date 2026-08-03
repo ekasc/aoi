@@ -260,6 +260,14 @@ describe('PATCH /v1/someday/:id', () => {
     expect(res.status).toBe(401);
   });
 
+  it('returns 400 for a non-UUID id', async () => {
+    const jwt = await getTestJwt();
+    const res = await app.fetch(req('PATCH', '/v1/someday/not-a-uuid', {
+      jwt, body: { checked: true },
+    }));
+    expect(res.status).toBe(400);
+  });
+
   it('returns 404 for a non-existent item', async () => {
     const jwt = await getTestJwt();
     mockSelectQueue.push([]);
@@ -287,6 +295,16 @@ describe('PATCH /v1/someday/:id', () => {
       jwt, body: {},
     }));
     expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when the scoped update matches no rows (row vanished mid-flight)', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([somedayRow()], [spaceMemberRow()]);
+    mockReturningResult = []; // the UPDATE ... RETURNING matched nothing
+    const res = await app.fetch(req('PATCH', `/v1/someday/${TEST_SOMEDAY_ID}`, {
+      jwt, body: { title: 'New title' },
+    }));
+    expect(res.status).toBe(404);
   });
 
   it('returns 400 for a title that exceeds the limit', async () => {

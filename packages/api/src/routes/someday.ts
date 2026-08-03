@@ -12,22 +12,9 @@ import { db } from '../db/index.js';
 import { somedayItems, spaceMembers } from '../db/schema.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { somedayItemRowToApi } from '../lib/db.js';
+import { getActiveSpaceId } from '../lib/space.js';
 
 const somedayRouter = new Hono();
-
-// ── Helper: get user's active space ──────────────────────────────────────
-
-async function getActiveSpaceId(userId: string): Promise<string | null> {
-  const membership = await db
-    .select()
-    .from(spaceMembers)
-    .where(
-      and(eq(spaceMembers.userId, userId), eq(spaceMembers.state, 'active'))
-    )
-    .limit(1);
-
-  return membership.length > 0 ? membership[0].spaceId : null;
-}
 
 // ── List items ───────────────────────────────────────────────────────────
 // Canonical order (shared with the client): open items first (newest
@@ -168,11 +155,25 @@ somedayRouter.patch(
       return c.json(somedayItemRowToApi(existing, userId));
     }
 
+    // Scope the UPDATE to the item's space (defense in depth): the id alone
+    // was already membership-checked above, but binding spaceId makes the
+    // write atomic instead of a read-then-write TOCTOU.
     const [updated] = await db
       .update(somedayItems)
       .set(updateData)
-      .where(eq(somedayItems.id, itemId))
+      .where(
+        and(
+          eq(somedayItems.id, itemId),
+          eq(somedayItems.spaceId, existing.spaceId)
+        )
+      )
       .returning();
+
+    // The scoped UPDATE matched nothing — the row vanished between the check
+    // and the write. Treat it as gone rather than serializing undefined.
+    if (!updated) {
+      throw notFound('Someday item not found');
+    }
 
     return c.json(somedayItemRowToApi(updated, userId));
   }

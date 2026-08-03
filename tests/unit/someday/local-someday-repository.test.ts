@@ -148,6 +148,23 @@ describe('local someday repository', () => {
     expect(await repo.update('missing', { checked: true })).toBeNull();
   });
 
+  it('validates update input like the server: blank/oversized title and oversized note reject', async () => {
+    const repo = createLocalSomedayRepository('user-1');
+    const created = await repo.add({ title: 'Picnic', category: 'place' });
+
+    await expect(repo.update(created.id, { title: '   ' })).rejects.toThrow();
+    await expect(repo.update(created.id, { title: 'a'.repeat(121) })).rejects.toThrow();
+    await expect(repo.update(created.id, { note: 'n'.repeat(281) })).rejects.toThrow();
+
+    // Validation runs before the existence check, exactly like the server's
+    // zod validator rejects a bad body before the 404 lookup.
+    await expect(repo.update('missing', { title: '   ' })).rejects.toThrow();
+
+    // Rejected patches leave the stored item untouched.
+    const items = await repo.list();
+    expect(items[0].title).toBe('Picnic');
+  });
+
   it('keeps lists separate per user', async () => {
     const mine = createLocalSomedayRepository('user-1');
     const theirs = createLocalSomedayRepository('user-2');

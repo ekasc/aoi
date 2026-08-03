@@ -6,22 +6,9 @@ import { db } from '../db/index.js';
 import { calendarEvents, spaceMembers } from '../db/schema.js';
 import { badRequest, notFound, forbidden } from '../lib/errors.js';
 import { calendarEventRowToApi } from '../lib/db.js';
+import { getActiveSpaceId } from '../lib/space.js';
 
 const calendarRouter = new Hono();
-
-// ── Helper: get user's active space ──────────────────────────────────────
-
-async function getActiveSpaceId(userId: string): Promise<string | null> {
-  const membership = await db
-    .select()
-    .from(spaceMembers)
-    .where(
-      and(eq(spaceMembers.userId, userId), eq(spaceMembers.state, 'active'))
-    )
-    .limit(1);
-
-  return membership.length > 0 ? membership[0].spaceId : null;
-}
 
 // ── List events by date range ────────────────────────────────────────────
 

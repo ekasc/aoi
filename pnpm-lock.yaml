@@ -12,6 +12,9 @@ importers:
 
   .:
     dependencies:
+      '@aoi/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       '@babel/runtime':
         specifier: ^7.29.2
         version: 7.29.7

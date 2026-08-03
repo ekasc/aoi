@@ -1,5 +1,6 @@
+import { sortSomedayItems } from '@aoi/shared';
+
 import { apiFetch } from '@/features/api-client';
-import { sortSomedayItems } from '@/features/someday/someday-order';
 import type {
   CreateSomedayItemInput,
   SomedayItem,
@@ -29,7 +30,12 @@ export const remoteSomedayRepository: SomedayRepository = {
     });
   },
 
-  async update(itemId: string, input: UpdateSomedayItemInput) {
+  // Tighter than the interface (`SomedayItem | null`): the remote API never
+  // returns null — a missing item is a 404 that `apiFetch` turns into a throw.
+  async update(
+    itemId: string,
+    input: UpdateSomedayItemInput
+  ): Promise<SomedayItem> {
     return apiFetch<SomedayItem>(`/v1/someday/${itemId}`, {
       method: 'PATCH',
       body: JSON.stringify(input),

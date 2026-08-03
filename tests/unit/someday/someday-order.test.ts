@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
-
-import { sortSomedayItems } from '@/features/someday/someday-order';
-import type { SomedayItem } from '@/features/someday/types';
+import { sortSomedayItems } from '@aoi/shared';
+import type { SomedayItem } from '@aoi/shared';
 
 function makeItem(overrides: Partial<SomedayItem> = {}): SomedayItem {
   return {
@@ -16,7 +15,9 @@ function makeItem(overrides: Partial<SomedayItem> = {}): SomedayItem {
   };
 }
 
-describe('sortSomedayItems (mirrors the API contract order)', () => {
+// The app consumes the shared ordering directly (single source of truth with
+// the API), so this is a thin contract test over the canonical order.
+describe('sortSomedayItems (canonical order shared with the API)', () => {
   it('puts open items first (newest first), then checked items (most recently checked first)', () => {
     const items = [
       makeItem({ id: 'old-open', createdAt: '2026-06-01T10:00:00.000Z' }),

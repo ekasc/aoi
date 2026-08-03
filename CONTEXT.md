@@ -143,7 +143,9 @@ recently checked first). Screen `app/(app)/someday.tsx`, entered from a
 button on the profile tab; sections "Someday" and "Done together" (shows who
 checked + when). Stub mode is AsyncStorage-local; remote mode uses
 `GET/POST /v1/spaces/current/someday` + `PATCH /v1/someday/:id` and
-re-fetches on app focus so partner changes appear.
+re-fetches on app focus so partner changes appear. Stub storage is keyed
+`aoi.someday.v1.{userId}` (per-user, single-author) — an accepted divergence
+from remote's shared-per-space list since stub mode implies one device.
 
 ### Calendar Event
 Scheduling block with start/end, actor (`you`/`partner`), label preset.
