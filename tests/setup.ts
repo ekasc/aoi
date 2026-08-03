@@ -107,7 +107,10 @@ vi.mock('expo-audio', () => ({
 vi.mock('expo-notifications', () => ({
   requestPermissionsAsync: async () => ({ granted: false }),
   scheduleNotificationAsync: async () => '',
+  getAllScheduledNotificationsAsync: async () => [],
+  cancelScheduledNotificationAsync: async () => {},
   setNotificationHandler: () => {},
+  SchedulableTriggerInputTypes: { DATE: 'date', TIME_INTERVAL: 'timeInterval' },
 }));
 
 vi.mock('expo-haptics', () => ({
@@ -158,6 +161,7 @@ class MockSQLiteDb {
         return [{ name: 'id' }, { name: 'title' }, { name: 'starts_at' }, { name: 'ends_at' },
           { name: 'actor' }, { name: 'actor_name' }, { name: 'label_preset' },
           { name: 'label_custom_text' }, { name: 'reminder_minutes' },
+          { name: 'all_day' }, { name: 'together' },
           { name: 'created_at' }, { name: 'updated_at' }] as any[];
       }
       return (table ?? []) as any;

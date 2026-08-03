@@ -53,7 +53,9 @@ features/             Feature modules (state, repos, API clients — NOT React-r
   session/            SessionProvider (SecureStore persistence)
   space/              Space context + local/remote repositories, invite codes
   moments/            Moments context, resurface engine, notification hook
-  calendar/           Calendar context + local (SQLite) / remote repositories
+  calendar/           Calendar context + local (SQLite) / remote repositories,
+                      event-reminders.ts (pure builders) + use-event-reminders.ts
+                      (silent local-notification scheduling hook)
   theme/              Theme context (beach-inspired presets, light + dark)
   media/              useMediaUpload (presigned R2 flow)
   partner-details/    "The little things" (device-local for now)
@@ -130,7 +132,49 @@ API surface yet.
 ### Calendar Event
 Scheduling block with start/end, actor (`you`/`partner`), label preset.
 Separate entity from Moment (see promotion rules in earlier docs; promotion
-UI not built). Stored locally in expo-sqlite (stub) or remote.
+UI not built). Stored locally in expo-sqlite (stub) or remote. Optional
+fields: `allDay?: boolean` (no time-of-day; stored as flag with
+startsAt=00:00 / endsAt=next midnight, UI shows "All day"), `together?:
+boolean` (the couple is jointly involved — powers the countdown lane), and
+`reminderMinutesBefore?: number[]` (quiet local-notification offsets in
+minutes before start; empty/absent = no reminders).
+
+### Event reminders
+Local notifications scheduled per (event, offset) on create/update and
+cancelled on update/delete by `features/calendar/use-event-reminders.ts`
+(pattern mirrors `use-resurface-notification.ts`). Pure logic lives in
+`features/calendar/event-reminders.ts` (unit-tested). expo-notifications
+returns its own system ids, so cancellation scans scheduled notifications
+for `content.data.eventId` / identifier prefix
+`aoi.cal.reminder.{eventId}.{offset}`. Only future fire dates are
+scheduled; permission denial silently skips; failures are swallowed
+(tender-error policy). Always silent — `sound: false`.
+
+### Countdown lane
+One quiet muted line atop the calendar tab: "You see each other in N days."
+Derived by pure fn `findCountdownEvent(upcomingEvents, now)`: nearest
+upcoming event with `together === true`, falling back to the nearest
+upcoming `Date`-labeled event. No card, no banner.
+
+### Anniversaries
+`space.relationshipStartDate` → monthly "monthiversary" markers on the same
+day-of-month, **clamped to the month's last day** when the start day doesn't
+exist (e.g. Jan 31 → Feb 28/29). Whole-year anniversaries (months % 12 === 0)
+are `kind: 'yearly'` and emphasized (accent dot vs muted). Pure fns in
+`calendar-date-utils.ts` (`getAnniversaryMarkers`, `getAnniversaryForDate`,
+`formatAnniversaryLabel`); rendered as a tiny dot in the month grid + a quiet
+one-liner when today is one.
+
+### Agenda view
+Calendar tab toggle under the month grid: upcoming events grouped by day
+("Today" / "Tomorrow" / "Mon, Aug 10"), each row = time (or "All day") +
+title + actor dot. Fed by `groupAgendaEvents(events, now, horizonDays=30)`.
+
+### Upcoming window
+`CalendarProvider` exposes `upcomingEvents` — events overlapping today →
+30 days ahead via `listEventsInRange` (implemented in BOTH the SQLite and
+remote repositories), independent of the visible month. Feeds the countdown
+lane and agenda view; reloaded after every add/update/delete.
 
 ### Space
 Container for exactly two members (`you`/`partner` roles, no hierarchy).
@@ -211,14 +255,16 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/spaces/current/moments` | keyset pagination (cursor = occurredAt), create incl. `type:'trace'`, `audioUri` |
 | `/v1/moments/:id` | PATCH/DELETE (own only, soft-delete); writes `space_activity` row in the same transaction |
 | `/v1/spaces/current/activity` | change log (tombstones): last 7 days, cap 50, desc; optional `since` ISO param; fact + actor only, never content |
-| `/v1/spaces/current/calendar`, `/v1/calendar-events/:id` | range query, CRUD |
+| `/v1/spaces/current/calendar/events`, `/v1/calendar/events/:id` | range query (overlaps from/to), CRUD; events carry optional `reminderMinutesBefore` (jsonb, ≤8 ints 0–2880; empty array on PATCH clears), `allDay`, `together` |
 | `/v1/spaces/current/milestones`, preferences | list/append, theme prefs |
 | `/v1/media/upload-url`, `/v1/media/:id/complete`, `/download-url` | presigned R2; images + audio; EXIF stripped server-side via sharp (images only) |
 | `/v1/squeezes` | **NOT IMPLEMENTED** — client calls it in remote mode; add it when building push |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0003_*` adds the `space_activity` change-log table (kind check
-constraint: `moment_deleted | moment_edited`). Run
+Latest: `0004_*` adds calendar_events `reminder_minutes_before` (jsonb) +
+`all_day` / `together` booleans (default false); `0003_*` added the
+`space_activity` change-log table (kind check constraint:
+`moment_deleted | moment_edited`). Run
 `pnpm --filter @aoi/api run db:migrate` after schema changes. JWT via
 `jose`, token hashing in `src/lib/crypto.ts`.
 
@@ -313,9 +359,11 @@ media (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 ## 10. Current state & known seams (as of 2026-08)
 
 **Working end-to-end (stub):** auth screens, space onboarding, timeline with
-traces + resurface + goals lane, calendar CRUD, profile, settings, the little
-things, squeeze loop (simulated reply), voice traces (local), media picking,
-moments edit/delete + tombstones (local synthesis).
+traces + resurface + goals lane, calendar CRUD + reminders (local
+notifications) + countdown lane + anniversaries + agenda view + all-day
+events, profile, settings, the little things, squeeze loop (simulated
+reply), voice traces (local), media picking, moments edit/delete +
+tombstones (local synthesis).
 
 **Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
 provenance), calendar, spaces, preferences, media upload pipeline — against
@@ -325,6 +373,10 @@ packages/api.
 
 - Push notifications: none. Squeeze delivery + true resurface delivery need
   expo-notifications push + `/v1/squeezes` endpoint + token registration.
+- Calendar reminders are device-scoped: `reminderMinutesBefore` schedules
+  silent local notifications only on the device that saved the event.
+  Partner-created events, reinstalls, and second devices get no reminders
+  until push exists.
 - Partner details are device-local — no API table yet.
 - E2E encryption tiers: designed, not built.
 - No deployment target for the API (no Dockerfile/hosting config). CI exists

@@ -25,6 +25,17 @@ export type CalendarEvent = {
   label: CalendarLabel;
   createdAt: string;
   updatedAt: string;
+  /** Minutes before start when a quiet local reminder should fire. */
+  reminderMinutesBefore?: number[];
+  /** All-day event: no time-of-day; UI shows "All day" instead of times. */
+  allDay?: boolean;
+  /** The couple is jointly involved — counts toward the countdown lane. */
+  together?: boolean;
+  /**
+   * Per-request ownership signal from the API (creator user id vs viewer).
+   * Optional for locally constructed events; unknown must mean "not own".
+   */
+  isOwn?: boolean;
 };
 
 export type CalendarEventRow = {
@@ -38,6 +49,9 @@ export type CalendarEventRow = {
   labelCustomText: string | null;
   createdAt: string;
   updatedAt: string;
+  reminderMinutesBefore: number[] | null;
+  allDay: boolean;
+  together: boolean;
 };
 
 export type CreateCalendarEventRequest = {
@@ -47,6 +61,9 @@ export type CreateCalendarEventRequest = {
   actor: CalendarActor;
   actorName: string;
   label: CalendarLabel;
+  reminderMinutesBefore?: number[];
+  allDay?: boolean;
+  together?: boolean;
 };
 
 export type UpdateCalendarEventRequest = {
@@ -54,4 +71,7 @@ export type UpdateCalendarEventRequest = {
   startsAt?: string;
   endsAt?: string;
   label?: CalendarLabel;
+  reminderMinutesBefore?: number[];
+  allDay?: boolean;
+  together?: boolean;
 };

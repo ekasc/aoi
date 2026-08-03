@@ -44,6 +44,20 @@ export async function listEventsForDay(
   return events.map(toCalendarEvent);
 }
 
+/**
+ * Events that overlap a time window — used by the agenda lane. Mirrors the
+ * local repository's range query against the same API endpoint.
+ */
+export async function listEventsInRange(
+  fromIso: string,
+  toIso: string
+): Promise<CalendarEvent[]> {
+  const events = await apiFetch<CalendarEvent[]>(
+    `/v1/spaces/current/calendar/events?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`
+  );
+  return events.map(toCalendarEvent);
+}
+
 export async function getEventById(eventId: string): Promise<CalendarEvent | null> {
   try {
     const event = await apiFetch<CalendarEvent>(`/v1/calendar/events/${eventId}`);
@@ -63,6 +77,9 @@ export async function insertEvent(input: CreateCalendarEventInput): Promise<stri
       actor: input.actor,
       actorName: input.actorName,
       label: input.label,
+      reminderMinutesBefore: input.reminderMinutesBefore,
+      allDay: input.allDay,
+      together: input.together,
     }),
   });
   return event.id;
@@ -76,6 +93,10 @@ export async function updateEvent(input: UpdateCalendarEventInput): Promise<void
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       label: input.label,
+      // Send reminderMinutesBefore even when empty so edits can clear reminders.
+      reminderMinutesBefore: input.reminderMinutesBefore ?? [],
+      allDay: input.allDay,
+      together: input.together,
     }),
   });
 }

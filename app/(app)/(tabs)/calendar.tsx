@@ -1,14 +1,21 @@
 import { useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppState, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
 	buildMonthGrid,
+	findCountdownEvent,
+	formatAnniversaryLabel,
+	formatCountdownLabel,
 	formatDateTitle,
+	formatEventTimeLabel,
 	formatMonthTitle,
 	formatTimeRange,
 	formatWeekdayShort,
+	getAnniversaryForDate,
+	getAnniversaryMarkers,
+	groupAgendaEvents,
 	isSameDay,
 	isSameMonth,
 	toDayKey,
@@ -21,8 +28,11 @@ import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Surface } from "@/components/ui/surface";
-import { Spacing } from "@/constants/theme";
+import { Radii, Spacing } from "@/constants/theme";
+import { useSpace } from "@/features/space/space-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
+
+type CalendarViewMode = "day" | "agenda";
 
 function buildMonthWeeks(days: Date[]) {
 	const weeks: Date[][] = [];
@@ -42,10 +52,13 @@ export default function CalendarScreen() {
 		visibleMonth,
 		monthSummary,
 		eventsForDay,
+		upcomingEvents,
 		setSelectedDate,
 		isLoading,
 	} = useCalendar();
 	const { goToPreviousMonth, goToNextMonth } = useCalendarMonthNavigation();
+	const { space } = useSpace();
+	const [viewMode, setViewMode] = useState<CalendarViewMode>("day");
 	const textColor = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
 	const border = useThemeColor({}, "border");
@@ -83,6 +96,49 @@ export default function CalendarScreen() {
 	const selectedDateIso = useMemo(
 		() => selectedDate.toISOString(),
 		[selectedDate],
+	);
+
+	const [now, setNow] = useState(() => new Date());
+
+	// Recompute "now" whenever the app returns to focus so countdown and
+	// agenda labels never stay frozen across midnight.
+	useEffect(() => {
+		const subscription = AppState.addEventListener(
+			"change",
+			(nextAppState) => {
+				if (nextAppState === "active") {
+					setNow(new Date());
+				}
+			},
+		);
+		return () => subscription.remove();
+	}, []);
+
+	const countdownLabel = useMemo(
+		() => formatCountdownLabel(findCountdownEvent(upcomingEvents, now)),
+		[now, upcomingEvents],
+	);
+	const anniversaryTodayLabel = useMemo(
+		() =>
+			formatAnniversaryLabel(
+				getAnniversaryForDate(space?.relationshipStartDate, now),
+			),
+		[now, space?.relationshipStartDate],
+	);
+	const anniversaryMarkersByDay = useMemo(() => {
+		const map: Record<string, "monthly" | "yearly"> = {};
+		const markers = getAnniversaryMarkers(
+			space?.relationshipStartDate,
+			visibleMonth,
+		);
+		for (const marker of markers) {
+			map[toDayKey(marker.date)] = marker.kind;
+		}
+		return map;
+	}, [space?.relationshipStartDate, visibleMonth]);
+	const agendaDays = useMemo(
+		() => groupAgendaEvents(upcomingEvents, now),
+		[now, upcomingEvents],
 	);
 
 	const handleSelectDate = useCallback(
@@ -145,6 +201,29 @@ export default function CalendarScreen() {
 				<Button label="Add event" onPress={handleAddEvent} />
 			</View>
 
+			{countdownLabel || anniversaryTodayLabel ? (
+				<View style={styles.quietLanes}>
+					{anniversaryTodayLabel ? (
+						<ThemedText
+							type="caption"
+							selectable
+							style={{ color: accent }}
+						>
+							{anniversaryTodayLabel}
+						</ThemedText>
+					) : null}
+					{countdownLabel ? (
+						<ThemedText
+							type="caption"
+							selectable
+							style={{ color: muted }}
+						>
+							{countdownLabel}
+						</ThemedText>
+					) : null}
+				</View>
+			) : null}
+
 			<Surface variant="glass" style={styles.calendarPanel}>
 				<View style={styles.weekdayRow}>
 					{weekdayLabels.map((label) => (
@@ -176,6 +255,11 @@ export default function CalendarScreen() {
 									? accent
 									: surface;
 								const count = summary?.total ?? 0;
+								// Dots belong to the visible month only —
+								// never on adjacent-month grid cells.
+								const anniversaryKind = isCurrentMonth
+									? anniversaryMarkersByDay[dayKey]
+									: undefined;
 
 								return (
 									<Pressable
@@ -196,12 +280,33 @@ export default function CalendarScreen() {
 											},
 										]}
 									>
-										<ThemedText
-											type="caption"
-											style={{ color: dayTextColor }}
-										>
-											{day.getDate()}
-										</ThemedText>
+										<View style={styles.dayNumberRow}>
+											<ThemedText
+												type="caption"
+												style={{ color: dayTextColor }}
+											>
+												{day.getDate()}
+											</ThemedText>
+											{anniversaryKind ? (
+												<View
+													accessibilityLabel={
+														anniversaryKind === "yearly"
+															? "Yearly anniversary"
+															: "Monthly anniversary"
+													}
+													style={[
+														styles.anniversaryDot,
+														{
+															backgroundColor:
+																anniversaryKind ===
+																"yearly"
+																	? accent
+																	: muted,
+														},
+													]}
+												/>
+											) : null}
+										</View>
 										{count > 0 ? (
 											<View
 												style={[
@@ -258,57 +363,95 @@ export default function CalendarScreen() {
 				</View>
 			</Surface>
 
-			<View style={styles.agendaHeader}>
-				<ThemedText type="meta" selectable>
-					Today&apos;s plans
-				</ThemedText>
-				<ThemedText type="title" selectable>
-					{selectedDateTitle}
-				</ThemedText>
+			<View style={styles.viewToggle}>
+				{(["day", "agenda"] as const).map((mode) => {
+					const selected = viewMode === mode;
+					return (
+						<Pressable
+							accessibilityLabel={
+								mode === "day"
+									? "Show day view"
+									: "Show agenda view"
+							}
+							accessibilityRole="button"
+							accessibilityState={{ selected }}
+							key={mode}
+							onPress={() => setViewMode(mode)}
+							style={[
+								styles.viewToggleChip,
+								{
+									borderColor: selected ? accent : border,
+									backgroundColor: selected
+										? accent
+										: surface,
+								},
+							]}
+						>
+							<ThemedText
+								type="caption"
+								style={{
+									color: selected ? onAccent : muted,
+								}}
+							>
+								{mode === "day" ? "Day" : "Agenda"}
+							</ThemedText>
+						</Pressable>
+					);
+				})}
 			</View>
 
-			{isLoading ? (
-				<Surface style={styles.emptyState}>
-					<ThemedText type="body">Loading events…</ThemedText>
-				</Surface>
-			) : null}
-
-			{!isLoading && selectedDayEvents.length === 0 ? (
-				<Surface style={styles.emptyState}>
-					<ThemedText type="body" style={{ color: muted }}>No plans yet.</ThemedText>
-					<Button
-						accessibilityLabel={`Add event for ${selectedDateTitle}`}
-						label="Add event"
-						onPress={handleAddEvent}
-						variant="secondary"
-					/>
-				</Surface>
-			) : null}
-
-			{!isLoading
-				? selectedDayEvents.map((event) => {
-						const eventLabel =
-							event.label.customText?.trim() ||
-							event.label.preset;
-						return (
-							<Pressable
-								accessibilityLabel={`Open event ${event.title}`}
-								accessibilityRole="button"
-								key={event.id}
-								onPress={() =>
-									router.push(
-										`/(app)/calendar/edit/${event.id}`,
-									)
-								}
+			{viewMode === "agenda" ? (
+				<Surface style={styles.agendaPanel}>
+					{isLoading ? (
+						<ThemedText type="body">Loading plans…</ThemedText>
+					) : agendaDays.length === 0 ? (
+						<ThemedText
+							type="body"
+							selectable
+							style={{ color: muted }}
+						>
+							Nothing planned yet — the days are open.
+						</ThemedText>
+					) : (
+						agendaDays.map((agendaDay) => (
+							<View
+								key={agendaDay.key}
+								style={styles.agendaGroup}
 							>
-								<Surface style={styles.eventCard}>
-									<View style={styles.eventTopRow}>
-										<ThemedText type="title">
+								<ThemedText type="meta" selectable>
+									{agendaDay.label}
+								</ThemedText>
+								{agendaDay.events.map((event) => (
+									<Pressable
+										accessibilityLabel={`Open event ${event.title}`}
+										accessibilityRole="button"
+										key={event.id}
+										onPress={() =>
+											router.push(
+												`/(app)/calendar/edit/${event.id}`,
+											)
+										}
+										style={styles.agendaRow}
+									>
+										<ThemedText
+											type="caption"
+											style={[
+												styles.agendaTime,
+												{ color: muted },
+											]}
+										>
+											{formatEventTimeLabel(event)}
+										</ThemedText>
+										<ThemedText
+											type="body"
+											numberOfLines={1}
+											style={styles.agendaTitle}
+										>
 											{event.title}
 										</ThemedText>
 										<View
 											style={[
-												styles.actorPill,
+												styles.actorHint,
 												{
 													backgroundColor:
 														event.actor === "you"
@@ -316,38 +459,111 @@ export default function CalendarScreen() {
 															: partnerAccent,
 												},
 											]}
-										>
+										/>
+									</Pressable>
+								))}
+							</View>
+						))
+					)}
+				</Surface>
+			) : null}
+
+			{viewMode === "day" ? (
+				<>
+					<View style={styles.agendaHeader}>
+						<ThemedText type="meta" selectable>
+							Today&apos;s plans
+						</ThemedText>
+						<ThemedText type="title" selectable>
+							{selectedDateTitle}
+						</ThemedText>
+					</View>
+
+					{isLoading ? (
+						<Surface style={styles.emptyState}>
+							<ThemedText type="body">Loading events…</ThemedText>
+						</Surface>
+					) : null}
+
+					{!isLoading && selectedDayEvents.length === 0 ? (
+						<Surface style={styles.emptyState}>
+							<ThemedText type="body" style={{ color: muted }}>No plans yet.</ThemedText>
+							<Button
+								accessibilityLabel={`Add event for ${selectedDateTitle}`}
+								label="Add event"
+								onPress={handleAddEvent}
+								variant="secondary"
+							/>
+						</Surface>
+					) : null}
+
+					{!isLoading
+						? selectedDayEvents.map((event) => {
+								const eventLabel =
+									event.label.customText?.trim() ||
+									event.label.preset;
+								return (
+									<Pressable
+										accessibilityLabel={`Open event ${event.title}`}
+										accessibilityRole="button"
+										key={event.id}
+										onPress={() =>
+											router.push(
+												`/(app)/calendar/edit/${event.id}`,
+											)
+										}
+									>
+										<Surface style={styles.eventCard}>
+											<View style={styles.eventTopRow}>
+												<ThemedText type="title">
+													{event.title}
+												</ThemedText>
+												<View
+													style={[
+														styles.actorPill,
+														{
+															backgroundColor:
+																event.actor === "you"
+																	? accent
+																	: partnerAccent,
+														},
+													]}
+												>
+													<ThemedText
+														type="meta"
+														style={{ color: onAccent }}
+													>
+														{event.actor === "you"
+															? "You"
+															: event.actorName}
+													</ThemedText>
+												</View>
+											</View>
 											<ThemedText
-												type="meta"
-												style={{ color: onAccent }}
+												type="caption"
+												selectable
+												style={{ color: muted }}
 											>
-												{event.actor === "you"
-													? "You"
-													: event.actorName}
+												{event.allDay
+													? "All day"
+													: formatTimeRange(
+															event.startsAt,
+															event.endsAt,
+														)}
 											</ThemedText>
-										</View>
-									</View>
-									<ThemedText
-										type="caption"
-										selectable
-										style={{ color: muted }}
-									>
-										{formatTimeRange(
-											event.startsAt,
-											event.endsAt,
-										)}
-									</ThemedText>
-									<ThemedText
-										type="caption"
-										style={{ color: muted }}
-									>
-										{eventLabel}
-									</ThemedText>
-								</Surface>
-							</Pressable>
-						);
-					})
-				: null}
+											<ThemedText
+												type="caption"
+												style={{ color: muted }}
+											>
+												{eventLabel}
+											</ThemedText>
+										</Surface>
+									</Pressable>
+								);
+							})
+						: null}
+				</>
+			) : null}
 		</ScrollView>
 	);
 }
@@ -438,5 +654,50 @@ const styles = StyleSheet.create({
 		borderRadius: 999,
 		paddingHorizontal: 9,
 		paddingVertical: 4,
+	},
+	quietLanes: {
+		gap: Spacing[4],
+	},
+	dayNumberRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 4,
+	},
+	anniversaryDot: {
+		width: 6,
+		height: 6,
+		borderRadius: Radii.pill,
+	},
+	viewToggle: {
+		flexDirection: "row",
+		gap: Spacing[8],
+	},
+	viewToggleChip: {
+		minHeight: 36,
+		borderRadius: Radii.pill,
+		borderWidth: StyleSheet.hairlineWidth,
+		paddingHorizontal: Spacing[16],
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	agendaPanel: {
+		gap: Spacing[16],
+		borderRadius: 18,
+	},
+	agendaGroup: {
+		gap: Spacing[8],
+	},
+	agendaRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: Spacing[12],
+		minHeight: 40,
+	},
+	agendaTime: {
+		width: 76,
+		fontVariant: ["tabular-nums"],
+	},
+	agendaTitle: {
+		flex: 1,
 	},
 });

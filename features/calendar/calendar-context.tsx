@@ -9,14 +9,17 @@ import {
 } from "react";
 
 import {
+	addDays,
 	addMonths,
 	isEventOnDate,
 	monthBounds,
+	startOfDay,
 	startOfMonth,
 	toDayKey,
 } from "@/features/calendar/calendar-date-utils";
 import { isStubMode } from "@/features/api-client";
 import { createCalendarSeed } from "@/features/calendar/calendar-seed";
+import { useEventReminders } from "@/features/calendar/use-event-reminders";
 import type {
 	CalendarContextValue,
 	CalendarEvent,
@@ -34,10 +37,14 @@ const _useRemote = !isStubMode();
 const initCalendarDb = _useRemote ? _remoteCalendarImpl.initCalendarDb : _calendarImpl.initCalendarDb;
 const countCalendarEvents = _useRemote ? _remoteCalendarImpl.countCalendarEvents : _calendarImpl.countCalendarEvents;
 const listEventsInMonth = _useRemote ? _remoteCalendarImpl.listEventsInMonth : _calendarImpl.listEventsInMonth;
+const listEventsInRange = _useRemote ? _remoteCalendarImpl.listEventsInRange : _calendarImpl.listEventsInRange;
 const insertEvent = _useRemote ? _remoteCalendarImpl.insertEvent : _calendarImpl.insertEvent;
 const updateEvent = _useRemote ? _remoteCalendarImpl.updateEvent : _calendarImpl.updateEvent;
 const deleteEvent = _useRemote ? _remoteCalendarImpl.deleteEvent : _calendarImpl.deleteEvent;
 const getEventById = _useRemote ? _remoteCalendarImpl.getEventById : _calendarImpl.getEventById;
+
+/** Horizon for the countdown lane + agenda view. */
+const UPCOMING_WINDOW_DAYS = 30;
 
 // Keep aliases used throughout this file
 const deleteCalendarEvent: typeof deleteEvent = deleteEvent;
@@ -50,6 +57,7 @@ const CalendarContext = createContext<CalendarContextValue | undefined>(
 
 export function CalendarProvider({ children }: PropsWithChildren) {
 	const [events, setEvents] = useState<CalendarEvent[]>([]);
+	const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]);
 	const [selectedDate, setSelectedDateState] = useState(() => new Date());
 	const [visibleMonth, setVisibleMonthState] = useState(() =>
 		startOfMonth(new Date()),
@@ -57,6 +65,8 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 	const [isLoading, setIsLoading] = useState(true);
 	const [isInitialized, setIsInitialized] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const { rescheduleEventReminders, cancelEventReminders } =
+		useEventReminders();
 
 	const loadMonth = useCallback(async (monthDate: Date) => {
 		const { monthStart, nextMonthStart } = monthBounds(monthDate);
@@ -65,6 +75,16 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			nextMonthStart.toISOString(),
 		);
 		setEvents(monthEvents);
+	}, []);
+
+	const loadUpcoming = useCallback(async () => {
+		const windowStart = startOfDay(new Date());
+		const windowEnd = addDays(windowStart, UPCOMING_WINDOW_DAYS);
+		const upcoming = await listEventsInRange(
+			windowStart.toISOString(),
+			windowEnd.toISOString(),
+		);
+		setUpcomingEvents(upcoming);
 	}, []);
 
 	useEffect(() => {
@@ -132,6 +152,17 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		};
 	}, [isInitialized, loadMonth, visibleMonth]);
 
+	// Load the upcoming window once for the countdown lane + agenda view.
+	useEffect(() => {
+		if (!isInitialized) {
+			return;
+		}
+
+		void loadUpcoming().catch(() => {
+			// The upcoming lanes are a quiet enhancement — never block on them.
+		});
+	}, [isInitialized, loadUpcoming]);
+
 	const setSelectedDate = useCallback((date: Date) => {
 		const normalizedDate = new Date(date);
 		setSelectedDateState(normalizedDate);
@@ -155,28 +186,37 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		await loadMonth(visibleMonth);
 	}, [loadMonth, visibleMonth]);
 
+	const reloadAfterMutation = useCallback(async () => {
+		await Promise.all([reloadCurrentMonth(), loadUpcoming()]);
+	}, [loadUpcoming, reloadCurrentMonth]);
+
 	const addEvent = useCallback(
 		async (input: CreateCalendarEventInput) => {
-			await insertEvent(input);
-			await reloadCurrentMonth();
+			const eventId = await insertEvent(input);
+			// Quietly schedule local reminders; failures are swallowed inside.
+			void rescheduleEventReminders({ ...input, id: eventId });
+			await reloadAfterMutation();
 		},
-		[reloadCurrentMonth],
+		[reloadAfterMutation, rescheduleEventReminders],
 	);
 
 	const updateEvent = useCallback(
 		async (input: UpdateCalendarEventInput) => {
 			await updateCalendarEvent(input);
-			await reloadCurrentMonth();
+			// Reschedule so changed times/offsets stay exact.
+			void rescheduleEventReminders(input);
+			await reloadAfterMutation();
 		},
-		[reloadCurrentMonth],
+		[reloadAfterMutation, rescheduleEventReminders],
 	);
 
 	const deleteEvent = useCallback(
 		async (eventId: string) => {
 			await deleteCalendarEvent(eventId);
-			await reloadCurrentMonth();
+			void cancelEventReminders(eventId);
+			await reloadAfterMutation();
 		},
-		[reloadCurrentMonth],
+		[cancelEventReminders, reloadAfterMutation],
 	);
 
 	const eventsForDay = useMemo<Record<string, CalendarEvent[]>>(() => {
@@ -240,6 +280,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 	const value = useMemo<CalendarContextValue>(
 		() => ({
 			events,
+			upcomingEvents,
 			selectedDate,
 			visibleMonth,
 			monthSummary,
@@ -266,6 +307,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			setSelectedDate,
 			setVisibleMonth,
 			updateEvent,
+			upcomingEvents,
 			visibleMonth,
 		],
 	);
