@@ -42,6 +42,8 @@ app/                  Expo Router routes (route groups below)
   (app)/calendar/     new-event.tsx, edit/[id].tsx
   (app)/profile/      edit-relationship, import-milestones, little-things
   (app)/someday.tsx   the shared Someday list
+  (app)/memory-wall.tsx  the memory wall (photo + voice album)
+  (app)/question.tsx  "one question this week" ritual
 components/           Reusable UI (kebab-case files)
   ui/                 Primitives: button, icon-button, surface, divider,
                       glass-surface, android-glass-surface
@@ -62,11 +64,16 @@ features/             Feature modules (state, repos, API clients — NOT React-r
   partner-details/    "The little things" (device-local for now)
   someday/            Someday list context + local (AsyncStorage) / remote
                       repositories, shared ordering (someday-order.ts)
+  question/           "One question this week" context + local (AsyncStorage) /
+                      remote repositories, ISO-week mapping (question-of-the-week.ts)
+  time-together/      Pure derivations (days together, moments kept) for the
+                      quiet profile line — no state, no storage
   squeeze/            Wordless signal (stub-simulated delivery)
 hooks/                use-theme-color, use-color-scheme, use-aoi-fonts
 constants/            theme.ts (Spacing/Radii/Motion), theme-presets.ts, typography.ts
 packages/api/         Hono + Drizzle + Postgres backend (own package.json, vitest, tsconfig)
-packages/shared/      @aoi/shared — API contract types (moment, calendar, space, auth, api)
+packages/shared/      @aoi/shared — API contract types (moment, calendar, space, auth, api,
+                      question incl. ISO-week helpers + the 20-question bank)
 tests/unit/           Frontend vitest tests (RN mocked to DOM — see tests/setup.ts)
 e2e/maestro/          auth-stub-smoke.yaml
 patches/              pnpm patches: expo-router (ctx ignore), @expo/metro-runtime (exports)
@@ -149,6 +156,49 @@ checked + when). Stub mode is AsyncStorage-local; remote mode uses
 re-fetches on app focus so partner changes appear. Stub storage is keyed
 `aoi.someday.v1.{userId}` (per-user, single-author) — an accepted divergence
 from remote's shared-per-space list since stub mode implies one device.
+
+### Time together
+A quiet remembrance line on the profile tab: "N days together" plus
+"M moments kept" (only when >0). Pure derivations in
+`features/time-together/time-together.ts` (`getDaysTogether`,
+`formatDaysTogether`, `formatMomentsKept`) — no storage, no API. **Semantics:
+the start day itself is day 1** (inclusive); days roll over at local midnight
+(calendar-date arithmetic via `Date.UTC`, so leap years and DST stay exact).
+Future/invalid start dates return `null` and the block hides itself. Days come
+from `space.relationshipStartDate`; the moment count from the loaded moments
+list. Deliberately NOT engagement metrics: no graphs, rankings, streak framing,
+or notifications.
+
+### Memory wall
+All kept media gathered like a printed album — screen `app/(app)/memory-wall.tsx`,
+entered from ONE quiet button on the profile tab. One wall item per moment: its
+photo (`mediaPreview`, expo-image) when it has one, otherwise its voice trace
+(`audioUri` rendered as a full-width row reusing `AudioPlayer`). Sorted
+`occurredAt` desc (newest first); nothing ranked, nothing counted. Rows are
+memoized (`MemoryWallRow`) so tapping a photo never re-renders the list; a tap
+opens a full-screen Modal viewer with a "{date} · Kept by you/them" caption.
+Image rows pair two cells side by side (author dot colored accent /
+partnerAccent); a one-line empty state covers the blank wall. Pure UI over
+existing moment data — no new API.
+
+### One question this week
+An optional, never-nagging ritual: one handcrafted question per ISO week, both
+partners answer privately, and **the answers reveal only when both are in**
+(the reveal gate). 20 seeded questions live in `packages/shared/src/question.ts`
+(mirrored to `features/question/question-of-the-week.ts` for stub mode); the
+week→question mapping is deterministic and identical for both partners
+(`(isoYear * 52 + isoWeek) % 20`, week keys `YYYY-Www`, ISO-8601 Thursday rule).
+Server authority: `GET /v1/spaces/current/question` returns the week's question
+plus both answer states (partner's content only when revealed);
+`PUT /v1/spaces/current/question/answer` upserts the viewer's answer for the
+server-computed week (membership-gated, 404-style non-leaks like someday).
+Answers live in `weekly_answers` (migration 0006), unique per
+(space, user, week). Frontend: `features/question/` (context + AsyncStorage
+stub + remote repo) and screen `app/(app)/question.tsx`, entered from ONE quiet
+button on the profile tab. **Stub mode deliberately does NOT simulate a partner
+answer** — the reveal only means anything with their real words, so the stub
+shows only your own answer plus a soft "unlocks when they've written too" note.
+No badges, no notifications, no pressure. Never log answer content.
 
 ### Calendar Event
 Scheduling block with start/end, actor (`you`/`partner`), label preset.
@@ -243,7 +293,8 @@ RootLayout (app/_layout.tsx)
   CalendarProvider
     PartnerDetailsProvider
       SomedayProvider
-        SqueezeProvider      (+ <SqueezeOverlay/> mounted here)
+        QuestionProvider
+          SqueezeProvider    (+ <SqueezeOverlay/> mounted here)
 ```
 
 Navigation redirects: signed out → `(public)`; no space → `(auth)/space-setup`;
@@ -279,12 +330,16 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/spaces/current/activity` | change log (tombstones): last 7 days, cap 50, desc; optional `since` ISO param; fact + actor only, never content |
 | `/v1/spaces/current/calendar/events`, `/v1/calendar/events/:id` | range query (overlaps from/to), CRUD; events carry optional `reminderMinutesBefore` (jsonb, ≤8 ints 0–2880; empty array on PATCH clears), `allDay`, `together` |
 | `/v1/spaces/current/someday`, `/v1/someday/:id` | shared Someday list: list/create; PATCH checks off (`checked: true`), undoes (`checked: false`), or edits title/note/category — either member may do all of it; only meaningful transitions write |
+| `/v1/spaces/current/question` (+ `/answer`) | one question this week: GET returns the ISO week's question + both answer states (partner's answer content only when BOTH answered — the reveal gate; partner timing never surfaced); PUT upserts the viewer's answer for the server-computed week (≤500 chars) |
 | `/v1/spaces/current/milestones`, preferences | list/append, theme prefs |
 | `/v1/media/upload-url`, `/v1/media/:id/complete`, `/download-url` | presigned R2; images + audio; EXIF stripped server-side via sharp (images only) |
 | `/v1/squeezes` | **NOT IMPLEMENTED** — client calls it in remote mode; add it when building push |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0005_*` adds the `someday_items` table (title/note/category +
+Latest: `0006_*` adds the `weekly_answers` table (spaceId/userId/weekKey/
+questionId/answer + timestamps; unique per (space, user, week) for upsert,
+indexed by (space, week)) backing the "one question this week" reveal gate;
+`0005_*` adds the `someday_items` table (title/note/category +
 nullable `checked_at` / `checked_by_user_id` for soft check-off and undo;
 category check constraint `place | food | film | other`); `0004_*` adds
 calendar_events `reminder_minutes_before` (jsonb) + `all_day` / `together`
@@ -388,11 +443,14 @@ traces + resurface + goals lane, calendar CRUD + reminders (local
 notifications) + countdown lane + anniversaries + agenda view + all-day
 events, profile, settings, the little things, the Someday list
 (device-local), squeeze loop (simulated reply), voice traces (local), media
-picking, moments edit/delete + tombstones (local synthesis).
+picking, moments edit/delete + tombstones (local synthesis), time-together
+profile line, memory wall, and "one question this week" (device-local answers;
+no simulated partner — the reveal waits for a real second voice).
 
 **Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
 provenance), calendar, the Someday list, spaces, preferences, media upload
-pipeline — against packages/api.
+pipeline, and the weekly-question reveal gate (`weekly_answers`) — against
+packages/api.
 
 **Known gaps / seams:**
 
