@@ -26,13 +26,16 @@ vi.mock('@/features/api-client', () => ({
 
 const mockFetchMoments = vi.fn();
 const mockFetchActivity = vi.fn();
+const mockCreateMoment = vi.fn();
+const mockUpdateMoment = vi.fn();
+const mockDeleteMoment = vi.fn();
 
 vi.mock('@/features/moments/remote-moments-api', () => ({
   fetchMoments: (...args: unknown[]) => mockFetchMoments(...args),
   fetchActivity: (...args: unknown[]) => mockFetchActivity(...args),
-  createMoment: vi.fn(),
-  updateMoment: vi.fn(),
-  deleteMoment: vi.fn(),
+  createMoment: (...args: unknown[]) => mockCreateMoment(...args),
+  updateMoment: (...args: unknown[]) => mockUpdateMoment(...args),
+  deleteMoment: (...args: unknown[]) => mockDeleteMoment(...args),
 }));
 
 vi.mock('@/features/session/session-context', () => ({
@@ -77,6 +80,9 @@ describe('useMoments (remote refresh guards)', () => {
     mockFetchMoments.mockReset();
     mockFetchActivity.mockReset();
     mockFetchActivity.mockResolvedValue({ activity: [] });
+    mockCreateMoment.mockReset();
+    mockUpdateMoment.mockReset();
+    mockDeleteMoment.mockReset();
   });
 
   async function renderRemoteMoments() {
@@ -144,5 +150,65 @@ describe('useMoments (remote refresh guards)', () => {
     });
     await waitFor(() => expect(result.current.moments[0].title).toBe('Second'));
     expect(result.current.isLoading).toBe(false);
+  });
+
+  it('does not resurrect a deleted moment when a stale in-flight refresh resolves', async () => {
+    const firstPage: Page = { moments: [remoteMoment('m1', 'First')] };
+    const focusLoad = deferred<Page>();
+    mockFetchMoments
+      .mockResolvedValueOnce(firstPage)
+      .mockReturnValueOnce(focusLoad.promise);
+    mockDeleteMoment.mockResolvedValue(undefined);
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.moments).toHaveLength(1));
+
+    // A focus refresh is now in flight with a snapshot that still includes m1...
+    triggerFocus();
+    await waitFor(() => expect(mockFetchMoments).toHaveBeenCalledTimes(2));
+
+    // ...while the user deletes m1.
+    await act(async () => {
+      await result.current.removeMoment('m1');
+    });
+    expect(mockDeleteMoment).toHaveBeenCalledWith('m1');
+    expect(result.current.moments).toHaveLength(0);
+
+    // The stale snapshot resolves afterwards and must be dropped — it may not
+    // resurrect the deleted row.
+    await act(async () => {
+      focusLoad.resolve({ moments: [remoteMoment('m1', 'First')] });
+    });
+    expect(result.current.moments).toHaveLength(0);
+  });
+
+  it('does not overwrite an updated moment when a stale in-flight refresh resolves', async () => {
+    const firstPage: Page = { moments: [remoteMoment('m1', 'Before')] };
+    const focusLoad = deferred<Page>();
+    mockFetchMoments
+      .mockResolvedValueOnce(firstPage)
+      .mockReturnValueOnce(focusLoad.promise);
+    mockUpdateMoment.mockResolvedValue(remoteMoment('m1', 'After'));
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.moments).toHaveLength(1));
+
+    // A focus refresh is now in flight with a snapshot that predates the edit...
+    triggerFocus();
+    await waitFor(() => expect(mockFetchMoments).toHaveBeenCalledTimes(2));
+
+    // ...while the user edits m1.
+    await act(async () => {
+      await result.current.updateMoment('m1', { title: 'After' });
+    });
+    expect(result.current.moments[0].title).toBe('After');
+
+    // The stale snapshot resolves afterwards and must be dropped — it may not
+    // roll the moment back to its pre-edit state.
+    await act(async () => {
+      focusLoad.resolve({ moments: [remoteMoment('m1', 'Before')] });
+    });
+    expect(result.current.moments).toHaveLength(1);
+    expect(result.current.moments[0].title).toBe('After');
   });
 });

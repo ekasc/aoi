@@ -11,6 +11,7 @@ const insertCalls: any[] = [];
 function selectChain() {
   return {
     from: vi.fn(() => selectChain()),
+    innerJoin: vi.fn(() => selectChain()),
     where: vi.fn(() => selectChain()),
     orderBy: vi.fn(() => selectChain()),
     limit: vi.fn((n: number) => Promise.resolve(mockSelectQueue.shift() ?? [])),
@@ -85,6 +86,11 @@ function spaceMemberRow(overrides: Record<string, unknown> = {}) {
   return { spaceId: TEST_SPACE_ID, userId: TEST_USER_ID, state: 'active' as const, ...overrides };
 }
 
+/** Result of the create route's author lookup (membership role + live name). */
+function authorRow(overrides: Record<string, unknown> = {}) {
+  return { role: 'you' as const, displayName: 'Taylor', ...overrides };
+}
+
 describe('POST /v1/spaces/current/moments', () => {
   it('returns 401 without auth', async () => {
     const res = await app.fetch(req('POST', '/v1/spaces/current/moments'));
@@ -116,7 +122,7 @@ describe('POST /v1/spaces/current/moments', () => {
 
   it('returns 201 for valid moment', async () => {
     const jwt = await getTestJwt();
-    mockSelectQueue.push([spaceMemberRow()]);
+    mockSelectQueue.push([spaceMemberRow()], [authorRow()]);
     mockReturningResult = [momentRow()];
     const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
       jwt, body: { type: 'note', title: 'Hello', body: 'World' },
@@ -128,7 +134,7 @@ describe('POST /v1/spaces/current/moments', () => {
 
   it('accepts media type with mediaPreview', async () => {
     const jwt = await getTestJwt();
-    mockSelectQueue.push([spaceMemberRow()]);
+    mockSelectQueue.push([spaceMemberRow()], [authorRow()]);
     mockReturningResult = [momentRow({ type: 'media' as const, mediaPreview: 'https://cdn.example.com/img.jpg' })];
     const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
       jwt, body: { type: 'media', mediaPreview: 'https://cdn.example.com/img.jpg' },
@@ -136,15 +142,56 @@ describe('POST /v1/spaces/current/moments', () => {
     expect(res.status).toBe(201);
   });
 
+  it('returns 403 when the membership vanished before insert', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()], []);
+    const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
+      jwt, body: { type: 'note' },
+    }));
+    expect(res.status).toBe(403);
+    expect(insertCalls).toHaveLength(0);
+  });
+
   it('returns isOwn true on the created moment', async () => {
     const jwt = await getTestJwt();
-    mockSelectQueue.push([spaceMemberRow()]);
+    mockSelectQueue.push([spaceMemberRow()], [authorRow()]);
     mockReturningResult = [momentRow()];
     const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
       jwt, body: { type: 'note', title: 'Hello' },
     }));
     expect(res.status).toBe(201);
     const body = await res.json();
+    expect(body.isOwn).toBe(true);
+  });
+
+  it('stores the author\'s membership role and live display name, not hardcoded values', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()], [authorRow({ role: 'partner' as const, displayName: 'Jordan' })]);
+    mockReturningResult = [momentRow()];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
+      jwt, body: { type: 'note', title: 'Hello' },
+    }));
+    expect(res.status).toBe(201);
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]).toMatchObject({
+      createdByUserId: TEST_USER_ID,
+      authorRole: 'partner',
+      authorName: 'Jordan',
+    });
+  });
+
+  it('returns authorRole you and authorName You to the creator', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()], [authorRow({ displayName: 'Jordan' })]);
+    mockReturningResult = [momentRow({ authorName: 'Jordan' })];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
+      jwt, body: { type: 'note', title: 'Hello' },
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.authorId).toBe(TEST_USER_ID);
+    expect(body.authorRole).toBe('you');
+    expect(body.authorName).toBe('You');
     expect(body.isOwn).toBe(true);
   });
 });
@@ -194,6 +241,53 @@ describe('GET /v1/spaces/current/moments', () => {
     const body = await res.json();
     expect(body.moments[0].isOwn).toBe(true);
     expect(body.moments[1].isOwn).toBe(false);
+  });
+
+  it('computes attribution relative to the viewer, ignoring the stored role snapshot', async () => {
+    const jwt = await getTestJwt();
+    // Own moment whose stored snapshot claims the opposite role/name.
+    const own = momentRow({ authorRole: 'partner' as const, authorName: 'Alex' });
+    // Partner moment whose stored snapshot still carries the old hardcoded
+    // 'you'/'You' — the joined display name must win for the viewer.
+    const partner = momentRow({
+      id: '00000000-0000-0000-0000-000000000021',
+      createdByUserId: TEST_OTHER_USER_ID,
+      authorRole: 'you' as const,
+      authorName: 'Alex',
+      occurredAt: new Date('2026-03-14T10:00:00Z'),
+    });
+    mockSelectQueue.push([spaceMemberRow()], [own, partner]);
+    const res = await app.fetch(req('GET', '/v1/spaces/current/moments', { jwt }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.moments[0]).toMatchObject({
+      authorId: TEST_USER_ID,
+      authorRole: 'you',
+      authorName: 'You',
+      isOwn: true,
+    });
+    expect(body.moments[1]).toMatchObject({
+      authorId: TEST_OTHER_USER_ID,
+      authorRole: 'partner',
+      authorName: 'Alex',
+      isOwn: false,
+    });
+  });
+
+  it('shows the viewer their own moments as you/You when viewing as the other user', async () => {
+    // The same row flips attribution depending on who is asking.
+    const jwt = await getTestJwt(TEST_OTHER_USER_ID);
+    const row = momentRow({ authorName: 'Taylor' });
+    mockSelectQueue.push([spaceMemberRow({ userId: TEST_OTHER_USER_ID })], [row]);
+    const res = await app.fetch(req('GET', '/v1/spaces/current/moments', { jwt }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.moments[0]).toMatchObject({
+      authorId: TEST_USER_ID,
+      authorRole: 'partner',
+      authorName: 'Taylor',
+      isOwn: false,
+    });
   });
 
   it('returns empty moments for empty DB', async () => {
@@ -277,16 +371,24 @@ describe('PATCH /v1/moments/:id', () => {
     expect(insertCalls).toHaveLength(0);
   });
 
-  it('returns isOwn true in the PATCH response for the author', async () => {
+  it('returns isOwn true and viewer-relative attribution in the PATCH response for the author', async () => {
     const jwt = await getTestJwt();
-    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
-    mockReturningResult = [momentRow({ title: 'Updated' })];
+    // Stored snapshot claims the opposite role/name — the response must still
+    // attribute relative to the viewing author.
+    mockSelectQueue.push(
+      [momentRow({ authorRole: 'partner' as const, authorName: 'Alex' })],
+      [spaceMemberRow()]
+    );
+    mockReturningResult = [momentRow({ title: 'Updated', authorRole: 'partner' as const, authorName: 'Alex' })];
     const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
       jwt, body: { title: 'Updated' },
     }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.isOwn).toBe(true);
+    expect(body.authorId).toBe(TEST_USER_ID);
+    expect(body.authorRole).toBe('you');
+    expect(body.authorName).toBe('You');
   });
 
   it('records a moment_edited activity row in the same transaction', async () => {

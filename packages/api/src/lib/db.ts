@@ -15,7 +15,14 @@ export function activityRowToApi(row: {
   };
 }
 
-/** Convert DB row to API shape for moments */
+/**
+ * Convert DB row to API shape for moments.
+ *
+ * Attribution is computed relative to the viewing user (author id vs viewer
+ * id) — the stored `author_role` column is a creation-time snapshot and is
+ * never read. `authorName` must carry the author's current display name
+ * (read routes join it from users).
+ */
 export function momentRowToApi(
   row: {
     id: string;
@@ -27,13 +34,15 @@ export function momentRowToApi(
     createdAt: Date;
     updatedAt: Date;
     createdByUserId: string;
-    authorRole: string;
     authorName: string;
     mediaPreview: string | null;
     audioUri?: string | null;
   },
   viewerUserId: string
 ) {
+  // Per-request ownership: only the requesting user's own moments are
+  // editable/deletable on the client.
+  const isOwn = row.createdByUserId === viewerUserId;
   return {
     id: row.id,
     type: row.type as any,
@@ -44,11 +53,11 @@ export function momentRowToApi(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     authorId: row.createdByUserId,
-    authorRole: row.authorRole as any,
-    authorName: row.authorName,
-    // Per-request ownership: only the requesting user's own moments are
-    // editable/deletable on the client.
-    isOwn: row.createdByUserId === viewerUserId,
+    // The author is always either the viewer or their partner — compute it
+    // from ids instead of trusting the stored role snapshot.
+    authorRole: isOwn ? 'you' : 'partner',
+    authorName: isOwn ? 'You' : row.authorName,
+    isOwn,
     mediaPreview: row.mediaPreview,
     audioUri: row.audioUri ?? null,
   };

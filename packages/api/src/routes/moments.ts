@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, isNull, desc, lt, gt, asc } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { moments, spaceActivity, spaceMembers } from '../db/schema.js';
+import { moments, spaceActivity, spaceMembers, users } from '../db/schema.js';
 import { badRequest, notFound, forbidden } from '../lib/errors.js';
 import { momentRowToApi } from '../lib/db.js';
 
@@ -40,8 +40,24 @@ momentsRouter.get('/v1/spaces/current/moments', zValidator('query', listMomentsS
   }
 
   let query = db
-    .select()
+    .select({
+      id: moments.id,
+      type: moments.type,
+      title: moments.title,
+      body: moments.body,
+      occurredAt: moments.occurredAt,
+      targetAt: moments.targetAt,
+      createdAt: moments.createdAt,
+      updatedAt: moments.updatedAt,
+      createdByUserId: moments.createdByUserId,
+      // Author attribution uses the live display name (join), never the
+      // creation-time snapshot column.
+      authorName: users.displayName,
+      mediaPreview: moments.mediaPreview,
+      audioUri: moments.audioUri,
+    })
     .from(moments)
+    .innerJoin(users, eq(moments.createdByUserId, users.id))
     .where(
       and(
         eq(moments.spaceId, spaceId),
@@ -90,13 +106,34 @@ momentsRouter.post('/v1/spaces/current/moments', zValidator('json', createMoment
 
   const input = c.req.valid('json');
 
+  // Creation-time attribution snapshot: the author's membership role and
+  // current display name. Reads recompute attribution relative to the viewer
+  // (from user ids), so these stored values are provenance, never the source
+  // of truth at read time.
+  const [author] = await db
+    .select({ role: spaceMembers.role, displayName: users.displayName })
+    .from(spaceMembers)
+    .innerJoin(users, eq(spaceMembers.userId, users.id))
+    .where(
+      and(
+        eq(spaceMembers.spaceId, spaceId),
+        eq(spaceMembers.userId, userId),
+        eq(spaceMembers.state, 'active')
+      )
+    )
+    .limit(1);
+
+  if (!author) {
+    throw forbidden('You are not an active member of this space');
+  }
+
   const [moment] = await db
     .insert(moments)
     .values({
       spaceId,
       createdByUserId: userId,
-      authorRole: 'you', // will be replaced by actual role lookup in production
-      authorName: 'You',
+      authorRole: author.role,
+      authorName: author.displayName,
       type: input.type,
       title: input.title ?? '',
       body: input.body ?? '',

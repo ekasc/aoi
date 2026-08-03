@@ -187,12 +187,18 @@ function useRemoteMoments(): MomentsContextValue {
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const created = await remoteCreateMoment(input);
+    // The mutation invalidates any in-flight refresh: bump the sequence so a
+    // stale snapshot (fetched before this change) is dropped on arrival.
+    momentsRequestSeq.current += 1;
     setMoments((prev) => sortMomentsOldestFirst([...prev, created]));
   }, []);
 
   const updateMoment = useCallback(
     async (momentId: string, patch: UpdateMomentInput) => {
       const updated = await remoteUpdateMoment(momentId, patch);
+      // The mutation invalidates any in-flight refresh: bump the sequence so a
+      // stale snapshot (fetched before this change) is dropped on arrival.
+      momentsRequestSeq.current += 1;
       setMoments((prev) =>
         sortMomentsOldestFirst(
           prev.map((moment) => (moment.id === momentId ? updated : moment))
@@ -205,6 +211,11 @@ function useRemoteMoments(): MomentsContextValue {
   const removeMoment = useCallback(
     async (momentId: string) => {
       await remoteDeleteMoment(momentId);
+      // The mutation invalidates any in-flight refresh of both slices: bump
+      // the sequences so stale snapshots (fetched before this change) are
+      // dropped on arrival and never resurrect the deleted row.
+      momentsRequestSeq.current += 1;
+      activityRequestSeq.current += 1;
       setMoments((prev) => prev.filter((moment) => moment.id !== momentId));
       // The server recorded a tombstone; pick it up quietly.
       void loadActivity();
