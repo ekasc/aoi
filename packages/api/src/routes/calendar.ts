@@ -57,7 +57,7 @@ calendarRouter.get('/v1/spaces/current/calendar/events', zValidator('query', lis
 
 // ── Get single event ─────────────────────────────────────────────────────
 
-calendarRouter.get('/v1/calendar/events/:id', async (c) => {
+calendarRouter.get('/v1/calendar/events/:id', zValidator('param', z.object({ id: z.string().uuid() })), async (c) => {
   const userId = c.var.userId;
   const eventId = c.req.param('id');
 
@@ -148,7 +148,7 @@ const updateEventSchema = z.object({
   }).optional(),
 });
 
-calendarRouter.patch('/v1/calendar/events/:id', zValidator('json', updateEventSchema), async (c) => {
+calendarRouter.patch('/v1/calendar/events/:id', zValidator('param', z.object({ id: z.string().uuid() })), zValidator('json', updateEventSchema), async (c) => {
   const userId = c.var.userId;
   const eventId = c.req.param('id');
 
@@ -184,7 +184,7 @@ calendarRouter.patch('/v1/calendar/events/:id', zValidator('json', updateEventSc
   }
 
   const input = c.req.valid('json');
-  const updateData: Record<string, any> = { updatedAt: new Date() };
+  const updateData: Partial<typeof calendarEvents.$inferInsert> = { updatedAt: new Date() };
   if (input.title !== undefined) updateData.title = input.title;
   if (input.startsAt !== undefined) updateData.startsAt = new Date(input.startsAt);
   if (input.endsAt !== undefined) updateData.endsAt = new Date(input.endsAt);
@@ -204,7 +204,7 @@ calendarRouter.patch('/v1/calendar/events/:id', zValidator('json', updateEventSc
 
 // ── Delete event (soft delete) ───────────────────────────────────────────
 
-calendarRouter.delete('/v1/calendar/events/:id', async (c) => {
+calendarRouter.delete('/v1/calendar/events/:id', zValidator('param', z.object({ id: z.string().uuid() })), async (c) => {
   const userId = c.var.userId;
   const eventId = c.req.param('id');
 

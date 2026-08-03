@@ -192,10 +192,10 @@ export default function SpaceImportScreen() {
               Step 2 of 3
             </ThemedText>
             <ThemedText type="title" selectable>
-              Import past milestones
+              Add your story so far
             </ThemedText>
             <ThemedText type="caption" style={{ color: muted }} selectable>
-              Add your previous highlights now, or skip and do it later.
+              First date, moving in, trips you took — fill in what matters from before today. Your timeline will start from the earliest entry. You can always add more later.
             </ThemedText>
           </Surface>
 
@@ -251,18 +251,30 @@ export default function SpaceImportScreen() {
                   })}
                 </View>
 
+                {index === 0 && (
+                  <ThemedText type="caption" style={{ color: muted }}>
+                    Think of first dates, trips, anniversaries — anything you don&apos;t want to forget.
+                  </ThemedText>
+                )}
+
+                <ThemedText type="meta" style={{ color: muted }}>
+                  What happened?
+                </ThemedText>
                 <TextInput
                   accessibilityLabel={`Title for entry ${index + 1}`}
                   autoCapitalize="sentences"
                   onChangeText={(value) =>
                     updateRow(row.id, (currentRow) => ({ ...currentRow, title: value }))
                   }
-                  placeholder="Title"
+                  placeholder="e.g. First date at the botanical garden"
                   placeholderTextColor={muted}
                   style={inputStyle}
                   value={row.title}
                 />
 
+                <ThemedText type="meta" style={{ color: muted }}>
+                  Details (optional)
+                </ThemedText>
                 <TextInput
                   accessibilityLabel={`Details for entry ${index + 1}`}
                   autoCapitalize="sentences"
@@ -270,7 +282,7 @@ export default function SpaceImportScreen() {
                   onChangeText={(value) =>
                     updateRow(row.id, (currentRow) => ({ ...currentRow, body: value }))
                   }
-                  placeholder="Optional note"
+                  placeholder="What do you want to remember?"
                   placeholderTextColor={muted}
                   style={[inputStyle, styles.textArea]}
                   value={row.body}

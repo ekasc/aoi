@@ -30,8 +30,10 @@ export const remoteSpaceRepository: SpaceRepository = {
       method: 'POST',
       body: JSON.stringify({
         name: input.name,
+        yourName: input.yourName,
         partnerName: input.partnerName,
         relationshipStartDate: input.relationshipStartDate,
+        photoUri: input.photoUri || undefined,
       }),
     });
     return data.space;
@@ -58,6 +60,10 @@ export const remoteSpaceRepository: SpaceRepository = {
 
   async clearSpaceForUser(_userId: string): Promise<void> {
     // No dedicated leave endpoint yet — skip for MVP
+  },
+
+  async leaveSpace(_userId: string): Promise<void> {
+    await apiFetch('/v1/spaces/leave', { method: 'POST' });
   },
 
   async getImportedMilestonesForUser(_userId: string): Promise<ImportedMilestone[]> {

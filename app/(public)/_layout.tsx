@@ -1,4 +1,4 @@
-import { Redirect, Slot } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 
 import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
@@ -31,5 +31,9 @@ export default function PublicLayout() {
 		);
 	}
 
-	return <Slot />;
+	return (
+		<Stack>
+			<Stack.Screen name="index" options={{ headerShown: false }} />
+		</Stack>
+	);
 }

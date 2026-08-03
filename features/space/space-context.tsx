@@ -94,7 +94,7 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 
 				setSpace(null);
 				setImportedMilestones([]);
-				setStatus("none");
+				setStatus("error");
 			} finally {
 				if (isActive) {
 					setIsHydrated(true);
@@ -157,6 +157,17 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		setStatus("none");
 	}, [repository, user]);
 
+	const leaveSpace = useCallback(async () => {
+		if (!user) {
+			return;
+		}
+
+		await repository.leaveSpace(user.id);
+		setSpace(null);
+		setImportedMilestones([]);
+		setStatus("none");
+	}, [repository, user]);
+
 	const importMilestones = useCallback(
 		async (inputs: ImportedMilestoneInput[]) => {
 			if (!user || inputs.length === 0) {
@@ -185,6 +196,7 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			joinSpace,
 			updateSpace,
 			clearSpace,
+			leaveSpace,
 			importMilestones,
 		}),
 		[
@@ -196,6 +208,7 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			joinSpace,
 			updateSpace,
 			clearSpace,
+			leaveSpace,
 			importMilestones,
 		],
 	);

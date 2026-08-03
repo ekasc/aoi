@@ -31,7 +31,7 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 - Run one test name: `npx vitest run -t "renders empty state"`
 
 ### Build
-- There is no EAS config (`eas.json`) in this repo yet.
+- EAS config exists (`eas.json`) with development/preview/production profiles; no EAS Update or CI-driven builds yet.
 - For web-only static output, Expo supports exports; if/when needed:
   - `npx expo export --platform web`
 

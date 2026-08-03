@@ -79,7 +79,11 @@ export function IconButton({
 			]}
 			{...rest}
 		>
-			<ThemedText style={{ fontSize: 25 }}>{`${children}`}</ThemedText>
+			{typeof children === "string" ? (
+				<ThemedText style={{ fontSize: 25 }}>{children}</ThemedText>
+			) : (
+				children
+			)}
 		</Pressable>
 	);
 }

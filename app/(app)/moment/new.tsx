@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -8,13 +9,18 @@ import {
 	TextInput,
 	View,
 } from "react-native";
+import Animated, { FadeIn, FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NativeDateTimeField } from "@/components/forms/native-date-time-field";
+import { MediaPicker } from "@/components/media/media-picker";
+import { UploadProgress } from "@/components/media/upload-progress";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
-import { Spacing } from "@/constants/theme";
+import { FontFamilies } from "@/constants/typography";
+import { Motion, Spacing } from "@/constants/theme";
+import { useMediaUpload } from "@/features/media/use-media-upload";
 import { useMoments } from "@/features/moments/moments-context";
 import { useSession } from "@/features/session/session-context";
 import type { MomentType } from "@/features/moments/types";
@@ -23,16 +29,19 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 type MomentTypeOption = {
 	value: MomentType;
 	label: string;
-	disabled?: boolean;
+	icon: keyof typeof Ionicons.glyphMap;
+	description: string;
 };
 
 const MOMENT_TYPES: MomentTypeOption[] = [
-	{ value: "note", label: "Note" },
-	{ value: "milestone", label: "Milestone" },
-	{ value: "date", label: "Date" },
-	{ value: "goal", label: "Goal" },
-	{ value: "media", label: "Media", disabled: true },
+	{ value: "note", label: "Note", icon: "create-outline", description: "A quick thought" },
+	{ value: "milestone", label: "Milestone", icon: "trophy-outline", description: "Something important" },
+	{ value: "date", label: "Date", icon: "heart-outline", description: "When we were together" },
+	{ value: "media", label: "Media", icon: "camera-outline", description: "A photo or video" },
+	{ value: "goal", label: "Goal", icon: "flag-outline", description: "Something we're working toward" },
 ];
+
+const TYPE_ICON_SIZE = 22;
 
 export default function NewMomentScreen() {
 	const router = useRouter();
@@ -40,9 +49,11 @@ export default function NewMomentScreen() {
 	const isIos = process.env.EXPO_OS === "ios";
 	const { addMoment } = useMoments();
 	const { user } = useSession();
+	const { uploadImage, state: uploadState, progress: uploadProgress, error: uploadError, reset: resetUpload } = useMediaUpload();
 	const border = useThemeColor({}, "border");
 	const accent = useThemeColor({}, "accent");
 	const onAccent = useThemeColor({}, "onAccent");
+	const surface = useThemeColor({}, "surface");
 	const surface2 = useThemeColor({}, "surface2");
 	const text = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
@@ -58,34 +69,18 @@ export default function NewMomentScreen() {
 		return value;
 	});
 	const [error, setError] = useState("");
+	const [isSaving, setIsSaving] = useState(false);
+	const [mediaUri, setMediaUri] = useState<string | null>(null);
+	const [selectedMimeType, setSelectedMimeType] = useState("image/jpeg");
 
 	const trimmedTitle = title.trim();
 	const trimmedBody = body.trim();
-	const canSubmit = trimmedTitle.length > 0 || trimmedBody.length > 0;
+	const isMedia = type === "media";
 	const isGoal = type === "goal";
+	const hasMedia = isMedia && !!mediaUri;
+	const hasText = trimmedTitle.length > 0 || trimmedBody.length > 0;
+	const canSubmit = hasText || hasMedia;
 
-	const inputStyle = useMemo(
-		() => [
-			styles.input,
-			{
-				backgroundColor: surface2,
-				borderColor: border,
-				color: text,
-			},
-		],
-		[border, surface2, text],
-	);
-	const textAreaStyle = useMemo(
-		() => [inputStyle, styles.textArea],
-		[inputStyle],
-	);
-	const contentContainerStyle = useMemo(
-		() => [
-			styles.contentContainer,
-			{ paddingBottom: insets.bottom + Spacing[24] },
-		],
-		[insets.bottom],
-	);
 	const footerStyle = useMemo(
 		() => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
 		[insets.bottom],
@@ -95,36 +90,85 @@ export default function NewMomentScreen() {
 		router.back();
 	}, [router]);
 
-	const handleSave = useCallback(() => {
+	const handleSave = useCallback(async () => {
 		if (!canSubmit) {
-			setError("Add a title or note before saving.");
+			setError("Add a title, note, or media before saving.");
 			return;
 		}
 
-		addMoment({
-			type,
-			title: trimmedTitle,
-			body: trimmedBody,
-			occurredAt: new Date().toISOString(),
-			targetAt: isGoal && hasTargetDate ? targetAt.toISOString() : null,
-			authorId: user?.id ?? "user_you",
-			authorRole: "you",
-			authorName: user?.displayName ?? "You",
-		});
+		setIsSaving(true);
+		setError("");
 
-		router.back();
+		try {
+			let mediaPreview: string | null = null;
+
+			if (mediaUri) {
+				const uploadedUrl = await uploadImage({ uri: mediaUri, mimeType: selectedMimeType });
+				if (!uploadedUrl) {
+					setError("Failed to upload media. Please try again.");
+					setIsSaving(false);
+					return;
+				}
+				mediaPreview = uploadedUrl;
+			}
+
+			await addMoment({
+				type,
+				title: trimmedTitle,
+				body: trimmedBody,
+				occurredAt: new Date().toISOString(),
+				targetAt: isGoal && hasTargetDate ? targetAt.toISOString() : null,
+				authorId: user?.id ?? "user_you",
+				authorRole: "you",
+				authorName: user?.displayName ?? "You",
+				mediaPreview: mediaPreview ?? undefined,
+			});
+
+			router.back();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to save moment");
+		} finally {
+			setIsSaving(false);
+		}
 	}, [
 		addMoment,
 		canSubmit,
 		hasTargetDate,
 		isGoal,
+		mediaUri,
 		router,
 		targetAt,
 		trimmedBody,
 		trimmedTitle,
 		type,
+		uploadImage,
 		user,
+		selectedMimeType,
 	]);
+
+	const handleMediaSelected = useCallback((selection: { uri: string; mimeType: string }) => {
+		setMediaUri(selection.uri);
+		setSelectedMimeType(selection.mimeType);
+		setError("");
+	}, []);
+
+	const handleMediaClear = useCallback(() => {
+		setMediaUri(null);
+		setSelectedMimeType("image/jpeg");
+		resetUpload();
+	}, [resetUpload]);
+
+	const handleTypeSelect = useCallback((option: MomentTypeOption) => {
+		setType(option.value);
+		if (option.value !== "goal") {
+			setHasTargetDate(false);
+		}
+		if (option.value !== "media") {
+			setMediaUri(null);
+			resetUpload();
+		}
+		setError("");
+	}, [resetUpload]);
 
 	return (
 		<>
@@ -134,155 +178,206 @@ export default function NewMomentScreen() {
 				style={[styles.root, { backgroundColor: background }]}
 			>
 				<ScrollView
-					contentContainerStyle={contentContainerStyle}
+					contentContainerStyle={styles.contentContainer}
 					contentInsetAdjustmentBehavior="never"
 					keyboardDismissMode="interactive"
 					keyboardShouldPersistTaps="handled"
 					showsVerticalScrollIndicator={false}
 				>
-					<Surface variant="raised" style={styles.section}>
-						<ThemedText type="meta">Type</ThemedText>
-						<View style={styles.typeGrid}>
-							{MOMENT_TYPES.map((option) => {
-								const selected = option.value === type;
-								return (
+					<Animated.View
+						entering={true ? FadeInDown.duration(Motion.slow).reduceMotion(ReduceMotion.System) : undefined}
+						style={styles.hero}
+					>
+						<ThemedText type="display" style={styles.heroTitle}>
+							Capture a moment
+						</ThemedText>
+						<ThemedText type="body" style={{ color: muted }}>
+							What kind of moment was it?
+						</ThemedText>
+					</Animated.View>
+
+					<View style={styles.typeGrid}>
+						{MOMENT_TYPES.map((option, index) => {
+							const selected = option.value === type;
+							return (
+								<Animated.View
+									entering={
+										true
+											? FadeInDown.duration(Motion.base)
+													.delay(40 + index * 30)
+													.reduceMotion(ReduceMotion.System)
+											: undefined
+									}
+									key={option.value}
+									style={[
+										styles.typeCell,
+										index === MOMENT_TYPES.length - 1 && styles.typeCellLast,
+									]}
+								>
 									<Pressable
 										accessibilityLabel={`Moment type ${option.label}`}
 										accessibilityRole="button"
-										disabled={option.disabled}
-										key={option.value}
-										onPress={() => {
-											setType(option.value);
-											if (option.value !== "goal") {
-												setHasTargetDate(false);
-											}
-											setError("");
-										}}
-										style={({ pressed }) => [
-											styles.typeChip,
+										onPress={() => handleTypeSelect(option)}
+										style={[
+											styles.typeCard,
 											{
-												borderColor: selected
-													? accent
-													: border,
-												backgroundColor: selected
-													? accent
-													: surface2,
+												borderColor: selected ? accent : border,
+												backgroundColor: selected ? accent : surface,
 											},
-											option.disabled
-												? styles.typeChipDisabled
-												: undefined,
-											pressed && !option.disabled
-												? styles.typeChipPressed
-												: undefined,
 										]}
 									>
+										<Ionicons
+											color={selected ? onAccent : muted}
+											name={option.icon}
+											size={TYPE_ICON_SIZE}
+										/>
 										<ThemedText
-											type="caption"
+											type="body"
 											style={[
 												styles.typeLabel,
-												{
-													color: selected
-														? onAccent
-														: text,
-												},
-												option.disabled
-													? styles.typeLabelDisabled
-													: undefined,
+												{ color: selected ? onAccent : text },
 											]}
 										>
 											{option.label}
 										</ThemedText>
+										<ThemedText
+											type="caption"
+											style={{ color: selected ? onAccent : muted }}
+										>
+											{option.description}
+										</ThemedText>
 									</Pressable>
-								);
-							})}
-						</View>
-					</Surface>
+								</Animated.View>
+							);
+						})}
+					</View>
 
-					<Surface style={styles.section}>
-						<ThemedText type="meta">Title</ThemedText>
-						<TextInput
-							accessibilityLabel="Moment title"
-							autoCapitalize="sentences"
-							onChangeText={setTitle}
-							placeholder="What was it?"
-							placeholderTextColor={muted}
-							style={inputStyle}
-							value={title}
-						/>
-						<ThemedText type="meta">Note</ThemedText>
-						<TextInput
-							accessibilityLabel="Moment note"
-							autoCapitalize="sentences"
-							multiline
-							onChangeText={setBody}
-							placeholder="The details you'll want later"
-							placeholderTextColor={muted}
-							style={textAreaStyle}
-							textAlignVertical="top"
-							value={body}
-						/>
+					<Animated.View
+						entering={true ? FadeIn.duration(Motion.base).reduceMotion(ReduceMotion.System) : undefined}
+						style={styles.contentWrap}
+					>
+						{isMedia ? (
+							<>
+								<MediaPicker
+									disabled={isSaving}
+									onClear={handleMediaClear}
+									onMediaSelected={handleMediaSelected}
+									selectedUri={mediaUri}
+								/>
+								<UploadProgress
+									error={uploadError}
+									progress={uploadProgress}
+									state={uploadState}
+								/>
+							</>
+						) : null}
 
-						{isGoal ? (
-							<View style={styles.goalSection}>
-								<Pressable
-									accessibilityLabel="Toggle goal target date"
-									accessibilityRole="button"
-									onPress={() =>
-										setHasTargetDate(
-											(currentValue) => !currentValue,
-										)
-									}
-									style={[
-										styles.goalToggle,
-										{
-											borderColor: hasTargetDate
-												? accent
-												: border,
-											backgroundColor: hasTargetDate
-												? accent
-												: surface2,
-										},
-									]}
-								>
-									<ThemedText
-										type="caption"
-										style={{
-											color: hasTargetDate
-												? onAccent
-												: text,
-										}}
+						<Surface style={styles.contentSection}>
+							<TextInput
+								accessibilityLabel="Moment title"
+								autoCapitalize="sentences"
+								onChangeText={setTitle}
+								placeholder="What was it?"
+								placeholderTextColor={muted}
+								style={[
+									styles.titleInput,
+									{
+										backgroundColor: surface2,
+										borderColor: border,
+										color: text,
+									},
+								]}
+								value={title}
+							/>
+
+							<TextInput
+								accessibilityLabel="Moment note"
+								autoCapitalize="sentences"
+								multiline
+								onChangeText={setBody}
+								placeholder="The details you'll want later"
+								placeholderTextColor={muted}
+								style={[
+									styles.noteInput,
+									{
+										backgroundColor: surface2,
+										borderColor: border,
+										color: text,
+									},
+								]}
+								textAlignVertical="top"
+								value={body}
+							/>
+
+							{isGoal ? (
+								<View style={styles.goalSection}>
+									<Pressable
+										accessibilityLabel="Toggle goal target date"
+										accessibilityRole="button"
+										onPress={() =>
+											setHasTargetDate(
+												(currentValue) => !currentValue,
+											)
+										}
+										style={[
+											styles.goalToggle,
+											{
+												borderColor: hasTargetDate
+													? accent
+													: border,
+												backgroundColor: hasTargetDate
+													? accent
+													: surface2,
+											},
+										]}
 									>
-										{hasTargetDate
-											? "Target date enabled"
-											: "No target date (Someday)"}
-									</ThemedText>
-								</Pressable>
+										<Ionicons
+											color={hasTargetDate ? onAccent : muted}
+											name={hasTargetDate ? "calendar" : "calendar-outline"}
+											size={18}
+											style={styles.goalToggleIcon}
+										/>
+										<ThemedText
+											type="caption"
+											style={{
+												color: hasTargetDate
+													? onAccent
+													: text,
+											}}
+										>
+											{hasTargetDate
+												? "Target date enabled"
+												: "No target date (Someday)"}
+										</ThemedText>
+									</Pressable>
 
-								{hasTargetDate ? (
-									<NativeDateTimeField
-										accessibilityLabel="Choose goal target date"
-										label="Target date"
-										mode="date"
-										onChange={setTargetAt}
-										value={targetAt}
-									/>
-								) : null}
-							</View>
-						) : null}
+									{hasTargetDate ? (
+										<NativeDateTimeField
+											accessibilityLabel="Choose goal target date"
+											label="Target date"
+											mode="date"
+											onChange={setTargetAt}
+											value={targetAt}
+										/>
+									) : null}
+								</View>
+							) : null}
 
-						<ThemedText type="caption" style={{ color: muted }}>
-							Saved on {new Date().toLocaleDateString("en-US")}
-						</ThemedText>
-						{error ? (
-							<ThemedText
-								accessibilityRole="alert"
-								type="caption"
-								style={{ color: danger }}
-							>
-								{error}
+							<ThemedText type="caption" style={{ color: muted }}>
+								Today · {new Date().toLocaleDateString("en-US")}
 							</ThemedText>
-						) : null}
-					</Surface>
+
+							{error ? (
+								<ThemedText
+									accessibilityRole="alert"
+									type="caption"
+									style={{ color: danger }}
+								>
+									{error}
+								</ThemedText>
+							) : null}
+						</Surface>
+					</Animated.View>
 				</ScrollView>
 
 				<View
@@ -291,7 +386,19 @@ export default function NewMomentScreen() {
 						{ borderColor: border, backgroundColor: background },
 					]}
 				>
-					<Button label="Save moment" onPress={handleSave} />
+					<Button
+						label={
+							uploadState === 'uploading'
+								? 'Uploading media…'
+								: uploadState === 'confirming'
+									? 'Confirming upload…'
+									: isSaving
+										? 'Saving…'
+										: 'Save moment'
+						}
+						onPress={handleSave}
+						disabled={isSaving}
+					/>
 					<Button
 						label="Cancel"
 						onPress={handleCancel}
@@ -309,52 +416,68 @@ const styles = StyleSheet.create({
 	},
 	contentContainer: {
 		paddingHorizontal: Spacing[16],
-		paddingTop: Spacing[16],
-		gap: Spacing[12],
+		paddingTop: Spacing[24],
+		paddingBottom: Spacing[40],
+		gap: Spacing[16],
 	},
-	section: {
-		gap: Spacing[8],
+	hero: {
+		gap: Spacing[4],
+		paddingBottom: Spacing[8],
+	},
+	heroTitle: {
+		fontSize: 40,
+		lineHeight: 46,
 	},
 	typeGrid: {
 		flexDirection: "row",
 		flexWrap: "wrap",
 		gap: Spacing[8],
 	},
-	typeChip: {
+	typeCell: {
+		width: "48%",
+	},
+	typeCellLast: {
+		flexGrow: 1,
+	},
+	typeCard: {
+		minHeight: 88,
 		borderWidth: StyleSheet.hairlineWidth,
-		borderRadius: 999,
-		minHeight: 44,
-		minWidth: 44,
-		paddingHorizontal: 14,
+		borderRadius: 20,
+		padding: Spacing[12],
+		gap: Spacing[4],
 		justifyContent: "center",
-		alignItems: "center",
-	},
-	typeChipPressed: {
-		opacity: 0.92,
-	},
-	typeChipDisabled: {
-		opacity: 0.5,
 	},
 	typeLabel: {
 		fontWeight: "600",
 	},
-	typeLabelDisabled: {
-		textDecorationLine: "line-through",
+	contentWrap: {
+		gap: Spacing[16],
 	},
-	input: {
-		minHeight: 44,
+	contentSection: {
+		gap: Spacing[12],
+	},
+	titleInput: {
+		minHeight: 52,
+		borderWidth: StyleSheet.hairlineWidth,
+		borderRadius: 14,
+		paddingHorizontal: Spacing[12],
+		paddingVertical: Spacing[12],
+		fontFamily: FontFamilies.display,
+		fontSize: 22,
+		lineHeight: 28,
+	},
+	noteInput: {
+		minHeight: 120,
 		borderWidth: StyleSheet.hairlineWidth,
 		borderRadius: 14,
 		paddingHorizontal: Spacing[12],
 		paddingVertical: Spacing[12],
 	},
-	textArea: {
-		minHeight: 116,
-	},
 	goalSection: {
 		gap: Spacing[8],
 	},
 	goalToggle: {
+		flexDirection: "row",
 		minHeight: 44,
 		minWidth: 44,
 		borderRadius: 999,
@@ -363,10 +486,13 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		alignItems: "center",
 	},
+	goalToggleIcon: {
+		marginRight: 6,
+	},
 	footer: {
 		borderTopWidth: StyleSheet.hairlineWidth,
 		paddingHorizontal: Spacing[16],
 		paddingTop: Spacing[12],
-		gap: Spacing[8],
+		gap: Spacing[12],
 	},
 });

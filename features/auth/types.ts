@@ -19,44 +19,23 @@ export type AuthSessionPayload = {
   tokens: AuthSessionTokens;
 };
 
-export type OAuthStartRequest = {
+export type WorkOSAuthorizeRequest = {
   provider: AuthProvider;
-  platform: OAuthPlatform;
-  clientId: string;
   redirectUri: string;
-  codeChallenge?: string;
-  codeChallengeMethod?: 'S256';
-  nonce?: string;
 };
 
-export type OAuthStartResponse = {
+export type WorkOSAuthorizeResponse = {
   authorizationUrl: string;
-  state: string;
-  codeVerifier?: string;
 };
 
-export type OAuthCallbackRequest = {
-  provider: AuthProvider;
-  platform: OAuthPlatform;
+export type WorkOSCallbackRequest = {
   code: string;
-  state: string;
-  codeVerifier?: string;
 };
 
-export type OAuthNativeCallbackRequest = {
-  provider: 'apple';
-  platform: 'ios';
+export type WorkOSAppleNativeRequest = {
   idToken: string;
   nonce: string;
   displayName?: string;
-  avatarUrl?: string;
-};
-
-export type OAuthCallbackResponse = {
-  accessToken: string;
-  refreshToken: string;
-  expiresInSec: number;
-  user: AuthSessionUser;
 };
 
 export type SessionResponse = {
@@ -66,11 +45,10 @@ export type SessionResponse = {
 };
 
 export type AuthApi = {
-  oauthStart: (input: OAuthStartRequest) => Promise<OAuthStartResponse>;
-  oauthCallback: (input: OAuthCallbackRequest) => Promise<AuthSessionPayload>;
-  oauthNativeCallback: (
-    input: OAuthNativeCallbackRequest
-  ) => Promise<AuthSessionPayload>;
+  workosAuthorize: (input: WorkOSAuthorizeRequest) => Promise<WorkOSAuthorizeResponse>;
+  workosCallback: (input: WorkOSCallbackRequest) => Promise<AuthSessionPayload>;
+  workosAppleNative: (input: WorkOSAppleNativeRequest) => Promise<AuthSessionPayload>;
   getSession: (accessToken: string) => Promise<AuthSessionUser>;
   logout: (accessToken: string, refreshToken?: string) => Promise<void>;
+  deleteAccount: (accessToken: string) => Promise<void>;
 };

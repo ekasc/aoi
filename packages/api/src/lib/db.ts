@@ -12,6 +12,7 @@ export function momentRowToApi(row: {
   authorRole: string;
   authorName: string;
   mediaPreview: string | null;
+  audioUri?: string | null;
 }) {
   return {
     id: row.id,
@@ -26,6 +27,7 @@ export function momentRowToApi(row: {
     authorRole: row.authorRole as any,
     authorName: row.authorName,
     mediaPreview: row.mediaPreview,
+    audioUri: row.audioUri ?? null,
   };
 }
 

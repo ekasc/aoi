@@ -3,23 +3,15 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
-import {
-  getAppleAndroidClientId,
-  getGoogleClientId,
-  isAuthStubMode,
-} from './auth-config';
+import { isAuthStubMode } from './auth-config';
 import type {
   AuthApi,
   AuthProvider,
-  OAuthPlatform,
   AuthSessionPayload,
+  WorkOSCallbackRequest,
 } from './types';
 
 WebBrowser.maybeCompleteAuthSession();
-
-const PKCE_CHARSET =
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-const NONCE_CHARSET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 type OAuthErrorCode =
   | 'cancelled'
@@ -45,7 +37,7 @@ function getFirstValue(value: string | string[] | undefined) {
   return value;
 }
 
-function resolvePlatform(): OAuthPlatform {
+function resolvePlatform(): 'ios' | 'android' {
   if (Platform.OS === 'ios') {
     return 'ios';
   }
@@ -60,107 +52,31 @@ function resolvePlatform(): OAuthPlatform {
   );
 }
 
-function randomString(length: number, charset: string) {
-  const crypto = globalThis.crypto;
-
-  if (!crypto?.getRandomValues) {
-    if (isAuthStubMode()) {
-      let fallback = '';
-      for (let index = 0; index < length; index += 1) {
-        fallback += charset[Math.floor(Math.random() * charset.length)];
-      }
-      return fallback;
-    }
-
-    throw new OAuthClientError(
-      'Secure random generation is unavailable on this device.',
-      'unknown'
-    );
+async function createRedirectUri() {
+  if (isAuthStubMode()) {
+    return Linking.createURL('/auth/oauth-callback');
   }
 
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-
-  let output = '';
-  for (const value of bytes) {
-    output += charset[value % charset.length];
-  }
-
-  return output;
+  const authSession = await import('expo-auth-session');
+  return authSession.makeRedirectUri({
+    scheme: 'aoi',
+    path: 'auth/oauth-callback',
+  });
 }
 
-function bytesToBase64Url(bytes: Uint8Array) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let encoded = '';
-
-  for (let index = 0; index < bytes.length; index += 3) {
-    const byte1 = bytes[index];
-    const byte2 = index + 1 < bytes.length ? bytes[index + 1] : 0;
-    const byte3 = index + 2 < bytes.length ? bytes[index + 2] : 0;
-    const hasByte2 = index + 1 < bytes.length;
-    const hasByte3 = index + 2 < bytes.length;
-
-    const chunk = (byte1 << 16) | (byte2 << 8) | byte3;
-    const char1 = alphabet[(chunk >> 18) & 0x3f];
-    const char2 = alphabet[(chunk >> 12) & 0x3f];
-    const char3 = hasByte2 ? alphabet[(chunk >> 6) & 0x3f] : '=';
-    const char4 = hasByte3 ? alphabet[chunk & 0x3f] : '=';
-
-    encoded += `${char1}${char2}${char3}${char4}`;
-  }
-
-  return encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function utf8Encode(value: string) {
-  if (typeof TextEncoder !== 'undefined') {
-    return new TextEncoder().encode(value);
-  }
-
-  const encoded = unescape(encodeURIComponent(value));
-  const bytes = new Uint8Array(encoded.length);
-  for (let index = 0; index < encoded.length; index += 1) {
-    bytes[index] = encoded.charCodeAt(index);
-  }
-  return bytes;
-}
-
-async function createCodeChallenge(codeVerifier: string) {
-  const subtle = globalThis.crypto?.subtle;
-
-  if (!subtle) {
-    throw new OAuthClientError(
-      'Secure hashing is unavailable on this device.',
-      'unknown'
-    );
-  }
-
-  const digest = await subtle.digest('SHA-256', utf8Encode(codeVerifier));
-  return bytesToBase64Url(new Uint8Array(digest));
-}
-
-function createNonce() {
-  return randomString(32, NONCE_CHARSET);
-}
-
-function createRedirectUri() {
-  return Linking.createURL('/auth/oauth-callback');
-}
-
-function extractOAuthCallback(url: string) {
+function extractWorkOSCallback(url: string): WorkOSCallbackRequest {
   const parsedUrl = Linking.parse(url);
   const queryParams = parsedUrl.queryParams ?? {};
   const code = getFirstValue(queryParams.code as string | string[] | undefined);
-  const state = getFirstValue(queryParams.state as string | string[] | undefined);
 
-  if (!code || !state) {
-    throw new OAuthClientError('Missing OAuth callback values.', 'invalid_callback');
+  if (!code) {
+    throw new OAuthClientError('Missing OAuth code from WorkOS.', 'invalid_callback');
   }
 
-  return { code, state };
+  return { code };
 }
 
-async function openBrowserOAuthSession(authorizationUrl: string, redirectUri: string) {
+async function openBrowserSession(authorizationUrl: string, redirectUri: string) {
   let result: WebBrowser.WebBrowserAuthSessionResult;
 
   try {
@@ -173,66 +89,31 @@ async function openBrowserOAuthSession(authorizationUrl: string, redirectUri: st
     throw new OAuthClientError('Sign in was canceled.', 'cancelled');
   }
 
-  return extractOAuthCallback(result.url);
+  return extractWorkOSCallback(result.url);
 }
 
-function toDisplayName(credential: AppleAuthentication.AppleAuthenticationCredential) {
-  const first = credential.fullName?.givenName?.trim();
-  const last = credential.fullName?.familyName?.trim();
-  return [first, last].filter(Boolean).join(' ').trim();
-}
+async function signInWithBrowser(
+  provider: AuthProvider,
+  authApi: AuthApi
+): Promise<AuthSessionPayload> {
+  const redirectUri = await createRedirectUri();
+  const { authorizationUrl } = await authApi.workosAuthorize({ provider, redirectUri });
 
-async function signInWithGoogle(authApi: AuthApi): Promise<AuthSessionPayload> {
-  const platform = resolvePlatform();
-  const redirectUri = createRedirectUri();
-  const isStubMode = isAuthStubMode();
-  const codeVerifier = randomString(64, PKCE_CHARSET);
-  const codeChallenge = isStubMode
-    ? randomString(64, PKCE_CHARSET)
-    : await createCodeChallenge(codeVerifier);
-  const startResponse = await authApi.oauthStart({
-    provider: 'google',
-    platform,
-    clientId: getGoogleClientId(platform),
-    redirectUri,
-    codeChallenge,
-    codeChallengeMethod: 'S256',
-  });
-
-  if (isStubMode) {
-    return authApi.oauthCallback({
-      provider: 'google',
-      platform,
-      code: 'stub_code_google',
-      state: startResponse.state,
-      codeVerifier,
-    });
+  if (isAuthStubMode()) {
+    return authApi.workosCallback({ code: 'stub_code' });
   }
 
-  const { code, state } = await openBrowserOAuthSession(
-    startResponse.authorizationUrl,
-    redirectUri
-  );
-
-  return authApi.oauthCallback({
-    provider: 'google',
-    platform,
-    code,
-    state,
-    codeVerifier,
-  });
+  const { code } = await openBrowserSession(authorizationUrl, redirectUri);
+  return authApi.workosCallback({ code });
 }
 
 async function signInWithAppleIOSNative(authApi: AuthApi): Promise<AuthSessionPayload> {
-  const nonce = createNonce();
+  const nonce = randomString(32);
 
   if (isAuthStubMode()) {
-    return authApi.oauthNativeCallback({
-      provider: 'apple',
-      platform: 'ios',
+    return authApi.workosAppleNative({
       idToken: `stub_apple_id_token_${Date.now()}`,
       nonce,
-      displayName: 'Apple User',
     });
   }
 
@@ -269,48 +150,34 @@ async function signInWithAppleIOSNative(authApi: AuthApi): Promise<AuthSessionPa
     throw new OAuthClientError('Apple did not return an identity token.', 'invalid_callback');
   }
 
-  const displayName = toDisplayName(credential);
+  const first = credential.fullName?.givenName?.trim();
+  const last = credential.fullName?.familyName?.trim();
+  const displayName = [first, last].filter(Boolean).join(' ').trim() || undefined;
 
-  return authApi.oauthNativeCallback({
-    provider: 'apple',
-    platform: 'ios',
-    idToken,
-    nonce,
-    displayName: displayName || undefined,
-  });
+  return authApi.workosAppleNative({ idToken, nonce, displayName });
 }
 
-async function signInWithAppleAndroid(authApi: AuthApi): Promise<AuthSessionPayload> {
-  const redirectUri = createRedirectUri();
-  const nonce = createNonce();
-  const startResponse = await authApi.oauthStart({
-    provider: 'apple',
-    platform: 'android',
-    clientId: getAppleAndroidClientId(),
-    redirectUri,
-    nonce,
-  });
+function randomString(length: number) {
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const crypto = globalThis.crypto;
 
-  if (isAuthStubMode()) {
-    return authApi.oauthCallback({
-      provider: 'apple',
-      platform: 'android',
-      code: 'stub_code_apple',
-      state: startResponse.state,
-    });
+  if (!crypto?.getRandomValues) {
+    let fallback = '';
+    for (let index = 0; index < length; index += 1) {
+      fallback += charset[Math.floor(Math.random() * charset.length)];
+    }
+    return fallback;
   }
 
-  const { code, state } = await openBrowserOAuthSession(
-    startResponse.authorizationUrl,
-    redirectUri
-  );
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
 
-  return authApi.oauthCallback({
-    provider: 'apple',
-    platform: 'android',
-    code,
-    state,
-  });
+  let output = '';
+  for (const value of bytes) {
+    output += charset[value % charset.length];
+  }
+
+  return output;
 }
 
 export async function signInWithOAuthProvider(
@@ -319,17 +186,9 @@ export async function signInWithOAuthProvider(
 ): Promise<AuthSessionPayload> {
   const platform = resolvePlatform();
 
-  if (provider === 'google') {
-    return signInWithGoogle(authApi);
-  }
-
   if (provider === 'apple' && platform === 'ios') {
     return signInWithAppleIOSNative(authApi);
   }
 
-  if (provider === 'apple' && platform === 'android') {
-    return signInWithAppleAndroid(authApi);
-  }
-
-  throw new OAuthClientError('Unsupported OAuth provider/platform.', 'unsupported_platform');
+  return signInWithBrowser(provider, authApi);
 }

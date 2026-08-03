@@ -5,156 +5,97 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { users, authAccounts, userSessions, userPreferences, oauthStates } from '../db/schema.js';
+import { users, authAccounts, userSessions, userPreferences } from '../db/schema.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../lib/jwt.js';
-import { hashToken, randomToken } from '../lib/crypto.js';
-import { unauthorized, notFound, conflict, badRequest, internal } from '../lib/errors.js';
+import { hashToken } from '../lib/crypto.js';
+import { unauthorized, notFound, badRequest, internal } from '../lib/errors.js';
 import { userRowToApi } from '../lib/db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
+import {
+  getAuthorizationUrl,
+  authenticateWithCode,
+  authenticateWithAppleNative,
+} from '../lib/workos-auth.js';
 
 const auth = new Hono();
 
-// Rate limiting for auth endpoints: applied to public routes directly
-const authRateLimit = rateLimit({ max: 10, windowSec: 60 });
-
-// ── OAuth Start ──────────────────────────────────────────────────────────
-// Returns the authorization URL the client should open.
-// In production, this would construct the proper Google/Apple OAuth URL.
-
-const oauthStartSchema = z.object({
-  provider: z.enum(['apple', 'google']),
-  platform: z.enum(['ios', 'android']),
-  clientId: z.string().min(1),
-  redirectUri: z.string().url(),
-  codeChallenge: z.string().optional(),
-  codeChallengeMethod: z.literal('S256').optional(),
-  nonce: z.string().optional(),
+// Rate limiting for auth endpoints
+const authRateLimit = rateLimit({
+  max: 10,
+  windowSec: 60,
+  keyFn: (c) =>
+    c.req.header('cf-connecting-ip') ??
+    c.req.header('x-forwarded-for') ??
+    c.req.header('x-real-ip') ??
+    'unknown',
 });
 
-auth.post('/v1/auth/oauth/start', authRateLimit, zValidator('json', oauthStartSchema), async (c) => {
-  const { provider, platform, clientId, redirectUri, codeChallenge, codeChallengeMethod, nonce } = c.req.valid('json');
+// ── WorkOS Authorize ──────────────────────────────────────────────────────
+// Generates a WorkOS authorization URL for the given provider.
 
-  const state = randomToken(16);
-  const codeVerifier = randomToken(32);
-
-  let authorizationUrl: string;
-
-  if (provider === 'google') {
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: 'openid email profile',
-      state,
-      ...(codeChallenge && { code_challenge: codeChallenge }),
-      ...(codeChallengeMethod && { code_challenge_method: codeChallengeMethod }),
-    });
-    authorizationUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-  } else {
-    // Apple
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code id_token',
-      scope: 'name email',
-      state,
-      response_mode: 'form_post',
-      ...(nonce && { nonce }),
-    });
-    authorizationUrl = `https://appleid.apple.com/auth/authorize?${params}`;
-  }
-
-  // Store state for callback validation
-  await db.insert(oauthStates).values({
-    state,
-    provider,
-    codeVerifier: codeVerifier ?? null,
-    nonce: nonce ?? null,
-    redirectUri,
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
-  });
-
-  return c.json({
-    authorizationUrl,
-    state,
-    codeVerifier,
-  });
+const workosAuthorizeSchema = z.object({
+  provider: z.string().min(1),
+  redirectUri: z.string(),
 });
 
-// ── OAuth Callback ───────────────────────────────────────────────────────
+auth.post('/v1/auth/workos/authorize', authRateLimit, zValidator('json', workosAuthorizeSchema), async (c) => {
+  const { provider, redirectUri } = c.req.valid('json');
 
-const oauthCallbackSchema = z.object({
-  provider: z.enum(['apple', 'google']),
-  platform: z.enum(['ios', 'android']),
+  const authorizationUrl = await getAuthorizationUrl(provider, redirectUri);
+
+  return c.json({ authorizationUrl });
+});
+
+// ── WorkOS Callback ────────────────────────────────────────────────────────
+// Exchanges a WorkOS authorization code for user profile and session tokens.
+
+const workosCallbackSchema = z.object({
   code: z.string().min(1),
-  state: z.string().min(1),
-  codeVerifier: z.string().optional(),
 });
 
-auth.post('/v1/auth/oauth/callback', authRateLimit, zValidator('json', oauthCallbackSchema), async (c) => {
-  const { provider, code, state, codeVerifier } = c.req.valid('json');
+auth.post('/v1/auth/workos/callback', authRateLimit, zValidator('json', workosCallbackSchema), async (c) => {
+  const { code } = c.req.valid('json');
 
-  // Validate state exists and hasn't been consumed
-  const [storedState] = await db
-    .select()
-    .from(oauthStates)
-    .where(and(eq(oauthStates.state, state), isNull(oauthStates.consumedAt)))
-    .limit(1);
+  const { user: workosUser, accessToken: workosAccessToken, refreshToken: workosRefreshToken } =
+    await authenticateWithCode(code);
 
-  if (!storedState) {
-    throw badRequest('Invalid or expired OAuth state');
-  }
-
-  if (storedState.provider !== provider) {
-    throw badRequest('OAuth provider mismatch');
-  }
-
-  if (new Date() > storedState.expiresAt) {
-    throw badRequest('OAuth state has expired');
-  }
-
-  // Mark state as consumed (one-time use)
-  await db
-    .update(oauthStates)
-    .set({ consumedAt: new Date() })
-    .where(eq(oauthStates.state, state));
-
-  // In production: exchange `code` with the provider's token endpoint
-  // to get id_token, then verify id_token, extract sub + email + name.
-  // Also validate codeVerifier against the stored one for PKCE.
-  // For now, we simulate with the code as provider subject (stub).
-  const providerSubject = `stub_${provider}_${code.slice(0, 8)}`;
-  const email = `user_${code.slice(0, 6)}@example.com`;
-  const displayName = provider === 'apple' ? 'Apple User' : 'Google User';
-
-  return handleOAuthUser(c, provider, providerSubject, email, displayName);
+  return handleOAuthUser(
+    c,
+    'google',
+    workosUser.id,
+    workosUser.email,
+    workosUser.displayName,
+    workosUser.avatarUrl,
+  );
 });
 
-// ── OAuth Native Callback (Apple iOS native) ─────────────────────────────
+// ── WorkOS Apple Native ─────────────────────────────────────────────────────
+// Authenticates with Apple native sign-in via WorkOS.
 
-const oauthNativeCallbackSchema = z.object({
-  provider: z.literal('apple'),
-  platform: z.literal('ios'),
+const workosAppleSchema = z.object({
   idToken: z.string().min(1),
   nonce: z.string().min(1),
   displayName: z.string().optional(),
 });
 
-auth.post('/v1/auth/oauth/native/callback', authRateLimit, zValidator('json', oauthNativeCallbackSchema), async (c) => {
-  const { idToken, displayName } = c.req.valid('json');
+auth.post('/v1/auth/workos/apple', authRateLimit, zValidator('json', workosAppleSchema), async (c) => {
+  const { idToken, nonce, displayName } = c.req.valid('json');
 
-  // In production: verify the idToken (Apple's JWT) using Apple's public keys.
-  // Extract sub (user id from Apple), email, and name.
-  // For now: stub with idToken prefix.
-  const providerSubject = `apple_native_${idToken.slice(0, 12)}`;
-  const email = `apple_user_${idToken.slice(0, 6)}@example.com`;
-  const name = displayName ?? 'Apple User';
+  const { user: workosUser, accessToken: workosAccessToken, refreshToken: workosRefreshToken } =
+    await authenticateWithAppleNative(idToken, nonce);
 
-  return handleOAuthUser(c, 'apple', providerSubject, email, name);
+  return handleOAuthUser(
+    c,
+    'apple',
+    workosUser.id,
+    workosUser.email,
+    displayName || workosUser.displayName,
+    workosUser.avatarUrl,
+  );
 });
 
-// ── Session (GET) ───────────────────────────────────────────────────────
+// ── Session (GET) ─────────────────────────────────────────────────────────
 
 auth.get('/v1/auth/session', authMiddleware, async (c) => {
   const userId = c.var.userId;
@@ -192,7 +133,6 @@ auth.post('/v1/auth/refresh', authRateLimit, zValidator('json', refreshSchema), 
     const sessionId = payload.jti;
     const userId = payload.sub;
 
-    // First, find session by ID regardless of revocation status
     const [session] = await db
       .select()
       .from(userSessions)
@@ -203,8 +143,6 @@ auth.post('/v1/auth/refresh', authRateLimit, zValidator('json', refreshSchema), 
       throw unauthorized('Session not found or revoked');
     }
 
-    // Token theft detection: if session is already revoked,
-    // someone reused a rotated token — revoke ALL sessions for this user
     if (session.revokedAt) {
       await db
         .update(userSessions)
@@ -214,34 +152,42 @@ auth.post('/v1/auth/refresh', authRateLimit, zValidator('json', refreshSchema), 
       throw unauthorized('Session has been revoked due to suspected token theft');
     }
 
+    // The stored hash must match the presented token exactly. A mismatch means
+    // a rotated-out token is being replayed — treat it as theft and revoke all
+    // of the user's sessions.
+    if (hashToken(refreshToken) !== session.refreshTokenHash) {
+      await db
+        .update(userSessions)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(userSessions.userId, userId), isNull(userSessions.revokedAt)));
+
+      throw unauthorized('Refresh token mismatch; all sessions revoked');
+    }
+
     if (new Date() > session.expiresAt) {
       throw unauthorized('Session expired');
     }
 
-    // Rotate refresh token: revoke old, create new session row
     await db
       .update(userSessions)
       .set({ revokedAt: new Date() })
       .where(eq(userSessions.id, sessionId));
 
     const newSessionId = crypto.randomUUID();
-    const newRefreshToken = randomToken(32);
-    const newRefreshHash = hashToken(newRefreshToken);
+    const newAccessToken = await signAccessToken(userId);
+    const signedRefreshToken = await signRefreshToken(userId, newSessionId);
 
     await db.insert(userSessions).values({
       id: newSessionId,
       userId,
-      refreshTokenHash: newRefreshHash,
+      refreshTokenHash: hashToken(signedRefreshToken),
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
-
-    const newAccessToken = await signAccessToken(userId);
-    const signedRefreshToken = await signRefreshToken(userId, newSessionId);
 
     return c.json({
       accessToken: newAccessToken,
       refreshToken: signedRefreshToken,
-      expiresInSec: 900, // 15 min
+      expiresInSec: 900,
     });
   } catch (err) {
     if (err instanceof HTTPException) {
@@ -265,7 +211,6 @@ auth.post('/v1/auth/logout', authMiddleware, zValidator('json', logoutSchema), a
     try {
       const payload = await verifyRefreshToken(refreshToken);
       const sessionId = payload.jti;
-      // Revoke just this session
       await db
         .update(userSessions)
         .set({ revokedAt: new Date() })
@@ -274,12 +219,29 @@ auth.post('/v1/auth/logout', authMiddleware, zValidator('json', logoutSchema), a
       // If refresh token is invalid, still proceed with logout
     }
   } else {
-    // Revoke ALL sessions for this user
     await db
       .update(userSessions)
       .set({ revokedAt: new Date() })
       .where(and(eq(userSessions.userId, userId), isNull(userSessions.revokedAt)));
   }
+
+  return c.json({ ok: true });
+});
+
+// ── Delete Account ────────────────────────────────────────────────────────
+
+auth.delete('/v1/auth/account', authMiddleware, async (c) => {
+  const userId = c.var.userId;
+
+  await db
+    .update(users)
+    .set({ deletedAt: new Date() })
+    .where(eq(users.id, userId));
+
+  await db
+    .update(userSessions)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(userSessions.userId, userId), isNull(userSessions.revokedAt)));
 
   return c.json({ ok: true });
 });
@@ -291,9 +253,9 @@ async function handleOAuthUser(
   provider: 'apple' | 'google',
   providerSubject: string,
   email: string,
-  displayName: string
+  displayName: string,
+  avatarUrl?: string,
 ) {
-  // Check if this provider account already exists
   const [existingAccount] = await db
     .select()
     .from(authAccounts)
@@ -303,12 +265,10 @@ async function handleOAuthUser(
     .limit(1);
 
   let userId: string;
-  let user: typeof users.$inferSelect;
 
   if (existingAccount) {
     userId = existingAccount.userId;
   } else {
-    // Check if user with this email exists
     const [existingUser] = await db
       .select()
       .from(users)
@@ -318,25 +278,23 @@ async function handleOAuthUser(
     if (existingUser) {
       userId = existingUser.id;
     } else {
-      // Create new user
       const [newUser] = await db
         .insert(users)
         .values({
           email,
           displayName,
+          avatarUrl: avatarUrl ?? null,
         })
         .returning();
 
       userId = newUser.id;
 
-      // Create default preferences
       await db.insert(userPreferences).values({
         userId,
         themeId: 'sunset-shore',
       }).onConflictDoNothing();
     }
 
-    // Link provider account
     await db.insert(authAccounts).values({
       userId,
       provider,
@@ -344,7 +302,6 @@ async function handleOAuthUser(
     });
   }
 
-  // Fetch user
   const [userRow] = await db
     .select()
     .from(users)
@@ -355,20 +312,16 @@ async function handleOAuthUser(
     throw internal('User creation failed');
   }
 
-  // Create session
   const sessionId = crypto.randomUUID();
-  const refreshTokenRaw = randomToken(32);
-  const refreshTokenHash = hashToken(refreshTokenRaw);
+  const accessToken = await signAccessToken(userId);
+  const refreshToken = await signRefreshToken(userId, sessionId);
 
   await db.insert(userSessions).values({
     id: sessionId,
     userId,
-    refreshTokenHash,
+    refreshTokenHash: hashToken(refreshToken),
     expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
-
-  const accessToken = await signAccessToken(userId);
-  const refreshToken = await signRefreshToken(userId, sessionId);
 
   return c.json({
     accessToken,

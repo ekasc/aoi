@@ -4,9 +4,12 @@ import { Stack } from "expo-router/stack";
 import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
+import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
 import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
+import { SqueezeProvider } from "@/features/squeeze/squeeze-context";
 import { useAoiTheme } from "@/features/theme/theme-context";
+import { SqueezeOverlay } from "@/components/squeeze/squeeze-overlay";
 
 export default function AuthenticatedAppLayout() {
 	const isIos = process.env.EXPO_OS === "ios";
@@ -57,6 +60,9 @@ export default function AuthenticatedAppLayout() {
 
 	return (
 		<CalendarProvider>
+			<PartnerDetailsProvider>
+				<SqueezeProvider>
+			<SqueezeOverlay />
 			<Stack
 				screenOptions={{
 					contentStyle: { backgroundColor: colors.background },
@@ -67,6 +73,14 @@ export default function AuthenticatedAppLayout() {
 					name="moment/new"
 					options={{
 						title: "Add moment",
+						presentation: "pageSheet",
+						...sheetOptions,
+					}}
+				/>
+				<Stack.Screen
+					name="moment/trace"
+					options={{
+						title: "Keep this",
 						presentation: "pageSheet",
 						...sheetOptions,
 					}}
@@ -103,7 +117,17 @@ export default function AuthenticatedAppLayout() {
 						...sheetOptions,
 					}}
 				/>
+				<Stack.Screen
+					name="profile/little-things"
+					options={{
+						title: "The little things",
+						presentation: useFormSheet ? "formSheet" : "modal",
+						...sheetOptions,
+					}}
+				/>
 			</Stack>
+				</SqueezeProvider>
+			</PartnerDetailsProvider>
 		</CalendarProvider>
 	);
 }

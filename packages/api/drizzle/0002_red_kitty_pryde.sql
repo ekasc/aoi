@@ -1,0 +1,1 @@
+ALTER TABLE "moments" ADD COLUMN "audio_uri" text;

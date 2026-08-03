@@ -1,0 +1,10 @@
+diff --git a/build/_ctx-shared.js b/build/_ctx-shared.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4dbb885757e8bea351f2644001db533feaf2884
+--- /dev/null
++++ b/build/_ctx-shared.js
+@@ -0,0 +1,4 @@
++"use strict";
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.EXPO_ROUTER_CTX_IGNORE = void 0;
++exports.EXPO_ROUTER_CTX_IGNORE = /(?:__tests__|\.(?:test|spec|d)\.[jt]sx?$)/;

@@ -47,7 +47,7 @@ preferencesRouter.patch('/v1/users/me/preferences', zValidator('json', updatePre
     .limit(1);
 
   if (prefs) {
-    const updateData: Record<string, any> = { updatedAt: new Date() };
+    const updateData: Partial<typeof userPreferences.$inferInsert> = { updatedAt: new Date() };
     if (input.themeId) updateData.themeId = input.themeId;
 
     const [updated] = await db

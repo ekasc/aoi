@@ -2,12 +2,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type PropsWithChildren,
 } from 'react';
 
+import { isStubMode } from '@/features/api-client';
 import { mockMoments } from '@/features/moments/mock-data';
+import {
+  fetchMoments,
+  createMoment as remoteCreateMoment,
+  deleteMoment as remoteDeleteMoment,
+} from '@/features/moments/remote-moments-api';
 import type {
   CreateMomentInput,
   Moment,
@@ -15,6 +22,10 @@ import type {
 } from '@/features/moments/types';
 import { useSpace } from '@/features/space/space-context';
 import type { ImportedMilestone } from '@/features/space/types';
+
+const _useRemote = !isStubMode();
+
+// ── Helpers (both modes) ─────────────────────────────────────────────────
 
 function sortMomentsOldestFirst(moments: Moment[]) {
   return [...moments].sort(
@@ -27,7 +38,7 @@ function normalizeText(value?: string) {
   return value?.trim() ?? '';
 }
 
-function toMoment(input: CreateMomentInput): Moment {
+function toLocalMoment(input: CreateMomentInput): Moment {
   const now = new Date();
   const occurredAt = input.occurredAt ?? now.toISOString();
   const title = normalizeText(input.title) || 'Untitled moment';
@@ -45,6 +56,7 @@ function toMoment(input: CreateMomentInput): Moment {
     authorRole: input.authorRole ?? 'you',
     authorName: input.authorName ?? 'You',
     mediaPreview: input.mediaPreview,
+    audioUri: input.audioUri ?? null,
   };
 }
 
@@ -65,7 +77,57 @@ function toImportedMoment(milestone: ImportedMilestone): Moment {
 
 const MomentsContext = createContext<MomentsContextValue | undefined>(undefined);
 
-export function MomentsProvider({ children }: PropsWithChildren) {
+// ── Remote implementation ────────────────────────────────────────────────
+
+function useRemoteMoments(): MomentsContextValue {
+  const [moments, setMoments] = useState<Moment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMoments = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const allMoments: Moment[] = [];
+      let cursor: string | undefined;
+
+      do {
+        const response = await fetchMoments(cursor, 100);
+        allMoments.push(...response.moments);
+        cursor = response.nextCursor;
+      } while (cursor);
+
+      setMoments(sortMomentsOldestFirst(allMoments));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load moments');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMoments();
+  }, [loadMoments]);
+
+  const addMoment = useCallback(async (input: CreateMomentInput) => {
+    const created = await remoteCreateMoment(input);
+    setMoments((prev) => sortMomentsOldestFirst([...prev, created]));
+  }, []);
+
+  const removeMoment = useCallback(async (momentId: string) => {
+    await remoteDeleteMoment(momentId);
+    setMoments((prev) => prev.filter((m) => m.id !== momentId));
+  }, []);
+
+  return useMemo(
+    () => ({ moments, isLoading, error, addMoment, removeMoment }),
+    [addMoment, error, isLoading, moments, removeMoment]
+  );
+}
+
+// ── Stub (local) implementation ──────────────────────────────────────────
+
+function useStubMoments(): MomentsContextValue {
   const { importedMilestones } = useSpace();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
@@ -74,6 +136,7 @@ export function MomentsProvider({ children }: PropsWithChildren) {
     () => importedMilestones.map(toImportedMoment),
     [importedMilestones]
   );
+
   const moments = useMemo(() => {
     const byId = new Map<string, Moment>();
 
@@ -86,14 +149,19 @@ export function MomentsProvider({ children }: PropsWithChildren) {
     return sortMomentsOldestFirst(Array.from(byId.values()));
   }, [hiddenMomentIds, importedMoments, localMoments]);
 
-  const addMoment = useCallback((input: CreateMomentInput) => {
-    setLocalMoments((currentMoments) => {
-      const nextMoment = toMoment(input);
-      return sortMomentsOldestFirst([...currentMoments, nextMoment]);
+  const addMoment = useCallback(async (input: CreateMomentInput) => {
+    const nextMoment = toLocalMoment(input);
+    return new Promise<void>((resolve) => {
+      setLocalMoments((currentMoments) => {
+        const updated = sortMomentsOldestFirst([...currentMoments, nextMoment]);
+        // Use setTimeout to resolve after state update (best-effort for stub)
+        setTimeout(resolve, 0);
+        return updated;
+      });
     });
   }, []);
 
-  const removeMoment = useCallback((momentId: string) => {
+  const removeMoment = useCallback(async (momentId: string) => {
     setLocalMoments((currentMoments) =>
       currentMoments.filter((moment) => moment.id !== momentId)
     );
@@ -104,14 +172,16 @@ export function MomentsProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
-  const value = useMemo(
-    () => ({
-      moments,
-      addMoment,
-      removeMoment,
-    }),
+  return useMemo(
+    () => ({ moments, isLoading: false, error: null, addMoment, removeMoment }),
     [addMoment, moments, removeMoment]
   );
+}
+
+// ── Provider ─────────────────────────────────────────────────────────────
+
+export function MomentsProvider({ children }: PropsWithChildren) {
+  const value = _useRemote ? useRemoteMoments() : useStubMoments();
 
   return (
     <MomentsContext.Provider value={value}>{children}</MomentsContext.Provider>

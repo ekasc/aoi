@@ -27,6 +27,7 @@ export async function createMoment(input: CreateMomentInput): Promise<Moment> {
       occurredAt: input.occurredAt,
       targetAt: input.targetAt ?? null,
       mediaPreview: input.mediaPreview ?? null,
+      audioUri: input.audioUri ?? null,
     }),
   });
 }

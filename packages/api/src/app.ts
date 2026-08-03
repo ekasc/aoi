@@ -64,7 +64,7 @@ app.onError((err, c) => {
     return c.json(errorResponse, err.status);
   }
 
-  console.error('Unhandled error:', err);
+  console.error('Unhandled error:', err instanceof Error ? err.message : String(err));
   const errorResponse: ApiError = {
     error: {
       code: 'INTERNAL_ERROR',
