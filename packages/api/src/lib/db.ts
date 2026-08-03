@@ -1,3 +1,20 @@
+import type { SpaceActivityItem, SpaceActivityKind } from '@aoi/shared';
+
+/** Convert DB row to API shape for space activity (fact + actor only — never content) */
+export function activityRowToApi(row: {
+  id: string;
+  kind: string;
+  actorName: string;
+  occurredAt: Date;
+}): SpaceActivityItem {
+  return {
+    id: row.id,
+    kind: row.kind as SpaceActivityKind,
+    actorName: row.actorName,
+    occurredAt: row.occurredAt.toISOString(),
+  };
+}
+
 /** Convert DB row to API shape for moments */
 export function momentRowToApi(row: {
   id: string;

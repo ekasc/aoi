@@ -7,23 +7,32 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
+import { AppState } from 'react-native';
 
 import { isStubMode } from '@/features/api-client';
 import { mockMoments } from '@/features/moments/mock-data';
 import {
   fetchMoments,
+  fetchActivity,
   createMoment as remoteCreateMoment,
+  updateMoment as remoteUpdateMoment,
   deleteMoment as remoteDeleteMoment,
 } from '@/features/moments/remote-moments-api';
 import type {
   CreateMomentInput,
   Moment,
   MomentsContextValue,
+  SpaceActivityItem,
+  UpdateMomentInput,
 } from '@/features/moments/types';
 import { useSpace } from '@/features/space/space-context';
 import type { ImportedMilestone } from '@/features/space/types';
 
 const _useRemote = !isStubMode();
+
+// Activity is provenance, not history — mirror the API's 7-day window.
+const ACTIVITY_RETENTION_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // ── Helpers (both modes) ─────────────────────────────────────────────────
 
@@ -52,6 +61,7 @@ function toLocalMoment(input: CreateMomentInput): Moment {
     occurredAt,
     targetAt: input.targetAt ?? null,
     createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
     authorId: input.authorId ?? 'user_you',
     authorRole: input.authorRole ?? 'you',
     authorName: input.authorName ?? 'You',
@@ -69,10 +79,19 @@ function toImportedMoment(milestone: ImportedMilestone): Moment {
     occurredAt: milestone.occurredAt,
     targetAt: milestone.type === 'goal' ? milestone.targetAt ?? null : null,
     createdAt: milestone.createdAt,
+    updatedAt: milestone.createdAt,
     authorId: 'user_you',
     authorRole: 'you',
     authorName: 'You',
   };
+}
+
+function withinActivityRetention(occurredAt: string, now: number) {
+  const timestamp = new Date(occurredAt).getTime();
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+  return timestamp >= now - ACTIVITY_RETENTION_DAYS * MS_PER_DAY;
 }
 
 const MomentsContext = createContext<MomentsContextValue | undefined>(undefined);
@@ -81,6 +100,7 @@ const MomentsContext = createContext<MomentsContextValue | undefined>(undefined)
 
 function useRemoteMoments(): MomentsContextValue {
   const [moments, setMoments] = useState<Moment[]>([]);
+  const [activity, setActivity] = useState<SpaceActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,23 +125,82 @@ function useRemoteMoments(): MomentsContextValue {
     }
   }, []);
 
+  const loadActivity = useCallback(async () => {
+    try {
+      const response = await fetchActivity();
+      setActivity(response.activity);
+    } catch {
+      // Activity is provenance only — keep whatever we already have.
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    await Promise.all([loadMoments(), loadActivity()]);
+  }, [loadActivity, loadMoments]);
+
   useEffect(() => {
-    void loadMoments();
-  }, [loadMoments]);
+    void refresh();
+  }, [refresh]);
+
+  // Pick up partner edits/deletes when the app returns to focus.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        void refresh();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [refresh]);
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const created = await remoteCreateMoment(input);
     setMoments((prev) => sortMomentsOldestFirst([...prev, created]));
   }, []);
 
-  const removeMoment = useCallback(async (momentId: string) => {
-    await remoteDeleteMoment(momentId);
-    setMoments((prev) => prev.filter((m) => m.id !== momentId));
-  }, []);
+  const updateMoment = useCallback(
+    async (momentId: string, patch: UpdateMomentInput) => {
+      const updated = await remoteUpdateMoment(momentId, patch);
+      setMoments((prev) =>
+        sortMomentsOldestFirst(
+          prev.map((moment) => (moment.id === momentId ? updated : moment))
+        )
+      );
+    },
+    []
+  );
+
+  const removeMoment = useCallback(
+    async (momentId: string) => {
+      await remoteDeleteMoment(momentId);
+      setMoments((prev) => prev.filter((moment) => moment.id !== momentId));
+      // The server recorded a tombstone; pick it up quietly.
+      void loadActivity();
+    },
+    [loadActivity]
+  );
 
   return useMemo(
-    () => ({ moments, isLoading, error, addMoment, removeMoment }),
-    [addMoment, error, isLoading, moments, removeMoment]
+    () => ({
+      moments,
+      activity,
+      isLoading,
+      error,
+      addMoment,
+      updateMoment,
+      removeMoment,
+      refresh,
+    }),
+    [
+      activity,
+      addMoment,
+      error,
+      isLoading,
+      moments,
+      refresh,
+      removeMoment,
+      updateMoment,
+    ]
   );
 }
 
@@ -131,23 +210,38 @@ function useStubMoments(): MomentsContextValue {
   const { importedMilestones } = useSpace();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
+  const [localActivity, setLocalActivity] = useState<SpaceActivityItem[]>([]);
 
   const importedMoments = useMemo(
     () => importedMilestones.map(toImportedMoment),
     [importedMilestones]
   );
 
+  const baseMoments = useMemo(
+    () => [...mockMoments, ...importedMoments],
+    [importedMoments]
+  );
+
   const moments = useMemo(() => {
     const byId = new Map<string, Moment>();
 
-    [...mockMoments, ...importedMoments, ...localMoments].forEach((moment) => {
-      if (!hiddenMomentIds.has(moment.id)) {
-        byId.set(moment.id, moment);
-      }
-    });
+    baseMoments.forEach((moment) => byId.set(moment.id, moment));
+    // Local moments are creates *and* edits — they override base entries.
+    localMoments.forEach((moment) => byId.set(moment.id, moment));
 
-    return sortMomentsOldestFirst(Array.from(byId.values()));
-  }, [hiddenMomentIds, importedMoments, localMoments]);
+    const visibleMoments = Array.from(byId.values()).filter(
+      (moment) => !hiddenMomentIds.has(moment.id)
+    );
+
+    return sortMomentsOldestFirst(visibleMoments);
+  }, [baseMoments, hiddenMomentIds, localMoments]);
+
+  const activity = useMemo(() => {
+    const now = Date.now();
+    return localActivity.filter((item) =>
+      withinActivityRetention(item.occurredAt, now)
+    );
+  }, [localActivity]);
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const nextMoment = toLocalMoment(input);
@@ -161,6 +255,36 @@ function useStubMoments(): MomentsContextValue {
     });
   }, []);
 
+  const updateMoment = useCallback(
+    async (momentId: string, patch: UpdateMomentInput) => {
+      const now = new Date().toISOString();
+      setLocalMoments((currentMoments) => {
+        const existing =
+          currentMoments.find((moment) => moment.id === momentId) ??
+          baseMoments.find((moment) => moment.id === momentId);
+
+        if (!existing) {
+          return currentMoments;
+        }
+
+        const updatedMoment: Moment = { ...existing, updatedAt: now };
+        if (patch.type !== undefined) updatedMoment.type = patch.type;
+        if (patch.title !== undefined) updatedMoment.title = normalizeText(patch.title);
+        if (patch.body !== undefined) updatedMoment.body = normalizeText(patch.body);
+        if (patch.occurredAt !== undefined) updatedMoment.occurredAt = patch.occurredAt;
+        if (patch.targetAt !== undefined) updatedMoment.targetAt = patch.targetAt;
+        if (patch.mediaPreview !== undefined) {
+          updatedMoment.mediaPreview = patch.mediaPreview ?? undefined;
+        }
+        if (patch.audioUri !== undefined) updatedMoment.audioUri = patch.audioUri;
+
+        const rest = currentMoments.filter((moment) => moment.id !== momentId);
+        return [...rest, updatedMoment];
+      });
+    },
+    [baseMoments]
+  );
+
   const removeMoment = useCallback(async (momentId: string) => {
     setLocalMoments((currentMoments) =>
       currentMoments.filter((moment) => moment.id !== momentId)
@@ -170,11 +294,34 @@ function useStubMoments(): MomentsContextValue {
       nextIds.add(momentId);
       return nextIds;
     });
+    // Synthesize the tombstone the remote API would record.
+    setLocalActivity((currentActivity) => [
+      {
+        id: `activity_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+        kind: 'moment_deleted',
+        actorName: 'You',
+        occurredAt: new Date().toISOString(),
+      },
+      ...currentActivity,
+    ]);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    // Local data is always current — nothing to sync in stub mode.
   }, []);
 
   return useMemo(
-    () => ({ moments, isLoading: false, error: null, addMoment, removeMoment }),
-    [addMoment, moments, removeMoment]
+    () => ({
+      moments,
+      activity,
+      isLoading: false,
+      error: null,
+      addMoment,
+      updateMoment,
+      removeMoment,
+      refresh,
+    }),
+    [activity, addMoment, moments, refresh, removeMoment, updateMoment]
   );
 }
 

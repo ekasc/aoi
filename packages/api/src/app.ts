@@ -7,6 +7,7 @@ import { rateLimit } from './middleware/rate-limit.js';
 import { auth } from './routes/auth.js';
 import { spacesRouter } from './routes/spaces.js';
 import { momentsRouter } from './routes/moments.js';
+import { activityRouter } from './routes/activity.js';
 import { calendarRouter } from './routes/calendar.js';
 import { milestonesRouter } from './routes/milestones.js';
 import { preferencesRouter } from './routes/preferences.js';
@@ -46,6 +47,7 @@ app.use('/v1/*', rateLimit({
 
 app.route('/', spacesRouter);
 app.route('/', momentsRouter);
+app.route('/', activityRouter);
 app.route('/', calendarRouter);
 app.route('/', milestonesRouter);
 app.route('/', preferencesRouter);

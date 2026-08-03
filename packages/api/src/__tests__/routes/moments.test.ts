@@ -6,6 +6,7 @@ vi.stubEnv('CORS_ORIGIN', '*');
 
 const mockSelectQueue: any[][] = [];
 let mockReturningResult: any[] = [];
+const insertCalls: any[] = [];
 
 function selectChain() {
   return {
@@ -18,11 +19,15 @@ function selectChain() {
 }
 
 function insertChain() {
-  return {
-    values: vi.fn(() => insertChain()),
+  const chain = {
+    values: vi.fn((value: any) => {
+      insertCalls.push(value);
+      return chain;
+    }),
     returning: vi.fn(() => Promise.resolve(mockReturningResult)),
     then: (resolve: Function) => resolve(mockReturningResult),
   };
+  return chain;
 }
 
 function updateChain() {
@@ -39,17 +44,28 @@ vi.mock('../../db/index.js', () => ({
     select: vi.fn(() => selectChain()),
     insert: vi.fn(() => insertChain()),
     update: vi.fn(() => updateChain()),
+    // Runs the callback with the same mocked chains so handlers can be
+    // tested without a real database.
+    transaction: vi.fn((callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        select: () => selectChain(),
+        insert: () => insertChain(),
+        update: () => updateChain(),
+      })
+    ),
   },
 }));
 
 beforeEach(() => {
   mockSelectQueue.length = 0;
   mockReturningResult = [];
+  insertCalls.length = 0;
 });
 
 function momentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: TEST_MOMENT_ID,
+    spaceId: TEST_SPACE_ID,
     type: 'note' as const,
     title: 'Test moment',
     body: 'Test body',
@@ -209,6 +225,33 @@ describe('PATCH /v1/moments/:id', () => {
     }));
     expect(res.status).toBe(400);
   });
+
+  it('records a moment_edited activity row in the same transaction', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [momentRow({ title: 'Updated' })];
+    const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
+      jwt, body: { title: 'Updated' },
+    }));
+    expect(res.status).toBe(200);
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]).toMatchObject({
+      spaceId: TEST_SPACE_ID,
+      actorUserId: TEST_USER_ID,
+      kind: 'moment_edited',
+      subjectId: TEST_MOMENT_ID,
+    });
+  });
+
+  it('does not record activity when the moment belongs to someone else', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow({ createdByUserId: TEST_OTHER_USER_ID })]);
+    const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
+      jwt, body: { title: 'Updated' },
+    }));
+    expect(res.status).toBe(403);
+    expect(insertCalls).toHaveLength(0);
+  });
 });
 
 describe('DELETE /v1/moments/:id', () => {
@@ -238,5 +281,27 @@ describe('DELETE /v1/moments/:id', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true });
+  });
+
+  it('records a moment_deleted activity row in the same transaction', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    const res = await app.fetch(req('DELETE', `/v1/moments/${TEST_MOMENT_ID}`, { jwt }));
+    expect(res.status).toBe(200);
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]).toMatchObject({
+      spaceId: TEST_SPACE_ID,
+      actorUserId: TEST_USER_ID,
+      kind: 'moment_deleted',
+      subjectId: TEST_MOMENT_ID,
+    });
+  });
+
+  it('does not record activity when the moment belongs to someone else', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow({ createdByUserId: TEST_OTHER_USER_ID })]);
+    const res = await app.fetch(req('DELETE', `/v1/moments/${TEST_MOMENT_ID}`, { jwt }));
+    expect(res.status).toBe(403);
+    expect(insertCalls).toHaveLength(0);
   });
 });

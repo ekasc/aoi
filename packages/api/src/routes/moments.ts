@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, isNull, desc, lt, gt, asc } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { moments, spaceMembers } from '../db/schema.js';
+import { moments, spaceActivity, spaceMembers } from '../db/schema.js';
 import { badRequest, notFound, forbidden } from '../lib/errors.js';
 import { momentRowToApi } from '../lib/db.js';
 
@@ -167,11 +167,22 @@ momentsRouter.patch('/v1/moments/:id', zValidator('param', z.object({ id: z.stri
   if (input.mediaPreview !== undefined) updateData.mediaPreview = input.mediaPreview;
   if (input.audioUri !== undefined) updateData.audioUri = input.audioUri;
 
-  const [updated] = await db
-    .update(moments)
-    .set(updateData)
-    .where(eq(moments.id, momentId))
-    .returning();
+  const [updated] = await db.transaction(async (tx) => {
+    const updatedRows = await tx
+      .update(moments)
+      .set(updateData)
+      .where(eq(moments.id, momentId))
+      .returning();
+
+    await tx.insert(spaceActivity).values({
+      spaceId: existing.spaceId,
+      actorUserId: userId,
+      kind: 'moment_edited',
+      subjectId: momentId,
+    });
+
+    return updatedRows;
+  });
 
   return c.json(momentRowToApi(updated));
 });
@@ -213,10 +224,19 @@ momentsRouter.delete('/v1/moments/:id', zValidator('param', z.object({ id: z.str
     throw forbidden('You are not an active member of this space');
   }
 
-  await db
-    .update(moments)
-    .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(eq(moments.id, momentId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(moments)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(moments.id, momentId));
+
+    await tx.insert(spaceActivity).values({
+      spaceId: existing.spaceId,
+      actorUserId: userId,
+      kind: 'moment_deleted',
+      subjectId: momentId,
+    });
+  });
 
   return c.json({ ok: true });
 });

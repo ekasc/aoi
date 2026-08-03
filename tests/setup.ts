@@ -61,6 +61,11 @@ vi.mock('react-native', () => {
     ActivityIndicator: View,
     Modal: View,
     Pressable: View,
+    KeyboardAvoidingView: View,
+    AppState: {
+      currentState: 'active',
+      addEventListener: () => ({ remove: () => {} }),
+    },
   };
 });
 

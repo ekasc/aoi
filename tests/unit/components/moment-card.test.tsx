@@ -106,4 +106,33 @@ describe('MomentCard', () => {
     render(<MomentCard moment={makeMoment({ type: 'milestone' })} />);
     expect(screen.getByText(/Milestone/)).toBeTruthy();
   });
+
+  it('shows the edited marker when updatedAt is more than 1s after createdAt', () => {
+    render(
+      <MomentCard
+        moment={makeMoment({
+          createdAt: '2026-03-15T10:00:00.000Z',
+          updatedAt: '2026-03-16T09:30:00.000Z',
+        })}
+      />
+    );
+    expect(screen.getByText(/Edited/)).toBeTruthy();
+  });
+
+  it('does not show the edited marker within the 1s tolerance', () => {
+    render(
+      <MomentCard
+        moment={makeMoment({
+          createdAt: '2026-03-15T10:00:00.000Z',
+          updatedAt: '2026-03-15T10:00:00.800Z',
+        })}
+      />
+    );
+    expect(screen.queryByText(/Edited/)).toBeNull();
+  });
+
+  it('does not show the edited marker when updatedAt is missing', () => {
+    render(<MomentCard moment={makeMoment()} />);
+    expect(screen.queryByText(/Edited/)).toBeNull();
+  });
 });
