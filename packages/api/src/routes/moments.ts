@@ -6,6 +6,7 @@ import { db } from '../db/index.js';
 import { moments, spaceActivity, spaceMembers, users } from '../db/schema.js';
 import { badRequest, notFound, forbidden } from '../lib/errors.js';
 import { momentRowToApi } from '../lib/db.js';
+import { notifyPartnerInSpace } from '../lib/push.js';
 
 const momentsRouter = new Hono();
 
@@ -144,6 +145,10 @@ momentsRouter.post('/v1/spaces/current/moments', zValidator('json', createMoment
     })
     .returning();
 
+  // Fire-and-forget: push must never delay or break the create. The payload
+  // carries only the kind — vague copy, never the moment's content.
+  void notifyPartnerInSpace(spaceId, userId, 'moment_added');
+
   return c.json(momentRowToApi(moment, userId), 201);
 });
 
@@ -245,6 +250,9 @@ momentsRouter.patch('/v1/moments/:id', zValidator('param', z.object({ id: z.stri
     throw notFound('Moment not found');
   }
 
+  // Fire-and-forget; kind only, never content.
+  void notifyPartnerInSpace(existing.spaceId, userId, 'moment_edited');
+
   return c.json(momentRowToApi(updated, userId));
 });
 
@@ -311,6 +319,9 @@ momentsRouter.delete('/v1/moments/:id', zValidator('param', z.object({ id: z.str
   if (deletedRows.length === 0) {
     throw notFound('Moment not found');
   }
+
+  // Fire-and-forget; kind only, never content.
+  void notifyPartnerInSpace(existing.spaceId, userId, 'moment_deleted');
 
   return c.json({ ok: true });
 });

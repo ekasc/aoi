@@ -26,6 +26,8 @@ export default function SettingsScreen() {
   const handleSignOut = useCallback(async () => {
     setSignOutError('');
     try {
+      // signOut() quietly lets go of this device's push registration first
+      // (single choke point — every sign-out path unregisters the token).
       await signOut();
       router.replace('/(public)');
     } catch {

@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { app, getTestJwt, req, TEST_USER_ID, TEST_OTHER_USER_ID, TEST_SPACE_ID, TEST_MOMENT_ID } from '../helpers/test-app.js';
+import { notifyPartnerInSpace } from '../../lib/push.js';
 
 vi.stubEnv('JWT_SECRET', 'test-jwt-secret-for-testing');
 vi.stubEnv('CORS_ORIGIN', '*');
@@ -57,10 +58,17 @@ vi.mock('../../db/index.js', () => ({
   },
 }));
 
+// Partner push delivery is mocked away — these tests assert the delivery
+// intent (kind + target), never Expo traffic.
+vi.mock('../../lib/push.js', () => ({
+  notifyPartnerInSpace: vi.fn(async () => {}),
+}));
+
 beforeEach(() => {
   mockSelectQueue.length = 0;
   mockReturningResult = [];
   insertCalls.length = 0;
+  vi.mocked(notifyPartnerInSpace).mockClear();
 });
 
 function momentRow(overrides: Record<string, unknown> = {}) {
@@ -193,6 +201,25 @@ describe('POST /v1/spaces/current/moments', () => {
     expect(body.authorRole).toBe('you');
     expect(body.authorName).toBe('You');
     expect(body.isOwn).toBe(true);
+  });
+
+  it('notifies the partner with moment_added — kind only, never the content', async () => {
+    const secretBody = 'the thing I will never put in a push payload';
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()], [authorRow()]);
+    mockReturningResult = [momentRow()];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/moments', {
+      jwt, body: { type: 'note', title: 'Hello', body: secretBody },
+    }));
+    expect(res.status).toBe(201);
+    expect(notifyPartnerInSpace).toHaveBeenCalledTimes(1);
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(
+      TEST_SPACE_ID,
+      TEST_USER_ID,
+      'moment_added'
+    );
+    // Privacy: no call argument may carry the moment's content.
+    expect(JSON.stringify(vi.mocked(notifyPartnerInSpace).mock.calls)).not.toContain(secretBody);
   });
 });
 
@@ -417,6 +444,32 @@ describe('PATCH /v1/moments/:id', () => {
     expect(res.status).toBe(403);
     expect(insertCalls).toHaveLength(0);
   });
+
+  it('notifies the partner with moment_edited after a successful edit', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [momentRow({ title: 'Updated' })];
+    const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
+      jwt, body: { title: 'Updated' },
+    }));
+    expect(res.status).toBe(200);
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(
+      TEST_SPACE_ID,
+      TEST_USER_ID,
+      'moment_edited'
+    );
+  });
+
+  it('does not notify the partner when the edit failed mid-flight', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [];
+    const res = await app.fetch(req('PATCH', `/v1/moments/${TEST_MOMENT_ID}`, {
+      jwt, body: { title: 'Updated' },
+    }));
+    expect(res.status).toBe(404);
+    expect(notifyPartnerInSpace).not.toHaveBeenCalled();
+  });
 });
 
 describe('DELETE /v1/moments/:id', () => {
@@ -481,5 +534,18 @@ describe('DELETE /v1/moments/:id', () => {
     const res = await app.fetch(req('DELETE', `/v1/moments/${TEST_MOMENT_ID}`, { jwt }));
     expect(res.status).toBe(403);
     expect(insertCalls).toHaveLength(0);
+  });
+
+  it('notifies the partner with moment_deleted after a successful delete', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([momentRow()], [spaceMemberRow()]);
+    mockReturningResult = [momentRow({ deletedAt: new Date() })];
+    const res = await app.fetch(req('DELETE', `/v1/moments/${TEST_MOMENT_ID}`, { jwt }));
+    expect(res.status).toBe(200);
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(
+      TEST_SPACE_ID,
+      TEST_USER_ID,
+      'moment_deleted'
+    );
   });
 });

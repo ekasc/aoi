@@ -319,6 +319,33 @@ export const weeklyAnswers = pgTable(
   ]
 );
 
+// ── Push Tokens ───────────────────────────────────────────────────────────
+// Device-scoped Expo push tokens. Deliberately user-owned, not space-owned:
+// a token belongs to the device+account pair, and delivery targets are
+// resolved through space membership at send time. Re-registering the same
+// token upserts it; a token re-registered by a different user is reassigned
+// (the device changed hands). Rows are ephemeral artifacts — expired or
+// uninstalled-device tokens are removed outright, never soft-deleted.
+
+export const pushTokens = pgTable(
+  'push_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expoPushToken: text('expo_push_token').notNull().unique(),
+    platform: text('platform', { enum: ['ios', 'android', 'web', 'unknown'] })
+      .notNull()
+      .default('unknown'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_push_tokens_user').on(table.userId),
+  ]
+);
+
 // ── OAuth States ──────────────────────────────────────────────────────────
 
 export const oauthStates = pgTable('oauth_states', {

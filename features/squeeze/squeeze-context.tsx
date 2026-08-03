@@ -30,8 +30,9 @@ function createSqueeze(fromRole: Squeeze['fromRole']): Squeeze {
  *
  * Stub mode simulates the full loop: sending a squeeze makes your partner
  * squeeze back a moment later, so the receive path (overlay + haptics) is
- * real and testable. Remote mode posts to the API; true delivery requires
- * push notifications (see PLAN.md).
+ * real and testable. Remote mode posts to the API, which pushes the squeeze
+ * to the partner's device; the push receive listener calls `receiveSqueeze`
+ * to light up the same overlay.
  */
 export function SqueezeProvider({ children }: PropsWithChildren) {
   const [incomingSqueeze, setIncomingSqueeze] = useState<Squeeze | null>(null);
@@ -47,16 +48,22 @@ export function SqueezeProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
+  // The single real receive path — push delivery (remote) and the simulated
+  // reply (stub) both light up the overlay through it.
+  const receiveSqueeze = useCallback(() => {
+    setIncomingSqueeze(createSqueeze('partner'));
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, []);
+
   const scheduleSimulatedReply = useCallback(() => {
     if (replyTimer.current) {
       clearTimeout(replyTimer.current);
     }
 
     replyTimer.current = setTimeout(() => {
-      setIncomingSqueeze(createSqueeze('partner'));
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      receiveSqueeze();
     }, PARTNER_REPLY_DELAY_MS);
-  }, []);
+  }, [receiveSqueeze]);
 
   const sendSqueeze = useCallback(async () => {
     setIsSending(true);
@@ -87,13 +94,21 @@ export function SqueezeProvider({ children }: PropsWithChildren) {
   const value = useMemo(
     () => ({
       sendSqueeze,
+      receiveSqueeze,
       incomingSqueeze,
       dismissIncoming,
       lastSentAt,
       isSending,
       deliveryAvailable: true,
     }),
-    [dismissIncoming, incomingSqueeze, isSending, lastSentAt, sendSqueeze]
+    [
+      dismissIncoming,
+      incomingSqueeze,
+      isSending,
+      lastSentAt,
+      receiveSqueeze,
+      sendSqueeze,
+    ]
   );
 
   return <SqueezeContext.Provider value={value}>{children}</SqueezeContext.Provider>;

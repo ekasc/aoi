@@ -8,6 +8,11 @@ export type Squeeze = {
 export type SqueezeContextValue = {
   /** Send a wordless squeeze to your partner. */
   sendSqueeze: () => Promise<void>;
+  /**
+   * Light up the receive path from outside (push delivery). Shows the
+   * overlay + success haptic, exactly like a simulated reply.
+   */
+  receiveSqueeze: () => void;
   /** A squeeze received from the partner (drives the overlay). */
   incomingSqueeze: Squeeze | null;
   dismissIncoming: () => void;
