@@ -180,7 +180,6 @@ export default function ProfileScreen() {
 			{daysTogether !== null ? (
 				<Surface variant="raised" style={styles.card}>
 					<ThemedText type="meta">Time together</ThemedText>
-					<Divider style={styles.divider} />
 					<ThemedText type="title" selectable>
 						{formatDaysTogether(daysTogether)}
 					</ThemedText>

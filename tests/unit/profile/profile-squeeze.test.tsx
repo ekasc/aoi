@@ -35,6 +35,10 @@ vi.mock('@/features/squeeze/squeeze-context', () => ({
   useSqueeze: () => ({ sendSqueeze: sendSqueezeSpy, isSending: false }),
 }));
 
+vi.mock('@/features/moments/moments-context', () => ({
+  useMoments: () => ({ moments: [] }),
+}));
+
 vi.mock('@/components/themed-text', () => ({
   ThemedText: ({ children }: any) => <span>{children}</span>,
 }));
