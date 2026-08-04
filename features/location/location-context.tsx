@@ -85,6 +85,13 @@ export function LocationProvider({ children }: PropsWithChildren) {
   const youConsentedRef = useRef(false);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const sentResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bumped on every stop/revoke so an in-flight report can never resurrect
+  // a row that was just deleted (it re-issues stop when it lands late).
+  const stopEpochRef = useRef(0);
+  // Arrival checks only trust fixes taken after tracking started — the
+  // first callback can be a stale last-known location ≈ destination.
+  const arriveStartedAtRef = useRef(0);
+  const approvingRef = useRef(false);
 
   useEffect(() => {
     sharingModeRef.current = sharingMode;
@@ -161,6 +168,7 @@ export function LocationProvider({ children }: PropsWithChildren) {
       }
 
       const destination = destinationRef.current;
+      const epoch = stopEpochRef.current;
 
       try {
         await repository.share({
@@ -170,6 +178,16 @@ export function LocationProvider({ children }: PropsWithChildren) {
           accuracyMeters: position.coords.accuracy ?? undefined,
           ...(destination ? { destination } : {}),
         });
+
+        // A stop/revoke that landed while this report was in flight wins:
+        // the upsert may have resurrected the row, so stop it again.
+        if (stopEpochRef.current !== epoch) {
+          try {
+            await repository.stop();
+          } catch {
+            // Absorbed — the row simply expires on its own.
+          }
+        }
       } catch {
         // A location that fails to send is silently absorbed.
       }
@@ -195,6 +213,7 @@ export function LocationProvider({ children }: PropsWithChildren) {
   }, []);
 
   const stopSharing = useCallback(async () => {
+    stopEpochRef.current += 1;
     const wasSharing = sharingModeRef.current !== null;
 
     destinationRef.current = null;
@@ -283,6 +302,7 @@ export function LocationProvider({ children }: PropsWithChildren) {
         } else {
           // Until I arrive: foreground watching, auto-stop on arrival.
           const arrivalDestination = destination;
+          arriveStartedAtRef.current = Date.now();
 
           watchRef.current = await Location.watchPositionAsync(
             {
@@ -292,8 +312,16 @@ export function LocationProvider({ children }: PropsWithChildren) {
             (position) => {
               void reportPosition(position);
 
+              // The first callback can be a stale last-known fix ≈ the
+              // destination — only fixes taken after tracking started may
+              // declare arrival.
+              const isFreshFix =
+                typeof position.timestamp === 'number' &&
+                position.timestamp >= arriveStartedAtRef.current;
+
               if (
                 arrivalDestination &&
+                isFreshFix &&
                 hasArrivedAtDestination(
                   position.coords.latitude,
                   position.coords.longitude,
@@ -340,6 +368,7 @@ export function LocationProvider({ children }: PropsWithChildren) {
       try {
         if (!consented) {
           // Stopping consent also stops any active sharing — one tap.
+          stopEpochRef.current += 1;
           destinationRef.current = null;
           setSharingMode(null);
           await stopTrackers();
@@ -390,10 +419,13 @@ export function LocationProvider({ children }: PropsWithChildren) {
   }, []);
 
   const approveRequest = useCallback(async () => {
-    if (!repository) {
+    // A rapid double-tap must not post two grants/pushes: the reducer only
+    // guards state, so the side effect is guarded here as well.
+    if (!repository || approvingRef.current) {
       return;
     }
 
+    approvingRef.current = true;
     dispatchApproval({ type: 'approve' });
 
     try {
@@ -425,6 +457,8 @@ export function LocationProvider({ children }: PropsWithChildren) {
       // A location that fails to send is silently absorbed — the prompt
       // simply goes away, never an error surface.
       dispatchApproval({ type: 'decline' });
+    } finally {
+      approvingRef.current = false;
     }
   }, [repository]);
 

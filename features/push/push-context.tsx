@@ -62,7 +62,7 @@ export function PushProvider({ children }: PropsWithChildren) {
     const routePushData = (rawData: unknown) => {
       const data = parsePushNotificationData(rawData);
 
-if (!data) {
+      if (!data) {
         return; // Unknown kinds are never acted on.
       }
 
@@ -99,7 +99,7 @@ if (!data) {
       (notification) => routePushData(notification.request.content.data)
     );
 
-// The user tapped a notification that arrived while the app was
+    // The user tapped a notification that arrived while the app was
     // backgrounded/killed — light up the same routing.
     const responseSubscription =
       Notifications.addNotificationResponseReceivedListener((response) =>

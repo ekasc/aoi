@@ -546,7 +546,10 @@ against packages/api.
 - Location sharing depends on device-level OS permission grants: Live asks
   for background ("always") permission and falls back to a foreground watch
   if declined; simulators/Expo Go may not deliver background fixes, so real
-  verification needs a physical device.
+  verification needs a physical device. Cold-start gap: after an OS restart
+  the Live background task wakes with no registered reporter and stops
+  itself rather than silently draining the battery — rehydrating a live
+  session on app launch is a future seam.
 - E2E encryption tiers: designed, not built.
 - No deployment target for the API (no Dockerfile/hosting config). CI exists
   (`.github/workflows/ci.yml`: lint, typecheck, tests, API build). `eas.json`

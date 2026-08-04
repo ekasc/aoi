@@ -39,9 +39,22 @@ TaskManager.defineTask<BackgroundLocationBody>(
       return;
     }
 
+    // Cold-start gap: after an OS restart the task can wake before the app
+    // ever registers a reporter. Rather than silently drain the battery
+    // while nothing is reported, stop the updates. (Rehydrating a live
+    // session on launch is a future seam.)
+    if (!reportCallback) {
+      try {
+        await Location.stopLocationUpdatesAsync(LOCATION_BACKGROUND_TASK);
+      } catch {
+        // Already stopped — still stopped.
+      }
+      return;
+    }
+
     const latest = data.locations[data.locations.length - 1];
 
-    if (latest && reportCallback) {
+    if (latest) {
       reportCallback(latest);
     }
   }

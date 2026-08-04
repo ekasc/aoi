@@ -180,14 +180,24 @@ describe('getMapRegionForShare', () => {
     expect(region.longitudeDelta).toBeGreaterThan(0);
   });
 
-  it('frames the destination when the share carries one', () => {
+  it('frames BOTH the moving partner and the destination when one exists', () => {
     const destination = makeDestination({
       name: 'The station',
       latitude: 35.7,
       longitude: 139.8,
     });
-    const region = getMapRegionForShare(makeShare({ destination }));
-    expect(region.latitude).toBe(35.7);
-    expect(region.longitude).toBe(139.8);
+    const share = makeShare({ destination });
+    const region = getMapRegionForShare(share);
+
+    // Centered between the partner and the place they're headed…
+    expect(region.latitude).toBeCloseTo((share.latitude + 35.7) / 2, 5);
+    expect(region.longitude).toBeCloseTo((share.longitude + 139.8) / 2, 5);
+    // …and wide enough that both stay visible.
+    const halfLat = region.latitudeDelta / 2;
+    const halfLng = region.longitudeDelta / 2;
+    expect(Math.abs(share.latitude - region.latitude)).toBeLessThan(halfLat);
+    expect(Math.abs(35.7 - region.latitude)).toBeLessThan(halfLat);
+    expect(Math.abs(share.longitude - region.longitude)).toBeLessThan(halfLng);
+    expect(Math.abs(139.8 - region.longitude)).toBeLessThan(halfLng);
   });
 });

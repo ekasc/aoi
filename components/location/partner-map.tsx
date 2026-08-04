@@ -24,25 +24,22 @@ export function PartnerMap({
   pinColor: string;
 }) {
   const borderColor = useThemeColor({}, 'border');
+  const muted = useThemeColor({}, 'muted');
 
   const region = useMemo<Region>(() => getMapRegionForShare(share), [share]);
 
-  const marker = share.destination
-    ? {
-        latitude: share.destination.latitude,
-        longitude: share.destination.longitude,
-        title: share.destination.name,
-      }
-    : {
-        latitude: share.latitude,
-        longitude: share.longitude,
-        title: partnerName,
-      };
+  // The story is where the partner IS — the live position is always the
+  // primary pin; a destination (Until I arrive) is a quiet secondary one.
+  const partnerMarker = {
+    latitude: share.latitude,
+    longitude: share.longitude,
+    title: partnerName,
+  };
 
   return (
     <View
       style={[styles.container, { borderColor }]}
-      accessibilityLabel={`Map showing ${marker.title}`}
+      accessibilityLabel={`Map showing ${partnerMarker.title}`}
     >
       <MapView
         initialRegion={region}
@@ -51,7 +48,21 @@ export function PartnerMap({
         style={styles.map}
         zoomEnabled={false}
       >
-        <Marker coordinate={marker} pinColor={pinColor} title={marker.title} />
+        <Marker
+          coordinate={partnerMarker}
+          pinColor={pinColor}
+          title={partnerMarker.title}
+        />
+        {share.destination ? (
+          <Marker
+            coordinate={{
+              latitude: share.destination.latitude,
+              longitude: share.destination.longitude,
+            }}
+            pinColor={muted}
+            title={share.destination.name}
+          />
+        ) : null}
       </MapView>
     </View>
   );

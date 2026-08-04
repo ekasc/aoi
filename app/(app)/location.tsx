@@ -11,6 +11,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import {
+	DestinationPicker,
+	type DestinationCoordinate,
+} from "@/components/location/destination-picker";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
@@ -21,8 +25,10 @@ import { isPartnerLocationVisible } from "@/features/location/location-state";
 import { useSpace } from "@/features/space/space-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
-// Stub mode only: a fixed, plainly-simulated destination so "Until I
-// arrive" can be tried offline. Never used when talking to the real API.
+// Stub mode: a fixed, plainly-simulated destination so "Until I arrive"
+// can be tried offline. Remote mode: only ever the fallback seed for the
+// destination map when the current position cannot be found — the pin the
+// user drops is what counts.
 const SIMULATED_DESTINATION = {
 	latitude: 35.65858,
 	longitude: 139.74543,
@@ -56,6 +62,10 @@ export default function LocationScreen() {
 
 	const [destinationName, setDestinationName] = useState("Home");
 	const [isBusy, setIsBusy] = useState(false);
+	const [isChoosingDestination, setIsChoosingDestination] = useState(false);
+	const [pickerSeed, setPickerSeed] = useState<DestinationCoordinate | null>(
+		null,
+	);
 
 	const partnerName = space?.partnerName ?? "your partner";
 	const partnerVisible = isPartnerLocationVisible(partnerLocation, Date.now());
@@ -94,37 +104,60 @@ export default function LocationScreen() {
 
 	const handleStartUntilArrive = useCallback(async () => {
 		const name = destinationName.trim() || "Home";
-		let latitude: number;
-		let longitude: number;
 
 		if (isStubMode()) {
-			latitude = SIMULATED_DESTINATION.latitude;
-			longitude = SIMULATED_DESTINATION.longitude;
-		} else {
+			// Offline trial: a fixed simulated destination, plainly labeled.
+			setIsBusy(true);
 			try {
-				const position = await Location.getCurrentPositionAsync({
-					accuracy: Location.Accuracy.Balanced,
+				await startSharing("until_arrive", {
+					name,
+					latitude: SIMULATED_DESTINATION.latitude,
+					longitude: SIMULATED_DESTINATION.longitude,
+					radiusMeters: ARRIVAL_RADIUS_METERS,
 				});
-				latitude = position.coords.latitude;
-				longitude = position.coords.longitude;
-			} catch {
-				// A destination that cannot be placed simply doesn't start.
-				return;
+			} finally {
+				setIsBusy(false);
 			}
+			return;
 		}
 
-		setIsBusy(true);
+		// Remote: the destination is where they are HEADED, so they pick it on
+		// a map. Seed the map near where they are now (fall back to the
+		// simulated point only as a map center if positioning fails).
+		let seed: DestinationCoordinate;
 		try {
-			await startSharing("until_arrive", {
-				name,
-				latitude,
-				longitude,
-				radiusMeters: ARRIVAL_RADIUS_METERS,
+			const position = await Location.getCurrentPositionAsync({
+				accuracy: Location.Accuracy.Balanced,
 			});
-		} finally {
-			setIsBusy(false);
+			seed = {
+				latitude: position.coords.latitude,
+				longitude: position.coords.longitude,
+			};
+		} catch {
+			seed = SIMULATED_DESTINATION;
 		}
+
+		setPickerSeed(seed);
+		setIsChoosingDestination(true);
 	}, [destinationName, startSharing]);
+
+	const handleDestinationConfirm = useCallback(
+		async (coordinate: DestinationCoordinate) => {
+			setIsChoosingDestination(false);
+			setIsBusy(true);
+			try {
+				await startSharing("until_arrive", {
+					name: destinationName.trim() || "Home",
+					latitude: coordinate.latitude,
+					longitude: coordinate.longitude,
+					radiusMeters: ARRIVAL_RADIUS_METERS,
+				});
+			} finally {
+				setIsBusy(false);
+			}
+		},
+		[destinationName, startSharing],
+	);
 
 	const handleStop = useCallback(async () => {
 		setIsBusy(true);
@@ -144,13 +177,14 @@ export default function LocationScreen() {
 	}, [router]);
 
 	return (
-		<ScrollView
-			contentContainerStyle={contentContainerStyle}
-			keyboardShouldPersistTaps="handled"
-			showsVerticalScrollIndicator={false}
-			style={{ backgroundColor: background }}
-		>
-			<Stack.Screen options={{ title: "Location" }} />
+		<>
+			<ScrollView
+				contentContainerStyle={contentContainerStyle}
+				keyboardShouldPersistTaps="handled"
+				showsVerticalScrollIndicator={false}
+				style={{ backgroundColor: background }}
+			>
+				<Stack.Screen options={{ title: "Location" }} />
 
 			{!isLoaded ? (
 				<View style={styles.center}>
@@ -243,8 +277,8 @@ export default function LocationScreen() {
 											variant="secondary"
 										/>
 										<ThemedText type="caption" style={{ color: muted }}>
-											Share until you reach this place (set to
-											where you are now), then it stops itself.
+											Share until you reach the place you pick —
+											then it stops itself.
 										</ThemedText>
 									</View>
 									<ThemedText type="caption" style={{ color: muted }}>
@@ -301,6 +335,16 @@ export default function LocationScreen() {
 				</>
 			)}
 		</ScrollView>
+
+		{isChoosingDestination && pickerSeed ? (
+			<DestinationPicker
+				initialCoordinate={pickerSeed}
+				name={destinationName.trim() || "Home"}
+				onCancel={() => setIsChoosingDestination(false)}
+				onConfirm={(coordinate) => void handleDestinationConfirm(coordinate)}
+			/>
+		) : null}
+		</>
 	);
 }
 

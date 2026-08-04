@@ -133,24 +133,43 @@ export type MapRegion = {
 };
 
 /**
- * Frame a single pin — partner position, or the destination when the share
- * carries one (the destination is where the story is). Nothing else is ever
- * drawn: no trails, no history, no accuracy circles beyond a soft one.
+ * Frame the story: the MOVING partner is always the focus. When the share
+ * carries a destination (Until I arrive), widen the frame so both the
+ * partner and the place they're headed fit. Nothing else is ever drawn: no
+ * trails, no history, no accuracy circles beyond a soft one.
  */
 export function getMapRegionForShare(
   share: PartnerLocationShare
 ): MapRegion {
-  const focus = share.destination ?? {
-    latitude: share.latitude,
-    longitude: share.longitude,
-  };
+  // ~1.2 km across: close enough to feel like "almost home", wide enough
+  // to stay calm.
+  const CALM_MIN_DELTA = 0.012;
+  const BOX_PADDING = 1.6;
+
+  if (!share.destination) {
+    return {
+      latitude: share.latitude,
+      longitude: share.longitude,
+      latitudeDelta: CALM_MIN_DELTA,
+      longitudeDelta: CALM_MIN_DELTA,
+    };
+  }
+
+  const minLatitude = Math.min(share.latitude, share.destination.latitude);
+  const maxLatitude = Math.max(share.latitude, share.destination.latitude);
+  const minLongitude = Math.min(share.longitude, share.destination.longitude);
+  const maxLongitude = Math.max(share.longitude, share.destination.longitude);
 
   return {
-    latitude: focus.latitude,
-    longitude: focus.longitude,
-    // ~1.2 km across: close enough to feel like "almost home", wide enough
-    // to stay calm.
-    latitudeDelta: 0.012,
-    longitudeDelta: 0.012,
+    latitude: (minLatitude + maxLatitude) / 2,
+    longitude: (minLongitude + maxLongitude) / 2,
+    latitudeDelta: Math.max(
+      (maxLatitude - minLatitude) * BOX_PADDING,
+      CALM_MIN_DELTA
+    ),
+    longitudeDelta: Math.max(
+      (maxLongitude - minLongitude) * BOX_PADDING,
+      CALM_MIN_DELTA
+    ),
   };
 }
