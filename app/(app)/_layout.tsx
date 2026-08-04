@@ -4,6 +4,7 @@ import { Stack } from "expo-router/stack";
 import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
+import { LocationProvider } from "@/features/location/location-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
@@ -12,6 +13,7 @@ import { SomedayProvider } from "@/features/someday/someday-context";
 import { useSpace } from "@/features/space/space-context";
 import { SqueezeProvider } from "@/features/squeeze/squeeze-context";
 import { useAoiTheme } from "@/features/theme/theme-context";
+import { LocationRequestPrompt } from "@/components/location/location-request-prompt";
 import { SqueezeOverlay } from "@/components/squeeze/squeeze-overlay";
 
 export default function AuthenticatedAppLayout() {
@@ -67,8 +69,10 @@ export default function AuthenticatedAppLayout() {
 				<SomedayProvider>
 					<QuestionProvider>
 						<SqueezeProvider>
-							<PushProvider>
-								<SqueezeOverlay />
+							<LocationProvider>
+								<PushProvider>
+									<SqueezeOverlay />
+									<LocationRequestPrompt />
 								<Stack
 									screenOptions={{
 										contentStyle: { backgroundColor: colors.background },
@@ -155,9 +159,26 @@ export default function AuthenticatedAppLayout() {
 											...sheetOptions,
 										}}
 									/>
+									<Stack.Screen
+										name="location"
+										options={{
+											title: "Location",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="partner-map"
+										options={{
+											title: "Where they are",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
 								</Stack>
 							</PushProvider>
-						</SqueezeProvider>
+						</LocationProvider>
+					</SqueezeProvider>
 					</QuestionProvider>
 				</SomedayProvider>
 			</PartnerDetailsProvider>

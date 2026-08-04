@@ -62,9 +62,14 @@ type ExpoPushResponse = {
 
 /**
  * Warm, vague copy per kind — NEVER content. A push must tell the partner
- * that something happened, never what was written.
+ * that something happened, never what was written. Location pushes carry a
+ * kind + a name at most — NEVER coordinates. `fromName` is only used by the
+ * location kinds; everything else ignores it.
  */
-export function buildPushCopy(kind: PushNotificationKind): { title: string; body: string } {
+export function buildPushCopy(
+  kind: PushNotificationKind,
+  fromName?: string
+): { title: string; body: string } {
   switch (kind) {
     case 'squeeze':
       return { title: 'A squeeze for you', body: 'Your partner is thinking of you.' };
@@ -74,6 +79,21 @@ export function buildPushCopy(kind: PushNotificationKind): { title: string; body
       return { title: 'A moment changed', body: 'Your partner touched up something they kept.' };
     case 'moment_deleted':
       return { title: 'A moment moved on', body: 'Your space shifted a little.' };
+    case 'location_request':
+      return {
+        title: `${fromName ?? 'Your partner'} would like your location`,
+        body: 'Share where you are, just this once?',
+      };
+    case 'location_granted':
+      return {
+        title: `${fromName ?? 'Your partner'} shared their location`,
+        body: 'Take a look — it only lasts a moment.',
+      };
+    case 'location_stopped':
+      return {
+        title: 'Location sharing stopped',
+        body: 'Your partner stopped sharing their location.',
+      };
   }
 }
 
@@ -191,17 +211,19 @@ export async function sendPushToUser(
 
 /**
  * Notify the OTHER active member of a two-person space. The reusable hook
- * every partner-facing feature (squeezes, moments, and future location
- * requests/proposals) delivers through. Never throws.
+ * every partner-facing feature (squeezes, moments, and location
+ * requests/grants) delivers through. Never throws.
  *
- * Deliberately takes NO data parameter: payloads carry the kind only. If a
- * future kind ever needs extras, re-add it deliberately — never as an
- * open-ended hole in the privacy contract.
+ * Deliberately takes NO data parameter: payloads carry the kind only.
+ * `fromName` personalizes the location kinds' copy — it never carries
+ * coordinates, and never enters the data payload.
+
  */
 export async function notifyPartnerInSpace(
   spaceId: string,
   fromUserId: string,
-  kind: PushNotificationKind
+  kind: PushNotificationKind,
+  fromName?: string
 ): Promise<void> {
   try {
     const members = await db
@@ -217,7 +239,7 @@ export async function notifyPartnerInSpace(
       return;
     }
 
-    const copy = buildPushCopy(kind);
+    const copy = buildPushCopy(kind, fromName);
 
     await sendPushToUser(partner.userId, {
       title: copy.title,

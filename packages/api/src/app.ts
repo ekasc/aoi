@@ -16,6 +16,7 @@ import { preferencesRouter } from './routes/preferences.js';
 import { mediaRouter } from './routes/media.js';
 import { pushRouter } from './routes/push.js';
 import { squeezesRouter } from './routes/squeezes.js';
+import { locationRouter } from './routes/location.js';
 
 const app = new Hono();
 
@@ -60,6 +61,7 @@ app.route('/', preferencesRouter);
 app.route('/', mediaRouter);
 app.route('/', pushRouter);
 app.route('/', squeezesRouter);
+app.route('/', locationRouter);
 
 // ── Global error handler ─────────────────────────────────────────────────
 
@@ -74,7 +76,11 @@ app.onError((err, c) => {
     return c.json(errorResponse, err.status);
   }
 
-  console.error('Unhandled error:', err instanceof Error ? err.message : String(err));
+  // A FIXED string, never err.message: unhandled errors can embed request
+  // fragments (V8 JSON.parse SyntaxErrors quote the input; Postgres
+  // constraint violations quote the failing row), and request content here
+  // can carry coordinates. Coordinates must never reach logs — full stop.
+  console.error('internal error');
   const errorResponse: ApiError = {
     error: {
       code: 'INTERNAL_ERROR',

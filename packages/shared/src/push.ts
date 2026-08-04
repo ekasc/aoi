@@ -15,6 +15,9 @@ export const PUSH_NOTIFICATION_KINDS = [
   'moment_added',
   'moment_edited',
   'moment_deleted',
+  'location_request',
+  'location_granted',
+  'location_stopped',
 ] as const;
 
 export type PushNotificationKind = (typeof PUSH_NOTIFICATION_KINDS)[number];

@@ -1,7 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
+import {
+	ActivityIndicator,
+	Pressable,
+	ScrollView,
+	StyleSheet,
+	View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
@@ -9,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Surface } from "@/components/ui/surface";
 import { Spacing } from "@/constants/theme";
+import { useLocation } from "@/features/location/location-context";
+import { isPartnerLocationVisible } from "@/features/location/location-state";
 import { useMoments } from "@/features/moments/moments-context";
 import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
@@ -71,9 +79,11 @@ export default function ProfileScreen() {
 	const { space, status: spaceStatus } = useSpace();
 	const { sendSqueeze, isSending: isSqueezeSending } = useSqueeze();
 	const { moments } = useMoments();
+	const { sharingMode, partnerLocation } = useLocation();
 	const muted = useThemeColor({}, "muted");
 	const background = useThemeColor({}, "background");
 	const accent = useThemeColor({}, "accent");
+	const partnerAccent = useThemeColor({}, "partnerAccent");
 	const todayKey = new Date().toDateString();
 	const daysTogether = useMemo(
 		() => getDaysTogether(space?.relationshipStartDate, new Date(todayKey)),
@@ -118,6 +128,15 @@ export default function ProfileScreen() {
 	const handleQuestion = useCallback(() => {
 		router.push("/(app)/question");
 	}, [router]);
+
+	const handleLocation = useCallback(() => {
+		router.push("/(app)/location");
+	}, [router]);
+
+	// One quiet dot: visible exactly while you are actively sharing, so
+	// nobody ever forgets it's on.
+	const isSharing = sharingMode !== null;
+	const partnerSharing = isPartnerLocationVisible(partnerLocation, Date.now());
 
 	const handleSignOut = useCallback(async () => {
 		await signOut();
@@ -236,6 +255,35 @@ export default function ProfileScreen() {
 					</IconButton>
 				</View>
 				<InfoRow label="Invite" value={space?.inviteCode ?? "Not available"} muted={muted} />
+				<Pressable
+					accessibilityLabel="Location sharing settings"
+					accessibilityRole="button"
+					onPress={handleLocation}
+					style={styles.locationRow}
+				>
+					<Ionicons color={muted} name="location-outline" size={18} />
+					<ThemedText type="body" style={styles.locationLabel}>
+						Location
+					</ThemedText>
+					{isSharing ? (
+						<View
+							accessibilityLabel="You are sharing your location"
+							style={[styles.sharingDot, { backgroundColor: accent }]}
+						/>
+					) : partnerSharing ? (
+						<View
+							accessibilityLabel="Your partner is sharing their location"
+							style={[styles.sharingDot, { backgroundColor: partnerAccent }]}
+						/>
+					) : null}
+					<ThemedText type="caption" style={{ color: muted }}>
+						{isSharing
+							? "Sharing"
+							: partnerSharing
+								? `${space?.partnerName ?? "They"} sharing`
+								: "Off"}
+					</ThemedText>
+				</Pressable>
 			</Surface>
 
 			<Surface style={styles.card}>
@@ -309,6 +357,19 @@ const styles = StyleSheet.create({
 	},
 	partnerName: {
 		flex: 1,
+	},
+	locationRow: {
+		alignItems: "center",
+		flexDirection: "row",
+		gap: Spacing[8],
+	},
+	locationLabel: {
+		flex: 1,
+	},
+	sharingDot: {
+		borderRadius: 4,
+		height: 8,
+		width: 8,
 	},
 	actionStack: {
 		gap: Spacing[8],

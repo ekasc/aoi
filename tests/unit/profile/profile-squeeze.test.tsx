@@ -39,6 +39,13 @@ vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ moments: [] }),
 }));
 
+vi.mock('@/features/location/location-context', () => ({
+  useLocation: () => ({
+    sharingMode: null,
+    partnerLocation: null,
+  }),
+}));
+
 vi.mock('@/components/themed-text', () => ({
   ThemedText: ({ children }: any) => <span>{children}</span>,
 }));

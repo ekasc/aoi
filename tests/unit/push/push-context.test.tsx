@@ -21,10 +21,19 @@ const momentsMock = vi.hoisted(() => ({
   refresh: vi.fn(async () => {}),
 }));
 
+const locationMock = vi.hoisted(() => ({
+  receiveRequest: vi.fn(),
+  refreshPartnerLocation: vi.fn(async () => {}),
+  handlePartnerStopped: vi.fn(),
+}));
+
 vi.mock('expo-notifications', () => notificationsMock);
 vi.mock('@/features/api-client', () => apiClientMock);
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ refresh: momentsMock.refresh }),
+}));
+vi.mock('@/features/location/location-context', () => ({
+  useLocation: () => locationMock,
 }));
 
 const VALID_TOKEN = 'ExpoPushToken[context-test-token-123]';
@@ -71,6 +80,9 @@ beforeEach(() => {
   apiClientMock.isStubMode.mockReturnValue(false);
   apiClientMock.apiFetch.mockClear();
   momentsMock.refresh.mockClear();
+  locationMock.receiveRequest.mockClear();
+  locationMock.refreshPartnerLocation.mockClear();
+  locationMock.handlePartnerStopped.mockClear();
   notificationsMock.requestPermissionsAsync.mockReset();
   notificationsMock.getExpoPushTokenAsync.mockReset();
   notificationsMock.addNotificationReceivedListener.mockReset();
@@ -153,12 +165,50 @@ describe('PushProvider receive handling (remote)', () => {
     const view = renderProvider();
     await waitFor(() => expect(receivedListener).not.toBeNull());
 
-    deliver({ kind: 'location_request' });
+    deliver({ kind: 'proposal' });
     deliver('garbage');
 
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
+    expect(locationMock.receiveRequest).not.toHaveBeenCalled();
     expect(view.getByTestId('squeeze').textContent).toBe('quiet');
+    view.unmount();
+  });
+});
+
+describe('PushProvider location routing (remote)', () => {
+  it('shows the approval prompt for location_request', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(receivedListener).not.toBeNull());
+
+    deliver({ kind: 'location_request' });
+
+    await waitFor(() => expect(locationMock.receiveRequest).toHaveBeenCalledTimes(1));
+    expect(momentsMock.refresh).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it('refreshes the partner position for location_granted', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(receivedListener).not.toBeNull());
+
+    deliver({ kind: 'location_granted' });
+
+    await waitFor(() =>
+      expect(locationMock.refreshPartnerLocation).toHaveBeenCalledTimes(1)
+    );
+    view.unmount();
+  });
+
+  it('clears the partner pin for location_stopped', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(receivedListener).not.toBeNull());
+
+    deliver({ kind: 'location_stopped' });
+
+    await waitFor(() =>
+      expect(locationMock.handlePartnerStopped).toHaveBeenCalledTimes(1)
+    );
     view.unmount();
   });
 });
@@ -185,15 +235,24 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     view.unmount();
   });
 
-  it('ignores unknown kinds tapped from the notification tray', async () => {
+  it('routes a tapped backgrounded location_request to the approval prompt', async () => {
     const view = renderProvider();
     await waitFor(() => expect(responseListener).not.toBeNull());
 
     deliverResponse({ kind: 'location_request' });
+    await waitFor(() => expect(locationMock.receiveRequest).toHaveBeenCalledTimes(1));
+    view.unmount();
+  });
+
+  it('ignores unknown kinds tapped from the notification tray', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(responseListener).not.toBeNull());
+
     deliverResponse('garbage');
 
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
+    expect(locationMock.receiveRequest).not.toHaveBeenCalled();
     expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
   });

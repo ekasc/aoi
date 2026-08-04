@@ -39,13 +39,21 @@ describe('isExpoPushToken', () => {
 
 describe('parsePushNotificationData', () => {
   it('recognizes every known kind', () => {
-    for (const kind of ['squeeze', 'moment_added', 'moment_edited', 'moment_deleted']) {
+    for (const kind of [
+      'squeeze',
+      'moment_added',
+      'moment_edited',
+      'moment_deleted',
+      'location_request',
+      'location_granted',
+      'location_stopped',
+    ]) {
       expect(parsePushNotificationData({ kind })).toEqual({ kind });
     }
   });
 
   it('ignores unknown kinds — receivers never act on them', () => {
-    expect(parsePushNotificationData({ kind: 'location_request' })).toBeNull();
+    expect(parsePushNotificationData({ kind: 'proposal' })).toBeNull();
     expect(parsePushNotificationData({ kind: '' })).toBeNull();
   });
 

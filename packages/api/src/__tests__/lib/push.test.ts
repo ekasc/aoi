@@ -65,6 +65,21 @@ describe('buildPushCopy', () => {
     }
   });
 
+  it('location kinds carry the sender name at most — never coordinates', () => {
+    const request = buildPushCopy('location_request', 'Mara');
+    expect(request.title).toContain('Mara');
+    const granted = buildPushCopy('location_granted', 'Mara');
+    expect(granted.title).toContain('Mara');
+    const stopped = buildPushCopy('location_stopped');
+    expect(stopped.title.length).toBeGreaterThan(0);
+
+    // The builder has no coordinate parameter; assert the copy for every
+    // location kind stays free of anything resembling a position.
+    for (const copy of [request, granted, stopped]) {
+      expect(`${copy.title} ${copy.body}`).not.toMatch(/\d+\.\d+/);
+    }
+  });
+
   it('moment copy never carries content — the builder accepts none', () => {
     // Structural privacy: buildPushCopy(kind) has no content parameter, so
     // moment text can never enter a payload through it. Assert the copy for
