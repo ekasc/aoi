@@ -58,7 +58,7 @@ function tokenRow(expoPushToken: string, overrides: Record<string, unknown> = {}
 
 describe('buildPushCopy', () => {
   it('gives every kind a warm, vague title and body', () => {
-    for (const kind of ['squeeze', 'moment_added', 'moment_edited', 'moment_deleted'] as const) {
+    for (const kind of ['squeeze', 'moment_added', 'moment_edited', 'moment_deleted', 'letter_sealed'] as const) {
       const copy = buildPushCopy(kind);
       expect(copy.title.length).toBeGreaterThan(0);
       expect(copy.body.length).toBeGreaterThan(0);
@@ -89,6 +89,16 @@ describe('buildPushCopy', () => {
       const copy = buildPushCopy(kind);
       expect(`${copy.title} ${copy.body}`).not.toContain(secret);
     }
+  });
+
+  it('letter_sealed copy never carries the words or the date', () => {
+    const copy = buildPushCopy('letter_sealed');
+    const wire = `${copy.title} ${copy.body}`;
+    expect(wire).not.toContain('tide');
+    expect(wire).not.toContain('summer');
+    // The opening day is content too — never in the copy.
+    expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(wire).not.toMatch(/\b\d{1,2}\b/);
   });
 });
 

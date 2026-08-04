@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { LocationProvider } from "@/features/location/location-context";
+import { LettersProvider } from "@/features/letters/letters-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
@@ -70,6 +71,7 @@ export default function AuthenticatedAppLayout() {
 					<QuestionProvider>
 						<SqueezeProvider>
 							<LocationProvider>
+								<LettersProvider>
 								<PushProvider>
 									<SqueezeOverlay />
 									<LocationRequestPrompt />
@@ -175,8 +177,25 @@ export default function AuthenticatedAppLayout() {
 											...sheetOptions,
 										}}
 									/>
+									<Stack.Screen
+										name="letters"
+										options={{
+											title: "Letters",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
+									<Stack.Screen
+										name="letter/new"
+										options={{
+											title: "Write a letter",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
 								</Stack>
 							</PushProvider>
+								</LettersProvider>
 						</LocationProvider>
 					</SqueezeProvider>
 					</QuestionProvider>

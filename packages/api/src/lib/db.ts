@@ -7,7 +7,8 @@ import type {
   SomedayItem,
   SpaceActivityItem,
   SpaceActivityKind,
-} from '@aoi/shared';
+  Letter,
+  LetterAuthorRole,} from '@aoi/shared';
 
 /** Convert DB row to API shape for space activity (fact + actor only — never content) */
 export function activityRowToApi(row: {
@@ -200,6 +201,50 @@ export function locationShareRowToApi(row: {
     reportedAt: row.reportedAt.toISOString(),
     destination: row.destination ?? null,
   };
+}
+
+/**
+ * Convert a letter DB row to its API shape. THE LOCK lives here: the body
+ * only ever leaves the server once the letter has been opened — for the
+ * partner and the author alike. Unopened letters are serialized without a
+ * `body` key at all, on every read path. Authorship is computed per request
+ * from user ids relative to the viewer, like every other shared surface.
+ */
+export function letterRowToApi(
+  row: {
+    id: string;
+    authorUserId: string;
+    authorName: string;
+    caption: string | null;
+    body: string;
+    sealedUntil: Date;
+    createdAt: Date;
+    openedAt: Date | null;
+  },
+  viewerUserId: string,
+  now: Date
+): Letter {
+  const isOwn = row.authorUserId === viewerUserId;
+  const isOpened = row.openedAt !== null;
+  const authorRole: LetterAuthorRole = isOwn ? 'you' : 'partner';
+
+  const letter: Letter = {
+    id: row.id,
+    authorRole,
+    authorName: isOwn ? 'You' : row.authorName,
+    caption: row.caption,
+    sealedUntil: row.sealedUntil.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    isOpened,
+    readyToOpen: now.getTime() >= row.sealedUntil.getTime(),
+    openedAt: row.openedAt?.toISOString() ?? null,
+  };
+
+  if (isOpened) {
+    letter.body = row.body;
+  }
+
+  return letter;
 }
 
 /** Convert DB row to API shape for users */

@@ -27,6 +27,10 @@ const locationMock = vi.hoisted(() => ({
   handlePartnerStopped: vi.fn(),
 }));
 
+const lettersMock = vi.hoisted(() => ({
+  reload: vi.fn(async () => {}),
+}));
+
 vi.mock('expo-notifications', () => notificationsMock);
 vi.mock('@/features/api-client', () => apiClientMock);
 vi.mock('@/features/moments/moments-context', () => ({
@@ -34,6 +38,9 @@ vi.mock('@/features/moments/moments-context', () => ({
 }));
 vi.mock('@/features/location/location-context', () => ({
   useLocation: () => locationMock,
+}));
+vi.mock('@/features/letters/letters-context', () => ({
+  useLetters: () => ({ reload: lettersMock.reload }),
 }));
 
 const VALID_TOKEN = 'ExpoPushToken[context-test-token-123]';
@@ -83,6 +90,7 @@ beforeEach(() => {
   locationMock.receiveRequest.mockClear();
   locationMock.refreshPartnerLocation.mockClear();
   locationMock.handlePartnerStopped.mockClear();
+  lettersMock.reload.mockClear();
   notificationsMock.requestPermissionsAsync.mockReset();
   notificationsMock.getExpoPushTokenAsync.mockReset();
   notificationsMock.addNotificationReceivedListener.mockReset();
@@ -161,6 +169,17 @@ describe('PushProvider receive handling (remote)', () => {
     view.unmount();
   });
 
+  it('quietly refreshes the letters shelf for letter_sealed pushes', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(receivedListener).not.toBeNull());
+
+    deliver({ kind: 'letter_sealed' });
+    await waitFor(() => expect(lettersMock.reload).toHaveBeenCalledTimes(1));
+    // The shelf refresh never doubles as a moments refresh.
+    expect(momentsMock.refresh).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
   it('ignores unknown kinds entirely', async () => {
     const view = renderProvider();
     await waitFor(() => expect(receivedListener).not.toBeNull());
@@ -171,6 +190,7 @@ describe('PushProvider receive handling (remote)', () => {
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     expect(locationMock.receiveRequest).not.toHaveBeenCalled();
+    expect(lettersMock.reload).not.toHaveBeenCalled();
     expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
   });
@@ -235,6 +255,15 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     view.unmount();
   });
 
+  it('refreshes the letters shelf when the user taps a backgrounded letter_sealed push', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(responseListener).not.toBeNull());
+
+    deliverResponse({ kind: 'letter_sealed' });
+    await waitFor(() => expect(lettersMock.reload).toHaveBeenCalledTimes(1));
+    view.unmount();
+  });
+
   it('routes a tapped backgrounded location_request to the approval prompt', async () => {
     const view = renderProvider();
     await waitFor(() => expect(responseListener).not.toBeNull());
@@ -253,6 +282,7 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     expect(locationMock.receiveRequest).not.toHaveBeenCalled();
+    expect(lettersMock.reload).not.toHaveBeenCalled();
     expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
   });

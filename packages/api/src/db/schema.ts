@@ -381,6 +381,34 @@ export const locationShares = pgTable(
   ]
 );
 
+// ── Letters (time capsule) ────────────────────────────────────────────────
+// Write a letter, seal it to a future day. Sealed letters are immutable —
+// there is no update or delete surface anywhere in the API. The body stays
+// unreadable through every read path until `opened_at` is set, for the
+// partner and the author alike; opening is an atomic, one-way transition.
+
+export const letters = pgTable(
+  'letters',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    authorUserId: uuid('author_user_id')
+      .notNull()
+      .references(() => users.id),
+    caption: text('caption'),
+    body: text('body').notNull(),
+    sealedUntil: timestamp('sealed_until', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    openedAt: timestamp('opened_at', { withTimezone: true }),
+    openedByUserId: uuid('opened_by_user_id').references(() => users.id),
+  },
+  (table) => [
+    index('idx_letters_space_sealed_until').on(table.spaceId, table.sealedUntil),
+  ]
+);
+
 // ── Push Tokens ───────────────────────────────────────────────────────────
 // Device-scoped Expo push tokens. Deliberately user-owned, not space-owned:
 // a token belongs to the device+account pair, and delivery targets are

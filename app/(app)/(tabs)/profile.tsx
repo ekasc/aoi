@@ -138,6 +138,10 @@ export default function ProfileScreen() {
 	const isSharing = sharingMode !== null;
 	const partnerSharing = isPartnerLocationVisible(partnerLocation, Date.now());
 
+	const handleLetters = useCallback(() => {
+		router.push("/(app)/letters");
+	}, [router]);
+
 	const handleSignOut = useCallback(async () => {
 		await signOut();
 		router.replace("/(public)");
@@ -319,6 +323,11 @@ export default function ProfileScreen() {
 					<Button
 						label="This week's question"
 						onPress={handleQuestion}
+						variant="secondary"
+					/>
+					<Button
+						label="Letters"
+						onPress={handleLetters}
 						variant="secondary"
 					/>
 					<Button
