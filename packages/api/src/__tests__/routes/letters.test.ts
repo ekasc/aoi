@@ -495,7 +495,9 @@ describe('POST /v1/letters/:id/open', () => {
     expect(updateWhereCalls).toHaveLength(1);
     const rendered = new PgDialect().sqlToQuery(updateWhereCalls[0] as SQL);
     expect(rendered.params).toContain(TEST_LETTER_ID);
-    expect(rendered.sql.toLowerCase()).toContain('is null');
+    const sql = rendered.sql.toLowerCase();
+    expect(sql).toContain('"letters"."opened_at" is null');
+    expect(sql).toContain(' and ');
   });
 
   it('returns 404 when the membership is no longer active', async () => {

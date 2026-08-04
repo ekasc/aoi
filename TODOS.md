@@ -1,6 +1,6 @@
 # Aoi — TODOs
 
-> Working list (created 2026-08) — **all items shipped 2026-08-04**.
+> Working list (created 2026-08) — **all items shipped 2026-08-03**.
 > Two tracks: **Track A** = shippable now (no new backend infra);
 > **Track B** = needs push notifications and/or new API surfaces first.
 > Ground rules for all of it: calm over engagement, two-not-one, privacy
