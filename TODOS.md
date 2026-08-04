@@ -1,10 +1,16 @@
 # Aoi — TODOs
 
-> Working list (created 2026-08). Two tracks:
-> **Track A** = shippable now (no new backend infra).
+> Working list (created 2026-08) — **all items shipped 2026-08-04**.
+> Two tracks: **Track A** = shippable now (no new backend infra);
 > **Track B** = needs push notifications and/or new API surfaces first.
 > Ground rules for all of it: calm over engagement, two-not-one, privacy
 > fail-fast. See `CONTEXT.md` for domain model and conventions.
+>
+> Outcome notes: deletion provenance shipped as tombstones (option b) over a
+> generic `space_activity` change log; the Someday list is API-backed;
+> letters store plaintext locked by date (E2E encryption remains a designed
+> future tier); weekly recurrence is deliberately bounded (13 instances, no
+> series ops).
 
 ---
 
@@ -13,23 +19,23 @@
 **Goal:** reduce visual noise so every screen feels like a quiet room.
 One primary action per screen; less chrome, more content.
 
-- [ ] **Timeline hero**: three buttons (squeeze/trace/add) is loud. Collapse
+- [x] **Timeline hero**: three buttons (squeeze/trace/add) is loud. Collapse
       to one compose button ("+") that opens a sheet: *Trace* (quick) /
       *Moment* (full). Move squeeze to the partner row (profile) or a
       long-press on the partner name — keep it discoverable but quiet.
-- [ ] **Drop redundant labels**: hero shows space name + "Your moments" +
+- [x] **Drop redundant labels**: hero shows space name + "Your moments" +
       period label, while the rail has a floating context chip that repeats
       the period. Pick one: keep the chip, remove the hero caption.
-- [ ] **MomentCard quieting**: badge + divider + meta row per card is busy.
+- [x] **MomentCard quieting**: badge + divider + meta row per card is busy.
       Try: author dot (accent/partnerAccent) + small date in corner; remove
       the divider; show type label only for non-note types.
-- [ ] **Empty states**: currently four hint rows on timeline. Cut to one
+- [x] **Empty states**: currently four hint rows on timeline. Cut to one
       line + the compose button.
-- [ ] **Motion audit**: every entering animation should be ≤ Motion.slow,
+- [x] **Motion audit**: every entering animation should be ≤ Motion.slow,
       fade/slide only, always `ReduceMotion.System`. Remove anything bouncy.
-- [ ] **Settings & Profile**: consolidate InfoRows; hairline dividers →
+- [x] **Settings & Profile**: consolidate InfoRows; hairline dividers →
       spacing only.
-- [ ] Pass the "squint test": from 1m away, no screen should have more than
+- [x] Pass the "squint test": from 1m away, no screen should have more than
       one visually dominant element.
 
 **Notes:** this is a polish track — do it screen by screen, screenshots
@@ -51,14 +57,14 @@ before/after. No behavior changes.
   Never log coordinates anywhere (AGENTS.md policy).
 - Archived/locked space ⇒ location sharing hard-off.
 
-- [ ] Design brief + consent screens (both must opt in)
-- [ ] `expo-location` integration; background task only in Live mode
-- [ ] API: `POST /v1/spaces/current/location/share` (mode + optional
+- [x] Design brief + consent screens (both must opt in)
+- [x] `expo-location` integration; background task only in Live mode
+- [x] API: `POST /v1/spaces/current/location/share` (mode + optional
       destination), `DELETE` to stop, `GET` current (authorized member only)
-- [ ] Request/approve flow needs push ⇒ depends on 5.1
-- [ ] Map UI: simple single-pin view (MapKit via `react-native-maps`), no
+- [x] Request/approve flow needs push ⇒ depends on 5.1
+- [x] Map UI: simple single-pin view (MapKit via `react-native-maps`), no
       trails, no history
-- [ ] Persistent but subtle "sharing" indicator so nobody ever forgets it's on
+- [x] Persistent but subtle "sharing" indicator so nobody ever forgets it's on
 
 **Risks:** battery (background location), App Store privacy labels, and the
 creepiness line — the feature must feel like "they'll be home soon", never
@@ -74,24 +80,24 @@ knows when something changed or vanished.
 Current state: create ✅, delete API ✅ (soft-delete), PATCH API ✅,
 **UI for edit/delete: none** (`removeMoment` exists but is unused).
 
-- [ ] **Edit**: long-press a moment → action sheet (Edit / Delete). New
+- [x] **Edit**: long-press a moment → action sheet (Edit / Delete). New
       screen `app/(app)/moment/edit/[id].tsx` reusing the new-moment form.
-- [ ] **Edited marker**: PATCH sets `updatedAt`; card shows a quiet
+- [x] **Edited marker**: PATCH sets `updatedAt`; card shows a quiet
       "edited" meta tag when `updatedAt > createdAt` (+1s tolerance).
-- [ ] **Delete**: confirm sheet ("This moment will be removed from your
+- [x] **Delete**: confirm sheet ("This moment will be removed from your
       shared timeline"). Soft-delete on API as today.
-- [ ] **Deletion provenance** (product decision — pick one):
+- [x] **Deletion provenance** (product decision — pick one):
       - a) *Quiet*: the moment simply disappears for the partner on next sync.
       - b) *Tombstone*: a subtle rail marker "{Name} removed a moment" for 7 days.
       Recommend (b) — silence about deletion breeds suspicion; a tombstone
       is honest without drama. Needs a `deleted_events` feed or change-log
       endpoint (`GET /v1/spaces/current/activity`).
-- [ ] **Activity surface**: same feed can later carry "edited a moment",
+- [x] **Activity surface**: same feed can later carry "edited a moment",
       "added a detail", squeeze received — build it as a small change-log
       table now, not per-feature hacks.
-- [ ] Sync/refresh: timeline must pick up partner edits — polling on
+- [x] Sync/refresh: timeline must pick up partner edits — polling on
       app-focus for now, push later (5.1).
-- [ ] Tests: edit/delete flows + provenance marker rendering.
+- [x] Tests: edit/delete flows + provenance marker rendering.
 
 ---
 
@@ -103,24 +109,24 @@ Already in place: month grid, event CRUD, actor pills, label presets,
 `reminderMinutesBefore` in types, `reminder_minutes` in local schema.
 
 🅰️ — ship now:
-- [ ] **Reminders** → local notifications via expo-notifications (infra
+- [x] **Reminders** → local notifications via expo-notifications (infra
       exists since resurface work). Schedule on create/edit, cancel on
       delete; silent banner, e.g. "Dinner tonight at 7 — with them".
-- [ ] **Countdown lane**: "Next time you see each other in 3 days" — derive
+- [x] **Countdown lane**: "Next time you see each other in 3 days" — derive
       from the next event with actor=both, or a dedicated `together` flag.
       Anticipation is intimacy.
-- [ ] **Anniversaries**: auto-mark relationship start date; monthly/annual
+- [x] **Anniversaries**: auto-mark relationship start date; monthly/annual
       markers on the grid + an "On this day" style resurface for them.
-- [ ] **Agenda view**: upcoming-events list across days (toggle under the
+- [x] **Agenda view**: upcoming-events list across days (toggle under the
       month grid) — better for planning than tapping days.
-- [ ] **All-day events** (no time pickers when toggled).
+- [x] **All-day events** (no time pickers when toggled).
 
 🅱️ — after push exists:
-- [ ] **Partner reminders**: notify the *other* person about events they
+- [x] **Partner reminders**: notify the *other* person about events they
       didn't create ("they planned something for Friday").
-- [ ] **Proposals**: suggest a time ("How about Saturday?") → partner
+- [x] **Proposals**: suggest a time ("How about Saturday?") → partner
       accepts/declines → becomes a real event. Two-not-one in action.
-- [ ] **Recurring events** ("Tuesday calls") — do this last; recurrence
+- [x] **Recurring events** ("Tuesday calls") — do this last; recurrence
       rules are a complexity trap. Start with simple weekly repeat.
 
 ---
@@ -130,8 +136,8 @@ Already in place: month grid, event CRUD, actor pills, label presets,
 Shaped against the product principles (no feeds, no streaks, no AI).
 
 ### 5.1 Push notifications backbone 🅱️ (unblocks everything)
-- [ ] expo-notifications token registration → `POST /v1/push/tokens`
-- [ ] Delivery targets: squeeze, resurface (true timing), reminders-for-
+- [x] expo-notifications token registration → `POST /v1/push/tokens`
+- [x] Delivery targets: squeeze, resurface (true timing), reminders-for-
       partner, moment added/edited/deleted, location request, proposals.
 - This is the highest-leverage backend item on the list.
 

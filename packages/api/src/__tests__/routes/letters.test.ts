@@ -1,4 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { notifyPartnerInSpace } from '../../lib/push.js';
 import {
@@ -26,6 +28,7 @@ const DUE_SEAL = '2026-08-03T09:00:00Z'; // same day, already past FIXED_NOW
 
 const mockSelectQueue: any[][] = [];
 let mockReturningResult: any[] = [];
+const updateWhereCalls: unknown[] = [];
 
 function selectChain() {
   return {
@@ -48,7 +51,10 @@ function insertChain() {
 function updateChain() {
   return {
     set: vi.fn(() => updateChain()),
-    where: vi.fn(() => updateChain()),
+    where: vi.fn((predicate: unknown) => {
+      updateWhereCalls.push(predicate);
+      return updateChain();
+    }),
     returning: vi.fn(() => Promise.resolve(mockReturningResult)),
   };
 }
@@ -69,6 +75,7 @@ vi.mock('../../lib/push.js', () => ({
 
 beforeEach(() => {
   mockSelectQueue.length = 0;
+  updateWhereCalls.length = 0;
   mockReturningResult = [];
   vi.mocked(db.insert).mockClear();
   vi.mocked(db.update).mockClear();
@@ -467,5 +474,38 @@ describe('POST /v1/letters/:id/open', () => {
       openedAt: '2026-08-03T10:00:00.000Z',
       body: SECRET_BODY,
     });
+  });
+
+  it('scopes the atomic open to the letter AND opened_at IS NULL', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push(
+      [letterRow({ sealedUntil: new Date(DUE_SEAL) })],
+      [spaceMemberRow()]
+    );
+    mockReturningResult = [letterRow({
+      sealedUntil: new Date(DUE_SEAL),
+      openedAt: FIXED_NOW,
+      openedByUserId: TEST_USER_ID,
+    })];
+    const res = await app.fetch(req('POST', `/v1/letters/${TEST_LETTER_ID}/open`, { jwt }));
+    expect(res.status).toBe(200);
+
+    // The load-bearing atomicity invariant, rendered from the real drizzle
+    // predicate: id = $ AND opened_at IS NULL.
+    expect(updateWhereCalls).toHaveLength(1);
+    const rendered = new PgDialect().sqlToQuery(updateWhereCalls[0] as SQL);
+    expect(rendered.params).toContain(TEST_LETTER_ID);
+    expect(rendered.sql.toLowerCase()).toContain('is null');
+  });
+
+  it('returns 404 when the membership is no longer active', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push(
+      [letterRow({ sealedUntil: new Date(DUE_SEAL) })],
+      [] // membership vanished between list and open
+    );
+    const res = await app.fetch(req('POST', `/v1/letters/${TEST_LETTER_ID}/open`, { jwt }));
+    expect(res.status).toBe(404);
+    expect(vi.mocked(db.update)).not.toHaveBeenCalled();
   });
 });

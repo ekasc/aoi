@@ -133,6 +133,12 @@ export function getNextAnniversary(
     return null;
   }
 
+  // An anniversary needs time actually spent together — a start date in the
+  // future has nothing to celebrate yet.
+  if (start.getTime() > now.getTime()) {
+    return null;
+  }
+
   const monthsTogether = Math.max(
     0,
     (now.getFullYear() - start.getFullYear()) * 12 +
