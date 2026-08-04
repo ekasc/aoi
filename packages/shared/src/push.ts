@@ -19,6 +19,12 @@ export const PUSH_NOTIFICATION_KINDS = [
   'location_granted',
   'location_stopped',
   'letter_sealed',
+  'event_added',
+  'event_updated',
+  'event_deleted',
+  'proposal_received',
+  'proposal_accepted',
+  'proposal_declined',
 ] as const;
 
 export type PushNotificationKind = (typeof PUSH_NOTIFICATION_KINDS)[number];

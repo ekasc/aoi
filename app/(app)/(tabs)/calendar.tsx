@@ -24,6 +24,11 @@ import {
 	useCalendar,
 	useCalendarMonthNavigation,
 } from "@/features/calendar/calendar-context";
+import {
+	getAnswerableProposals,
+	formatProposalWhen,
+} from "@/features/proposals/proposal-time";
+import { useProposals } from "@/features/proposals/proposals-context";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -55,10 +60,18 @@ export default function CalendarScreen() {
 		upcomingEvents,
 		setSelectedDate,
 		isLoading,
+		refresh: refreshCalendar,
 	} = useCalendar();
 	const { goToPreviousMonth, goToNextMonth } = useCalendarMonthNavigation();
+	const {
+		proposals,
+		accept: acceptProposal,
+		decline: declineProposal,
+		reload: reloadProposals,
+	} = useProposals();
 	const { space } = useSpace();
 	const [viewMode, setViewMode] = useState<CalendarViewMode>("day");
+	const [resolvingProposalId, setResolvingProposalId] = useState<string | null>(null);
 	const textColor = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
 	const border = useThemeColor({}, "border");
@@ -153,6 +166,38 @@ export default function CalendarScreen() {
 			params: { date: selectedDateIso },
 		});
 	}, [router, selectedDateIso]);
+
+	// Suggestions are only ever answerable when they are the partner's and
+	// still pending — yours wait for them, quietly.
+	const answerableProposals = useMemo(
+		() => getAnswerableProposals(proposals),
+		[proposals],
+	);
+
+	const handleProposeTime = useCallback(() => {
+		router.push({ pathname: "/(app)/proposal/new" });
+	}, [router]);
+
+	const handleResolveProposal = useCallback(
+		async (proposalId: string, action: "accept" | "decline") => {
+			setResolvingProposalId(proposalId);
+			try {
+				if (action === "accept") {
+					await acceptProposal(proposalId);
+					// An accepted suggestion becomes a real event.
+					await refreshCalendar();
+				} else {
+					await declineProposal(proposalId);
+				}
+			} catch {
+				// Calm — re-read the list in case it was answered elsewhere.
+				void reloadProposals();
+			} finally {
+				setResolvingProposalId(null);
+			}
+		},
+		[acceptProposal, declineProposal, refreshCalendar, reloadProposals],
+	);
 	const contentContainerStyle = useMemo(
 		() => [
 			styles.contentContainer,
@@ -223,6 +268,60 @@ export default function CalendarScreen() {
 					) : null}
 				</View>
 			) : null}
+
+			{answerableProposals.length > 0 ? (
+				<Surface variant="glass" style={styles.proposalsPanel}>
+					<ThemedText type="meta" selectable>
+						They suggested a time
+					</ThemedText>
+					{answerableProposals.map((proposal) => (
+						<View key={proposal.id} style={styles.proposalRow}>
+							<View style={styles.proposalText}>
+								<ThemedText type="body" numberOfLines={2}>
+									{proposal.title}
+								</ThemedText>
+								<ThemedText
+									type="caption"
+									selectable
+									style={{ color: muted }}
+								>
+									{formatProposalWhen(proposal)}
+								</ThemedText>
+							</View>
+							<View style={styles.proposalActions}>
+								<Button
+									label="Accept"
+									size="sm"
+									disabled={resolvingProposalId !== null}
+									onPress={() =>
+										void handleResolveProposal(proposal.id, "accept")
+									}
+								/>
+								<Button
+									label="Not now"
+									variant="ghost"
+									size="sm"
+									disabled={resolvingProposalId !== null}
+									onPress={() =>
+										void handleResolveProposal(proposal.id, "decline")
+									}
+								/>
+							</View>
+						</View>
+					))}
+				</Surface>
+			) : null}
+
+			<Pressable
+				accessibilityLabel="Suggest a time for the two of you"
+				accessibilityRole="button"
+				onPress={handleProposeTime}
+				style={styles.proposeEntry}
+			>
+				<ThemedText type="caption" style={{ color: muted }}>
+					Suggest a time for the two of you
+				</ThemedText>
+			</Pressable>
 
 			<Surface variant="glass" style={styles.calendarPanel}>
 				<View style={styles.weekdayRow}>
@@ -657,6 +756,28 @@ const styles = StyleSheet.create({
 	},
 	quietLanes: {
 		gap: Spacing[4],
+	},
+	proposalsPanel: {
+		gap: Spacing[12],
+		borderRadius: 18,
+	},
+	proposalRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: Spacing[12],
+	},
+	proposalText: {
+		flex: 1,
+		gap: Spacing[4],
+	},
+	proposalActions: {
+		flexDirection: "row",
+		gap: Spacing[8],
+	},
+	proposeEntry: {
+		alignSelf: "flex-start",
+		paddingVertical: Spacing[4],
+		paddingRight: Spacing[16],
 	},
 	dayNumberRow: {
 		flexDirection: "row",

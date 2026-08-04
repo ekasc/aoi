@@ -40,6 +40,7 @@ app/                  Expo Router routes (route groups below)
   (app)/(tabs)/       index (timeline), calendar, profile, settings
   (app)/moment/       new.tsx (full form), trace.tsx (5-second capture)
   (app)/calendar/     new-event.tsx, edit/[id].tsx
+  (app)/proposal/     new.tsx (suggest a time to the partner)
   (app)/profile/      edit-relationship, import-milestones, little-things
   (app)/someday.tsx   the shared Someday list
   (app)/memory-wall.tsx  the memory wall (photo + voice album)
@@ -64,7 +65,11 @@ features/             Feature modules (state, repos, API clients — NOT React-r
   moments/            Moments context, resurface engine, notification hook
   calendar/           Calendar context + local (SQLite) / remote repositories,
                       event-reminders.ts (pure builders) + use-event-reminders.ts
-                      (silent local-notification scheduling hook)
+                      (silent local-notification scheduling hook), recurrence.ts
+                      (weekly instance expansion, mirrors the API)
+  proposals/          Proposals ("how about Saturday?") context + local
+                      (AsyncStorage) / remote repositories, display derivations
+                      (proposal-time.ts)
   theme/              Theme context (beach-inspired presets, light + dark)
   media/              useMediaUpload (presigned R2 flow)
   partner-details/    "The little things" (device-local for now)
@@ -86,10 +91,12 @@ features/             Feature modules (state, repos, API clients — NOT React-r
 hooks/                use-theme-color, use-color-scheme, use-aoi-fonts
 constants/            theme.ts (Spacing/Radii/Motion), theme-presets.ts, typography.ts
 packages/api/         Hono + Drizzle + Postgres backend (own package.json, vitest, tsconfig)
-packages/shared/      @aoi/shared — API contract types (moment, calendar, space, auth, api,
+packages/shared/      @aoi/shared — API contract types (moment, calendar incl.
+                      weekly recurrence, space, auth, api,
                       question incl. ISO-week helpers + the 20-question bank,
-                      push kinds, location sharing incl. shared freshness rules)
-                      letter incl. seal limits + ordering)
+                      push kinds, location sharing incl. shared freshness rules,
+                      letter incl. seal limits + ordering,
+                      proposal incl. title limit + ordering)
 tests/unit/           Frontend vitest tests (RN mocked to DOM — see tests/setup.ts)
 e2e/maestro/          auth-stub-smoke.yaml
 patches/              pnpm patches: expo-router (ctx ignore), @expo/metro-runtime (exports)
@@ -162,14 +169,18 @@ reassigned — tokens are device-scoped; `DELETE` on sign-out, no existence
 leaks). `sendPushToUser` batches to the Expo endpoint (injectable via
 `EXPO_PUSH_ENDPOINT`/`setPushEndpoint`), removes tokens whose tickets report
 `DeviceNotRegistered`/`InvalidPushToken`, and swallows ALL failures — push
-must never break a request. `notifyPartnerInSpace(spaceId, fromUserId, kind, fromName?)`
+must never break a request. `notifyPartnerInSpace(spaceId, fromUserId, kind, fromName?, dayOfWeek?)`
 is the reusable hook for partner-facing features. Payloads carry
 `data.kind` + fixed vague copy only — NEVER moment text, letter content,
-locations, or any content (location/letter pushes may carry the sender's
-display name in the copy — never coordinates, never the words, never the
-date).
+locations, event titles, proposal titles, or any content (location/letter
+pushes may carry the sender's display name in the copy — never coordinates,
+never the words, never the date; calendar pushes may carry at most the DAY
+OF WEEK via `dayOfWeek` — never a date, time, or title, and the weekday
+never enters the data payload; proposal pushes carry no detail at all).
 Kinds: `squeeze | moment_added | moment_edited | moment_deleted |
-location_request | location_granted | location_stopped | letter_sealed`.
+location_request | location_granted | location_stopped | letter_sealed |
+event_added | event_updated | event_deleted | proposal_received |
+proposal_accepted | proposal_declined`.
 Client receive routing lives in `features/push/push-context.tsx`; the
 foreground handler (banner visible, never sound) is set globally in
 `app/_layout.tsx`.
@@ -293,9 +304,42 @@ Separate entity from Moment (see promotion rules in earlier docs; promotion
 UI not built). Stored locally in expo-sqlite (stub) or remote. Optional
 fields: `allDay?: boolean` (no time-of-day; stored as flag with
 startsAt=00:00 / endsAt=next midnight, UI shows "All day"), `together?:
-boolean` (the couple is jointly involved — powers the countdown lane), and
+boolean` (the couple is jointly involved — powers the countdown lane),
 `reminderMinutesBefore?: number[]` (quiet local-notification offsets in
-minutes before start; empty/absent = no reminders).
+minutes before start; empty/absent = no reminders), and `recurrence?:
+'none' | 'weekly'` (see Weekly recurrence below).
+
+### Weekly recurrence (simple by design)
+`recurrence: 'weekly'` is the ONLY recurrence rule. A weekly create expands
+into a bounded horizon of CONCRETE instances — 13 weeks including the
+original (`WEEKLY_RECURRENCE_INSTANCE_COUNT`) — server-side in remote mode
+and in the local repository in stub mode. All instances share one nullable
+`recurrenceGroupId` so they are recognizable, but they are otherwise
+ordinary events: **editing or deleting one instance never touches the rest,
+and there are no series operations** (deliberate limitation — keep it that
+way). Creating/updating/deleting events notifies the partner with a vague
+push (weekday at most, never the title — see Push notifications).
+
+### Proposals ("how about Saturday?")
+A gentle suggestion from one partner to the other — never a demand. Table
+`event_proposals` (migration 0010): title ≤120, proposedStart/proposedEnd
+timestamptz, optional label (calendar label shape), status check-constraint
+`pending | accepted | declined`, nullable resolvedAt; indexed
+(spaceId, status). Only the PROPOSEE can resolve, and only while pending —
+the transition is one atomic `UPDATE … WHERE status='pending'`, so a
+double-resolve can never race. **Accepting copies the proposal into a real
+calendar event** (title/start/end/label; actor = the proposer's membership
+role, created under the proposer's id — the accept only said yes). Declining
+("Not now") creates nothing and carries no guilt. Both partners list every
+proposal; authorship is computed per request (`proposerRole` you/partner).
+Cross-space ids → 404, word-only calm errors, never an existence leak. Push
+kinds `proposal_received | proposal_accepted | proposal_declined` carry vague
+copy only — never the title, never the time. Entry points: a quiet "Suggest a
+time" row on the calendar tab → `app/(app)/proposal/new.tsx`, and a pending
+section where the proposee answers with Accept / Not now. Stub mode is
+device-local (AsyncStorage, keyed `aoi.proposals.v1.{userId}`) and simulates
+a plainly-documented partner: one seeded suggestion to answer, plus a yes to
+your own suggestions a few seconds later (checked on reads, no live timers).
 
 ### Event reminders
 Local notifications scheduled per (event, offset) on create/update and
@@ -383,17 +427,17 @@ RootLayout (app/_layout.tsx)
         QuestionProvider
           SqueezeProvider
             LocationProvider (consent/sharing state; stub vs remote repo)
-              PushProvider   (token registration + push receive routing;
-                              + <SqueezeOverlay/> + <LocationRequestPrompt/>
-                              mounted here)
-          LettersProvider
-            SqueezeProvider
-              PushProvider   (token registration + push receive routing;
-                              + <SqueezeOverlay/> mounted here)
+              ProposalsProvider (suggest-a-time; stub vs remote repo)
+                LettersProvider
+                  PushProvider (token registration + push receive routing;
+                                + <SqueezeOverlay/> + <LocationRequestPrompt/>
+                                mounted here)
 ```
 
-`LettersProvider` must wrap `PushProvider` — push receive routing calls
-`useLetters().reload` on `letter_sealed`.
+`LettersProvider` and `ProposalsProvider` must wrap `PushProvider` — push
+receive routing calls `useLetters().reload` on `letter_sealed`,
+`useProposals().reload` on `proposal_*`, and `useCalendar().refresh` on
+`event_*` / `proposal_accepted`.
 
 Navigation redirects: signed out → `(public)`; no space → `(auth)/space-setup`;
 no theme selection → `(auth)/theme-select`.
@@ -426,7 +470,8 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/spaces/current/moments` | keyset pagination (cursor = occurredAt), create incl. `type:'trace'`, `audioUri` |
 | `/v1/moments/:id` | PATCH/DELETE (own only, soft-delete); writes `space_activity` row in the same transaction |
 | `/v1/spaces/current/activity` | change log (tombstones): last 7 days, cap 50, desc; optional `since` ISO param; fact + actor only, never content |
-| `/v1/spaces/current/calendar/events`, `/v1/calendar/events/:id` | range query (overlaps from/to), CRUD; events carry optional `reminderMinutesBefore` (jsonb, ≤8 ints 0–2880; empty array on PATCH clears), `allDay`, `together` |
+| `/v1/spaces/current/calendar/events`, `/v1/calendar/events/:id` | range query (overlaps from/to), CRUD; events carry optional `reminderMinutesBefore` (jsonb, ≤8 ints 0–2880; empty array on PATCH clears), `allDay`, `together`, `recurrence` (`none` \| `weekly` — a weekly create expands into 13 concrete instances sharing `recurrenceGroupId`; instances are ordinary events, no series operations); create/update/delete notify the partner (`event_*`, weekday-at-most copy, never the title) |
+| `/v1/spaces/current/proposals`, `/v1/proposals/:id/{accept,decline}` | proposals ("how about Saturday?"): POST suggests a time (title ≤120, strictly-future start, end after start — word-only 400s; notifies partner `proposal_received`); GET lists the space's proposals (`proposerRole` computed per viewer); accept/decline are proposee-only, pending-only (atomic `UPDATE … WHERE status='pending'`), cross-space → 404; accept copies the proposal into a real calendar event (actor = proposer) + notifies `proposal_accepted`; decline notifies `proposal_declined`; pushes carry vague copy only |
 | `/v1/spaces/current/someday`, `/v1/someday/:id` | shared Someday list: list/create; PATCH checks off (`checked: true`), undoes (`checked: false`), or edits title/note/category — either member may do all of it; only meaningful transitions write |
 | `/v1/spaces/current/question` (+ `/answer`) | one question this week: GET returns the ISO week's question + both answer states (partner's answer content only when BOTH answered — the reveal gate; partner timing never surfaced); PUT upserts the viewer's answer for the server-computed week (≤500 chars) |
 | `/v1/spaces/current/milestones`, preferences | list/append, theme prefs |
@@ -442,7 +487,13 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/letters/:id/open` | open a letter: due + unopened → atomic `UPDATE … SET opened_at, opened_by_user_id WHERE opened_at IS NULL RETURNING` then return with body; not due → calm 400 "Not yet time" (no body); already opened → idempotent with body; cross-space → 404 |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0009_*` adds the `letters` table (spaceId, authorUserId, nullable
+Latest: `0010_*` adds the `event_proposals` table (spaceId, proposerUserId,
+title, `proposed_start` / `proposed_end`, nullable label jsonb mirroring the
+calendar label shape, status check constraint `pending | accepted |
+declined`, createdAt, nullable `resolved_at`; indexed by (spaceId, status))
+and calendar_events `recurrence` (default `none`, weekly-only) +
+`recurrence_group_id` (nullable uuid linking a weekly expansion); `0009_*`
+adds the `letters` table (spaceId, authorUserId, nullable
 caption, body, `sealed_until`, nullable `opened_at` / `opened_by_user_id`,
 createdAt; indexed by (spaceId, sealed_until); immutable once sealed — no
 edit/delete surface); `0008_*` adds the `location_shares` table
@@ -559,27 +610,30 @@ media (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 **Working end-to-end (stub):** auth screens, space onboarding, timeline with
 traces + resurface + goals lane, calendar CRUD + reminders (local
 notifications) + countdown lane + anniversaries + agenda view + all-day
-events, profile, settings, the little things, the Someday list
-(device-local), squeeze loop (simulated reply), voice traces (local), media
-picking, moments edit/delete + tombstones (local synthesis), time-together
-profile line, memory wall, "one question this week" (device-local answers;
-no simulated partner — the reveal waits for a real second voice), and
-location sharing — honestly simulated: the pretend partner consents a couple
-of seconds after you opt in and grants a fixed, plainly-simulated place when
-asked (no real GPS, nothing leaves the device).
-letters / time capsule (device-local, with one plainly-simulated partner
+events + weekly recurrence (local 13-week expansion), proposals (device-local
+with a plainly-simulated partner: one seeded suggestion to answer, and a yes
+to your own suggestions a few seconds later), profile, settings, the little
+things, the Someday list (device-local), squeeze loop (simulated reply),
+voice traces (local), media picking, moments edit/delete + tombstones (local
+synthesis), time-together profile line, memory wall, "one question this week"
+(device-local answers; no simulated partner — the reveal waits for a real
+second voice), location sharing — honestly simulated: the pretend partner
+consents a couple of seconds after you opt in and grants a fixed,
+plainly-simulated place when asked (no real GPS, nothing leaves the device),
+and letters / time capsule (device-local, with one plainly-simulated partner
 letter so the reveal can be tried offline).
 
 **Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
-provenance), calendar, the Someday list, spaces, preferences, media upload
-pipeline, push backbone (token registration, squeeze delivery, moment-change
-and location-request/granted/stopped notifications), the weekly-question
-reveal gate (`weekly_answers`), and bounded location sharing (both-consent
-gate, three modes, one-time grants, freshness-purged single row) —
-against packages/api.
-+ letter-sealed notifications), the weekly-question reveal gate
-(`weekly_answers`), and letters (sealed-until lock enforced server-side,
-atomic open) — against packages/api.
+provenance), calendar (incl. weekly recurrence expansion + partner-reminder
+pushes on create/update/delete), proposals (propose/accept/decline with
+server-side guards; accept creates the event), the Someday list, spaces,
+preferences, media upload pipeline, push backbone (token registration,
+squeeze delivery, moment-change, letter-sealed, calendar event_* and
+proposal_* notifications, and location-request/granted/stopped), the
+weekly-question reveal gate (`weekly_answers`), letters (sealed-until lock
+enforced server-side, atomic open), and bounded location sharing
+(both-consent gate, three modes, one-time grants, freshness-purged single
+row) — against packages/api.
 
 **Known gaps / seams:**
 
@@ -592,7 +646,13 @@ atomic open) — against packages/api.
 - Calendar reminders are device-scoped: `reminderMinutesBefore` schedules
   silent local notifications only on the device that saved the event.
   Partner-created events, reinstalls, and second devices get no reminders
-  until reminders are delivered through the push backbone.
+  until reminders are delivered through the push backbone. Partner-reminder
+  pushes (`event_*`) are the cross-device AWARENESS layer only — they
+  refresh the calendar; they never carry the event's details, by design.
+- Weekly recurrence is deliberately bounded: 13 concrete instances per
+  weekly create, no series operations (edit/delete touch one instance), and
+  nothing regenerates past the horizon — a plan that should keep repeating
+  beyond the season is suggested or created again.
 - Partner details are device-local — no API table yet.
 - Location sharing depends on device-level OS permission grants: Live asks
   for background ("always") permission and falls back to a foreground watch

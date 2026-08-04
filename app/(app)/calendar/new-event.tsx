@@ -110,6 +110,7 @@ export default function NewCalendarEventScreen() {
   const [endsAt, setEndsAt] = useState(initialEnd);
   const [allDay, setAllDay] = useState(false);
   const [together, setTogether] = useState(false);
+  const [repeatsWeekly, setRepeatsWeekly] = useState(false);
   const [reminderOffset, setReminderOffset] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -142,6 +143,10 @@ export default function NewCalendarEventScreen() {
 
   const handleToggleTogether = useCallback(() => {
     setTogether((current) => !current);
+  }, []);
+
+  const handleToggleRepeatsWeekly = useCallback(() => {
+    setRepeatsWeekly((current) => !current);
   }, []);
 
   const inputStyle = useMemo(
@@ -193,6 +198,7 @@ export default function NewCalendarEventScreen() {
         reminderMinutesBefore: reminderOffset === null ? undefined : [reminderOffset],
         allDay,
         together,
+        recurrence: repeatsWeekly ? 'weekly' : 'none',
       });
 
       router.back();
@@ -210,6 +216,7 @@ export default function NewCalendarEventScreen() {
     effectiveStart,
     presetLabel,
     reminderOffset,
+    repeatsWeekly,
     router,
     space?.partnerName,
     title,
@@ -328,10 +335,33 @@ export default function NewCalendarEventScreen() {
                   Together
                 </ThemedText>
               </Pressable>
+              <Pressable
+                accessibilityLabel="Toggle repeats weekly"
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: repeatsWeekly }}
+                onPress={handleToggleRepeatsWeekly}
+                style={[
+                  styles.choiceChip,
+                  {
+                    borderColor: repeatsWeekly ? accent : border,
+                    backgroundColor: repeatsWeekly ? accent : surface2,
+                  },
+                ]}
+              >
+                <ThemedText type="caption" style={{ color: repeatsWeekly ? onAccent : text }}>
+                  Repeats weekly
+                </ThemedText>
+              </Pressable>
             </View>
             <ThemedText type="caption" selectable style={{ color: muted }}>
               Together marks time you both share — it powers the countdown.
             </ThemedText>
+            {repeatsWeekly ? (
+              <ThemedText type="caption" selectable style={{ color: muted }}>
+                Repeats weekly for a season — each week stays its own event,
+                free to move or let go on its own.
+              </ThemedText>
+            ) : null}
 
             <NativeDateTimeField
               accessibilityLabel="Choose start date"

@@ -1,4 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { db } from '../../db/index.js';
+import { notifyPartnerInSpace } from '../../lib/push.js';
+import { WEEKLY_RECURRENCE_INSTANCE_COUNT } from '@aoi/shared';
 import { app, getTestJwt, req, TEST_USER_ID, TEST_OTHER_USER_ID, TEST_SPACE_ID, TEST_EVENT_ID } from '../helpers/test-app.js';
 
 vi.stubEnv('JWT_SECRET', 'test-jwt-secret-for-testing');
@@ -42,9 +45,18 @@ vi.mock('../../db/index.js', () => ({
   },
 }));
 
+// The delivery service is mocked away — route tests assert the delivery
+// intent, not Expo traffic.
+vi.mock('../../lib/push.js', () => ({
+  notifyPartnerInSpace: vi.fn(async () => {}),
+}));
+
 beforeEach(() => {
   mockSelectQueue.length = 0;
   mockReturningResult = [];
+  vi.mocked(db.insert).mockClear();
+  vi.mocked(db.update).mockClear();
+  vi.mocked(notifyPartnerInSpace).mockClear();
 });
 
 function eventRow(overrides: Record<string, unknown> = {}) {
@@ -333,6 +345,94 @@ describe('POST /v1/spaces/current/calendar/events', () => {
     }));
     expect(res.status).toBe(400);
   });
+
+  it('notifies the partner with event_added — weekday at most, never the title', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()]);
+    mockReturningResult = [eventRow()];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: { title: 'Secret dinner plan', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z', actor: 'you', actorName: 'You', label: { preset: 'Date' } },
+    }));
+    expect(res.status).toBe(201);
+    expect(notifyPartnerInSpace).toHaveBeenCalledTimes(1);
+    // 2026-03-15 falls on a Sunday — a weekday is the most detail allowed.
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(
+      TEST_SPACE_ID, TEST_USER_ID, 'event_added', undefined, 'Sunday'
+    );
+    expect(JSON.stringify(vi.mocked(notifyPartnerInSpace).mock.calls[0]))
+      .not.toContain('Secret dinner plan');
+  });
+
+  it('resolves the push weekday in the event\'s own offset, not the server\'s', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()]);
+    mockReturningResult = [eventRow()];
+    // 23:30 Sunday evening at UTC-5 is already Monday 04:30 UTC — the copy
+    // must say Sunday (the couple's day), not Monday.
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: { title: 'Test', startsAt: '2026-03-15T23:30:00-05:00', endsAt: '2026-03-16T00:30:00-05:00', actor: 'you', actorName: 'You', label: { preset: 'Date' } },
+    }));
+    expect(res.status).toBe(201);
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(
+      TEST_SPACE_ID, TEST_USER_ID, 'event_added', undefined, 'Sunday'
+    );
+  });
+
+  it('does not notify when the user has no space', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([]);
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: { title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z', actor: 'you', actorName: 'You', label: { preset: 'Date' } },
+    }));
+    expect(res.status).toBe(400);
+    expect(notifyPartnerInSpace).not.toHaveBeenCalled();
+  });
+
+  it('creates exactly one event when recurrence is absent', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()]);
+    mockReturningResult = [eventRow()];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: { title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z', actor: 'you', actorName: 'You', label: { preset: 'Date' } },
+    }));
+    expect(res.status).toBe(201);
+    expect(vi.mocked(db.insert)).toHaveBeenCalledTimes(1);
+    const values = vi.mocked(db.insert).mock.results[0].value.values.mock.calls[0][0];
+    // A single object, not a series expansion.
+    expect(Array.isArray(values)).toBe(false);
+    expect(values.recurrenceGroupId).toBeNull();
+    expect(values.recurrence).toBe('none');
+  });
+
+  it('expands weekly recurrence into 13 concrete instances sharing one group', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()]);
+    mockReturningResult = [eventRow({ recurrence: 'weekly' })];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: {
+        title: 'Test', startsAt: '2026-03-15T10:00:00Z', endsAt: '2026-03-15T11:00:00Z',
+        actor: 'you', actorName: 'You', label: { preset: 'Date' }, recurrence: 'weekly',
+      },
+    }));
+    expect(res.status).toBe(201);
+    expect(vi.mocked(db.insert)).toHaveBeenCalledTimes(1);
+    const values = vi.mocked(db.insert).mock.results[0].value.values.mock.calls[0][0];
+    expect(Array.isArray(values)).toBe(true);
+    expect(values).toHaveLength(WEEKLY_RECURRENCE_INSTANCE_COUNT);
+    // All instances share one recurrence group and keep their own identity.
+    const groupIds = new Set(values.map((instance: { recurrenceGroupId: string }) => instance.recurrenceGroupId));
+    expect(groupIds.size).toBe(1);
+    expect(values.every((instance: { recurrence: string }) => instance.recurrence === 'weekly')).toBe(true);
+    // Concrete weekly spacing: each instance starts exactly 7 days after the
+    // previous one, original included.
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const firstStart = values[0].startsAt.getTime();
+    values.forEach((instance: { startsAt: Date; endsAt: Date }, week: number) => {
+      expect(instance.startsAt.getTime()).toBe(firstStart + week * WEEK_MS);
+      // Duration is preserved week over week.
+      expect(instance.endsAt.getTime() - instance.startsAt.getTime()).toBe(60 * 60 * 1000);
+    });
+  });
 });
 
 describe('PATCH /v1/calendar/events/:id', () => {
@@ -428,6 +528,32 @@ describe('PATCH /v1/calendar/events/:id', () => {
     }));
     expect(res.status).toBe(400);
   });
+
+  it('notifies the partner with event_updated — never the title', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow({ title: 'Secret dinner plan' })], [spaceMemberRow()]);
+    mockReturningResult = [eventRow({ title: 'Updated secret' })];
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { title: 'Updated secret' },
+    }));
+    expect(res.status).toBe(200);
+    expect(notifyPartnerInSpace).toHaveBeenCalledTimes(1);
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(
+      TEST_SPACE_ID, TEST_USER_ID, 'event_updated', undefined, 'Sunday'
+    );
+    expect(JSON.stringify(vi.mocked(notifyPartnerInSpace).mock.calls[0]))
+      .not.toContain('secret');
+  });
+
+  it('does not notify when the update fails validation', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow()], [spaceMemberRow()]);
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { endsAt: '2026-03-15T09:00:00Z' },
+    }));
+    expect(res.status).toBe(400);
+    expect(notifyPartnerInSpace).not.toHaveBeenCalled();
+  });
 });
 
 describe('DELETE /v1/calendar/events/:id', () => {
@@ -450,5 +576,18 @@ describe('DELETE /v1/calendar/events/:id', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true });
+  });
+
+  it('notifies the partner with event_deleted — never the title', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow({ title: 'Secret dinner plan' })], [spaceMemberRow()]);
+    const res = await app.fetch(req('DELETE', `/v1/calendar/events/${TEST_EVENT_ID}`, { jwt }));
+    expect(res.status).toBe(200);
+    expect(notifyPartnerInSpace).toHaveBeenCalledTimes(1);
+    // Deletion copy carries no time either — exactly (space, sender, kind).
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_USER_ID, 'event_deleted');
+    expect(vi.mocked(notifyPartnerInSpace).mock.calls[0]).toHaveLength(3);
+    expect(JSON.stringify(vi.mocked(notifyPartnerInSpace).mock.calls[0]))
+      .not.toContain('Secret dinner plan');
   });
 });

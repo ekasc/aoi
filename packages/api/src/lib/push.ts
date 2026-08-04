@@ -65,10 +65,16 @@ type ExpoPushResponse = {
  * that something happened, never what was written. Location pushes carry a
  * kind + a name at most — NEVER coordinates. `fromName` is only used by the
  * location kinds; everything else ignores it.
+ *
+ * Calendar/proposal pushes are deliberately vague: a partner reminder says
+ * "they planned something", never the event title, and may carry at most the
+ * DAY OF WEEK (`dayOfWeek`) — never a date, time, or detail. Proposal pushes
+ * never carry the proposed title or time at all.
  */
 export function buildPushCopy(
   kind: PushNotificationKind,
-  fromName?: string
+  fromName?: string,
+  dayOfWeek?: string
 ): { title: string; body: string } {
   switch (kind) {
     case 'squeeze':
@@ -98,6 +104,33 @@ export function buildPushCopy(
       // Never the words, never the date — just the fact that something is
       // waiting.
       return { title: 'A letter, sealed', body: 'They sealed something for a future day.' };
+    case 'event_added':
+      // Day of week at most — never the title, never the details.
+      return {
+        title: 'They planned something',
+        body: dayOfWeek
+          ? `They planned something for ${dayOfWeek}.`
+          : 'They planned something — take a look.',
+      };
+    case 'event_updated':
+      return {
+        title: 'A plan changed',
+        body: dayOfWeek
+          ? `Something on ${dayOfWeek} shifted a little.`
+          : 'One of your plans shifted a little.',
+      };
+    case 'event_deleted':
+      return { title: 'A plan let go', body: 'One of your plans was let go.' };
+    case 'proposal_received':
+      // Never the title, never the time — just a gentle invitation.
+      return {
+        title: 'A time, suggested',
+        body: 'Your partner suggested a time for the two of you.',
+      };
+    case 'proposal_accepted':
+      return { title: 'They said yes', body: 'Your partner accepted a time you suggested.' };
+    case 'proposal_declined':
+      return { title: 'Not this time', body: 'Your partner passed on a time — gently.' };
   }
 }
 
@@ -215,19 +248,21 @@ export async function sendPushToUser(
 
 /**
  * Notify the OTHER active member of a two-person space. The reusable hook
- * every partner-facing feature (squeezes, moments, and location
- * requests/grants) delivers through. Never throws.
+ * every partner-facing feature (squeezes, moments, calendar, proposals, and
+ * location requests/grants) delivers through. Never throws.
  *
  * Deliberately takes NO data parameter: payloads carry the kind only.
  * `fromName` personalizes the location kinds' copy — it never carries
- * coordinates, and never enters the data payload.
-
+ * coordinates, and never enters the data payload. `dayOfWeek` (a weekday
+ * name, nothing more) softens the calendar kinds' copy — it never carries a
+ * title, a date, or a time.
  */
 export async function notifyPartnerInSpace(
   spaceId: string,
   fromUserId: string,
   kind: PushNotificationKind,
-  fromName?: string
+  fromName?: string,
+  dayOfWeek?: string
 ): Promise<void> {
   try {
     const members = await db
@@ -243,7 +278,7 @@ export async function notifyPartnerInSpace(
       return;
     }
 
-    const copy = buildPushCopy(kind, fromName);
+    const copy = buildPushCopy(kind, fromName, dayOfWeek);
 
     await sendPushToUser(partner.userId, {
       title: copy.title,

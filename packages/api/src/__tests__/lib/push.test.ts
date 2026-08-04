@@ -58,10 +58,52 @@ function tokenRow(expoPushToken: string, overrides: Record<string, unknown> = {}
 
 describe('buildPushCopy', () => {
   it('gives every kind a warm, vague title and body', () => {
-    for (const kind of ['squeeze', 'moment_added', 'moment_edited', 'moment_deleted', 'letter_sealed'] as const) {
+    for (const kind of [
+      'squeeze',
+      'moment_added',
+      'moment_edited',
+      'moment_deleted',
+      'letter_sealed',
+      'event_added',
+      'event_updated',
+      'event_deleted',
+      'proposal_received',
+      'proposal_accepted',
+      'proposal_declined',
+    ] as const) {
       const copy = buildPushCopy(kind);
       expect(copy.title.length).toBeGreaterThan(0);
       expect(copy.body.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('calendar kinds carry a weekday at most — never a title, date, or time', () => {
+    const secret = 'Dinner at the lighthouse';
+    const added = buildPushCopy('event_added', undefined, 'Friday');
+    expect(added.body).toContain('Friday');
+    const updated = buildPushCopy('event_updated', undefined, 'Friday');
+    expect(updated.body).toContain('Friday');
+    // Without a weekday the copy simply stays vaguer.
+    expect(buildPushCopy('event_added').body).not.toContain('undefined');
+    expect(buildPushCopy('event_deleted').title.length).toBeGreaterThan(0);
+
+    for (const copy of [added, updated, buildPushCopy('event_deleted')]) {
+      const wire = `${copy.title} ${copy.body}`;
+      expect(wire).not.toContain(secret);
+      // No dates, no clock times — a weekday name is the ceiling.
+      expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+      expect(wire).not.toMatch(/\d{1,2}:\d{2}/);
+    }
+  });
+
+  it('proposal kinds never carry the proposed title or time — the builder accepts neither', () => {
+    const secret = 'Farmers market Saturday';
+    for (const kind of ['proposal_received', 'proposal_accepted', 'proposal_declined'] as const) {
+      const copy = buildPushCopy(kind);
+      const wire = `${copy.title} ${copy.body}`;
+      expect(wire).not.toContain(secret);
+      expect(wire).not.toMatch(/\d{1,2}:\d{2}/);
+      expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     }
   });
 
@@ -283,6 +325,22 @@ describe('notifyPartnerInSpace', () => {
     await notifyPartnerInSpace(TEST_SPACE_ID, TEST_USER_ID, 'squeeze');
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the data payload kind-only even when copy carries a weekday', async () => {
+    mockSelectQueue.push(
+      [{ userId: TEST_USER_ID }, { userId: TEST_PARTNER_ID }],
+      [tokenRow('ExpoPushToken[partner-device]')]
+    );
+
+    await notifyPartnerInSpace(TEST_SPACE_ID, TEST_USER_ID, 'event_added', undefined, 'Friday');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    // The weekday softens the copy but never enters the data payload.
+    expect(sent[0].data).toEqual({ kind: 'event_added' });
+    expect(sent[0].body).toContain('Friday');
+    expect(sent[0].title).not.toContain('Friday');
   });
 
   it('push payloads never contain moment body text', async () => {
