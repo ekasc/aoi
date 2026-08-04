@@ -53,13 +53,20 @@ function updateChain() {
   };
 }
 
-vi.mock('../../db/index.js', () => ({
-  db: {
+vi.mock('../../db/index.js', () => {
+  const dbMock = {
     select: vi.fn(() => selectChain()),
     insert: vi.fn(() => insertChain()),
     update: vi.fn(() => updateChain()),
-  },
-}));
+    // Accept runs the status UPDATE + event INSERT in one transaction; the
+    // callback simply operates on the same mocked chains.
+    transaction: vi.fn(),
+  };
+  dbMock.transaction.mockImplementation(
+    async (fn: (tx: unknown) => Promise<unknown>) => fn(dbMock)
+  );
+  return { db: dbMock };
+});
 
 // The delivery service is mocked away — route tests assert the delivery
 // intent, not Expo traffic.

@@ -538,11 +538,29 @@ describe('PATCH /v1/calendar/events/:id', () => {
     }));
     expect(res.status).toBe(200);
     expect(notifyPartnerInSpace).toHaveBeenCalledTimes(1);
+    // No startsAt in the request -> no local offset to trust -> vaguer copy
+    // (undefined weekday) rather than a UTC weekday off by one local day.
     expect(notifyPartnerInSpace).toHaveBeenCalledWith(
-      TEST_SPACE_ID, TEST_USER_ID, 'event_updated', undefined, 'Sunday'
+      TEST_SPACE_ID, TEST_USER_ID, 'event_updated', undefined, undefined
     );
     expect(JSON.stringify(vi.mocked(notifyPartnerInSpace).mock.calls[0]))
       .not.toContain('secret');
+  });
+
+  it('uses the request ISO weekday when startsAt is updated', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([eventRow()], [spaceMemberRow()]);
+    mockReturningResult = [eventRow({ startsAt: new Date('2026-03-17T10:00:00-05:00') })];
+    const res = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: {
+        startsAt: '2026-03-17T10:00:00-05:00',
+        endsAt: '2026-03-17T12:00:00-05:00',
+      },
+    }));
+    expect(res.status).toBe(200);
+    expect(notifyPartnerInSpace).toHaveBeenCalledWith(
+      TEST_SPACE_ID, TEST_USER_ID, 'event_updated', undefined, 'Tuesday'
+    );
   });
 
   it('does not notify when the update fails validation', async () => {

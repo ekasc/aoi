@@ -206,16 +206,17 @@ async function guardResolvable(proposalId: string, userId: string): Promise<Reso
     throw badRequest('This one has already been answered');
   }
 
-  // The proposer's name and membership role — needed for authorship on
-  // accept, and for the response either way.
+  // The proposer's display name (for the response; authorship on accept is
+  // resolved separately against the active membership).
   const [proposer] = await db
-    .select({ role: spaceMembers.role, displayName: users.displayName })
+    .select({ displayName: users.displayName })
     .from(spaceMembers)
     .innerJoin(users, eq(spaceMembers.userId, users.id))
     .where(
       and(
         eq(spaceMembers.spaceId, proposal.spaceId),
-        eq(spaceMembers.userId, proposal.proposerUserId)
+        eq(spaceMembers.userId, proposal.proposerUserId),
+        eq(spaceMembers.state, 'active')
       )
     )
     .limit(1);
@@ -237,63 +238,72 @@ proposalsRouter.post(
 
     const { proposal, proposerName } = await guardResolvable(proposalId, userId);
 
-    // Atomic gate: the first accept wins; a concurrent second write matches
-    // nothing.
-    const [accepted] = await db
-      .update(eventProposals)
-      .set({ status: 'accepted', resolvedAt: now })
-      .where(and(eq(eventProposals.id, proposalId), eq(eventProposals.status, 'pending')))
-      .returning();
+    // Atomic gate + event creation in ONE transaction: the first accept
+    // wins (a concurrent second write matches nothing), and a failed event
+    // insert rolls the status back — never "accepted with no event".
+    const accepted = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(eventProposals)
+        .set({ status: 'accepted', resolvedAt: now })
+        .where(and(eq(eventProposals.id, proposalId), eq(eventProposals.status, 'pending')))
+        .returning();
+
+      if (!updated) {
+        return null;
+      }
+
+      // The proposal becomes a real calendar event. Authorship stays with
+      // the proposer (actor = proposer, created under their id) — the
+      // accept only said yes. The proposer's membership role is the space's
+      // authorship snapshot, exactly like moments.
+      const [proposer] = await tx
+        .select({ role: spaceMembers.role })
+        .from(spaceMembers)
+        .where(
+          and(
+            eq(spaceMembers.spaceId, proposal.spaceId),
+            eq(spaceMembers.userId, proposal.proposerUserId),
+            eq(spaceMembers.state, 'active')
+          )
+        )
+        .limit(1);
+
+      await tx.insert(calendarEvents).values({
+        spaceId: proposal.spaceId,
+        createdByUserId: proposal.proposerUserId,
+        actor: proposer?.role ?? 'partner',
+        actorName: proposerName,
+        title: proposal.title,
+        startsAt: proposal.proposedStart,
+        endsAt: proposal.proposedEnd,
+        labelPreset:
+          proposal.label && typeof proposal.label.preset === 'string'
+            ? (proposal.label.preset as
+                | 'Work'
+                | 'Gym'
+                | 'Travel'
+                | 'Date'
+                | 'Family'
+                | 'Other')
+            : 'Other',
+        labelCustomText:
+          proposal.label?.preset === 'Other' ? (proposal.label.customText ?? null) : null,
+        reminderMinutesBefore: null,
+        allDay: false,
+        together: false,
+        recurrence: 'none',
+        recurrenceGroupId: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return updated;
+    });
 
     if (!accepted) {
       // Answered between the check and the write — calm, no details.
       throw alreadyAnswered('This one has already been answered');
     }
-
-    // The proposal becomes a real calendar event. Authorship stays with the
-    // proposer (actor = proposer, created under their id) — the accept only
-    // said yes. The proposer's membership role is the space's authorship
-    // snapshot, exactly like moments.
-    const [proposer] = await db
-      .select({ role: spaceMembers.role })
-      .from(spaceMembers)
-      .where(
-        and(
-          eq(spaceMembers.spaceId, proposal.spaceId),
-          eq(spaceMembers.userId, proposal.proposerUserId),
-          eq(spaceMembers.state, 'active')
-        )
-      )
-      .limit(1);
-
-    await db.insert(calendarEvents).values({
-      spaceId: proposal.spaceId,
-      createdByUserId: proposal.proposerUserId,
-      actor: proposer?.role ?? 'partner',
-      actorName: proposerName,
-      title: proposal.title,
-      startsAt: proposal.proposedStart,
-      endsAt: proposal.proposedEnd,
-      labelPreset:
-        proposal.label && typeof proposal.label.preset === 'string'
-          ? (proposal.label.preset as
-              | 'Work'
-              | 'Gym'
-              | 'Travel'
-              | 'Date'
-              | 'Family'
-              | 'Other')
-          : 'Other',
-      labelCustomText:
-        proposal.label?.preset === 'Other' ? (proposal.label.customText ?? null) : null,
-      reminderMinutesBefore: null,
-      allDay: false,
-      together: false,
-      recurrence: 'none',
-      recurrenceGroupId: null,
-      createdAt: now,
-      updatedAt: now,
-    });
 
     // They said yes — vague copy only, never the title or the time.
     void notifyPartnerInSpace(proposal.spaceId, userId, 'proposal_accepted');

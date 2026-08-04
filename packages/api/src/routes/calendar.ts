@@ -319,14 +319,15 @@ calendarRouter.patch('/v1/calendar/events/:id', zValidator('param', z.object({ i
     .returning();
 
   // Quiet heads-up that a shared plan shifted — weekday at most, never the
-  // title. Fire-and-forget. Prefer the request's own ISO (it still carries
-  // the couple's offset; the stored timestamptz does not).
+  // title. Fire-and-forget. Use the request's own ISO when present (it still
+  // carries the couple's offset); the stored timestamptz does not, so prefer
+  // vaguer copy over a UTC weekday that could be off by one local day.
   void notifyPartnerInSpace(
     existing.spaceId,
     userId,
     'event_updated',
     undefined,
-    weekdayForIso(input.startsAt ?? updated.startsAt.toISOString())
+    input.startsAt !== undefined ? weekdayForIso(input.startsAt) : undefined
   );
 
   return c.json(calendarEventRowToApi(updated, userId));
