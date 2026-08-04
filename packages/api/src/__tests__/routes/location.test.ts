@@ -83,14 +83,23 @@ function deleteChain() {
   return chain;
 }
 
-vi.mock('../../db/index.js', () => ({
-  db: {
+const dbMock = vi.hoisted(() => {
+  const mock = {
     select: vi.fn(() => selectChain()),
     insert: vi.fn(() => insertChain()),
     update: vi.fn(() => updateChain()),
     delete: vi.fn(() => deleteChain()),
-  },
-}));
+    // GET serves the row inside a transaction; the callback simply runs
+    // against the same mocked chains.
+    transaction: vi.fn(),
+  };
+  mock.transaction.mockImplementation(
+    async (fn: (tx: unknown) => Promise<unknown>) => fn(mock)
+  );
+  return mock;
+});
+
+vi.mock('../../db/index.js', () => ({ db: dbMock }));
 
 vi.mock('../../lib/push.js', () => ({
   notifyPartnerInSpace: vi.fn(async () => {}),
@@ -144,6 +153,13 @@ function pushGetPreamble(
   mockSelectQueue.push([membershipRow()], [space], members);
 }
 
+/** GET re-verifies the partner's consent inside the serve transaction. */
+function pushPartnerConsentRecheck() {
+  mockSelectQueue.push([
+    memberConsentRow(TEST_OTHER_USER_ID, new Date(currentNow - 3_600_000)),
+  ]);
+}
+
 function nowIso(offsetMs = 0) {
   return new Date(currentNow + offsetMs).toISOString();
 }
@@ -158,6 +174,7 @@ beforeEach(() => {
   vi.mocked(db.insert).mockClear();
   vi.mocked(db.update).mockClear();
   vi.mocked(db.delete).mockClear();
+  vi.mocked(db.transaction).mockClear();
   vi.mocked(notifyPartnerInSpace).mockClear();
   vi.useFakeTimers();
   vi.setSystemTime(currentNow);
@@ -245,6 +262,7 @@ describe('GET /v1/spaces/current/location — consent gating matrix', () => {
   it('serves the partner fresh live row when both consented', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([locationShareRow({ accuracyMeters: 12 })]);
     const res = await app.fetch(req('GET', GET_PATH, { jwt }));
     expect(res.status).toBe(200);
@@ -264,6 +282,7 @@ describe('GET /v1/spaces/current/location — consent gating matrix', () => {
   it('queries the share row by the PARTNER id, never the caller id', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([locationShareRow()]);
     await app.fetch(req('GET', GET_PATH, { jwt }));
 
@@ -281,6 +300,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
   it('withholds and purges a stale live report (over the 15-minute window)', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([
       locationShareRow({ reportedAt: new Date(currentNow - 16 * 60_000) }),
     ]);
@@ -293,6 +313,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
   it('serves a fresh until_arrive report inside the window', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([
       locationShareRow({
         mode: 'until_arrive',
@@ -315,6 +336,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
   it('serves a one-time grant exactly once, then marks it consumed', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([
       locationShareRow({
         mode: 'on_request_granted',
@@ -333,6 +355,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
   it('never serves an already-consumed grant again', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([
       locationShareRow({
         mode: 'on_request_granted',
@@ -347,6 +370,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
   it('withholds a consumed grant even when a racing read already consumed it', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([
       locationShareRow({ mode: 'on_request_granted' }),
     ]);
@@ -358,6 +382,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
   it('withholds a stale grant (over the 5-minute window) and purges it', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([
       locationShareRow({
         mode: 'on_request_granted',
@@ -373,6 +398,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
   it('returns null when the partner has no share row at all', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
+    pushPartnerConsentRecheck();
     mockSelectQueue.push([]);
     const res = await app.fetch(req('GET', GET_PATH, { jwt }));
     expect(res.status).toBe(200);
@@ -464,6 +490,15 @@ describe('POST /v1/spaces/current/location/share', () => {
       'location_granted',
       'Mara'
     );
+  });
+
+  it('sweeps expired rows on every report even without a GET (TTL)', async () => {
+    const jwt = await getTestJwt();
+    pushGetPreamble();
+    const res = await app.fetch(req('POST', SHARE_PATH, { jwt, body: validBody }));
+    expect(res.status).toBe(201);
+    // The best-effort sweep ran even though nobody GETted.
+    expect(vi.mocked(db.delete)).toHaveBeenCalledTimes(1);
   });
 
   describe('validation 400s never echo coordinates', () => {
@@ -673,12 +708,26 @@ describe('POST /v1/spaces/current/location/request', () => {
     expect(res.status).toBe(403);
   });
 
+  it('never pushes to a partner who revoked consent', async () => {
+    const jwt = await getTestJwt();
+    // Earlier tests spent the 3/min budget — roll to a clean window.
+    vi.advanceTimersByTime(61_000);
+    pushGetPreamble([
+      memberConsentRow(TEST_USER_ID, new Date(currentNow)),
+      memberConsentRow(TEST_OTHER_USER_ID, null),
+    ]);
+    const res = await app.fetch(req('POST', REQUEST_PATH, { jwt, body: {} }));
+    expect(res.status).toBe(403);
+    expect(notifyPartnerInSpace).not.toHaveBeenCalled();
+  });
+
   it('rate-limits to 3 requests per minute per sender', async () => {
     const jwt = await getTestJwt();
 
-    // Earlier tests in this block spent part of the budget — roll the
-    // window forward so this test measures a clean 3 + 1.
-    vi.advanceTimersByTime(61_000);
+    // Earlier tests in this block spent part of the budget (one of them
+    // rolled the window forward) — roll far enough that every prior entry
+    // has expired, so this test measures a clean 3 + 1.
+    vi.advanceTimersByTime(130_000);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       pushGetPreamble();

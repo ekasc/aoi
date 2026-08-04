@@ -2,11 +2,12 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import {
   LOCATION_ACCURACY_MAX_METERS,
   LOCATION_DESTINATION_NAME_MAX_LENGTH,
   LOCATION_DESTINATION_RADIUS_MAX_METERS,
+  LOCATION_LIVE_FRESHNESS_MINUTES,
   LOCATION_SHARE_MODES,
   isLocationShareFresh,
   type CurrentLocationResponse,
@@ -172,6 +173,35 @@ async function getLocationSpaceContext(
   };
 }
 
+// ── TTL sweeper ──────────────────────────────────────────────────────────
+// GET deletes a stale row when it happens to meet one, but if nobody GETs
+// (force-quit, an unopened one-time grant) the row would linger at rest.
+// Every share/report and opt-in gives the space a best-effort sweep, so an
+// expired location leaves no record even when nobody is looking. A failed
+// sweep must never break a request.
+
+async function sweepExpiredLocationShares(spaceId: string): Promise<void> {
+  const cutoff = new Date(
+    Date.now() - LOCATION_LIVE_FRESHNESS_MINUTES * 60_000
+  );
+
+  try {
+    await db
+      .delete(locationShares)
+      .where(
+        and(
+          eq(locationShares.spaceId, spaceId),
+          or(
+            lt(locationShares.reportedAt, cutoff),
+            isNotNull(locationShares.consumedAt)
+          )
+        )
+      );
+  } catch {
+    // Best effort only.
+  }
+}
+
 // ── GET current partner location ─────────────────────────────────────────
 // Returns the PARTNER's current share only when: both consented, a row
 // exists, and it is fresh. Everything else answers `{ location: null }`
@@ -203,11 +233,39 @@ locationRouter.get('/v1/spaces/current/location', async (c) => {
     return c.json({ location: null, youConsented, partnerConsented });
   }
 
-  const [share] = await db
-    .select()
-    .from(locationShares)
-    .where(eq(locationShares.userId, partnerUserId))
-    .limit(1);
+  // Consent re-check + row read in ONE transaction: a revocation that lands
+  // mid-GET cannot serve one last fix (the consent gate above is a fast
+  // path; this is the atomic one). The read is space-scoped as well.
+  const share = await db.transaction(async (tx) => {
+    const [member] = await tx
+      .select({ locationConsentAt: spaceMembers.locationConsentAt })
+      .from(spaceMembers)
+      .where(
+        and(
+          eq(spaceMembers.spaceId, spaceId),
+          eq(spaceMembers.userId, partnerUserId),
+          eq(spaceMembers.state, 'active')
+        )
+      )
+      .limit(1);
+
+    if (!member || member.locationConsentAt === null) {
+      return null;
+    }
+
+    const [row] = await tx
+      .select()
+      .from(locationShares)
+      .where(
+        and(
+          eq(locationShares.userId, partnerUserId),
+          eq(locationShares.spaceId, spaceId)
+        )
+      )
+      .limit(1);
+
+    return row ?? null;
+  });
 
   if (!share) {
     return c.json({ location: null, youConsented, partnerConsented });
@@ -278,6 +336,8 @@ locationRouter.post(
     if (!context.youConsented || !context.partnerConsented) {
       throw forbidden('Both partners need to opt in before sharing locations');
     }
+
+    void sweepExpiredLocationShares(spaceId);
 
     const input = c.req.valid('json');
     const now = new Date();
@@ -401,6 +461,8 @@ locationRouter.post(
       if (removed) {
         await notifyPartnerInSpace(spaceId, userId, 'location_stopped');
       }
+    } else {
+      void sweepExpiredLocationShares(spaceId);
     }
 
     return c.json({
@@ -444,6 +506,14 @@ locationRouter.post(
     if (!context.youConsented) {
       throw forbidden('You can only ask when you have opted in yourself');
     }
+
+    // Never deliver a request push to a partner who revoked — mutuality is
+    // checked at send time, not just on the client.
+    if (!context.partnerConsented) {
+      throw forbidden('Your partner also needs to opt in before you can ask');
+    }
+
+    void sweepExpiredLocationShares(spaceId);
 
     const [sender] = await db
       .select({ displayName: users.displayName })
