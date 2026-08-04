@@ -18,6 +18,7 @@ export const PUSH_NOTIFICATION_KINDS = [
   'location_request',
   'location_granted',
   'location_stopped',
+  'letter_sealed',
 ] as const;
 
 export type PushNotificationKind = (typeof PUSH_NOTIFICATION_KINDS)[number];

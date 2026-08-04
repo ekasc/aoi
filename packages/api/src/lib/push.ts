@@ -94,6 +94,10 @@ export function buildPushCopy(
         title: 'Location sharing stopped',
         body: 'Your partner stopped sharing their location.',
       };
+    case 'letter_sealed':
+      // Never the words, never the date — just the fact that something is
+      // waiting.
+      return { title: 'A letter, sealed', body: 'They sealed something for a future day.' };
   }
 }
 

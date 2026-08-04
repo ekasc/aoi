@@ -46,6 +46,8 @@ app/                  Expo Router routes (route groups below)
   (app)/question.tsx  "one question this week" ritual
   (app)/location.tsx  location consent + sharing controls (default OFF)
   (app)/partner-map.tsx  single-pin partner map (no trails, no history)
+  (app)/letters.tsx   the letters shelf (sealed time capsules)
+  (app)/letter/new.tsx  the letter-writing ceremony
 components/           Reusable UI (kebab-case files)
   ui/                 Primitives: button, icon-button, surface, divider,
                       glass-surface, android-glass-surface
@@ -53,6 +55,7 @@ components/           Reusable UI (kebab-case files)
   media/              media-picker, upload-progress, voice-recorder, audio-player
   squeeze/            squeeze-overlay
   location/           partner-map (single pin), location-request-prompt
+  letters/            letter-card (sealed = closed card, opened = the words)
 features/             Feature modules (state, repos, API clients — NOT React-router stuff)
   api-client.ts       Authenticated fetch + token refresh/retry
   auth/               AuthApi interface, remote (WorkOS) + mock impls, config
@@ -69,6 +72,8 @@ features/             Feature modules (state, repos, API clients — NOT React-r
                       repositories, shared ordering (someday-order.ts)
   question/           "One question this week" context + local (AsyncStorage) /
                       remote repositories, ISO-week mapping (question-of-the-week.ts)
+  letters/            Letters / time capsule context + local (AsyncStorage) /
+                      remote repositories, pure time derivations (letter-time.ts)
   time-together/      Pure derivations (days together, moments kept) for the
                       quiet profile line — no state, no storage
   squeeze/            Wordless signal (real push in remote, simulated in stub)
@@ -84,6 +89,7 @@ packages/api/         Hono + Drizzle + Postgres backend (own package.json, vites
 packages/shared/      @aoi/shared — API contract types (moment, calendar, space, auth, api,
                       question incl. ISO-week helpers + the 20-question bank,
                       push kinds, location sharing incl. shared freshness rules)
+                      letter incl. seal limits + ordering)
 tests/unit/           Frontend vitest tests (RN mocked to DOM — see tests/setup.ts)
 e2e/maestro/          auth-stub-smoke.yaml
 patches/              pnpm patches: expo-router (ctx ignore), @expo/metro-runtime (exports)
@@ -156,15 +162,17 @@ reassigned — tokens are device-scoped; `DELETE` on sign-out, no existence
 leaks). `sendPushToUser` batches to the Expo endpoint (injectable via
 `EXPO_PUSH_ENDPOINT`/`setPushEndpoint`), removes tokens whose tickets report
 `DeviceNotRegistered`/`InvalidPushToken`, and swallows ALL failures — push
-must never break a request. `notifyPartnerInSpace(spaceId, fromUserId, kind, data, fromName?)`
+must never break a request. `notifyPartnerInSpace(spaceId, fromUserId, kind, fromName?)`
 is the reusable hook for partner-facing features. Payloads carry
-`data.kind` + fixed vague copy only — NEVER moment text, locations, or any
-content (location pushes may carry the sender's display name in the copy —
-never coordinates).
+`data.kind` + fixed vague copy only — NEVER moment text, letter content,
+locations, or any content (location/letter pushes may carry the sender's
+display name in the copy — never coordinates, never the words, never the
+date).
 Kinds: `squeeze | moment_added | moment_edited | moment_deleted |
-location_request | location_granted | location_stopped`. Client
-receive routing lives in `features/push/push-context.tsx`; the foreground
-handler (banner visible, never sound) is set globally in `app/_layout.tsx`.
+location_request | location_granted | location_stopped | letter_sealed`.
+Client receive routing lives in `features/push/push-context.tsx`; the
+foreground handler (banner visible, never sound) is set globally in
+`app/_layout.tsx`.
 
 ### Location sharing ("they'll be home soon", never tracking)
 Optional, consensual, BOUNDED sharing — default OFF. **Both partners must
@@ -253,6 +261,31 @@ button on the profile tab. **Stub mode deliberately does NOT simulate a partner
 answer** — the reveal only means anything with their real words, so the stub
 shows only your own answer plus a soft "unlocks when they've written too" note.
 No badges, no notifications, no pressure. Never log answer content.
+
+### Letters / time capsule
+Write a letter, seal it to a future day. Sealed letters are **immutable**
+(the API exposes no edit/delete surface) and **locked until their day**: an
+unopened letter's body never leaves the server — for the partner AND for the
+author who wrote it. The lock is enforced server-side in the serializer
+(`letterRowToApi` in `src/lib/db.ts` includes `body` only when `openedAt` is
+set), so it holds on every read path including the seal response itself.
+**Honesty note:** the lock is temporal/API-enforced, not cryptographic —
+bodies are stored plaintext in Postgres and the gate is the API, not
+encryption. (Encryption tiers are designed, not built; see below.)
+Opening is atomic: `UPDATE letters SET opened_at, opened_by_user_id WHERE id
+AND opened_at IS NULL RETURNING` — the first open wins, a concurrent second
+reader gets the already-opened row (idempotent), and opening before the day
+returns a calm word-only 400 ("Not yet time") with no body. Membership-gated;
+cross-space ids return 404 (no existence leaks). `GET` list omits `body` for
+every unopened letter (author too) and computes `authorRole`/`readyToOpen`
+per request. Sealing notifies the partner via push (`letter_sealed`) — vague
+copy only, never the words, never the date. Frontend: `features/letters/`
+(context + AsyncStorage stub + remote repo) and screens `app/(app)/letters.tsx`
+(the shelf) + `app/(app)/letter/new.tsx` (the writing ceremony), entered from
+ONE quiet button on the profile tab. Stub mode is device-local (keyed
+`aoi.letters.v1.{userId}`) and simulates ONE plainly-documented partner
+letter sealed ~15s from first load so the reveal can be tried offline. Never
+log letter bodies.
 
 ### Calendar Event
 Scheduling block with start/end, actor (`you`/`partner`), label preset.
@@ -353,7 +386,14 @@ RootLayout (app/_layout.tsx)
               PushProvider   (token registration + push receive routing;
                               + <SqueezeOverlay/> + <LocationRequestPrompt/>
                               mounted here)
+          LettersProvider
+            SqueezeProvider
+              PushProvider   (token registration + push receive routing;
+                              + <SqueezeOverlay/> mounted here)
 ```
+
+`LettersProvider` must wrap `PushProvider` — push receive routing calls
+`useLetters().reload` on `letter_sealed`.
 
 Navigation redirects: signed out → `(public)`; no space → `(auth)/space-setup`;
 no theme selection → `(auth)/theme-select`.
@@ -405,6 +445,14 @@ most ONE ephemeral row per user, `mode` check constraint, nullable
 `destination` jsonb, `consumed_at` for one-time grants, latitude/longitude
 range checks) and `space_members.location_consent_at` (the both-consent
 gate); `0007_*` adds the `push_tokens` table (user-owned,
+| `/v1/spaces/current/letters` | letters / time capsule: POST seals a letter (body non-empty ≤5000, optional caption ≤80, sealedUntil strictly future within ~50y horizon — word-only 400s never echoing numbers/dates; notifies partner `letter_sealed`); GET lists (authorRole you/partner, caption, sealedUntil, isOpened, readyToOpen; body ONLY when opened — omitted for the author too) |
+| `/v1/letters/:id/open` | open a letter: due + unopened → atomic `UPDATE … SET opened_at, opened_by_user_id WHERE opened_at IS NULL RETURNING` then return with body; not due → calm 400 "Not yet time" (no body); already opened → idempotent with body; cross-space → 404 |
+
+DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
+Latest: `0008_*` adds the `letters` table (spaceId, authorUserId, nullable
+caption, body, `sealed_until`, nullable `opened_at` / `opened_by_user_id`,
+createdAt; indexed by (spaceId, sealed_until); immutable once sealed — no
+edit/delete surface); `0007_*` adds the `push_tokens` table (user-owned,
 `expo_push_token` unique, `platform`, `last_seen_at`; user FK cascades —
 tokens are ephemeral device artifacts, removed outright when dead);
 `0006_*` adds the `weekly_answers` table (spaceId/userId/weekKey/
@@ -521,6 +569,8 @@ no simulated partner — the reveal waits for a real second voice), and
 location sharing — honestly simulated: the pretend partner consents a couple
 of seconds after you opt in and grants a fixed, plainly-simulated place when
 asked (no real GPS, nothing leaves the device).
+letters / time capsule (device-local, with one plainly-simulated partner
+letter so the reveal can be tried offline).
 
 **Working (remote):** auth (WorkOS), moments (incl. edit/delete + activity
 provenance), calendar, the Someday list, spaces, preferences, media upload
@@ -529,6 +579,9 @@ and location-request/granted/stopped notifications), the weekly-question
 reveal gate (`weekly_answers`), and bounded location sharing (both-consent
 gate, three modes, one-time grants, freshness-purged single row) —
 against packages/api.
++ letter-sealed notifications), the weekly-question reveal gate
+(`weekly_answers`), and letters (sealed-until lock enforced server-side,
+atomic open) — against packages/api.
 
 **Known gaps / seams:**
 

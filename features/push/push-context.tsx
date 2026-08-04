@@ -4,6 +4,7 @@ import { useEffect, type PropsWithChildren } from 'react';
 
 import { isStubMode } from '@/features/api-client';
 import { useLocation } from '@/features/location/location-context';
+import { useLetters } from '@/features/letters/letters-context';
 import { useMoments } from '@/features/moments/moments-context';
 import { registerDevicePushToken } from '@/features/push/register-push-token';
 import { useSqueeze } from '@/features/squeeze/squeeze-context';
@@ -20,7 +21,8 @@ let registeredThisSession = false;
  *   (offline boot, denied permission) is retried on a later mount.
  * - Listens for received pushes and routes them: `squeeze` lights up the
  *   real overlay through the squeeze context; `moment_*` gently refreshes
- *   the timeline so partner changes appear without waiting for app focus.
+ *   the timeline so partner changes appear without waiting for app focus;
+ *   `letter_sealed` quietly refreshes the letters shelf.
  *   Pushes received while backgrounded/killed only surface when the user
  *   taps the notification — the response listener routes those too.
  *
@@ -36,6 +38,7 @@ export function PushProvider({ children }: PropsWithChildren) {
     refreshPartnerLocation,
     handlePartnerStopped,
   } = useLocation();
+  const { reload: reloadLetters } = useLetters();
 
   useEffect(() => {
     if (isStubMode() || registeredThisSession) {
@@ -89,6 +92,13 @@ export function PushProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      if (data.kind === 'letter_sealed') {
+        // They sealed something — the shelf picks it up quietly. The push
+        // itself never says what, or when.
+        void reloadLetters();
+        return;
+      }
+
       // moment_added | moment_edited | moment_deleted — pick up the
       // partner's change quietly.
       void refresh();
@@ -116,6 +126,7 @@ export function PushProvider({ children }: PropsWithChildren) {
     receiveSqueeze,
     refresh,
     refreshPartnerLocation,
+    reloadLetters,
   ]);
 
   return <>{children}</>;
