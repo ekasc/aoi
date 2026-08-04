@@ -438,24 +438,22 @@ only). Errors use `ApiError { error: { code, message } }` from @aoi/shared.
 | `/v1/spaces/current/location/stop` | DELETE idempotent — same calm 200 whether or not a row existed; notifies `location_stopped` only when one did |
 | `/v1/spaces/current/location/consent` | POST `{ consented }` — opting out deletes any live row + notifies; response carries both consent flags (mutuality is the feature) |
 | `/v1/spaces/current/location/request` | POST asks the partner for a one-time share (notifies `location_request` with sender name only); mutuality-gated; rate limited 3/min |
-
-DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0008_*` adds the `location_shares` table (`user_id` unique — at
-most ONE ephemeral row per user, `mode` check constraint, nullable
-`destination` jsonb, `consumed_at` for one-time grants, latitude/longitude
-range checks) and `space_members.location_consent_at` (the both-consent
-gate); `0007_*` adds the `push_tokens` table (user-owned,
 | `/v1/spaces/current/letters` | letters / time capsule: POST seals a letter (body non-empty ≤5000, optional caption ≤80, sealedUntil strictly future within ~50y horizon — word-only 400s never echoing numbers/dates; notifies partner `letter_sealed`); GET lists (authorRole you/partner, caption, sealedUntil, isOpened, readyToOpen; body ONLY when opened — omitted for the author too) |
 | `/v1/letters/:id/open` | open a letter: due + unopened → atomic `UPDATE … SET opened_at, opened_by_user_id WHERE opened_at IS NULL RETURNING` then return with body; not due → calm 400 "Not yet time" (no body); already opened → idempotent with body; cross-space → 404 |
 
 DB: Postgres + Drizzle (`src/db/schema.ts`), migrations in `drizzle/`.
-Latest: `0008_*` adds the `letters` table (spaceId, authorUserId, nullable
+Latest: `0009_*` adds the `letters` table (spaceId, authorUserId, nullable
 caption, body, `sealed_until`, nullable `opened_at` / `opened_by_user_id`,
 createdAt; indexed by (spaceId, sealed_until); immutable once sealed — no
-edit/delete surface); `0007_*` adds the `push_tokens` table (user-owned,
-`expo_push_token` unique, `platform`, `last_seen_at`; user FK cascades —
-tokens are ephemeral device artifacts, removed outright when dead);
-`0006_*` adds the `weekly_answers` table (spaceId/userId/weekKey/
+edit/delete surface); `0008_*` adds the `location_shares` table
+(`user_id` unique — at most ONE ephemeral row per user, `mode` check
+constraint, nullable `destination` jsonb, `consumed_at` for one-time
+grants, latitude/longitude range checks) and
+`space_members.location_consent_at` (the both-consent gate); `0007_*` adds
+the `push_tokens` table (user-owned, `expo_push_token` unique, `platform`,
+`last_seen_at`; user FK cascades — tokens are ephemeral device artifacts,
+removed outright when dead); `0006_*` adds the `weekly_answers` table
+(spaceId/userId/weekKey/
 questionId/answer + timestamps; unique per (space, user, week) for upsert,
 indexed by (space, week)) backing the "one question this week" reveal gate;
 `0005_*` adds the `someday_items` table (title/note/category + nullable

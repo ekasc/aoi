@@ -25,6 +25,8 @@ const locationMock = vi.hoisted(() => ({
   receiveRequest: vi.fn(),
   refreshPartnerLocation: vi.fn(async () => {}),
   handlePartnerStopped: vi.fn(),
+}));
+
 const lettersMock = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }));
@@ -36,6 +38,7 @@ vi.mock('@/features/moments/moments-context', () => ({
 }));
 vi.mock('@/features/location/location-context', () => ({
   useLocation: () => locationMock,
+}));
 vi.mock('@/features/letters/letters-context', () => ({
   useLetters: () => ({ reload: lettersMock.reload }),
 }));
@@ -252,7 +255,6 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     view.unmount();
   });
 
-  it('routes a tapped backgrounded location_request to the approval prompt', async () => {
   it('refreshes the letters shelf when the user taps a backgrounded letter_sealed push', async () => {
     const view = renderProvider();
     await waitFor(() => expect(responseListener).not.toBeNull());
@@ -262,7 +264,7 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     view.unmount();
   });
 
-  it('ignores unknown kinds tapped from the notification tray', async () => {
+  it('routes a tapped backgrounded location_request to the approval prompt', async () => {
     const view = renderProvider();
     await waitFor(() => expect(responseListener).not.toBeNull());
 

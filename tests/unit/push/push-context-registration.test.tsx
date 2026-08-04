@@ -42,6 +42,7 @@ vi.mock('@/features/location/location-context', () => ({
     refreshPartnerLocation: async () => {},
     handlePartnerStopped: () => {},
   }),
+}));
 vi.mock('@/features/letters/letters-context', () => ({
   useLetters: () => ({ reload: lettersMock.reload }),
 }));
