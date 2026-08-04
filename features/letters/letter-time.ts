@@ -117,7 +117,9 @@ export function getSealDateInYears(now: Date, years: number): Date {
  * `space.relationshipStartDate`), at 9am — the next "monthiversary" that is
  * a multiple of 12 months and still ahead of now. Day-of-month is clamped
  * like the calendar's anniversary markers (Jan 31 → Feb 28/29). Returns null
- * when the start date is missing or invalid.
+ * when the start date is missing or invalid, or when it is still in the
+ * future (nothing to celebrate before any time has been spent together; a
+ * start exactly equal to now is treated as already begun).
  */
 export function getNextAnniversary(
   relationshipStartIso: string | null | undefined,
@@ -130,6 +132,12 @@ export function getNextAnniversary(
   const start = parseRelationshipStart(relationshipStartIso);
 
   if (!start) {
+    return null;
+  }
+
+  // An anniversary needs time actually spent together — a start date in the
+  // future has nothing to celebrate yet.
+  if (start.getTime() > now.getTime()) {
     return null;
   }
 

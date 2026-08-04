@@ -163,6 +163,11 @@ describe('getNextAnniversary', () => {
     expect(getNextAnniversary('not-a-date', NOW)).toBeNull();
   });
 
+  it('returns null for a start date still in the future', () => {
+    // Nothing to celebrate before any time has been spent together.
+    expect(getNextAnniversary('2027-01-01', NOW)).toBeNull();
+  });
+
   it('finds the next whole-year anniversary at 9am', () => {
     // Started June 15, 2023 — the next whole-year mark after Aug 3, 2026
     // is June 15, 2027.
