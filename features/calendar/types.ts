@@ -1,4 +1,13 @@
+import type { CalendarEventRecurrence } from '@aoi/shared';
+
 export type CalendarActor = 'you' | 'partner';
+
+/**
+ * Weekly recurrence is deliberately SIMPLE — the API expands a weekly event
+ * into a bounded horizon of concrete, ordinary events (no series
+ * operations). Mirrors @aoi/shared's contract type.
+ */
+export type CalendarRecurrence = CalendarEventRecurrence;
 
 export const CALENDAR_PRESET_LABELS = [
   'Work',
@@ -32,6 +41,12 @@ export type CalendarEvent = {
   /** The couple is jointly involved — counts toward the countdown lane. */
   together?: boolean;
   /**
+   * Weekly recurrence marker. A weekly event is expanded into concrete
+   * instances (server-side in remote mode, in the local repository in stub
+   * mode); each instance is an ordinary event. Absent means 'none'.
+   */
+  recurrence?: CalendarRecurrence;
+  /**
    * Per-request ownership signal from the API (creator user id vs viewer).
    * Optional for locally constructed events; unknown must mean "not own".
    */
@@ -48,6 +63,8 @@ export type CreateCalendarEventInput = {
   reminderMinutesBefore?: number[];
   allDay?: boolean;
   together?: boolean;
+  /** 'weekly' expands into concrete weekly instances. */
+  recurrence?: CalendarRecurrence;
 };
 
 export type UpdateCalendarEventInput = {
@@ -59,6 +76,8 @@ export type UpdateCalendarEventInput = {
   reminderMinutesBefore?: number[];
   allDay?: boolean;
   together?: boolean;
+  /** Applies to this single instance only — never regenerates a series. */
+  recurrence?: CalendarRecurrence;
 };
 
 export type CalendarDaySummary = {
@@ -86,6 +105,12 @@ export type CalendarContextValue = {
   addEvent: (input: CreateCalendarEventInput) => Promise<void>;
   updateEvent: (input: UpdateCalendarEventInput) => Promise<void>;
   deleteEvent: (eventId: string) => Promise<void>;
+  /**
+   * Re-reads the current month + upcoming window from the repository. Used
+   * when a partner-side change arrives (push) and the local state may be
+   * stale.
+   */
+  refresh: () => Promise<void>;
   eventsForDay: Record<string, CalendarEvent[]>;
   getEventById: (eventId: string) => Promise<CalendarEvent | null>;
 };

@@ -3,9 +3,11 @@ import { parsePushNotificationData } from '@aoi/shared';
 import { useEffect, type PropsWithChildren } from 'react';
 
 import { isStubMode } from '@/features/api-client';
+import { useCalendar } from '@/features/calendar/calendar-context';
 import { useLocation } from '@/features/location/location-context';
 import { useLetters } from '@/features/letters/letters-context';
 import { useMoments } from '@/features/moments/moments-context';
+import { useProposals } from '@/features/proposals/proposals-context';
 import { registerDevicePushToken } from '@/features/push/register-push-token';
 import { useSqueeze } from '@/features/squeeze/squeeze-context';
 
@@ -22,7 +24,11 @@ let registeredThisSession = false;
  * - Listens for received pushes and routes them: `squeeze` lights up the
  *   real overlay through the squeeze context; `moment_*` gently refreshes
  *   the timeline so partner changes appear without waiting for app focus;
- *   `letter_sealed` quietly refreshes the letters shelf.
+ *   `letter_sealed` quietly refreshes the letters shelf; `event_*`
+ *   refreshes the calendar (a partner planned / shifted / let go of a plan
+ *   — the push never says which); `proposal_*` reloads the suggestions
+ *   (and the calendar too when one was accepted, since acceptance creates
+ *   a real event).
  *   Pushes received while backgrounded/killed only surface when the user
  *   taps the notification — the response listener routes those too.
  *
@@ -33,6 +39,8 @@ let registeredThisSession = false;
 export function PushProvider({ children }: PropsWithChildren) {
   const { receiveSqueeze } = useSqueeze();
   const { refresh } = useMoments();
+  const { refresh: refreshCalendar } = useCalendar();
+  const { reload: reloadProposals } = useProposals();
   const {
     receiveRequest,
     refreshPartnerLocation,
@@ -99,6 +107,32 @@ export function PushProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      if (
+        data.kind === 'event_added' ||
+        data.kind === 'event_updated' ||
+        data.kind === 'event_deleted'
+      ) {
+        // They planned something / a plan shifted / a plan was let go —
+        // re-read the calendar quietly. The push never says which event.
+        void refreshCalendar();
+        return;
+      }
+
+      if (data.kind === 'proposal_received' || data.kind === 'proposal_declined') {
+        // A new suggestion, or a gentle pass on one of yours — reload the
+        // list quietly.
+        void reloadProposals();
+        return;
+      }
+
+      if (data.kind === 'proposal_accepted') {
+        // They said yes — the suggestion became a real event, so both the
+        // list and the calendar refresh.
+        void reloadProposals();
+        void refreshCalendar();
+        return;
+      }
+
       // moment_added | moment_edited | moment_deleted — pick up the
       // partner's change quietly.
       void refresh();
@@ -125,8 +159,10 @@ export function PushProvider({ children }: PropsWithChildren) {
     receiveRequest,
     receiveSqueeze,
     refresh,
+    refreshCalendar,
     refreshPartnerLocation,
     reloadLetters,
+    reloadProposals,
   ]);
 
   return <>{children}</>;

@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
+import { buildWeeklyRecurrenceInstances } from '@/features/calendar/recurrence';
 import type {
   CalendarEvent,
   CalendarPresetLabel,
@@ -19,6 +20,8 @@ type CalendarEventRow = {
   reminder_minutes: string | null;
   all_day: number | null;
   together: number | null;
+  recurrence: string | null;
+  recurrence_group_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -53,6 +56,7 @@ function toCalendarEvent(row: CalendarEventRow): CalendarEvent {
       : undefined,
     allDay: row.all_day === 1,
     together: row.together === 1,
+    recurrence: row.recurrence === 'weekly' ? 'weekly' : 'none',
     // Stub mode has no user accounts: the actor is the only ownership
     // signal, keeping the pre-existing "you-created events are editable"
     // behavior.
@@ -62,6 +66,48 @@ function toCalendarEvent(row: CalendarEventRow): CalendarEvent {
 
 function createId() {
   return `cal_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+}
+
+function createGroupId() {
+  return `rec_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+}
+
+async function insertSingleEvent(
+  db: SQLite.SQLiteDatabase,
+  input: CreateCalendarEventInput,
+  recurrenceGroupId: string | null
+) {
+  const now = new Date().toISOString();
+  const id = createId();
+  const reminderJson = input.reminderMinutesBefore?.length
+    ? JSON.stringify(input.reminderMinutesBefore)
+    : null;
+
+  await db.runAsync(
+    `INSERT INTO calendar_events (
+      id, title, starts_at, ends_at, actor, actor_name,
+      label_preset, label_custom_text, reminder_minutes,
+      all_day, together, recurrence, recurrence_group_id,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    input.title.trim(),
+    input.startsAt,
+    input.endsAt,
+    input.actor,
+    input.actorName.trim(),
+    input.label.preset,
+    input.label.customText?.trim() || null,
+    reminderJson,
+    input.allDay ? 1 : 0,
+    input.together ? 1 : 0,
+    input.recurrence === 'weekly' ? 'weekly' : 'none',
+    recurrenceGroupId,
+    now,
+    now
+  );
+
+  return id;
 }
 
 export async function initCalendarDb() {
@@ -80,6 +126,8 @@ export async function initCalendarDb() {
       reminder_minutes TEXT,
       all_day INTEGER NOT NULL DEFAULT 0,
       together INTEGER NOT NULL DEFAULT 0,
+      recurrence TEXT NOT NULL DEFAULT 'none',
+      recurrence_group_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -110,6 +158,16 @@ export async function initCalendarDb() {
   if (!columnNames.has('together')) {
     await db.execAsync(
       `ALTER TABLE calendar_events ADD COLUMN together INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+  if (!columnNames.has('recurrence')) {
+    await db.execAsync(
+      `ALTER TABLE calendar_events ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none'`
+    );
+  }
+  if (!columnNames.has('recurrence_group_id')) {
+    await db.execAsync(
+      `ALTER TABLE calendar_events ADD COLUMN recurrence_group_id TEXT`
     );
   }
 }
@@ -177,34 +235,24 @@ export async function getEventById(eventId: string) {
 
 export async function insertEvent(input: CreateCalendarEventInput) {
   const db = await getDatabase();
-  const now = new Date().toISOString();
-  const id = createId();
-  const reminderJson = input.reminderMinutesBefore?.length
-    ? JSON.stringify(input.reminderMinutesBefore)
-    : null;
 
-  await db.runAsync(
-    `INSERT INTO calendar_events (
-      id, title, starts_at, ends_at, actor, actor_name,
-      label_preset, label_custom_text, reminder_minutes,
-      all_day, together, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id,
-    input.title.trim(),
-    input.startsAt,
-    input.endsAt,
-    input.actor,
-    input.actorName.trim(),
-    input.label.preset,
-    input.label.customText?.trim() || null,
-    reminderJson,
-    input.allDay ? 1 : 0,
-    input.together ? 1 : 0,
-    now,
-    now
-  );
+  // SIMPLE WEEKLY ONLY — mirrors the API: expand into a bounded horizon of
+  // CONCRETE weekly instances sharing one group id. Each instance is an
+  // ordinary event; there are no series operations.
+  if (input.recurrence === 'weekly') {
+    const recurrenceGroupId = createGroupId();
+    const instances = buildWeeklyRecurrenceInstances(input);
+    let firstId = '';
+    for (const instance of instances) {
+      const id = await insertSingleEvent(db, instance, recurrenceGroupId);
+      if (!firstId) {
+        firstId = id;
+      }
+    }
+    return firstId;
+  }
 
-  return id;
+  return insertSingleEvent(db, input, null);
 }
 
 export async function updateEvent(input: UpdateCalendarEventInput) {
@@ -218,7 +266,8 @@ export async function updateEvent(input: UpdateCalendarEventInput) {
     `UPDATE calendar_events
      SET title = ?, starts_at = ?, ends_at = ?,
          label_preset = ?, label_custom_text = ?,
-         reminder_minutes = ?, all_day = ?, together = ?, updated_at = ?
+         reminder_minutes = ?, all_day = ?, together = ?,
+         recurrence = ?, updated_at = ?
      WHERE id = ?`,
     input.title.trim(),
     input.startsAt,
@@ -228,6 +277,8 @@ export async function updateEvent(input: UpdateCalendarEventInput) {
     reminderJson,
     input.allDay ? 1 : 0,
     input.together ? 1 : 0,
+    // Applies to THIS instance only — never touches any series siblings.
+    input.recurrence === 'weekly' ? 'weekly' : 'none',
     now,
     input.id
   );

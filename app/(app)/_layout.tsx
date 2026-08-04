@@ -7,6 +7,7 @@ import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { LocationProvider } from "@/features/location/location-context";
 import { LettersProvider } from "@/features/letters/letters-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
+import { ProposalsProvider } from "@/features/proposals/proposals-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
 import { useSession } from "@/features/session/session-context";
@@ -71,6 +72,7 @@ export default function AuthenticatedAppLayout() {
 					<QuestionProvider>
 						<SqueezeProvider>
 							<LocationProvider>
+								<ProposalsProvider>
 								<LettersProvider>
 								<PushProvider>
 									<SqueezeOverlay />
@@ -193,9 +195,18 @@ export default function AuthenticatedAppLayout() {
 											...sheetOptions,
 										}}
 									/>
+									<Stack.Screen
+										name="proposal/new"
+										options={{
+											title: "Suggest a time",
+											presentation: useFormSheet ? "formSheet" : "modal",
+											...sheetOptions,
+										}}
+									/>
 								</Stack>
 							</PushProvider>
 								</LettersProvider>
+								</ProposalsProvider>
 						</LocationProvider>
 					</SqueezeProvider>
 					</QuestionProvider>

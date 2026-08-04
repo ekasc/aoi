@@ -83,6 +83,7 @@ export default function EditCalendarEventScreen() {
   const [endsAt, setEndsAt] = useState(new Date());
   const [allDay, setAllDay] = useState(false);
   const [together, setTogether] = useState(false);
+  const [repeatsWeekly, setRepeatsWeekly] = useState(false);
   const [reminderOffset, setReminderOffset] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [isWorking, setIsWorking] = useState(false);
@@ -118,6 +119,10 @@ export default function EditCalendarEventScreen() {
     setTogether((current) => !current);
   }, []);
 
+  const handleToggleRepeatsWeekly = useCallback(() => {
+    setRepeatsWeekly((current) => !current);
+  }, []);
+
   // Ownership comes from the server (creator user id vs viewer). `actor`
   // alone can't say — a user can create an event "about" their partner.
   // Unknown (missing) must mean not editable.
@@ -146,6 +151,7 @@ export default function EditCalendarEventScreen() {
         setEndsAt(new Date(foundEvent.endsAt));
         setAllDay(foundEvent.allDay ?? false);
         setTogether(foundEvent.together ?? false);
+        setRepeatsWeekly(foundEvent.recurrence === 'weekly');
         // The UI intentionally manages a single reminder offset while the
         // contract allows arrays; save below replaces whatever was stored
         // with a 0-or-1-element array, making this screen the source of truth.
@@ -215,6 +221,8 @@ export default function EditCalendarEventScreen() {
         reminderMinutesBefore: reminderOffset === null ? [] : [reminderOffset],
         allDay,
         together,
+        // Applies to THIS instance only — never regenerates a series.
+        recurrence: repeatsWeekly ? 'weekly' : 'none',
       });
 
       router.back();
@@ -233,6 +241,7 @@ export default function EditCalendarEventScreen() {
     isOwner,
     presetLabel,
     reminderOffset,
+    repeatsWeekly,
     router,
     title,
     together,
@@ -392,7 +401,30 @@ export default function EditCalendarEventScreen() {
                   Together
                 </ThemedText>
               </Pressable>
+              <Pressable
+                accessibilityLabel="Toggle repeats weekly"
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: repeatsWeekly }}
+                onPress={handleToggleRepeatsWeekly}
+                style={[
+                  styles.toggleChip,
+                  {
+                    borderColor: repeatsWeekly ? accent : border,
+                    backgroundColor: repeatsWeekly ? accent : surface2,
+                  },
+                ]}
+              >
+                <ThemedText type="caption" style={{ color: repeatsWeekly ? onAccent : text }}>
+                  Repeats weekly
+                </ThemedText>
+              </Pressable>
             </View>
+            {repeatsWeekly ? (
+              <ThemedText type="caption" selectable style={{ color: muted }}>
+                Weekly — and this one instance stays its own event, whatever
+                you change here.
+              </ThemedText>
+            ) : null}
 
             <ThemedText type="meta">Start</ThemedText>
             <NativeDateTimeField

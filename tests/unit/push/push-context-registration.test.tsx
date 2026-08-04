@@ -31,6 +31,14 @@ const lettersMock = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }));
 
+const calendarMock = vi.hoisted(() => ({
+  refresh: vi.fn(async () => {}),
+}));
+
+const proposalsMock = vi.hoisted(() => ({
+  reload: vi.fn(async () => {}),
+}));
+
 vi.mock('expo-notifications', () => notificationsMock);
 vi.mock('@/features/api-client', () => apiClientMock);
 vi.mock('@/features/moments/moments-context', () => ({
@@ -45,6 +53,12 @@ vi.mock('@/features/location/location-context', () => ({
 }));
 vi.mock('@/features/letters/letters-context', () => ({
   useLetters: () => ({ reload: lettersMock.reload }),
+}));
+vi.mock('@/features/calendar/calendar-context', () => ({
+  useCalendar: () => ({ refresh: calendarMock.refresh }),
+}));
+vi.mock('@/features/proposals/proposals-context', () => ({
+  useProposals: () => ({ reload: proposalsMock.reload }),
 }));
 vi.mock('@/features/push/push-api', () => pushApiMock);
 

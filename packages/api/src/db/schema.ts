@@ -248,6 +248,13 @@ export const calendarEvents = pgTable(
     reminderMinutesBefore: jsonb('reminder_minutes_before').$type<number[]>(),
     allDay: boolean('all_day').notNull().default(false),
     together: boolean('together').notNull().default(false),
+    // Recurrence is deliberately simple: weekly only. A weekly create expands
+    // into concrete instances sharing one `recurrence_group_id`; instances
+    // are otherwise ordinary events (no series operations).
+    recurrence: text('recurrence', { enum: ['none', 'weekly'] })
+      .notNull()
+      .default('none'),
+    recurrenceGroupId: uuid('recurrence_group_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -259,6 +266,42 @@ export const calendarEvents = pgTable(
     index('idx_calendar_events_owner')
       .on(table.createdByUserId, table.id)
       .where(sql`${table.deletedAt} is null`),
+  ]
+);
+
+// ── Event Proposals ──────────────────────────────────────────────────────
+// "How about Saturday?" — one partner proposes a time, the OTHER partner
+// accepts or gently declines. Only the proposee may resolve it, and only
+// while it is still pending (the transition is an atomic guarded UPDATE).
+// Accepting copies the proposal into a real calendar event.
+
+export const eventProposals = pgTable(
+  'event_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    proposerUserId: uuid('proposer_user_id')
+      .notNull()
+      .references(() => users.id),
+    title: text('title').notNull(),
+    proposedStart: timestamp('proposed_start', { withTimezone: true }).notNull(),
+    proposedEnd: timestamp('proposed_end', { withTimezone: true }).notNull(),
+    /** Mirrors the calendar label shape: { preset, customText? }. */
+    label: jsonb('label').$type<{ preset: string; customText?: string }>(),
+    status: text('status', { enum: ['pending', 'accepted', 'declined'] })
+      .notNull()
+      .default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_event_proposals_space_status').on(table.spaceId, table.status),
+    check(
+      'ck_event_proposals_status',
+      sql`${table.status} in ('pending', 'accepted', 'declined')`
+    ),
   ]
 );
 

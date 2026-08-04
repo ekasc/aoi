@@ -1,7 +1,12 @@
 import type {
+  CalendarEventRecurrence,
+  CalendarPresetLabel,
+  EventProposal,
   LocationShareDestination,
   LocationShareMode,
   PartnerLocationShare,
+  ProposalProposerRole,
+  ProposalStatus,
   SomedayAuthorRole,
   SomedayCategory,
   SomedayItem,
@@ -88,6 +93,7 @@ export function calendarEventRowToApi(
     reminderMinutesBefore?: number[] | null;
     allDay?: boolean;
     together?: boolean;
+    recurrence?: string | null;
     createdAt: Date;
     updatedAt: Date;
   },
@@ -102,6 +108,9 @@ export function calendarEventRowToApi(
       ? row.reminderMinutesBefore
       : undefined;
 
+  const recurrence: CalendarEventRecurrence =
+    row.recurrence === 'weekly' ? 'weekly' : 'none';
+
   return {
     id: row.id,
     title: row.title,
@@ -113,6 +122,7 @@ export function calendarEventRowToApi(
     reminderMinutesBefore,
     allDay: row.allDay ?? false,
     together: row.together ?? false,
+    recurrence,
     // Per-request ownership: only the requesting user's own events are
     // editable/deletable on the client (actor alone can't say — a user can
     // create an event "about" their partner).
@@ -120,6 +130,53 @@ export function calendarEventRowToApi(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Convert an event-proposal DB row to its API shape. Authorship
+ * (`proposerRole`) is computed per request from the proposer's user id
+ * relative to the viewer — the two people in a space are always either "you"
+ * or "partner". The label jsonb is passed through only when it carries a
+ * preset.
+ */
+export function proposalRowToApi(
+  row: {
+    id: string;
+    proposerUserId: string;
+    proposerName: string;
+    title: string;
+    proposedStart: Date;
+    proposedEnd: Date;
+    label: { preset: string; customText?: string } | null;
+    status: string;
+    createdAt: Date;
+    resolvedAt: Date | null;
+  },
+  viewerUserId: string
+): EventProposal {
+  const isOwn = row.proposerUserId === viewerUserId;
+  const proposerRole: ProposalProposerRole = isOwn ? 'you' : 'partner';
+
+  const proposal: EventProposal = {
+    id: row.id,
+    proposerRole,
+    proposerName: isOwn ? 'You' : row.proposerName,
+    title: row.title,
+    proposedStart: row.proposedStart.toISOString(),
+    proposedEnd: row.proposedEnd.toISOString(),
+    status: row.status as ProposalStatus,
+    createdAt: row.createdAt.toISOString(),
+    resolvedAt: row.resolvedAt?.toISOString() ?? null,
+  };
+
+  if (row.label && typeof row.label.preset === 'string') {
+    proposal.label =
+      row.label.preset === 'Other' && row.label.customText
+        ? { preset: 'Other', customText: row.label.customText }
+        : { preset: row.label.preset as CalendarPresetLabel };
+  }
+
+  return proposal;
 }
 
 /**

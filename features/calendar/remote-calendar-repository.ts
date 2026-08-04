@@ -80,6 +80,8 @@ export async function insertEvent(input: CreateCalendarEventInput): Promise<stri
       reminderMinutesBefore: input.reminderMinutesBefore,
       allDay: input.allDay,
       together: input.together,
+      // 'weekly' expands into concrete instances server-side.
+      recurrence: input.recurrence,
     }),
   });
   return event.id;
@@ -97,6 +99,8 @@ export async function updateEvent(input: UpdateCalendarEventInput): Promise<void
       reminderMinutesBefore: input.reminderMinutesBefore ?? [],
       allDay: input.allDay,
       together: input.together,
+      // Applies to this single instance only — never regenerates a series.
+      recurrence: input.recurrence,
     }),
   });
 }

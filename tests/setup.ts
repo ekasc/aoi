@@ -4,21 +4,53 @@ function flattenStyle(style: any): any {
   if (Array.isArray(style)) {
     const merged: Record<string, any> = {};
     for (const s of style) {
-      if (s && typeof s === 'object') Object.assign(merged, s);
+      // RN flattens recursively — a style entry may itself be an array.
+      const flat = flattenStyle(s);
+      if (flat && typeof flat === 'object') Object.assign(merged, flat);
     }
     return merged;
   }
   return style;
 }
 
+// RN props are not DOM attributes — mirror the ones tests interact with:
+// accessibilityLabel / accessibilityState ALSO appear as their aria
+// equivalents so getByLabelText and aria-checked assertions work on mocked
+// Views and Pressables (the originals stay for attribute-style queries), and
+// onPress ALSO becomes onClick so fireEvent.click can tap them.
+function withAriaProps(props: Record<string, any>): Record<string, any> {
+  const next: Record<string, any> = { ...props };
+  if (typeof props.accessibilityLabel === 'string') {
+    next['aria-label'] = props.accessibilityLabel;
+  }
+  if (props.accessibilityState && typeof props.accessibilityState.checked === 'boolean') {
+    next['aria-checked'] = String(props.accessibilityState.checked);
+  }
+  if (props.accessibilityState && typeof props.accessibilityState.selected === 'boolean') {
+    next['aria-selected'] = String(props.accessibilityState.selected);
+  }
+  if (typeof props.onPress === 'function') {
+    next.onClick = props.onPress;
+  }
+  return next;
+}
+
 function createDiv(children: any, style: any, props: Record<string, any>) {
   const React = require('react');
-  return React.createElement('div', { style: flattenStyle(style), ...props }, children);
+  return React.createElement(
+    'div',
+    { style: flattenStyle(style), ...withAriaProps(props) },
+    children
+  );
 }
 
 function createSpan(children: any, style: any, props: Record<string, any>) {
   const React = require('react');
-  return React.createElement('span', { style: flattenStyle(style), ...props }, children);
+  return React.createElement(
+    'span',
+    { style: flattenStyle(style), ...withAriaProps(props) },
+    children
+  );
 }
 
 vi.mock('react-native', () => {
@@ -32,6 +64,17 @@ vi.mock('react-native', () => {
   const Text = (props: any) => {
     const { children, style, ...rest } = props;
     return createSpan(children, style, rest);
+  };
+
+  const TextInput = (props: any) => {
+    const { style, value, onChangeText, placeholder, ...rest } = props;
+    return React.createElement('input', {
+      style: flattenStyle(style),
+      value: value ?? '',
+      placeholder,
+      onChange: (event: any) => onChangeText?.(event.target.value),
+      ...withAriaProps(rest),
+    });
   };
 
   const Image = ({ source, style, ...props }: any) => {
@@ -49,6 +92,7 @@ vi.mock('react-native', () => {
     },
     View,
     Text,
+    TextInput,
     Image,
     Platform: { OS: 'ios', select: (obj: any) => obj.ios },
     Dimensions: { get: () => ({ width: 390, height: 844 }) },
