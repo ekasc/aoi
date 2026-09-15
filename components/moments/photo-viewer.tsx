@@ -62,17 +62,72 @@ export function PhotoViewer({
   onClose,
   onOpenMemory,
 }: PhotoViewerProps) {
+  const reduceMotion = useReducedMotion();
+  const total = photos.length;
+  // One canonical opening index. The list's scroll position, the counter,
+  // and the Open-memory target all read it, so they cannot disagree: an
+  // empty set or an out-of-range tap clamps once, here.
+  const safeInitialIndex = Math.max(0, Math.min(initialIndex, Math.max(total - 1, 0)));
+  // The session's identity is part of the key: a set that changes under an
+  // open viewer mounts a fresh session at the canonical index instead of
+  // keeping a scroll position that no longer matches the counter. The key
+  // fingerprints the photos themselves — a length is not a set, and a
+  // hand-rolled join can collide when a URI contains the separator — and
+  // never includes `page`, so swiping inside a session neither remounts
+  // nor snaps back.
+  const sessionKey = `${JSON.stringify(
+    photos.map((photo) => [photo.momentId, photo.uri]),
+  )}:${safeInitialIndex}`;
+
+  if (!visible || total === 0) {
+    return null;
+  }
+
+  return (
+    <Modal
+      animationType={reduceMotion ? 'none' : 'fade'}
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible
+    >
+      <GestureHandlerRootView accessibilityViewIsModal style={styles.root}>
+        <ViewerSession
+          key={sessionKey}
+          photos={photos}
+          initialIndex={safeInitialIndex}
+          onClose={onClose}
+          onOpenMemory={onOpenMemory}
+        />
+      </GestureHandlerRootView>
+    </Modal>
+  );
+}
+
+/**
+ * One viewing session. Mounted fresh per session key, so page, paging
+ * lock, and dismiss fade all start at rest without any reset logic: a
+ * drag-to-dismiss can't leave the next opening faded, and closing via X
+ * while zoomed can't leave paging locked.
+ */
+function ViewerSession({
+  photos,
+  initialIndex,
+  onClose,
+  onOpenMemory,
+}: {
+  photos: ViewerPhoto[];
+  initialIndex: number;
+  onClose: () => void;
+  onOpenMemory: (photo: ViewerPhoto) => void;
+}) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const background = useThemeColor({}, 'background');
   const textPrimary = useThemeColor({}, 'textPrimary');
   const muted = useThemeColor({}, 'muted');
-  const reduceMotion = useReducedMotion();
-  // One canonical opening index. The list's scroll position, the counter,
-  // and the Open-memory target all read it, so they cannot disagree: an
-  // empty set or an out-of-range tap clamps once, here.
-  const safeInitialIndex = Math.max(0, Math.min(initialIndex, Math.max(photos.length - 1, 0)));
-  const [page, setPage] = useState(safeInitialIndex);
+  const [page, setPage] = useState(initialIndex);
   // A zoomed photo locks horizontal paging so pan gestures own the photo.
   const [pagerEnabled, setPagerEnabled] = useState(true);
   // Dismiss-drag fade for the viewer ground, written straight from the
@@ -89,34 +144,6 @@ export function PhotoViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-  // This component stays mounted while the modal is closed — it returns
-  // null, so the list unmounts but this state does not — and `page` can
-  // therefore outlive the session that set it. Re-sync on the render that
-  // opens the viewer (adjusting state during render, React's pattern for
-  // derived state): opening at photo 4 reads "Photo 4 of 5" on the first
-  // frame, and a later session over a different set starts fresh instead of
-  // inheriting the previous position.
-  const [openSession, setOpenSession] = useState({ visible, index: safeInitialIndex, setKey: '' });
-  // initialScrollIndex only applies on mount, so the session's identity is
-  // part of the index key: a set that changes under an open viewer mounts a
-  // fresh list at the canonical index instead of keeping a scroll position
-  // that no longer matches the counter. The key fingerprints the photos
-  // themselves — a length is not a set, and a hand-rolled join can collide
-  // when a URI contains the separator — and never includes `page`, so
-  // swiping inside a session neither remounts nor snaps back.
-  const sessionKey = `${JSON.stringify(
-    photos.map((photo) => [photo.momentId, photo.uri]),
-  )}:${safeInitialIndex}`;
-  if (
-    openSession.visible !== visible ||
-    openSession.index !== safeInitialIndex ||
-    openSession.setKey !== sessionKey
-  ) {
-    setOpenSession({ visible, index: safeInitialIndex, setKey: sessionKey });
-    if (visible) {
-      setPage(safeInitialIndex);
-    }
-  }
 
   const total = photos.length;
   const current = photos[Math.min(page, total - 1)];
@@ -169,66 +196,50 @@ export function PhotoViewer({
     opacity: 1 - dismiss.value,
   }));
 
-  if (!visible || total === 0) {
-    return null;
-  }
-
   return (
-    <Modal
-      animationType={reduceMotion ? 'none' : 'fade'}
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      statusBarTranslucent
-      transparent
-      visible
-    >
-      <GestureHandlerRootView style={styles.root}>
-        <View accessibilityViewIsModal style={styles.inner}>
-          <Animated.View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { backgroundColor: background }, scrimStyle]}
-          />
-          <FlatList
-            key={sessionKey}
-            data={photos}
-            horizontal
-            pagingEnabled
-            scrollEnabled={pagerEnabled}
-            showsHorizontalScrollIndicator={false}
-            initialScrollIndex={safeInitialIndex}
-            getItemLayout={(_data, index) => ({
-              length: windowWidth,
-              offset: windowWidth * index,
-              index,
-            })}
-            keyExtractor={(item, index) => `${item.uri}:${index}`}
-            onMomentumScrollEnd={handleMomentumEnd}
-            renderItem={renderPhoto}
-            style={styles.list}
-          />
-          <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeStyle]}>
-            <View style={[styles.top, { paddingTop: insets.top + Spacing[8] }]}>
-              <IconButton
-                accessibilityLabel="Close photo"
-                label="Close photo"
-                onPress={onClose}
-                variant="secondary"
-              >
-                <Ionicons color={textPrimary} name="close" size={20} />
-              </IconButton>
-            </View>
-            <View style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[16] }]}>
-              {total > 1 ? (
-                <ThemedText type="caption" style={{ color: muted }}>
-                  Photo {Math.min(page, total - 1) + 1} of {total}
-                </ThemedText>
-              ) : null}
-              <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
-            </View>
-          </Animated.View>
+    <View accessibilityViewIsModal style={styles.inner}>
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { backgroundColor: background }, scrimStyle]}
+      />
+      <FlatList
+        data={photos}
+        horizontal
+        pagingEnabled
+        scrollEnabled={pagerEnabled}
+        showsHorizontalScrollIndicator={false}
+        initialScrollIndex={initialIndex}
+        getItemLayout={(_data, index) => ({
+          length: windowWidth,
+          offset: windowWidth * index,
+          index,
+        })}
+        keyExtractor={(item, index) => `${item.uri}:${index}`}
+        onMomentumScrollEnd={handleMomentumEnd}
+        renderItem={renderPhoto}
+        style={styles.list}
+      />
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeStyle]}>
+        <View style={[styles.top, { paddingTop: insets.top + Spacing[8] }]}>
+          <IconButton
+            accessibilityLabel="Close photo"
+            label="Close photo"
+            onPress={onClose}
+            variant="secondary"
+          >
+            <Ionicons color={textPrimary} name="close" size={20} />
+          </IconButton>
         </View>
-      </GestureHandlerRootView>
-    </Modal>
+        <View style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[16] }]}>
+          {total > 1 ? (
+            <ThemedText type="caption" style={{ color: muted }}>
+              Photo {Math.min(page, total - 1) + 1} of {total}
+            </ThemedText>
+          ) : null}
+          <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
+        </View>
+      </Animated.View>
+    </View>
   );
 }
 
