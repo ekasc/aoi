@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /** Generate a cryptographically random token as hex string. */
 export function randomToken(length = 32): string {
@@ -24,4 +24,17 @@ export function generateInviteCode(): string {
 /** Normalize an invite code for lookup (uppercase, no spaces). */
 export function normalizeInviteCode(code: string): string {
   return code.toUpperCase().replace(/\s/g, '');
+}
+
+/**
+ * Constant-time secret comparison (webhook authorization). Never throws on
+ * length mismatch — unequal lengths simply do not match.
+ */
+export function secretsEqual(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length || a.length === 0) {
+    return false;
+  }
+  return timingSafeEqual(a, b);
 }

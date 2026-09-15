@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Standalone config for local D1 migration CLI only:
+  //
+  //   pnpm db:migrate:local
+  //   → wrangler d1 migrations apply aoi-db-preview --local --config wrangler.migrations.jsonc
+  //
+  // wrangler.jsonc must stay binding-free (the Cloudflare Vite plugin merges
+  // it with vite.config.ts via defu, which CONCATENATES arrays — declaring
+  // d1_databases there would duplicate the binding on the emitted worker).
+  // This file mirrors ENV_BINDINGS.dev from vite.config.ts one-to-one so the
+  // CLI writes to the SAME local state key as the dev server
+  // (.wrangler/state/v3/d1/miniflare-D1DatabaseObject/<hash>.sqlite).
+  "name": "aoi-api",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aoi-db-preview",
+      "database_id": "59157bef-4efd-4076-9cd9-771c7d274693",
+      "migrations_dir": "drizzle-d1"
+    }
+  ]
+}

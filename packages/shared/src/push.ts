@@ -1,14 +1,10 @@
-/**
- * Push notification contract types shared by the API and the client.
- *
- * Privacy rule: push payloads carry a `kind` and vague copy only — never
- * moment text, locations, or answers. The API builds titles/bodies from the
- * kind alone; nothing content-shaped ever enters a payload.
- */
+import { z } from 'zod';
 
 export const PUSH_TOKEN_PLATFORMS = ['ios', 'android', 'web', 'unknown'] as const;
 
-export type PushTokenPlatform = (typeof PUSH_TOKEN_PLATFORMS)[number];
+export const pushTokenPlatformSchema = z.enum(PUSH_TOKEN_PLATFORMS);
+
+export type PushTokenPlatform = z.infer<typeof pushTokenPlatformSchema>;
 
 export const PUSH_NOTIFICATION_KINDS = [
   'squeeze',
@@ -27,26 +23,49 @@ export const PUSH_NOTIFICATION_KINDS = [
   'proposal_declined',
 ] as const;
 
-export type PushNotificationKind = (typeof PUSH_NOTIFICATION_KINDS)[number];
+export const pushNotificationKindSchema = z.enum(PUSH_NOTIFICATION_KINDS);
+
+export type PushNotificationKind = z.infer<typeof pushNotificationKindSchema>;
 
 /** The only structured data a push ever carries — kind only, never content. */
-export type PushNotificationData = {
-  kind: PushNotificationKind;
-};
+export const pushNotificationDataSchema = z.object({
+  kind: pushNotificationKindSchema,
+});
 
-export type RegisterPushTokenRequest = {
-  expoPushToken: string;
-  platform?: PushTokenPlatform;
-};
+export type PushNotificationData = z.infer<typeof pushNotificationDataSchema>;
 
-export type RegisterPushTokenResponse = {
-  id: string;
-  platform: PushTokenPlatform;
-};
+/** Upper bound for a stored Expo push token (shared by API validation). */
+export const PUSH_TOKEN_MAX_LENGTH = 200;
 
-export type UnregisterPushTokenRequest = {
-  expoPushToken: string;
-};
+export const registerPushTokenRequestSchema = z.object({
+  expoPushToken: z
+    .string()
+    .min(1)
+    .max(PUSH_TOKEN_MAX_LENGTH)
+    .refine(isExpoPushToken, { message: 'Invalid push token format' }),
+  platform: pushTokenPlatformSchema.optional(),
+});
+
+export type RegisterPushTokenRequest = z.infer<
+  typeof registerPushTokenRequestSchema
+>;
+
+export const registerPushTokenResponseSchema = z.object({
+  id: z.string(),
+  platform: pushTokenPlatformSchema,
+});
+
+export type RegisterPushTokenResponse = z.infer<
+  typeof registerPushTokenResponseSchema
+>;
+
+export const unregisterPushTokenRequestSchema = z.object({
+  expoPushToken: z.string(),
+});
+
+export type UnregisterPushTokenRequest = z.infer<
+  typeof unregisterPushTokenRequestSchema
+>;
 
 const EXPO_PUSH_TOKEN_PATTERN = /^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/;
 

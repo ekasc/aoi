@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // ═══════════════════════════════════════════════════════════════════════
+  // Aoi API — wrangler base config.
+  // ═══════════════════════════════════════════════════════════════════════
+  // This file is the BASE config for the Cloudflare Vite plugin. Bindings
+  // (D1 / R2 / queues / rate limits / analytics) are NOT declared here —
+  // they come from `vite.config.ts` (`ENV_BINDINGS`, selected by
+  // `AOI_DEPLOY_ENV`). The plugin merges the file config with the
+  // customizer's result (defu concatenates arrays), so declaring bindings in
+  // BOTH places would duplicate them on the emitted worker.
+  //
+  //   pnpm deploy:dev         → AOI_DEPLOY_ENV=dev     (worker: aoi-api)
+  //   pnpm deploy:preview     → AOI_DEPLOY_ENV=preview (worker: aoi-api-preview)
+  //   pnpm deploy:production  → AOI_DEPLOY_ENV=prod    (worker: aoi-api-prod)
+  //
+  // `wrangler dev` runs through the same Vite plugin and resolves the same
+  // way (AOI_DEPLOY_ENV defaults to dev), so local dev uses dev bindings.
+  "name": "aoi-api",
+  // Compatibility (date + flags) is owned by vite.config.ts (single source;
+  // declaring it here too causes the plugin to emit `nodejs_compat` twice —
+  // API error 10021 on deploy).
+  "main": "./src/worker.ts",
+  "observability": {
+    "enabled": true
+  }
+}

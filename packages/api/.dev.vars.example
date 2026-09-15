@@ -1,0 +1,23 @@
+# Local development secrets for `wrangler dev` / the Vite plugin.
+# Copy to `.dev.vars` and fill in real values — never commit `.dev.vars`.
+#
+# Required by the app before remote E2E is possible (user-owned gates):
+# BETTER_AUTH_SECRET=<generate: openssl rand -base64 32>
+# GOOGLE_CLIENT_ID=<web client id — must equal the app's EXPO_PUBLIC_GOOGLE_CLIENT_ID>
+# GOOGLE_CLIENT_SECRET=
+# APPLE_CLIENT_ID=<Services ID for web/Android sign-in>
+# APPLE_CLIENT_SECRET=<ES256 client secret signed with your Apple private key>
+# APPLE_APP_BUNDLE_ID=<native app bundle id — required for iOS expo-apple-authentication idTokens>
+# APP_BASE_URL=http://localhost:8787 (or the deployed worker URL)
+#
+# Optional R2 S3 presigning credentials (direct PUT path):
+# R2_ACCOUNT_ID=
+# R2_ACCESS_KEY_ID=
+# R2_SECRET_ACCESS_KEY=
+#
+# Billing webhook (P8A): dashboard-configured static secret the worker
+# verifies on every RevenueCat delivery. Absent = webhook 500s (fail
+# closed); Plus reads keep working (inactive) regardless.
+# REVENUECAT_WEBHOOK_SECRET=
+# Optional override; must match the client EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID.
+# REVENUECAT_PLUS_ENTITLEMENT_ID=plus

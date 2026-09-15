@@ -1,0 +1,1 @@
+ALTER TABLE `moments` ADD `media_id` text;

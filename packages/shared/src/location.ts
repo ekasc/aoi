@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * Optional, consensual, bounded location sharing — "they'll be home soon",
  * never tracking.
@@ -19,7 +21,9 @@ export const LOCATION_SHARE_MODES = [
   'on_request_granted',
 ] as const;
 
-export type LocationShareMode = (typeof LOCATION_SHARE_MODES)[number];
+export const locationShareModeSchema = z.enum(LOCATION_SHARE_MODES);
+
+export type LocationShareMode = z.infer<typeof locationShareModeSchema>;
 
 /** How long a reported position stays servable, per mode. */
 export const LOCATION_LIVE_FRESHNESS_MINUTES = 15;
@@ -30,57 +34,73 @@ export const LOCATION_ACCURACY_MAX_METERS = 5000;
 export const LOCATION_DESTINATION_NAME_MAX_LENGTH = 80;
 export const LOCATION_DESTINATION_RADIUS_MAX_METERS = 10000;
 
-export type LocationShareDestination = {
-  name: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
-};
+export const locationShareDestinationSchema = z.object({
+  name: z.string().min(1).max(LOCATION_DESTINATION_NAME_MAX_LENGTH),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().min(0).max(LOCATION_DESTINATION_RADIUS_MAX_METERS),
+});
+
+export type LocationShareDestination = z.infer<
+  typeof locationShareDestinationSchema
+>;
 
 /**
  * POST /v1/spaces/current/location/share — upserts the caller's current
  * position. `reportedAt` is always server-assigned; clients never supply it.
  */
-export type LocationShareRequest = {
-  mode: LocationShareMode;
-  destination?: LocationShareDestination;
-  latitude: number;
-  longitude: number;
-  accuracyMeters?: number;
-};
+export const locationShareRequestSchema = z.object({
+  mode: locationShareModeSchema,
+  destination: locationShareDestinationSchema.optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracyMeters: z.number().min(0).max(LOCATION_ACCURACY_MAX_METERS).optional(),
+});
 
-export type LocationConsentRequest = {
-  consented: boolean;
-};
+export type LocationShareRequest = z.infer<typeof locationShareRequestSchema>;
 
-export type LocationConsentResponse = {
-  youConsented: boolean;
-  partnerConsented: boolean;
-};
+export const locationConsentRequestSchema = z.object({
+  consented: z.boolean(),
+});
+
+export type LocationConsentRequest = z.infer<typeof locationConsentRequestSchema>;
+
+export const locationConsentResponseSchema = z.object({
+  youConsented: z.boolean(),
+  partnerConsented: z.boolean(),
+});
+
+export type LocationConsentResponse = z.infer<
+  typeof locationConsentResponseSchema
+>;
 
 /**
  * The partner's current share, exactly as served by
  * GET /v1/spaces/current/location. Only ever the partner's position — the
  * caller's own row is never returned.
  */
-export type PartnerLocationShare = {
-  mode: LocationShareMode;
-  latitude: number;
-  longitude: number;
-  accuracyMeters: number | null;
-  reportedAt: string;
-  destination: LocationShareDestination | null;
-};
+export const partnerLocationShareSchema = z.object({
+  mode: locationShareModeSchema,
+  latitude: z.number(),
+  longitude: z.number(),
+  accuracyMeters: z.number().nullable(),
+  reportedAt: z.string(),
+  destination: locationShareDestinationSchema.nullable(),
+});
 
-export type CurrentLocationResponse = {
+export type PartnerLocationShare = z.infer<typeof partnerLocationShareSchema>;
+
+export const currentLocationResponseSchema = z.object({
   /** Null whenever nothing qualifies (no consent on either side, no row,
    *  stale row, consumed grant) — a calm 200, never an error. */
-  location: PartnerLocationShare | null;
+  location: partnerLocationShareSchema.nullable(),
   /** Consent flags for the consent screen (both members may see these —
    *  mutuality is the feature). Positions are never derived from them. */
-  youConsented: boolean;
-  partnerConsented: boolean;
-};
+  youConsented: z.boolean(),
+  partnerConsented: z.boolean(),
+});
+
+export type CurrentLocationResponse = z.infer<typeof currentLocationResponseSchema>;
 
 /** How fresh a share must be to be servable, by mode. */
 export function getLocationFreshnessMs(mode: LocationShareMode): number {

@@ -1,11 +1,4 @@
-/**
- * One question this week — the couple's optional weekly ritual.
- *
- * A single handcrafted question per ISO week; both partners answer privately
- * and the answers reveal only when both are in. The week -> question mapping
- * is deterministic and identical for both partners (pure functions below).
- * Strictly optional, never nagging: no notifications, no badges, no pressure.
- */
+import { z } from 'zod';
 
 export const WEEKLY_ANSWER_MAX_LENGTH = 500;
 
@@ -37,13 +30,15 @@ export const WEEKLY_QUESTIONS = [
   'What do you want them to know you were thinking about?',
 ] as const;
 
-export type WeeklyQuestion = {
+export const weeklyQuestionSchema = z.object({
   /** ISO week key, e.g. `2026-W32`. Same for both partners. */
-  weekKey: string;
+  weekKey: z.string(),
   /** Index into WEEKLY_QUESTIONS; snapshotted onto answer rows. */
-  questionId: number;
-  question: string;
-};
+  questionId: z.number(),
+  question: z.string(),
+});
+
+export type WeeklyQuestion = z.infer<typeof weeklyQuestionSchema>;
 
 export type IsoWeekParts = {
   isoYear: number;
@@ -100,22 +95,26 @@ export function getWeeklyQuestionForDate(date: Date): WeeklyQuestion {
  * always relative to the viewer. The partner's answer content is only ever
  * present when `revealed` is true (both partners have answered this week).
  */
-export type WeeklyQuestionResponse = {
-  weekKey: string;
-  questionId: number;
-  question: string;
+export const weeklyQuestionResponseSchema = z.object({
+  weekKey: z.string(),
+  questionId: z.number(),
+  question: z.string(),
   /** The viewer's saved answer; null until they submit. */
-  yourAnswer: string | null;
-  yourAnswerUpdatedAt: string | null;
+  yourAnswer: z.string().nullable(),
+  yourAnswerUpdatedAt: z.string().nullable(),
   /** The partner has written something (timing stays private). */
-  partnerAnswered: boolean;
+  partnerAnswered: z.boolean(),
   /** Null until both answers are in — the reveal gate. */
-  partnerAnswer: string | null;
-  partnerName: string | null;
+  partnerAnswer: z.string().nullable(),
+  partnerName: z.string().nullable(),
   /** True only when both partners have answered this week. */
-  revealed: boolean;
-};
+  revealed: z.boolean(),
+});
 
-export type PutWeeklyAnswerRequest = {
-  answer: string;
-};
+export type WeeklyQuestionResponse = z.infer<typeof weeklyQuestionResponseSchema>;
+
+export const putWeeklyAnswerRequestSchema = z.object({
+  answer: z.string().min(1).max(WEEKLY_ANSWER_MAX_LENGTH),
+});
+
+export type PutWeeklyAnswerRequest = z.infer<typeof putWeeklyAnswerRequestSchema>;
