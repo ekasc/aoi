@@ -6,6 +6,7 @@ import {
 	type TextStyle,
 	type ViewStyle,
 } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 
 import { Radii } from "@/constants/theme";
 import { ThemedText } from "@/components/themed-text";
@@ -23,6 +24,7 @@ export type ButtonProps = Omit<PressableProps, "style"> & {
 type VariantStyles = {
 	container: ViewStyle;
 	label: TextStyle;
+	pressedContainer?: ViewStyle;
 };
 
 export function Button({
@@ -33,52 +35,52 @@ export function Button({
 	accessibilityLabel,
 	...rest
 }: ButtonProps) {
-	const accent = useThemeColor({}, "accent");
-	const onAccent = useThemeColor({}, "onAccent");
-	const surface = useThemeColor({}, "surface");
-	const border = useThemeColor({}, "border");
-	const text = useThemeColor({}, "text");
-	const danger = useThemeColor({}, "danger");
-	const onDanger = useThemeColor({}, "onDanger");
-	const surface2 = useThemeColor({}, "background");
+	const primary = useThemeColor({}, "primary");
+	const primaryPressed = useThemeColor({}, "primaryPressed");
+	const primaryText = useThemeColor({}, "primaryText");
+	const borderStrong = useThemeColor({}, "borderStrong");
+	const textPrimary = useThemeColor({}, "textPrimary");
+	const destructive = useThemeColor({}, "destructive");
+	const disabledColor = useThemeColor({}, "disabled");
+	const reduceMotion = useReducedMotion();
 
 	const variantStyles = useMemo<Record<ButtonVariant, VariantStyles>>(
 		() => ({
 			primary: {
 				container: {
-					backgroundColor: accent,
-					borderColor: accent,
+					backgroundColor: primary,
+					borderColor: primary,
 				},
-				label: { color: onAccent },
+				label: { color: primaryText },
+				pressedContainer: { backgroundColor: primaryPressed },
 			},
 			secondary: {
 				container: {
-					backgroundColor: surface,
-					borderColor: border,
+					backgroundColor: "transparent",
+					borderColor: borderStrong,
 				},
-				label: { color: text },
+				label: { color: textPrimary },
 			},
 			ghost: {
 				container: {
-					backgroundColor: surface2,
-					borderColor: border,
-					borderStyle: "dashed",
-					borderWidth: 0.85,
+					backgroundColor: "transparent",
+					borderColor: "transparent",
 				},
-				label: { color: text },
+				label: { color: primary },
 			},
 			destructive: {
 				container: {
-					backgroundColor: danger,
-					borderColor: danger,
+					backgroundColor: "transparent",
+					borderColor: destructive,
 				},
-				label: { color: onDanger },
+				label: { color: destructive },
 			},
 		}),
-		[accent, border, danger, onAccent, onDanger, surface, text],
+		[primary, primaryPressed, primaryText, borderStrong, textPrimary, destructive],
 	);
 
 	const currentVariant = variantStyles[variant];
+	const isDisabled = Boolean(disabled);
 
 	return (
 		<Pressable
@@ -89,14 +91,18 @@ export function Button({
 				styles.base,
 				size === "sm" ? styles.sm : styles.md,
 				currentVariant.container,
-				pressed && !disabled ? styles.pressed : undefined,
-				disabled ? styles.disabled : undefined,
+				pressed && !isDisabled && currentVariant.pressedContainer
+					? currentVariant.pressedContainer
+					: undefined,
+				pressed && !isDisabled ? styles.pressed : undefined,
+				pressed && !isDisabled && !reduceMotion ? styles.pressedScale : undefined,
+				isDisabled ? styles.disabled : undefined,
 			]}
 			{...rest}
 		>
 			<ThemedText
-				type="body"
-				style={[styles.label, currentVariant.label]}
+				type="bodyEmphasis"
+				style={[currentVariant.label, isDisabled ? { color: disabledColor } : undefined]}
 			>
 				{label}
 			</ThemedText>
@@ -109,7 +115,8 @@ const styles = StyleSheet.create({
 		minHeight: 44,
 		minWidth: 44,
 		borderWidth: StyleSheet.hairlineWidth,
-		borderRadius: Radii.pill,
+		borderRadius: Radii.md,
+		borderCurve: "continuous",
 		alignItems: "center",
 		justifyContent: "center",
 	},
@@ -123,12 +130,11 @@ const styles = StyleSheet.create({
 	},
 	pressed: {
 		opacity: 0.92,
-		transform: [{ translateY: 1 }],
+	},
+	pressedScale: {
+		transform: [{ scale: 0.97 }],
 	},
 	disabled: {
 		opacity: 0.55,
-	},
-	label: {
-		fontWeight: "600",
 	},
 });

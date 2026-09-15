@@ -22,11 +22,26 @@ export const Spacing = {
 } as const;
 
 export const Radii = {
-  sm: 10,
-  md: 14,
-  lg: 20,
+  none: 0,
+  sm: 6,
+  md: 10,
+  card: 12,
+  sheet: 14,
+  lg: 16,
   pill: 999,
 } as const;
+
+/**
+ * 30% frosted surfaces: cards stay translucent so the wine backdrop reads
+ * through, instead of stacking opaque slabs. Hex in, 8-digit hex out.
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const clamped = Math.min(1, Math.max(0, alpha));
+  const body = hex.replace('#', '');
+  const full = body.length === 3 ? body.split('').map((c: string) => c + c).join('') : body;
+  const a = Math.round(clamped * 255).toString(16).padStart(2, '0');
+  return `#${full}${a}`;
+}
 
 export const Motion = {
   fast: 160,

@@ -19,7 +19,7 @@ export function GlassSurface({
 	const iosBacking = useThemeColor(
 		{
 			light: "rgba(255, 255, 255, 0.16)",
-			dark: "rgba(10, 10, 10, 0.24)",
+			dark: "rgba(36, 27, 38, 0.40)",
 		},
 		"background",
 	);
@@ -27,7 +27,7 @@ export function GlassSurface({
 		effect === "clear"
 			? {
 					light: "rgba(255, 255, 255, 0.94)",
-					dark: "rgba(34, 28, 22, 0.9)",
+					dark: surface,
 				}
 			: { light: surface, dark: surface },
 		"background",

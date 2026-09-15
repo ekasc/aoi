@@ -1,6 +1,6 @@
 import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
 
-import { Radii, Spacing } from '@/constants/theme';
+import { Radii, Spacing, withAlpha } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/glass-surface';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -8,7 +8,7 @@ export type SurfaceProps = ViewProps & {
   variant?: 'page' | 'card' | 'raised' | 'glass';
 };
 
-export function Surface({ style, variant = 'card', ...rest }: SurfaceProps) {
+export function Surface({ children, style, variant = 'card', ...rest }: SurfaceProps) {
   const shadowColor = useThemeColor({}, 'shadow');
   const surface = useThemeColor({}, 'surface');
   const surface2 = useThemeColor({}, 'surface2');
@@ -16,7 +16,7 @@ export function Surface({ style, variant = 'card', ...rest }: SurfaceProps) {
   const border = useThemeColor({}, 'border');
 
   if (variant === 'page') {
-    return <View style={[styles.page, { backgroundColor: pageBackground }]} {...rest} />;
+    return <View style={[styles.page, { backgroundColor: pageBackground }]} {...rest}>{children}</View>;
   }
 
   if (variant === 'glass') {
@@ -34,7 +34,7 @@ export function Surface({ style, variant = 'card', ...rest }: SurfaceProps) {
           style,
         ]}
         {...rest}
-      />
+      >{children}</GlassSurface>
     );
   }
 
@@ -45,7 +45,7 @@ export function Surface({ style, variant = 'card', ...rest }: SurfaceProps) {
       style={[
         styles.card,
         {
-          backgroundColor: isRaised ? surface2 : surface,
+          backgroundColor: withAlpha(isRaised ? surface2 : surface, 0.3),
           borderColor: border,
           borderWidth: StyleSheet.hairlineWidth,
         },
@@ -62,7 +62,9 @@ export function Surface({ style, variant = 'card', ...rest }: SurfaceProps) {
         style,
       ]}
       {...rest}
-    />
+    >
+      {children}
+    </View>
   );
 }
 
@@ -71,23 +73,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   card: {
-    borderRadius: Radii.lg,
+    borderCurve: 'continuous',
+    borderRadius: Radii.md,
     padding: Spacing[16],
   },
   raised: {
     ...Platform.select({
       ios: {
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
       },
-      android: {
-        elevation: 2,
-      },
+      android: {},
       default: {
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
       },
     }),
   },

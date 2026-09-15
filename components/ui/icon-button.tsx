@@ -5,6 +5,7 @@ import {
 	type PressableProps,
 	type ViewStyle,
 } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 
 import { Radii } from "@/constants/theme";
 import { useThemeColor } from "@/hooks/use-theme-color";
@@ -33,6 +34,7 @@ export function IconButton({
 	const onAccent = useThemeColor({}, "onAccent");
 	const surface = useThemeColor({}, "surface");
 	const border = useThemeColor({}, "border");
+	const reduceMotion = useReducedMotion();
 
 	const variantStyles = useMemo<Record<IconButtonVariant, VariantStyles>>(
 		() => ({
@@ -75,6 +77,7 @@ export function IconButton({
 				styles.base,
 				currentVariant.container,
 				pressed && !disabled ? styles.pressed : undefined,
+				pressed && !disabled && !reduceMotion ? styles.pressedScale : undefined,
 				disabled ? styles.disabled : undefined,
 			]}
 			{...rest}
@@ -100,7 +103,9 @@ const styles = StyleSheet.create({
 	},
 	pressed: {
 		opacity: 0.92,
-		transform: [{ translateY: 1 }],
+	},
+	pressedScale: {
+		transform: [{ scale: 0.97 }],
 	},
 	disabled: {
 		opacity: 0.55,

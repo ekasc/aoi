@@ -9,6 +9,7 @@ import {
   type BeachThemeId,
 } from '@/constants/theme-presets';
 import { Motion, Spacing } from '@/constants/theme';
+import { haptics } from '@/features/haptics/haptics';
 import { useAoiTheme } from '@/features/theme/theme-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -59,7 +60,13 @@ export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
       {themes.map((theme, index) => {
         const isSelected = selectedThemeId === theme.id;
         const palette = theme[mode];
-        const handleSelect = () => void setSelectedThemeId(theme.id as BeachThemeId);
+        const handleSelect = () => {
+          if (isSelected) {
+            return;
+          }
+          haptics.select();
+          void setSelectedThemeId(theme.id as BeachThemeId);
+        };
 
         return (
           <Animated.View
@@ -71,8 +78,9 @@ export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
             key={theme.id}
           >
             <Pressable
-              accessibilityLabel={`Choose ${theme.name} theme`}
+              accessibilityLabel={`${theme.name} theme${isSelected ? ', selected' : ''}`}
               accessibilityRole="button"
+              accessibilityState={{ selected: isSelected }}
               onPress={handleSelect}
               style={[
                 styles.option,
@@ -84,13 +92,22 @@ export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
             >
               <View style={styles.optionTopRow}>
                 <View style={styles.labelBlock}>
-                  <ThemedText
-                    type="title"
-                    style={{ color: isSelected ? onAccent : text }}
-                    selectable
-                  >
-                    {theme.name}
-                  </ThemedText>
+                  <View style={styles.nameRow}>
+                    <ThemedText
+                      type="title"
+                      style={{ color: isSelected ? onAccent : text }}
+                      selectable
+                    >
+                      {theme.name}
+                    </ThemedText>
+                    {isSelected ? (
+                      <View style={[styles.selectedPill, { borderColor: onAccent }]}>
+                        <ThemedText type="label" style={{ color: onAccent }}>
+                          Selected
+                        </ThemedText>
+                      </View>
+                    ) : null}
+                  </View>
                   {showDescriptions ? (
                     <ThemedText
                       type="caption"
@@ -147,6 +164,18 @@ const styles = StyleSheet.create({
   labelBlock: {
     flex: 1,
     gap: Spacing[4],
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing[8],
+  },
+  selectedPill: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingHorizontal: Spacing[8],
+    paddingVertical: 2,
   },
   swatchRow: {
     flexDirection: 'row',
