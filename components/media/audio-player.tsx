@@ -11,6 +11,11 @@ import { useAudioPlayer } from 'expo-audio';
 
 export type AudioPlayerProps = {
   uri: string;
+  /**
+   * What this recording is, in words: a title, a date, whose voice. Falls
+   * back to the generic phrase so the control is never unlabelled.
+   */
+  label?: string;
 };
 
 function formatSeconds(value: number): string {
@@ -28,7 +33,7 @@ function formatSeconds(value: number): string {
 /**
  * Minimal playback for voice traces: one button, a progress thread, time.
  */
-function AudioPlayerComponent({ uri }: AudioPlayerProps) {
+function AudioPlayerComponent({ uri, label }: AudioPlayerProps) {
   const accent = useThemeColor({}, 'accent');
   const onAccent = useThemeColor({}, 'onAccent');
   const surface2 = useThemeColor({}, 'surface2');
@@ -50,6 +55,12 @@ function AudioPlayerComponent({ uri }: AudioPlayerProps) {
   const currentTime = player.currentTime ?? 0;
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
 
+  // Unlabelled keeps the original wording; a labelled player names what it
+  // holds, so a row of recordings is never a row of identical buttons.
+  const playLabel = label
+    ? `${isPlaying ? 'Pause' : 'Play'} voice note: ${label}`
+    : `${isPlaying ? 'Pause' : 'Play'} voice note`;
+
   const handleToggle = useCallback(() => {
     if (player.playing) {
       player.pause();
@@ -61,11 +72,12 @@ function AudioPlayerComponent({ uri }: AudioPlayerProps) {
 
   return (
     <View
-      accessibilityLabel="Voice note player"
+      accessible
+      accessibilityLabel={label ? `Voice note: ${label}` : 'Voice note player'}
       style={[styles.row, { backgroundColor: surface2 }]}
     >
       <Pressable
-        accessibilityLabel={isPlaying ? 'Pause voice note' : 'Play voice note'}
+        accessibilityLabel={playLabel}
         accessibilityRole="button"
         onPress={handleToggle}
         style={[styles.playButton, { backgroundColor: accent }]}

@@ -8,6 +8,9 @@ import { resolveStagedUri } from '@/features/composer/staged-uri';
 import type { GalleryPhoto } from '@/features/moments/gallery';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
+/** Corner radius of one tile, so the viewer morphs out of the same shape. */
+const TILE_RADIUS = Radii.sm;
+
 export type GalleryTileProps = {
   photo: GalleryPhoto;
   /** Square edge in points; the grid owns the math. */
@@ -19,8 +22,12 @@ export type GalleryTileProps = {
 
 /**
  * One dense gallery tile: a square, cover-cropped photo inside the same
- * press target that opens the full-screen viewer. Reads ordered attachments
- * or the legacy single photo, never both (the extraction helper decides).
+ * press target that opens the full-screen viewer. Photos only — a video or
+ * voice note takes a full-width line of the album instead, because both
+ * need a transport rather than a frame.
+ *
+ * The tile's radius is the viewer's starting radius, so the morph leaves
+ * from the shape the reader actually touched.
  */
 function GalleryTileComponent({ photo, size, accessibilityLabel, onPress }: GalleryTileProps) {
   const border = useThemeColor({}, 'border');
@@ -55,6 +62,9 @@ function GalleryTileComponent({ photo, size, accessibilityLabel, onPress }: Gall
       <Image
         accessible={false}
         contentFit="cover"
+        // A recycled row must not show the previous photo while the next one
+        // decodes: the key tells expo-image this is a different image.
+        recyclingKey={photo.key}
         source={{ uri: resolveStagedUri(photo.uri) }}
         style={styles.image}
         transition={200}
@@ -65,12 +75,9 @@ function GalleryTileComponent({ photo, size, accessibilityLabel, onPress }: Gall
 
 export const GalleryTile = memo(GalleryTileComponent);
 
-/** Corner radius of one tile, so the morph starts from the same shape. */
-const TILE_RADIUS = 4;
-
 const styles = StyleSheet.create({
   tile: {
-    borderRadius: Radii.sm,
+    borderRadius: TILE_RADIUS,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',

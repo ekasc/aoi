@@ -502,7 +502,7 @@ describe('Memories story feed (oldest-first archive)', () => {
 
     fireEvent.click(screen.getByText('Gallery'));
     // The second tile of that memory's grid row.
-    fireEvent.click(screen.getByLabelText('Open photo 2 from March 2026'));
+    fireEvent.click(screen.getByLabelText('Open photo 2 of 2 from March 2026'));
 
     // The viewer holds the whole set and starts on the tapped photo, exactly
     // like the feed path — a tile is not a dead end into one frame.
@@ -827,6 +827,8 @@ describe('archive search, filters, and month index (pure)', () => {
 describe('archive controls on the Memories screen', () => {
   beforeEach(() => {
     scrollToIndexSpy.mockClear();
+    // One test deep-links into the wall, so every test starts on the feed.
+    searchParams = {};
   });
 
   async function renderScreen() {
@@ -875,7 +877,7 @@ describe('archive controls on the Memories screen', () => {
     // The grid is month-grouped and tiles only real photos.
     expect(screen.getByText('March 2026')).toBeTruthy();
     expect(screen.queryByTestId('moment-lake')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Open photo 1 from March 2026'));
+    fireEvent.click(screen.getByLabelText('Open photo 1 of 1 from March 2026'));
     await act(async () => {});
     // Full screen: the viewer's controls prove the photo opened...
     expect(screen.getByLabelText('Close photo')).toBeTruthy();
@@ -885,6 +887,19 @@ describe('archive controls on the Memories screen', () => {
       pathname: '/(app)/moment/[id]',
       params: { id: 'lake', at: '2026-03-15T10:00:00.000Z' },
     });
+  });
+
+  it('opens the wall straight from a view=gallery link', async () => {
+    // Deep link (`/(tabs)/(memories)?view=gallery`), read once at mount: the
+    // switcher's scroll reset must not run just because a param arrived.
+    searchParams = { view: 'gallery' };
+    feedMoments = [
+      makeMoment({ id: 'lake', type: 'media', mediaPreview: 'file:///l.jpg', title: 'Lake day' }),
+    ];
+    await renderScreen();
+    expect(screen.getByText('March 2026')).toBeTruthy();
+    expect(screen.getByLabelText('Open photo 1 of 1 from March 2026')).toBeTruthy();
+    expect(screen.queryByTestId('moment-lake')).toBeNull();
   });
 
   it('shows a clear affordance when a search matches nothing', async () => {

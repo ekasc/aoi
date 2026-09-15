@@ -25,7 +25,7 @@ describe('dev preview mock world', () => {
 
   it('seeds a two-person spread of remote photos, voice, and video', () => {
     const seeds = getPreviewSeedMoments('full');
-    expect(seeds).toHaveLength(12);
+    expect(seeds).toHaveLength(13);
     const byId = new Map(seeds.map((moment) => [moment.id, moment]));
 
     // Photos from both members, all loaded from the network (no bundled
@@ -34,6 +34,15 @@ describe('dev preview mock world', () => {
     expect(byId.get('preview-photo-partner')?.mediaPreview).toMatch(HTTPS);
     expect(byId.get('preview-photo-old')?.mediaPreview).toMatch(HTTPS);
     expect(byId.get('preview-photo-partner-old')?.mediaPreview).toMatch(HTTPS);
+
+    // One memory carries an ordered set of prints (the path real memories
+    // take), so the wall's dense rows have something to show.
+    const set = byId.get('preview-photo-set');
+    expect(set?.attachments).toHaveLength(3);
+    for (const attachment of set?.attachments ?? []) {
+      expect(attachment.kind).toBe('image');
+      expect(attachment.url).toMatch(HTTPS);
+    }
 
     // Voice notes from Maya (own) and June (partner).
     expect(byId.get('preview-voice-own')?.audioUri).toMatch(HTTPS);

@@ -379,6 +379,23 @@ export function getPreviewSeedMoments(variant: PreviewVariant): Moment[] {
     return [];
   }
   return [
+    // This month: a kept set of prints, June's late note, June's voice note.
+    // Ordered attachments are the path real memories take, so the seeds
+    // exercise it: one memory, three prints, read in server order.
+    seedMoment({
+      id: 'preview-photo-set',
+      type: 'media',
+      title: 'Three from the lake',
+      body: 'Same evening, three ways.',
+      occurredAt: atMidnight(0, 18),
+      mediaId: 'preview-media-set-1',
+      mediaPreview: previewImages.lakeSunset.uri,
+      attachments: [
+        { mediaId: 'preview-media-set-1', kind: 'image', url: previewImages.lakeSunset.uri },
+        { mediaId: 'preview-media-set-2', kind: 'image', url: previewImages.pier.uri },
+        { mediaId: 'preview-media-set-3', kind: 'image', url: previewImages.roadTrip.uri },
+      ],
+    }),
     // This month: Maya's lake photo, June's late note, June's voice note.
     seedMoment({
       id: 'preview-photo-now',

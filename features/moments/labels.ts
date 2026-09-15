@@ -53,3 +53,31 @@ export function formatMomentShortDate(value: string): string {
     day: 'numeric',
   });
 }
+
+/** `12 photos` / `1 photo`. */
+function pluralCount(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * What one album month holds, e.g. `12 photos · 1 video · 2 voice notes`.
+ * Zero kinds are dropped rather than printed as "0 videos", and an empty
+ * month reads empty instead of "· —".
+ */
+export function formatGalleryCounts(counts: {
+  photo: number;
+  video: number;
+  voice: number;
+}): string {
+  const parts: string[] = [];
+  if (counts.photo > 0) {
+    parts.push(pluralCount(counts.photo, 'photo'));
+  }
+  if (counts.video > 0) {
+    parts.push(pluralCount(counts.video, 'video'));
+  }
+  if (counts.voice > 0) {
+    parts.push(pluralCount(counts.voice, 'voice note'));
+  }
+  return parts.join(' · ');
+}

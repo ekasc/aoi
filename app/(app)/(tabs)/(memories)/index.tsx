@@ -23,6 +23,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MemorySky, fabBottomOffset } from "@/components/home/memory-sky";
 import { SpaceAvatarButton } from "@/components/space/space-avatar-button";
+import { GalleryMediaRow } from "@/components/moments/gallery-media-row";
+import { GalleryMonthHeader } from "@/components/moments/gallery-month-header";
 import { GalleryTile } from "@/components/moments/gallery-tile";
 import { MomentCard } from "@/components/moments/moment-card";
 import { PhotoViewer, type ViewerPhoto } from "@/components/moments/photo-viewer";
@@ -142,6 +144,13 @@ export default function MemoriesScreen() {
 	const isFocused = useIsFocused();
 	const insets = useSafeAreaInsets();
 	const { width: windowWidth } = useWindowDimensions();
+	// `?view=gallery` opens the wall directly (and lets the dev preview route
+	// land on it). Read once, as the initial state: arriving must not re-run
+	// the switcher's scroll reset mid-session.
+	const { compose, view: viewParam } = useLocalSearchParams<{
+		compose?: string | string[];
+		view?: string | string[];
+	}>();
 	const feed = useStoryFeed();
 	const { moments: signalMoments, removeMoment } = useMoments();
 	const { space } = useSpace();
@@ -150,7 +159,11 @@ export default function MemoriesScreen() {
 	const [isRemoving, setIsRemoving] = useState(false);
 	const [removeError, setRemoveError] = useState("");
 	const [keptNotice, setKeptNotice] = useState(false);
-	const [view, setView] = useState<MemoriesView>("feed");
+	const [view, setView] = useState<MemoriesView>(() =>
+		(Array.isArray(viewParam) ? viewParam[0] : viewParam) === "gallery"
+			? "gallery"
+			: "feed",
+	);
 	const [switcherHidden, setSwitcherHidden] = useState(false);
 	const [isSearching, setIsSearching] = useState(false);
 	const [viewerPhoto, setViewerPhoto] = useState<{
@@ -548,7 +561,6 @@ export default function MemoriesScreen() {
 
 	// Capture intents from the Us tab land here: forward once to the
 	// dedicated editor and clear the param so a back-press never replays it.
-	const { compose } = useLocalSearchParams<{ compose?: string | string[] }>();
 	const composeValue = Array.isArray(compose) ? compose[0] : compose;
 	const consumedComposeRef = useRef<string | null>(null);
 	useEffect(() => {
@@ -571,7 +583,9 @@ export default function MemoriesScreen() {
 	}, [composeValue, isFocused, router]);
 
 	const handleOpenMonth = useCallback(
-		(section: FeedMonthSection) => {
+		// Only the id is needed, so the Feed's month sections and the Gallery's
+		// dividers open the same chapter without one borrowing the other's type.
+		(section: { id: string }) => {
 			router.push(`/(app)/chapter/${section.id}`);
 		},
 		[router],
@@ -787,21 +801,26 @@ export default function MemoriesScreen() {
 	);
 
 	const renderGalleryItem = useCallback(
-		({ item }: ListRenderItemInfo<GalleryRow>) => {
+		({ item, index }: ListRenderItemInfo<GalleryRow>) => {
 			if (item.kind === "month") {
 				return (
-					<View style={styles.galleryMonthRow}>
-						<ThemedText type="meta" style={{ color: muted, fontWeight: "600" }}>
-							{item.label}
-						</ThemedText>
-					</View>
+					<GalleryMonthHeader
+						first={index === 0}
+						onOpen={handleOpenMonth}
+						section={item.section}
+					/>
 				);
+			}
+			// Video and voice need a transport, so they take a full-width line
+			// of the album instead of a tile.
+			if (item.kind === "media") {
+				return <GalleryMediaRow item={item.item} sectionLabel={item.sectionLabel} />;
 			}
 			return (
 				<View style={styles.galleryGridRow}>
-					{item.photos.map((photo, index) => (
+					{item.photos.map((photo, tile) => (
 						<GalleryTile
-							accessibilityLabel={`Open photo ${item.startIndex + index + 1} from ${item.sectionLabel}`}
+							accessibilityLabel={`Open photo ${item.photoStartIndex + tile + 1} of ${item.photoTotal} from ${item.sectionLabel}`}
 							key={photo.key}
 							onPress={handleOpenPhoto}
 							photo={photo}
@@ -811,7 +830,7 @@ export default function MemoriesScreen() {
 				</View>
 			);
 		},
-		[galleryTileSize, handleOpenPhoto, muted],
+		[galleryTileSize, handleOpenMonth, handleOpenPhoto],
 	);
 
 	const handleCloseActionSheet = useCallback(() => {
@@ -946,9 +965,10 @@ export default function MemoriesScreen() {
 						<ThemedText type="meta" style={{ color: muted }}>
 							Gallery
 						</ThemedText>
-						<ThemedText type="title">No photos yet</ThemedText>
+						<ThemedText type="title">No media yet</ThemedText>
 						<ThemedText type="body" style={{ color: muted }}>
-							Photos you keep together will collect here.
+							Photos, videos and voice notes you keep together
+							collect here.
 						</ThemedText>
 					</>
 				)}
@@ -1499,11 +1519,6 @@ const styles = StyleSheet.create({
 	},
 	monthRowFirst: {
 		paddingTop: Spacing[0],
-	},
-	galleryMonthRow: {
-		paddingHorizontal: Spacing[24],
-		paddingTop: Spacing[8],
-		paddingBottom: Spacing[8],
 	},
 	galleryGridRow: {
 		flexDirection: "row",
