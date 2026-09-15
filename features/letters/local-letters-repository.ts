@@ -24,7 +24,7 @@ const STUB_PARTNER_SEAL_DELAY_MS = 15_000;
 const STUB_PARTNER_LETTER_BODY =
   'This is a pretend letter from your partner, sealed a few seconds ago so ' +
   'you can try the reveal. In your real space, these will be their own ' +
-  'words — sealed away until the day arrives.';
+  'words, sealed away until the day arrives.';
 
 /**
  * Device-local storage keeps the body of every letter (it has to live

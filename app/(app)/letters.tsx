@@ -10,14 +10,13 @@ import {
 	StyleSheet,
 	View,
 } from "react-native";
-import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LetterCard } from "@/components/letters/letter-card";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
-import { Motion, Radii, Spacing } from "@/constants/theme";
+import { Radii, Spacing } from "@/constants/theme";
 import { useLetters } from "@/features/letters/letters-context";
 import {
 	formatOpensInLabel,
@@ -26,19 +25,15 @@ import {
 import type { Letter } from "@/features/letters/types";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
-// The reveal: a gentle fade, nothing louder than Motion.slow.
-const SHELF_ANIMATION = FadeIn.duration(Motion.slow).reduceMotion(
-	ReduceMotion.System,
-);
-
 // How often the shelf re-derives "Opens in…" labels while letters wait.
 const SHELF_TICK_MS = 20_000;
 
 /**
- * The letters shelf. Sealed letters render as quiet closed cards — their
- * words are never shown (the body is not even here until a letter is opened,
- * for the author too). When one is due, tapping it opens it with a soft
- * fade and the words finally appear.
+ * The letters shelf. Sealed and opened letters render as quiet closed
+ * metadata — their words are never shown here (the body is not even here
+ * until a letter is opened, for the author too). When one is due, tapping
+ * it opens it through the server and then moves to the dedicated reader,
+ * where the words finally appear.
  */
 export default function LettersScreen() {
 	const router = useRouter();
@@ -73,8 +68,20 @@ export default function LettersScreen() {
 		(letter: Letter) => {
 			setHint(null);
 
+			if (letter.isOpened) {
+				router.push({
+					pathname: "/(app)/letter/[id]",
+					params: { id: letter.id },
+				});
+				return;
+			}
+
 			if (!isLetterReadyToOpen(letter, now)) {
 				setHint(`Not yet time. ${formatOpensInLabel(letter.sealedUntil, now)}.`);
+				return;
+			}
+
+			if (isOpeningId === letter.id) {
 				return;
 			}
 
@@ -82,8 +89,13 @@ export default function LettersScreen() {
 			void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
 			void openLetter(letter.id)
-				.then(() => {
+				.then((opened) => {
 					setIsOpeningId(null);
+					void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+					router.push({
+						pathname: "/(app)/letter/[id]",
+						params: { id: opened.id },
+					});
 				})
 				.catch((openError: unknown) => {
 					setIsOpeningId(null);
@@ -98,7 +110,7 @@ export default function LettersScreen() {
 					}
 				});
 		},
-		[now, openLetter],
+		[isOpeningId, now, openLetter, router],
 	);
 
 	const handleWrite = useCallback(() => {
@@ -126,8 +138,7 @@ export default function LettersScreen() {
 			<Stack.Screen options={{ title: "Letters" }} />
 			<View style={styles.headerRow}>
 				<ThemedText style={styles.intro} type="caption">
-					Sealed for a future day. Once sealed, a letter waits — even for
-					you.
+					Letters open on a future day.
 				</ThemedText>
 				<Pressable
 					accessibilityLabel="Write a letter"
@@ -168,23 +179,22 @@ export default function LettersScreen() {
 			) : letters.length === 0 ? (
 				<Surface style={styles.emptyCard}>
 					<ThemedText style={{ color: muted }} type="caption">
-						No letters yet. Write one for a future day — for the two of
+						No letters yet. Write one for a future day, for the two of
 						you.
 					</ThemedText>
 				</Surface>
 			) : (
 				letters.map((letter) => (
-					<Animated.View
-						entering={SHELF_ANIMATION}
+					<View
 						key={`${letter.id}-${letter.isOpened ? "opened" : "sealed"}`}
 						style={isOpeningId === letter.id ? styles.opening : undefined}
 					>
 						<LetterCard
 							letter={letter}
 							now={now}
-							onPress={letter.isOpened ? undefined : handlePress}
+							onPress={handlePress}
 						/>
-					</Animated.View>
+					</View>
 				))
 			)}
 		</ScrollView>
@@ -209,8 +219,9 @@ const styles = StyleSheet.create({
 		borderRadius: Radii.pill,
 		borderWidth: 1,
 		flexDirection: "row",
+		flexShrink: 0,
 		gap: Spacing[4],
-		minHeight: 40,
+		minHeight: 44,
 		justifyContent: "center",
 		paddingHorizontal: Spacing[12],
 	},
