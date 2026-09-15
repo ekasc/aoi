@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -207,18 +207,21 @@ describe('ViewerVoicePage waveform', () => {
     expect(Math.max(...waveProps.levels.value)).toBeCloseTo(0.9, 2);
   });
 
-  it('plays on arrival: a note that lands silent looks broken', async () => {
+  it('opens paused, and plays when the reader asks', async () => {
     const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
     playback.toggle.mockClear();
+    playback.isPlaying = false;
     render(createElement(ViewerVoicePage, voiceProps));
+    // Nothing plays on its own, for either media kind.
+    expect(playback.toggle).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText('Play voice note: 3 of 5 from March 2026'));
     expect(playback.toggle).toHaveBeenCalledTimes(1);
   });
 
-  it('stays silent while its page is off screen', async () => {
+  it('has no player while its page is off screen', async () => {
     const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
-    playback.toggle.mockClear();
     render(createElement(ViewerVoicePage, { ...voiceProps, active: false }));
-    expect(playback.toggle).not.toHaveBeenCalled();
+    expect(sampleListener).toBeNull();
   });
 
   it('asks for sampling and gives it back', async () => {

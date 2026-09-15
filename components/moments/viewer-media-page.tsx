@@ -161,6 +161,11 @@ function RestingVoicePage({ label }: { label: string }) {
  * rather than a shape chosen for it — and it spans the width, because a
  * waveform that stops a third of the way short reads as a broken one.
  *
+ * Nothing plays until the reader asks. A note opened from the wall arrives
+ * paused, with a flat line where its sound will be, and the transport below
+ * starts it. The wave holds its last shape when paused, so a note that has
+ * been played reads as itself rather than resetting to a line.
+ *
  * The wave is also the scrubbing surface: tap it to jump, drag along it to
  * go back and forth. Horizontal drags on the band scrub and vertical drags
  * still belong to the viewer's dismiss, so neither gesture has to be guessed
@@ -173,7 +178,6 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   const textPrimary = useThemeColor({}, 'textPrimary');
   const playback = useVoicePlayback(uri);
   const { isPlaying, progress, duration, currentTime, toggle, seek, setPlaying } = playback;
-  const started = useRef(false);
   // The wave is only built once the width is known: its bar count has to be
   // fixed before the levels array is created, or the bars and the data
   // disagree about how long the note is.
@@ -290,17 +294,6 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
 
   const handleWaveLayout = useCallback((event: LayoutChangeEvent) => {
     setWaveWidth(event.nativeEvent.layout.width);
-  }, []);
-
-  // A full-screen recording that lands silent looks broken, so it starts
-  // itself once. The control below still owns play and pause.
-  useEffect(() => {
-    if (started.current) {
-      return;
-    }
-    started.current = true;
-    toggle();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const readout = scrubSeconds ?? currentTime;
