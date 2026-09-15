@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -19,7 +20,9 @@ import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Motion, Spacing } from '@/constants/theme';
 import { FontFamilies } from '@/constants/typography';
-import { useMediaUpload } from '@/features/media/use-media-upload';
+import { newDraftClientId } from '@/features/moments/draft-identity';
+import { isQuotaExceededError, useMediaUpload } from '@/features/media/use-media-upload';
+import { useSubscription } from '@/features/subscription/subscription-context';
 import type { Moment, MomentType } from '@/features/moments/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -33,9 +36,10 @@ type MomentTypeOption = {
 const MOMENT_TYPES: MomentTypeOption[] = [
   { value: 'note', label: 'Note', icon: 'create-outline', description: 'A quick thought' },
   { value: 'milestone', label: 'Milestone', icon: 'trophy-outline', description: 'Something important' },
-  { value: 'date', label: 'Date', icon: 'heart-outline', description: 'When we were together' },
+  { value: 'date', label: 'Date', icon: 'calendar-outline', description: 'When we were together' },
   { value: 'media', label: 'Media', icon: 'camera-outline', description: 'A photo or video' },
-  { value: 'goal', label: 'Goal', icon: 'flag-outline', description: "Something we're working toward" },
+  // No 'goal' option: future goals are Plans-owned (created/read there).
+  // Editing an existing goal keeps its type via initial state below.
 ];
 
 const TYPE_ICON_SIZE = 22;
@@ -48,6 +52,14 @@ export type MomentFormValues = {
   targetAt: string | null;
   mediaPreview: string | null;
   audioUri: string | null;
+  /** Stable media object id (create + edit); null when no media. */
+  mediaId: string | null;
+  /**
+   * Opaque per-draft idempotency key (create mode only). One id per draft
+   * instance, stable across retries and edits, so a double-tap on Save
+   * replays server-side instead of creating two moments.
+   */
+  clientId?: string;
 };
 
 export type MomentFormProps = {
@@ -57,14 +69,17 @@ export type MomentFormProps = {
   submittingLabel: string;
   /** Present in edit mode — prefills the form and locks trace typing. */
   initialMoment?: Moment;
+  /** Create-mode starting type (e.g. Plans goal capture locks 'goal'). */
+  defaultType?: MomentType;
+  /** Hide the type picker entirely (the type is fixed by the caller). */
+  hideTypePicker?: boolean;
   onSubmit: (values: MomentFormValues) => Promise<void>;
   onCancel: () => void;
 };
 
 /**
- * The shared capture/edit form behind `moment/new` and `moment/edit/[id]`.
- * Create mode starts empty; edit mode prefills from `initialMoment` and
- * preserves occurredAt/audioUri untouched.
+ * The shared capture/edit form. Edit mode (behind `moment/edit/[id]`)
+ * prefills from `initialMoment` and preserves occurredAt/audioUri untouched.
  */
 export function MomentForm({
   heroTitle,
@@ -72,12 +87,16 @@ export function MomentForm({
   submitLabel,
   submittingLabel,
   initialMoment,
+  defaultType,
+  hideTypePicker,
   onSubmit,
   onCancel,
 }: MomentFormProps) {
   const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
   const { uploadImage, state: uploadState, progress: uploadProgress, error: uploadError, reset: resetUpload } = useMediaUpload();
+  const { refreshServerPlus } = useSubscription();
+  const router = useRouter();
   const border = useThemeColor({}, 'border');
   const accent = useThemeColor({}, 'accent');
   const onAccent = useThemeColor({}, 'onAccent');
@@ -90,7 +109,7 @@ export function MomentForm({
 
   const initialMediaPreview = initialMoment?.mediaPreview ?? null;
 
-  const [type, setType] = useState<MomentType>(initialMoment?.type ?? 'note');
+  const [type, setType] = useState<MomentType>(initialMoment?.type ?? defaultType ?? 'note');
   const [title, setTitle] = useState(initialMoment?.title ?? '');
   const [body, setBody] = useState(initialMoment?.body ?? '');
   const [hasTargetDate, setHasTargetDate] = useState(Boolean(initialMoment?.targetAt));
@@ -106,12 +125,20 @@ export function MomentForm({
     return value;
   });
   const [error, setError] = useState('');
+  // Shown only after the server itself enforces media quota, the draft
+  // (title/body/media/date) is never cleared, so nothing is lost.
+  const [quotaBlocked, setQuotaBlocked] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [mediaUri, setMediaUri] = useState<string | null>(initialMediaPreview);
   const [selectedMimeType, setSelectedMimeType] = useState('image/jpeg');
+  // Same-tick double-tap guard: useState flips don't apply within the tick,
+  // so a rapid second Save would otherwise issue a duplicate request.
+  const savingRef = useRef(false);
 
   // Traces are zero-decision captures — editing keeps their type locked.
-  const showTypePicker = !initialMoment || initialMoment.type !== 'trace';
+  // Callers (e.g. Plans goal capture) can lock any fixed type the same way.
+  const showTypePicker =
+    !hideTypePicker && (!initialMoment || initialMoment.type !== 'trace');
 
   const trimmedTitle = title.trim();
   const trimmedBody = body.trim();
@@ -126,6 +153,15 @@ export function MomentForm({
     [insets.bottom],
   );
 
+  // Create-mode idempotency key: one opaque id per draft instance, held
+  // stable for the draft's lifetime. Retries reuse it (server replays);
+  // editing contents never changes it; abandoning the draft and starting
+  // another generates a new one, even for identical content. Edit mode
+  // addresses an existing moment by id, no key needed.
+  const [draftClientId] = useState<string | undefined>(() =>
+    initialMoment ? undefined : newDraftClientId(),
+  );
+
   const occurredCaption = useMemo(() => {
     if (initialMoment) {
       return `Captured · ${new Date(initialMoment.occurredAt).toLocaleDateString('en-US')}`;
@@ -138,25 +174,42 @@ export function MomentForm({
       setError('Add a title, note, or media before saving.');
       return;
     }
+    if (savingRef.current) {
+      return;
+    }
+    savingRef.current = true;
 
     setIsSaving(true);
     setError('');
 
     try {
       let mediaPreview: string | null = null;
+      let mediaId: string | null = null;
 
       if (mediaUri) {
         if (initialMediaPreview && mediaUri === initialMediaPreview) {
           // Unchanged remote media — no re-upload needed.
           mediaPreview = initialMediaPreview;
+          mediaId = initialMoment?.mediaId ?? null;
         } else {
-          const uploadedUrl = await uploadImage({ uri: mediaUri, mimeType: selectedMimeType });
-          if (!uploadedUrl) {
-            setError('Failed to upload media. Please try again.');
+          try {
+            const uploaded = await uploadImage({ uri: mediaUri, mimeType: selectedMimeType });
+            // Stable URL + stable media id; the presigned URL never leaves
+            // the upload flow.
+            mediaPreview = uploaded.url;
+            mediaId = uploaded.mediaId;
+          } catch (err) {
+            if (isQuotaExceededError(err)) {
+              // Draft fully preserved; explain the actual limit and offer Plus.
+              void refreshServerPlus();
+              setQuotaBlocked(true);
+            } else {
+              setError('Failed to upload media. Please try again.');
+            }
             setIsSaving(false);
+            savingRef.current = false;
             return;
           }
-          mediaPreview = uploadedUrl;
         }
       }
 
@@ -167,15 +220,19 @@ export function MomentForm({
         occurredAt: initialMoment?.occurredAt ?? new Date().toISOString(),
         targetAt: isGoal && hasTargetDate ? targetAt.toISOString() : null,
         mediaPreview,
+        mediaId,
         audioUri: initialMoment?.audioUri ?? null,
+        clientId: draftClientId,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save moment');
     } finally {
       setIsSaving(false);
+      savingRef.current = false;
     }
   }, [
     canSubmit,
+    draftClientId,
     hasTargetDate,
     initialMediaPreview,
     initialMoment,
@@ -416,6 +473,23 @@ export function MomentForm({
                 {error}
               </ThemedText>
             ) : null}
+
+            {quotaBlocked ? (
+              <View style={styles.quotaPanel}>
+                <ThemedText type="body">This Space is out of media room.</ThemedText>
+                <ThemedText type="caption" style={{ color: muted }}>
+                  Aoi Plus raises your shared Space to 5 GiB, your draft stays right here.
+                </ThemedText>
+                <View style={styles.quotaActions}>
+                  <Button
+                    label="See Plus"
+                    variant="secondary"
+                    onPress={() => router.push('/(app)/paywall')}
+                  />
+                  <Button label="Keep editing" variant="ghost" onPress={() => setQuotaBlocked(false)} />
+                </View>
+              </View>
+            ) : null}
           </Surface>
         </Animated.View>
       </ScrollView>
@@ -452,6 +526,16 @@ export function MomentForm({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  quotaPanel: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: Spacing[8],
+    padding: Spacing[12],
+  },
+  quotaActions: {
+    flexDirection: 'row',
+    gap: Spacing[8],
   },
   contentContainer: {
     paddingHorizontal: Spacing[16],
