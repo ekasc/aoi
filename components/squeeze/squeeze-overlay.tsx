@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -27,6 +26,7 @@ export function SqueezeOverlay() {
   const { incomingSqueeze, dismissIncoming } = useSqueeze();
   const { space } = useSpace();
   const partnerAccent = useThemeColor({}, 'partnerAccent');
+  const accent = useThemeColor({}, 'accent');
   const background = useThemeColor({}, 'background');
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
@@ -75,11 +75,11 @@ export function SqueezeOverlay() {
         exiting={FadeOut.duration(Motion.base).reduceMotion(ReduceMotion.System)}
         style={styles.content}
       >
-        <Animated.View
-          style={[pulseStyle, styles.heartCircle, { backgroundColor: partnerAccent }]}
-        >
-          <Ionicons color="#FFFFFF" name="heart" size={40} />
-        </Animated.View>
+          <Animated.View
+            style={[pulseStyle, styles.sealCircle, { borderColor: partnerAccent }]}
+          >
+            <View style={[styles.sealDot, { backgroundColor: accent }]} />
+          </Animated.View>
         <View style={styles.textBlock}>
           <ThemedText type="title" style={{ color: text }}>
             {partnerName} squeezed back
@@ -95,7 +95,11 @@ export function SqueezeOverlay() {
 
 const styles = StyleSheet.create({
   root: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 100,
@@ -105,12 +109,18 @@ const styles = StyleSheet.create({
     gap: Spacing[24],
     padding: Spacing[24],
   },
-  heartCircle: {
+  sealCircle: {
     alignItems: 'center',
     borderRadius: 56,
+    borderWidth: 2,
     height: 112,
     justifyContent: 'center',
     width: 112,
+  },
+  sealDot: {
+    borderRadius: 14,
+    height: 28,
+    width: 28,
   },
   textBlock: {
     alignItems: 'center',

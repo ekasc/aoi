@@ -150,6 +150,7 @@ export default function LittleThingsScreen() {
 
         <Surface style={styles.composer}>
           <TextInput
+            accessibilityLabel="A small thing about them"
             multiline
             onChangeText={setDraft}
             placeholder="One small thing about them…"
@@ -269,12 +270,16 @@ const styles = StyleSheet.create({
   categoryChip: {
     borderRadius: 16,
     borderWidth: 1,
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: Spacing[12],
     paddingVertical: 6,
   },
   saveButton: {
     alignItems: 'center',
     borderRadius: 22,
+    minHeight: 44,
+    justifyContent: 'center',
     paddingVertical: Spacing[12],
   },
   promptCard: {
@@ -284,6 +289,8 @@ const styles = StyleSheet.create({
     marginVertical: Spacing[12],
   },
   promptRow: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingVertical: Spacing[8],
   },
   listCard: {

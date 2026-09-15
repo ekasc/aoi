@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
-import { Surface } from '@/components/ui/surface';
+import { Divider } from '@/components/ui/divider';
 import { Spacing } from '@/constants/theme';
 import { useSpace } from '@/features/space/space-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -85,20 +85,15 @@ export default function EditRelationshipScreen() {
 
   if (!space) {
     return (
-      <ScrollView
-        style={{ backgroundColor: background }}
-        contentContainerStyle={contentContainerStyle}
-        contentInsetAdjustmentBehavior="never"
-        keyboardDismissMode="interactive"
+      <View
+        style={[styles.centered, { backgroundColor: background }]}
       >
-        <Surface style={styles.section}>
-          <ThemedText type="title">No relationship found</ThemedText>
-          <ThemedText type="caption" style={{ color: muted }}>
-            Set up your relationship first.
-          </ThemedText>
-          <Button label="Close" onPress={() => router.back()} />
-        </Surface>
-      </ScrollView>
+        <ThemedText type="display" style={styles.hero}>No relationship found</ThemedText>
+        <ThemedText type="caption" style={{ color: muted }}>
+          Set up your relationship first.
+        </ThemedText>
+        <Button label="Close" onPress={() => router.back()} />
+      </View>
     );
   }
 
@@ -110,17 +105,32 @@ export default function EditRelationshipScreen() {
         style={[styles.root, { backgroundColor: background }]}
       >
         <ScrollView
+          style={styles.scroll}
           contentContainerStyle={contentContainerStyle}
-          contentInsetAdjustmentBehavior="never"
-          keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Surface variant="raised" style={styles.section}>
-            <ThemedText type="meta">Relationship details</ThemedText>
+          <View>
+            <ThemedText type="display" style={styles.hero}>
+              Edit relationship
+            </ThemedText>
+            <ThemedText type="caption" style={{ color: muted }}>
+              Names stay exactly as you type them, nothing else changes.
+            </ThemedText>
+          </View>
+
+          <View style={styles.section}>
+            <ThemedText type="meta" style={{ color: muted }}>
+              Space
+            </ThemedText>
+            <ThemedText type="label">
+              Space name
+            </ThemedText>
             <TextInput
               accessibilityLabel="Space name"
               autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
               onChangeText={(value) => {
                 setName(value);
                 setError('');
@@ -130,9 +140,14 @@ export default function EditRelationshipScreen() {
               style={inputStyle}
               value={name}
             />
+            <ThemedText type="label">
+              Partner name
+            </ThemedText>
             <TextInput
               accessibilityLabel="Partner name"
               autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="done"
               onChangeText={(value) => {
                 setPartnerName(value);
                 setError('');
@@ -142,7 +157,14 @@ export default function EditRelationshipScreen() {
               style={inputStyle}
               value={partnerName}
             />
-            <ThemedText type="meta">Relationship start date</ThemedText>
+          </View>
+
+          <Divider />
+
+          <View style={styles.section}>
+            <ThemedText type="meta" style={{ color: muted }}>
+              Start date
+            </ThemedText>
             <NativeDateTimeField
               accessibilityLabel="Choose relationship start date"
               label="Start date"
@@ -166,7 +188,7 @@ export default function EditRelationshipScreen() {
                 {error}
               </ThemedText>
             ) : null}
-          </Surface>
+          </View>
         </ScrollView>
 
         <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
@@ -186,13 +208,31 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  contentContainer: {
-    paddingHorizontal: Spacing[16],
-    paddingTop: Spacing[16],
+  scroll: {
+    flex: 1,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing[24],
+    paddingBottom: Spacing[24],
     gap: Spacing[12],
   },
+  contentContainer: {
+    flexGrow: 1,
+    paddingHorizontal: Spacing[24],
+    paddingTop: Spacing[16],
+    gap: Spacing[32],
+  },
+  hero: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '400',
+    marginBottom: Spacing[4],
+    flexWrap: 'wrap',
+  },
   section: {
-    gap: Spacing[8],
+    gap: Spacing[12],
   },
   input: {
     minHeight: 44,
@@ -200,11 +240,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: Spacing[12],
     paddingVertical: Spacing[12],
+    fontSize: 16,
   },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: Spacing[16],
+    paddingHorizontal: Spacing[24],
     paddingTop: Spacing[12],
     gap: Spacing[8],
+    flexWrap: 'wrap',
   },
 });
