@@ -68,9 +68,24 @@ describe('voice scrub contracts (source)', () => {
     expect(VOICE_SOURCE).toContain('runOnJS(finishScrub)(success)');
   });
 
-  it('follows the finger on the UI thread and clips the played wave under it', () => {
+  it('follows the finger on the UI thread, with one wave rather than two', () => {
     expect(VOICE_SOURCE).toContain('playhead.value = scrubFractionForOffset(event.x, waveWidth)');
-    expect(VOICE_SOURCE).toContain('tone="played"');
-    expect(VOICE_SOURCE).toContain('tone="rest"');
+    // One waveform, one animated playhead: a second clipped copy doubles the
+    // drawing, and animating the clip's width animates layout every frame.
+    expect(VOICE_SOURCE.match(/<LiveWaveform/g)).toHaveLength(1);
+    expect(VOICE_SOURCE).not.toContain('playedClip');
+    expect(VOICE_SOURCE).toContain('playhead.value * waveWidth');
+  });
+
+  it('paces native seeks at finger speed and always lands the last one', () => {
+    // A native seek behind every pan update is what stutters a scrub.
+    expect(VOICE_SOURCE).toContain('now - lastSeek.current >= SCRUB_SEEK_INTERVAL_MS');
+    expect(VOICE_SOURCE).toContain('runOnJS(scrubTo)(event.x, false)');
+    expect(VOICE_SOURCE).toContain('runOnJS(scrubTo)(event.x, true)');
+  });
+
+  it('never touches the player after the page is gone', () => {
+    expect(VOICE_SOURCE).toContain('if (!live.current) {');
+    expect(VOICE_SOURCE).toContain('live.current = false;');
   });
 });

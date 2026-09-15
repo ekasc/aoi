@@ -12,33 +12,21 @@ export type LiveWaveformProps = {
   columns: number;
   height: number;
   barWidth?: number;
-  /**
-   * Explicit width, for the copy that is clipped by the playhead: a wave that
-   * is laid out inside a narrowing box would compress its bars instead of
-   * being cut off at the playhead.
-   */
-  width?: number;
-  /**
-   * Which side of the playhead this copy draws. The player draws the wave
-   * twice — the whole note in the resting colour, and the played part in the
-   * accent, clipped to the playhead — so the played region follows a scrub on
-   * the UI thread instead of needing a colour animation per bar.
-   */
-  tone: 'rest' | 'played';
+  /** 0..1 played portion. Bars behind it carry the accent colour. */
+  progress: number;
 };
 
 /** Floor, so silence still reads as a line rather than nothing. */
 const MIN_SCALE = 0.06;
-/** Resting bars are quieter than the played ones, which is the playhead cue. */
-const REST_OPACITY = 0.45;
 
 /**
- * The waveform of a voice note, drawn from its samples.
+ * A bar of the waveform.
  *
- * Bars scale from the centre line, the way a symmetric waveform reads, and
- * each one is driven on the UI thread straight from the shared levels — no
- * React render per sample, which at audio rates would only show a fraction
- * of the sound.
+ * One copy, one animated style per bar, reading the level on the UI thread:
+ * the wave follows the audio without a React render per sample. The played
+ * portion is a normal prop rather than a second clipped wave — a copy for
+ * every bar is twice the drawing for the same picture, and animating a
+ * clipping box means animating layout on every frame of a scrub.
  */
 function WaveBar({
   index,
@@ -76,28 +64,28 @@ function LiveWaveformComponent({
   columns,
   height,
   barWidth = 3,
-  width,
-  tone,
+  progress,
 }: LiveWaveformProps) {
   const accent = useThemeColor({}, 'accent');
   const muted = useThemeColor({}, 'muted');
+  const played = Math.round(Math.min(1, Math.max(0, progress)) * columns);
 
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       pointerEvents="none"
-      style={[styles.wave, { height, width: width ?? '100%' }]}
+      style={[styles.wave, { height }]}
     >
       {Array.from({ length: columns }, (_, index) => (
         <WaveBar
           barWidth={barWidth}
-          color={tone === 'played' ? accent : muted}
+          color={index < played ? accent : muted}
           height={height}
           index={index}
           key={index}
           levels={levels}
-          opacity={tone === 'played' ? 1 : REST_OPACITY}
+          opacity={index < played ? 1 : 0.45}
         />
       ))}
     </View>

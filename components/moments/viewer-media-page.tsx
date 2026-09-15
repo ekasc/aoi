@@ -12,6 +12,7 @@ import { Radii, Spacing } from '@/constants/theme';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 import {
   SCRUB_READOUT_INTERVAL_MS,
+  SCRUB_SEEK_INTERVAL_MS,
   scrubFractionForOffset,
   scrubSecondsForOffset,
 } from '@/features/moments/audio-scrub';
@@ -32,6 +33,14 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  */
 
 const WAVE_HEIGHT = 128;
+
+/** 0..1 of a recording, for the bars behind the playhead. */
+function playheadFraction(seconds: number, duration: number): number {
+  if (!(duration > 0)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, seconds / duration));
+}
 const WAVE_BAR_WIDTH = 3;
 const WAVE_GUTTERS = Spacing[16] * 2;
 
@@ -153,7 +162,16 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   const scrubbing = useSharedValue(false);
   const wasPlaying = useRef(false);
   const lastReadout = useRef(0);
+  const lastSeek = useRef(0);
+  const live = useRef(true);
   const [scrubSeconds, setScrubSeconds] = useState<number | null>(null);
+
+  useEffect(
+    () => () => {
+      live.current = false;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!scrubbing.value) {
@@ -187,13 +205,24 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
     [setPlaying],
   );
 
+  /**
+   * One finger position, applied. The readout is throttled to what an eye
+   * reads, and the seek to what the native player can absorb: a finger fires
+   * updates at screen rate, and a native seek behind every one of them is
+   * what makes a scrub stutter. `force` is the release, which always lands.
+   */
   const scrubTo = useCallback(
-    (offsetX: number, publish: boolean) => {
-      const secondsAtFinger = scrubSecondsForOffset(offsetX, waveWidth, duration);
-      seek(secondsAtFinger);
-      if (publish) {
-        publishScrubSeconds(secondsAtFinger);
+    (offsetX: number, force: boolean) => {
+      if (!live.current) {
+        return;
       }
+      const secondsAtFinger = scrubSecondsForOffset(offsetX, waveWidth, duration);
+      const now = Date.now();
+      if (force || now - lastSeek.current >= SCRUB_SEEK_INTERVAL_MS) {
+        lastSeek.current = now;
+        seek(secondsAtFinger);
+      }
+      publishScrubSeconds(secondsAtFinger);
     },
     [duration, publishScrubSeconds, seek, waveWidth],
   );
@@ -210,7 +239,7 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
       })
       .onUpdate((event) => {
         playhead.value = scrubFractionForOffset(event.x, waveWidth);
-        runOnJS(scrubTo)(event.x, true);
+        runOnJS(scrubTo)(event.x, false);
       })
       .onFinalize((_, success) => {
         scrubbing.value = false;
@@ -223,6 +252,7 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
           return;
         }
         playhead.value = scrubFractionForOffset(event.x, waveWidth);
+        // A tap is one deliberate jump: it always lands.
         runOnJS(scrubTo)(event.x, true);
       });
 
@@ -249,15 +279,13 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const playedClip = useAnimatedStyle(() => ({
-    width: playhead.value * waveWidth,
-  }));
   const playheadStyle = useAnimatedStyle(() => ({
     opacity: waveWidth > 0 ? 1 : 0,
     transform: [{ translateX: playhead.value * waveWidth }],
   }));
 
   const readout = scrubSeconds ?? currentTime;
+  const filled = scrubSeconds === null ? progress : playheadFraction(scrubSeconds, duration);
 
   return (
     <View style={styles.voiceBody}>
@@ -276,20 +304,8 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
                 columns={columns}
                 height={WAVE_HEIGHT}
                 levels={levels}
-                tone="rest"
-                width={waveWidth}
+                progress={filled}
               />
-              {/* The played part, clipped at the playhead. */}
-              <Animated.View style={[styles.playedClip, playedClip]}>
-                <LiveWaveform
-                  barWidth={WAVE_BAR_WIDTH}
-                  columns={columns}
-                  height={WAVE_HEIGHT}
-                  levels={levels}
-                  tone="played"
-                  width={waveWidth}
-                />
-              </Animated.View>
               <Animated.View
                 pointerEvents="none"
                 style={[styles.playhead, { backgroundColor: accent }, playheadStyle]}
@@ -383,13 +399,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginVertical: Spacing[16],
     width: '100%',
-  },
-  playedClip: {
-    height: WAVE_HEIGHT,
-    left: 0,
-    overflow: 'hidden',
-    position: 'absolute',
-    top: 0,
   },
   playhead: {
     bottom: 0,

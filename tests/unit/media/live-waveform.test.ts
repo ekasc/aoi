@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { envelopeFromFrames, waveformColumnCount } from '@/hooks/use-live-waveform';
+import { envelopeFromFrames, smoothLevels, waveformColumnCount } from '@/hooks/use-live-waveform';
 
 describe('envelopeFromFrames', () => {
   it('reports the peak of each slice, not an average of it', () => {
@@ -30,6 +30,24 @@ describe('envelopeFromFrames', () => {
   it('returns nothing for nothing', () => {
     expect(envelopeFromFrames([], 4)).toEqual([0, 0, 0, 0]);
     expect(envelopeFromFrames([0.5], 0)).toEqual([]);
+  });
+});
+
+
+describe('smoothLevels', () => {
+  it('moves each bar halfway toward the new window, so updates do not flicker', () => {
+    // A sample update arrives ~30 times a second, each a fresh window. Drawn
+    // raw the wave jumps; blended it reads as movement.
+    expect(smoothLevels([0.9, 0.9], [0.1, 0.9])).toEqual([0.5, 0.9]);
+  });
+
+  it('draws the first window as measured, having nothing to blend with', () => {
+    expect(smoothLevels([], [0.4, 0.8])).toEqual([0.4, 0.8]);
+  });
+
+  it('takes the factor it is given', () => {
+    expect(smoothLevels([1, 1], [0, 0], 1)).toEqual([0, 0]);
+    expect(smoothLevels([1, 1], [0, 0], 0.25)).toEqual([0.75, 0.75]);
   });
 });
 

@@ -28,6 +28,31 @@ export type LiveWaveform = {
 };
 
 /**
+ * Blend a fresh envelope into the one on screen.
+ *
+ * A sample update lands ~30 times a second and each one is a new window of
+ * the sound, so drawing them raw reads as flicker. Halfway toward the new
+ * value keeps the shape honest (it is still the audio's own levels) and makes
+ * the movement continuous.
+ */
+export function smoothLevels(
+  previous: number[],
+  next: number[],
+  factor = LEVEL_SMOOTHING,
+): number[] {
+  return next.map((level, index) => {
+    const before = previous[index];
+    if (typeof before !== 'number') {
+      return level;
+    }
+    return before + (level - before) * factor;
+  });
+}
+
+/** How far each update moves a bar toward its new level. */
+export const LEVEL_SMOOTHING = 0.5;
+
+/**
  * Split a window of PCM frames into `columns` bars, each the loudest frame in
  * its slice. Pure, so the shape can be tested without a player.
  */
@@ -73,8 +98,28 @@ export function useLiveWaveform(player: AudioPlayer, columns: number): LiveWavef
     Array.from({ length: columns }, () => 0),
   );
   const windowRef = useRef<number[]>([]);
-  const capacity = columns * FRAMES_PER_COLUMN;
+  const smoothedRef = useRef<number[]>([]);
+  // The listener is subscribed once (expo-audio keys it to the player), so it
+  // would otherwise keep the bar count from the render that mounted it. The
+  // wave only measures its width after layout, which is exactly when that
+  // count changes: without this the data and the bars disagree about how many
+  // of them there are, and most of the wave draws flat.
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
   const [supported, setSupported] = useState(!!player.isAudioSamplingSupported);
+
+  // A shared value is created once, so a wave that measures its width after
+  // layout would keep the array sized for the guess it started with — and the
+  // bars, which are counted from the measured width, would read past its end
+  // and draw flat. Resize (and reset) whenever the count changes.
+  useEffect(() => {
+    if (levels.value.length === columns) {
+      return;
+    }
+    levels.value = Array.from({ length: columns }, () => 0);
+    smoothedRef.current = [];
+    windowRef.current = [];
+  }, [columns, levels]);
 
   // Sampling has to be ASKED for: expo-audio's listener hook bails out
   // immediately unless the player already reports support, and on web that
@@ -107,13 +152,16 @@ export function useLiveWaveform(player: AudioPlayer, columns: number): LiveWavef
     }
     // Keep the tail of the signal, so the shape scrolls with the sound
     // instead of flickering on whatever the last callback happened to hold.
+    const capacity = Math.max(1, columnsRef.current) * FRAMES_PER_COLUMN;
     const previous = windowRef.current;
     const next =
       frames.length >= capacity
         ? frames.slice(frames.length - capacity)
         : previous.concat(frames).slice(-capacity);
     windowRef.current = next;
-    levels.value = envelopeFromFrames(next, columns);
+    const envelope = envelopeFromFrames(next, columnsRef.current);
+    smoothedRef.current = smoothLevels(smoothedRef.current, envelope);
+    levels.value = smoothedRef.current;
   });
 
   return { levels, supported };

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { scrubFractionForOffset, scrubSecondsForOffset } from '@/features/moments/audio-scrub';
@@ -30,5 +32,20 @@ describe('scrubSecondsForOffset', () => {
   it('stays at zero until the duration is known', () => {
     expect(scrubSecondsForOffset(100, 200, 0)).toBe(0);
     expect(scrubSecondsForOffset(100, 200, Number.NaN)).toBe(0);
+  });
+});
+
+/**
+ * These helpers are called from gesture callbacks, which run on the UI thread.
+ * A plain function called from there is a crash, not a slow frame, and this
+ * repo has now paid for that mistake three times — so the directive is pinned
+ * rather than trusted to review.
+ */
+describe('scrub maths stay callable from a worklet', () => {
+  const source = readFileSync('features/moments/audio-scrub.ts', 'utf8');
+
+  it('marks both helpers as worklets', () => {
+    const worklets = source.match(/\n\s+'worklet';/g) ?? [];
+    expect(worklets).toHaveLength(2);
   });
 });
