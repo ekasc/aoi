@@ -1,5 +1,6 @@
 import { Link } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
@@ -8,17 +9,20 @@ import { Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function VerifyCodeScreen() {
+  const insets = useSafeAreaInsets();
   const muted = useThemeColor({}, 'muted');
   const background = useThemeColor({}, 'background');
 
   return (
-    <ScrollView
-      style={{ backgroundColor: background }}
-      contentContainerStyle={styles.contentContainer}
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardDismissMode="interactive"
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
+    <View
+      style={[
+        styles.root,
+        {
+          backgroundColor: background,
+          paddingTop: insets.top + Spacing[16],
+          paddingBottom: insets.bottom + Spacing[40],
+        },
+      ]}
     >
       <Surface variant="raised" style={styles.card}>
         <ThemedText type="meta" style={{ color: muted }} selectable>
@@ -41,15 +45,15 @@ export default function VerifyCodeScreen() {
           </Link>
         </View>
       </Surface>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  contentContainer: {
+  root: {
+    flex: 1,
+    justifyContent: 'center',
     paddingHorizontal: Spacing[16],
-    paddingTop: Spacing[16],
-    paddingBottom: Spacing[40],
   },
   card: {
     gap: Spacing[8],

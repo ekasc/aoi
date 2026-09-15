@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import { Redirect, useSegments } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 
@@ -7,21 +6,15 @@ import { useSpace } from '@/features/space/space-context';
 import { useAoiTheme } from '@/features/theme/theme-context';
 
 export default function AuthLayout() {
-  const isIos = process.env.EXPO_OS === 'ios';
-  const isExpoGo = Constants.appOwnership === 'expo';
-  const useFormSheet = isIos && !isExpoGo;
   const { status, isHydrated: isSessionHydrated } = useSession();
   const { status: spaceStatus, isHydrated: isSpaceHydrated } = useSpace();
-  const { colors, hasStoredSelection, isHydrated: isThemeHydrated } = useAoiTheme();
+  const { colors, isHydrated: isThemeHydrated } = useAoiTheme();
   const segments = useSegments();
   const routeName = segments[segments.length - 1];
   const isSignInRoute = routeName === 'sign-in';
   const isVerifyRoute = routeName === 'verify-code';
-  const isThemeSelectRoute = routeName === 'theme-select';
   const isSpaceSetupRoute = routeName === 'space-setup';
-  const isSpaceImportRoute = routeName === 'space-import';
-  const isSignedInOnlyRoute =
-    isThemeSelectRoute || isSpaceSetupRoute || isSpaceImportRoute;
+  const isSignedInOnlyRoute = isSpaceSetupRoute;
 
   if (!isSessionHydrated || status === 'loading') {
     return null;
@@ -43,23 +36,17 @@ export default function AuthLayout() {
         return <Redirect href="/(auth)/space-setup" />;
       }
 
-      if (!hasStoredSelection) {
-        return <Redirect href="/(auth)/theme-select" />;
-      }
-
-      return <Redirect href="/(app)/(tabs)" />;
+      return <Redirect href="/(app)/(tabs)/(memories)" />;
     }
 
+    // An already-ready Space skips setup entirely — except the setup
+    // route itself, which redirects to the Memories default on its own once ready.
     if (spaceStatus !== 'ready') {
       if (!isSpaceSetupRoute) {
         return <Redirect href="/(auth)/space-setup" />;
       }
-    } else if (!hasStoredSelection) {
-      if (!isThemeSelectRoute && !isSpaceImportRoute) {
-        return <Redirect href="/(auth)/theme-select" />;
-      }
-    } else {
-      return <Redirect href="/(app)/(tabs)" />;
+    } else if (!isSpaceSetupRoute) {
+      return <Redirect href="/(app)/(tabs)/(memories)" />;
     }
   }
 
@@ -73,22 +60,7 @@ export default function AuthLayout() {
     >
       <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} />
       <Stack.Screen name="verify-code" options={{ title: 'Verify code' }} />
-      <Stack.Screen name="space-setup" options={{ title: 'Relationship setup' }} />
-      <Stack.Screen
-        name="space-import"
-        options={{
-          title: 'Import milestones',
-          presentation: useFormSheet ? 'formSheet' : 'modal',
-          ...(useFormSheet
-            ? {
-                sheetGrabberVisible: true,
-                sheetAllowedDetents: [0.55, 1.0],
-                contentStyle: { backgroundColor: colors.background },
-              }
-            : {}),
-        }}
-      />
-      <Stack.Screen name="theme-select" options={{ title: 'Theme' }} />
+      <Stack.Screen name="space-setup" options={{ title: 'Get started' }} />
     </Stack>
   );
 }

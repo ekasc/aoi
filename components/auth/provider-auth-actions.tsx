@@ -1,252 +1,302 @@
-import * as AppleAuthentication from "expo-apple-authentication";
-import { Image } from "expo-image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { Image } from 'expo-image';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-	Pressable,
-	StyleSheet,
-	Text,
-	View,
-	useColorScheme,
-	type PressableStateCallbackType,
-	type ViewStyle,
-} from "react-native";
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useColorScheme,
+  type PressableStateCallbackType,
+  type ViewStyle,
+} from 'react-native';
 
-import { ThemedText } from "@/components/themed-text";
-import { Spacing } from "@/constants/theme";
-import type { AuthProvider } from "@/features/auth/types";
-import { useSession } from "@/features/session/session-context";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { ThemedText } from '@/components/themed-text';
+import type { AuthProvider } from '@/features/auth/types';
+import { useSession } from '@/features/session/session-context';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 const GOOGLE_G_MARK_URI =
-	"https://developers.google.com/identity/images/g-logo.png";
-const GOOGLE_TEXT_COLOR = "#1F1F1F";
-const GOOGLE_BORDER_COLOR = "#DADCE0";
+  'https://developers.google.com/identity/images/g-logo.png';
 
-type ProviderAuthActionsProps = {
-	onSuccess?: () => void;
+export type ProviderAuthAppearance = {
+  helperColor?: string;
+  googleBorderColor?: string;
+  colorScheme?: 'light' | 'dark';
+  errorColor?: string;
 };
 
-export function ProviderAuthActions({ onSuccess }: ProviderAuthActionsProps) {
-	const { signInWithProvider, status } = useSession();
-	const [activeProvider, setActiveProvider] = useState<AuthProvider | null>(
-		null,
-	);
-	const [error, setError] = useState("");
-	const [isAppleNativeAvailable, setIsAppleNativeAvailable] = useState(false);
-	const [hasGoogleIconError, setHasGoogleIconError] = useState(false);
-	const colorScheme = useColorScheme();
-	const muted = useThemeColor({}, "muted");
-	const danger = useThemeColor({}, "danger");
-	const googleBorderColor = colorScheme === "dark" ? "#8A8A8A" : "#DADCE0";
+type ProviderAuthActionsProps = {
+  helperColor?: string;
+  showHelper?: boolean;
+  onSuccess?: () => void;
+  appearance?: ProviderAuthAppearance;
+};
 
-	useEffect(() => {
-		let isActive = true;
+export function ProviderAuthActions({
+  helperColor,
+  showHelper = true,
+  onSuccess,
+  appearance,
+}: ProviderAuthActionsProps) {
+  const { signInWithProvider, status } = useSession();
+  const [activeProvider, setActiveProvider] = useState<AuthProvider | null>(
+    null
+  );
+  const [error, setError] = useState('');
+  const [isAppleNativeAvailable, setIsAppleNativeAvailable] = useState(false);
+  const [hasGoogleIconError, setHasGoogleIconError] = useState(false);
+  const colorScheme = useColorScheme();
+  const forcedScheme = appearance?.colorScheme;
+  const isDark = forcedScheme ? forcedScheme === 'dark' : colorScheme === 'dark';
+  const isMidnight = forcedScheme === 'dark';
+  const muted = useThemeColor({}, 'muted');
+  const danger = useThemeColor({}, 'danger');
+  const googleBorderColor =
+    appearance?.googleBorderColor ?? (isMidnight ? '#554b54' : isDark ? '#4A443C' : '#E4D9C7');
+  const resolvedHelperColor = appearance?.helperColor ?? helperColor ?? muted;
+  const resolvedErrorColor = appearance?.errorColor ?? danger;
 
-		void AppleAuthentication.isAvailableAsync()
-			.then((isAvailable) => {
-				if (isActive) {
-					setIsAppleNativeAvailable(isAvailable);
-				}
-			})
-			.catch(() => {
-				if (isActive) {
-					setIsAppleNativeAvailable(false);
-				}
-			});
+  useEffect(() => {
+    let isActive = true;
 
-		return () => {
-			isActive = false;
-		};
-	}, []);
+    void AppleAuthentication.isAvailableAsync()
+      .then((isAvailable) => {
+        if (isActive) {
+          setIsAppleNativeAvailable(isAvailable);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setIsAppleNativeAvailable(false);
+        }
+      });
 
-	const handleSignIn = useCallback(
-		async (provider: AuthProvider) => {
-			setError("");
-			setActiveProvider(provider);
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
-			const result = await signInWithProvider(provider);
-			setActiveProvider(null);
+  const handleSignIn = useCallback(
+    async (provider: AuthProvider) => {
+      setError('');
+      setActiveProvider(provider);
 
-			if (!result.ok) {
-				setError(result.error ?? "Unable to sign in right now.");
-				return;
-			}
+      const result = await signInWithProvider(provider);
+      setActiveProvider(null);
 
-			onSuccess?.();
-		},
-		[onSuccess, signInWithProvider],
-	);
+      if (!result.ok) {
+        setError(result.error ?? 'Unable to sign in right now.');
+        return;
+      }
 
-	const isLoading = status === "loading" || activeProvider !== null;
-	const helperText = useMemo(() => {
-		if (error) {
-			return error;
-		}
+      onSuccess?.();
+    },
+    [onSuccess, signInWithProvider]
+  );
 
-		if (activeProvider === "apple") {
-			return "Connecting to Apple…";
-		}
+  const isLoading = status === 'loading' || activeProvider !== null;
+  const helperText = useMemo(() => {
+    if (error) {
+      return error;
+    }
 
-		if (activeProvider === "google") {
-			return "Connecting to Google…";
-		}
+    if (activeProvider === 'apple') {
+      return 'Connecting to Apple…';
+    }
 
-		return "Private sign in. No public profile.";
-	}, [activeProvider, error]);
+    if (activeProvider === 'google') {
+      return 'Connecting to Google…';
+    }
 
-	const googleButtonStyle = useCallback(
-		({ pressed }: PressableStateCallbackType): ViewStyle[] => [
-			styles.googleButton,
-			{ borderColor: googleBorderColor },
-			pressed ? styles.pressed : styles.resting,
-			isLoading ? styles.disabled : styles.resting,
-		],
-		[isLoading, googleBorderColor],
-	);
+    return 'Invite-only spaces. No public profiles.';
+  }, [activeProvider, error]);
 
-	return (
-		<View style={styles.root}>
-			{isAppleNativeAvailable ? (
-				<View style={isLoading ? styles.disabled : styles.resting}>
-					<AppleAuthentication.AppleAuthenticationButton
-						accessibilityLabel="Continue with Apple"
-						buttonStyle={
-							AppleAuthentication.AppleAuthenticationButtonStyle
-								.BLACK
-						}
-						buttonType={
-							AppleAuthentication.AppleAuthenticationButtonType
-								.CONTINUE
-						}
-						cornerRadius={24}
-						onPress={() => {
-							if (isLoading) {
-								return;
-							}
-							void handleSignIn("apple");
-						}}
-						style={styles.appleNativeButton}
-					/>
-				</View>
-			) : (
-				<Pressable
-					accessibilityLabel="Continue with Apple"
-					accessibilityRole="button"
-					disabled={isLoading}
-					onPress={() => {
-						void handleSignIn("apple");
-					}}
-					style={({ pressed }) => [
-						styles.appleFallbackButton,
-						pressed ? styles.pressed : styles.resting,
-						isLoading ? styles.disabled : styles.resting,
-					]}
-				>
-					<Image
-						accessibilityElementsHidden
-						contentFit="contain"
-						source="sf:apple.logo"
-						style={styles.appleIcon}
-					/>
-					<Text style={styles.appleLabel}>Continue with Apple</Text>
-				</Pressable>
-			)}
+  const googleButtonStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType): (ViewStyle | null)[] => [
+      styles.googleButton,
+      { borderColor: googleBorderColor },
+      isMidnight ? styles.googleButtonMidnight : null,
+      pressed ? styles.pressed : styles.resting,
+      isLoading ? styles.disabled : styles.resting,
+    ],
+    [isLoading, googleBorderColor, isMidnight]
+  );
 
-			<Pressable
-				accessibilityLabel="Continue with Google"
-				accessibilityRole="button"
-				disabled={isLoading}
-				onPress={() => {
-					void handleSignIn("google");
-				}}
-				style={googleButtonStyle}
-			>
-				{!hasGoogleIconError ? (
-					<Image
-						accessibilityElementsHidden
-						contentFit="contain"
-						onError={() => setHasGoogleIconError(true)}
-						source={GOOGLE_G_MARK_URI}
-						style={styles.googleIcon}
-					/>
-				) : (
-					<Text style={styles.googleFallbackIcon}>G</Text>
-				)}
-				<Text style={[styles.googleLabel, { color: GOOGLE_TEXT_COLOR }]}>Continue with Google</Text>
-			</Pressable>
+  const showHelperText = showHelper || error || activeProvider !== null;
 
-			<ThemedText
-				accessibilityRole={error ? "alert" : undefined}
-				type="caption"
-				style={{ color: error ? danger : muted }}
-			>
-				{helperText}
-			</ThemedText>
-		</View>
-	);
+  return (
+    <View style={styles.root}>
+      {isAppleNativeAvailable ? (
+        <View style={isLoading ? styles.disabled : styles.resting}>
+          <AppleAuthentication.AppleAuthenticationButton
+            accessibilityLabel="Continue with Apple"
+            buttonStyle={
+              isDark
+                ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+            }
+            buttonType={
+              AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
+            }
+            cornerRadius={999}
+            onPress={() => {
+              if (isLoading) {
+                return;
+              }
+              void handleSignIn('apple');
+            }}
+            style={styles.appleNativeButton}
+          />
+        </View>
+      ) : (
+        <Pressable
+          accessibilityLabel="Continue with Apple"
+          accessibilityRole="button"
+          disabled={isLoading}
+          onPress={() => {
+            void handleSignIn('apple');
+          }}
+          style={({ pressed }) => [
+            styles.appleFallbackButton,
+            isDark ? styles.appleFallbackDark : styles.appleFallbackLight,
+            pressed ? styles.pressed : styles.resting,
+            isLoading ? styles.disabled : styles.resting,
+          ]}
+        >
+          <Ionicons
+            color={isDark ? '#000000' : '#FFFFFF'}
+            name="logo-apple"
+            size={20}
+          />
+          <Text
+            style={[
+              styles.appleLabel,
+              isDark ? styles.appleLabelDark : styles.appleLabelLight,
+            ]}
+          >
+            Continue with Apple
+          </Text>
+        </Pressable>
+      )}
+
+      <Pressable
+        accessibilityLabel="Continue with Google"
+        accessibilityRole="button"
+        disabled={isLoading}
+        onPress={() => {
+          void handleSignIn('google');
+        }}
+        style={googleButtonStyle}
+      >
+        {!hasGoogleIconError ? (
+          <Image
+            accessibilityElementsHidden
+            contentFit="contain"
+            onError={() => setHasGoogleIconError(true)}
+            source={GOOGLE_G_MARK_URI}
+            style={styles.googleIcon}
+          />
+        ) : (
+          <Text style={styles.googleFallbackIcon}>G</Text>
+        )}
+        <Text style={[styles.googleLabel, isMidnight ? styles.googleLabelMidnight : null]}>Continue with Google</Text>
+      </Pressable>
+
+      {showHelperText ? (
+        <ThemedText
+          accessibilityRole={error ? 'alert' : undefined}
+          type="caption"
+          style={[styles.helper, { color: error ? resolvedErrorColor : resolvedHelperColor }]}
+        >
+          {helperText}
+        </ThemedText>
+      ) : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-	root: {
-		width: "100%",
-		gap: Spacing[8],
-	},
-	appleNativeButton: {
-		width: "100%",
-		height: 50,
-	},
-	appleFallbackButton: {
-		minHeight: 50,
-		borderRadius: 24,
-		backgroundColor: "#000000",
-		alignItems: "center",
-		justifyContent: "center",
-		flexDirection: "row",
-		gap: 8,
-		paddingHorizontal: 16,
-	},
-	appleIcon: {
-		width: 16,
-		height: 16,
-		tintColor: "#FFFFFF",
-	},
-	appleLabel: {
-		color: "#FFFFFF",
-		fontSize: 16,
-		fontWeight: "600",
-	},
-	googleButton: {
-		minHeight: 50,
-		borderRadius: 24,
-		borderWidth: StyleSheet.hairlineWidth,
-		backgroundColor: "#FFFFFF",
-		alignItems: "center",
-		justifyContent: "center",
-		flexDirection: "row",
-		gap: 10,
-		paddingHorizontal: 16,
-	},
-	googleIcon: {
-		width: 18,
-		height: 18,
-	},
-	googleFallbackIcon: {
-		color: "#4285F4",
-		fontSize: 17,
-		fontWeight: "700",
-	},
-	googleLabel: {
-		fontSize: 16,
-		fontWeight: "600",
-	},
-	resting: {
-		opacity: 1,
-	},
-	pressed: {
-		opacity: 0.88,
-		transform: [{ translateY: 1 }],
-	},
-	disabled: {
-		opacity: 0.55,
-	},
+  root: {
+    width: '100%',
+    gap: 12,
+  },
+  appleNativeButton: {
+    width: '100%',
+    height: 56,
+  },
+  appleFallbackButton: {
+    minHeight: 56,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+  },
+  appleFallbackLight: {
+    backgroundColor: '#0B0B0C',
+  },
+  appleFallbackDark: {
+    backgroundColor: '#FFFFFF',
+  },
+  appleLabel: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  appleLabelLight: {
+    color: '#FFFFFF',
+  },
+  appleLabelDark: {
+    color: '#000000',
+  },
+  googleButton: {
+    minHeight: 56,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+  },
+  googleIcon: {
+    width: 20,
+    height: 20,
+  },
+  googleFallbackIcon: {
+    color: '#4285F4',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  googleLabelMidnight: {
+    color: '#e3e3e3',
+  },
+  googleButtonMidnight: {
+    backgroundColor: '#131314',
+  },
+  googleLabel: {
+    color: '#1F1F1F',
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  helper: {
+    textAlign: 'center',
+  },
+  resting: {
+    opacity: 1,
+  },
+  pressed: {
+    opacity: 0.88,
+    transform: [{ translateY: 1 }],
+  },
+  disabled: {
+    opacity: 0.55,
+  },
 });

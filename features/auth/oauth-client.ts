@@ -1,17 +1,16 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
-import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
-import { isAuthStubMode } from './auth-config';
+import {
+  getGoogleClientId,
+  getGoogleIosClientId,
+  isAuthStubMode,
+} from './auth-config';
 import type {
   AuthApi,
   AuthProvider,
   AuthSessionPayload,
-  WorkOSCallbackRequest,
 } from './types';
-
-WebBrowser.maybeCompleteAuthSession();
 
 type OAuthErrorCode =
   | 'cancelled'
@@ -29,14 +28,6 @@ export class OAuthClientError extends Error {
   }
 }
 
-function getFirstValue(value: string | string[] | undefined) {
-  if (Array.isArray(value)) {
-    return value[0];
-  }
-
-  return value;
-}
-
 function resolvePlatform(): 'ios' | 'android' {
   if (Platform.OS === 'ios') {
     return 'ios';
@@ -52,66 +43,41 @@ function resolvePlatform(): 'ios' | 'android' {
   );
 }
 
-async function createRedirectUri() {
-  if (isAuthStubMode()) {
-    return Linking.createURL('/auth/oauth-callback');
+function randomString(length: number) {
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const crypto = globalThis.crypto;
+
+  if (!crypto?.getRandomValues) {
+    let fallback = '';
+    for (let index = 0; index < length; index += 1) {
+      fallback += charset[Math.floor(Math.random() * charset.length)];
+    }
+    return fallback;
   }
 
-  const authSession = await import('expo-auth-session');
-  return authSession.makeRedirectUri({
-    scheme: 'aoi',
-    path: 'auth/oauth-callback',
-  });
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+
+  let output = '';
+  for (const value of bytes) {
+    output += charset[value % charset.length];
+  }
+
+  return output;
 }
 
-function extractWorkOSCallback(url: string): WorkOSCallbackRequest {
-  const parsedUrl = Linking.parse(url);
-  const queryParams = parsedUrl.queryParams ?? {};
-  const code = getFirstValue(queryParams.code as string | string[] | undefined);
-
-  if (!code) {
-    throw new OAuthClientError('Missing OAuth code from WorkOS.', 'invalid_callback');
-  }
-
-  return { code };
-}
-
-async function openBrowserSession(authorizationUrl: string, redirectUri: string) {
-  let result: WebBrowser.WebBrowserAuthSessionResult;
-
-  try {
-    result = await WebBrowser.openAuthSessionAsync(authorizationUrl, redirectUri);
-  } catch {
-    throw new OAuthClientError('Unable to open authentication screen.', 'network');
-  }
-
-  if (result.type !== 'success') {
-    throw new OAuthClientError('Sign in was canceled.', 'cancelled');
-  }
-
-  return extractWorkOSCallback(result.url);
-}
-
-async function signInWithBrowser(
-  provider: AuthProvider,
-  authApi: AuthApi
-): Promise<AuthSessionPayload> {
-  const redirectUri = await createRedirectUri();
-  const { authorizationUrl } = await authApi.workosAuthorize({ provider, redirectUri });
-
-  if (isAuthStubMode()) {
-    return authApi.workosCallback({ code: 'stub_code' });
-  }
-
-  const { code } = await openBrowserSession(authorizationUrl, redirectUri);
-  return authApi.workosCallback({ code });
-}
-
+/**
+ * Apple native sign-in (iOS only). The identity token from
+ * expo-apple-authentication is posted to the worker's `/v1/auth/apple`
+ * adapter; Better Auth verifies its signature before minting a session.
+ */
 async function signInWithAppleIOSNative(authApi: AuthApi): Promise<AuthSessionPayload> {
   const nonce = randomString(32);
 
   if (isAuthStubMode()) {
-    return authApi.workosAppleNative({
+    return authApi.signInWithAppleIdToken({
+      provider: 'apple',
+      platform: 'ios',
       idToken: `stub_apple_id_token_${Date.now()}`,
       nonce,
     });
@@ -154,30 +120,65 @@ async function signInWithAppleIOSNative(authApi: AuthApi): Promise<AuthSessionPa
   const last = credential.fullName?.familyName?.trim();
   const displayName = [first, last].filter(Boolean).join(' ').trim() || undefined;
 
-  return authApi.workosAppleNative({ idToken, nonce, displayName });
+  return authApi.signInWithAppleIdToken({
+    provider: 'apple',
+    platform: 'ios',
+    idToken,
+    nonce,
+    displayName,
+  });
 }
 
-function randomString(length: number) {
-  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const crypto = globalThis.crypto;
-
-  if (!crypto?.getRandomValues) {
-    let fallback = '';
-    for (let index = 0; index < length; index += 1) {
-      fallback += charset[Math.floor(Math.random() * charset.length)];
-    }
-    return fallback;
+/**
+ * Google sign-in (iOS + Android) via the native Google Sign-In SDK
+ * (@react-native-google-signin/google-signin). No redirect URI is involved:
+ * the SDK returns an idToken directly from the system account sheet.
+ *
+ * The idToken's `aud` is the WEB client id (passed as `webClientId` —
+ * verified in the package's native code: iOS `GIDConfiguration(clientID,
+ * serverClientID: webClientId)`, Android `requestIdToken(webClientId)`),
+ * which is exactly what the server verifies against its GOOGLE_CLIENT_ID.
+ * The SDK mints no nonce; Better Auth skips the nonce check when none is
+ * sent (`if (nonce && jwtClaims.nonce !== nonce) return null` in
+ * @better-auth/core/dist/social-providers/google.mjs).
+ */
+async function signInWithGoogle(authApi: AuthApi): Promise<AuthSessionPayload> {
+  if (isAuthStubMode()) {
+    return authApi.signInWithGoogleIdToken({
+      provider: 'google',
+      idToken: `stub_google_id_token_${Date.now()}`,
+    });
   }
 
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
+  const { GoogleSignin } = await import('@react-native-google-signin/google-signin');
 
-  let output = '';
-  for (const value of bytes) {
-    output += charset[value % charset.length];
+  GoogleSignin.configure({
+    iosClientId: getGoogleIosClientId(),
+    webClientId: getGoogleClientId(),
+    scopes: ['email', 'profile'],
+  });
+
+  let response;
+  try {
+    response = await GoogleSignin.signIn();
+  } catch {
+    throw new OAuthClientError('Unable to complete Google sign in.', 'unknown');
   }
 
-  return output;
+  if (response.type !== 'success') {
+    throw new OAuthClientError('Sign in was canceled.', 'cancelled');
+  }
+
+  const idToken = response.data.idToken?.trim();
+  if (!idToken) {
+    throw new OAuthClientError('Google did not return an identity token.', 'invalid_callback');
+  }
+
+  return authApi.signInWithGoogleIdToken({
+    provider: 'google',
+    idToken,
+    displayName: response.data.user?.name?.trim() || undefined,
+  });
 }
 
 export async function signInWithOAuthProvider(
@@ -190,5 +191,26 @@ export async function signInWithOAuthProvider(
     return signInWithAppleIOSNative(authApi);
   }
 
-  return signInWithBrowser(provider, authApi);
+  if (provider === 'google') {
+    return signInWithGoogle(authApi);
+  }
+
+  // Apple on Android: the native Apple sheet is iOS-only, and Better Auth's
+  // web redirect flow hands the session back as a cookie — a mobile
+  // WebBrowser session cannot surface that cookie to the app. The idToken
+  // exchange path (this module) is the supported mobile flow; Android users
+  // sign in with Google. Stub mode still works so the UI is exercisable.
+  if (isAuthStubMode()) {
+    return authApi.signInWithAppleIdToken({
+      provider: 'apple',
+      platform: 'ios',
+      idToken: `stub_apple_id_token_${Date.now()}`,
+      nonce: randomString(32),
+    });
+  }
+
+  throw new OAuthClientError(
+    'Apple sign in is only available on iOS. Use Google instead.',
+    'unsupported_platform'
+  );
 }

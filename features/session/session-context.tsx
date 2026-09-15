@@ -11,6 +11,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { getAuthApi } from '@/features/auth/auth-api';
 import { isAuthStubMode } from '@/features/auth/auth-config';
+import { setApiTokens } from '@/features/api-client';
 import {
   OAuthClientError,
   signInWithOAuthProvider,
@@ -59,7 +60,12 @@ function parseStoredSession(rawValue: string) {
   }
 }
 
-const SessionContext = createContext<SessionContextValue | undefined>(undefined);
+/**
+ * Exported for dev-preview routes, which provide seed values directly
+ * (headless environments have no SecureStore, so the real provider can
+ * never sign in there). Never used by app UI.
+ */
+export const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 
 export function SessionProvider({ children }: PropsWithChildren) {
   const authApi = useMemo(() => getAuthApi(), []);
@@ -92,6 +98,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       if (!storedRawSession) {
         setUser(null);
         setTokens(null);
+        setApiTokens(null);
         setStatus('signed_out');
         return;
       }
@@ -102,6 +109,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
         await clearStoredSession();
         setUser(null);
         setTokens(null);
+        setApiTokens(null);
         setStatus('signed_out');
         return;
       }
@@ -119,6 +127,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
             await clearStoredSession();
             setUser(null);
             setTokens(null);
+            setApiTokens(null);
             setStatus('signed_out');
             return;
           }
@@ -128,11 +137,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
       setUser(resolvedUser);
       setTokens(storedSession.tokens);
+      // Token plumbing: the api-client reads module state, so every session
+      // restore must republish the tokens or remote calls go out without an
+      // Authorization header (was: setApiTokens never called → remote mode
+      // always 401d).
+      setApiTokens(storedSession.tokens);
       setStatus('signed_in');
       await persistSession(resolvedUser, storedSession.tokens);
     } catch {
       setUser(null);
       setTokens(null);
+      setApiTokens(null);
       setStatus('signed_out');
       await clearStoredSession().catch(() => {});
     } finally {
@@ -153,6 +168,9 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
         setUser(authSession.user);
         setTokens(authSession.tokens);
+        // Token plumbing: publish the fresh tokens to the api-client so
+        // remote calls carry the Bearer header.
+        setApiTokens(authSession.tokens);
         setStatus('signed_in');
         await persistSession(authSession.user, authSession.tokens);
 
@@ -160,6 +178,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       } catch (error) {
         setUser(null);
         setTokens(null);
+        setApiTokens(null);
         setStatus('signed_out');
 
         if (error instanceof OAuthClientError && error.code === 'cancelled') {
@@ -189,6 +208,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     await clearStoredSession().catch(() => {});
     setUser(null);
     setTokens(null);
+    setApiTokens(null);
     setStatus('signed_out');
   }, [authApi, clearStoredSession, tokens?.accessToken, tokens?.refreshToken]);
 
@@ -203,6 +223,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       await clearStoredSession().catch(() => {});
       setUser(null);
       setTokens(null);
+      setApiTokens(null);
       setStatus('signed_out');
     }
   }, [authApi, clearStoredSession, tokens?.accessToken]);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
+import { setApiTokens, getApiTokens } from '@/features/api-client';
 import { setAuthApi } from '@/features/auth/auth-api';
 import type { AuthApi } from '@/features/auth/types';
 import { SessionProvider, useSession } from '@/features/session/session-context';
@@ -44,9 +45,8 @@ const callOrder: string[] = [];
 
 function createAuthApiMock(): AuthApi {
   return {
-    workosAuthorize: vi.fn(async () => ({ authorizationUrl: '' })),
-    workosCallback: vi.fn(async () => ({ user: USER, tokens: { accessToken: '' } })),
-    workosAppleNative: vi.fn(async () => ({ user: USER, tokens: { accessToken: '' } })),
+    signInWithAppleIdToken: vi.fn(async () => ({ user: USER, tokens: { accessToken: '' } })),
+    signInWithGoogleIdToken: vi.fn(async () => ({ user: USER, tokens: { accessToken: '' } })),
     getSession: vi.fn(async () => USER),
     logout: vi.fn(async () => {
       callOrder.push('logout');
@@ -86,6 +86,7 @@ async function clickSignOut(view: ReturnType<typeof renderSession>) {
 
 beforeEach(() => {
   callOrder.length = 0;
+  setApiTokens(null);
   secureStoreMock.getItemAsync.mockReset();
   secureStoreMock.setItemAsync.mockClear();
   secureStoreMock.deleteItemAsync.mockClear();
@@ -135,6 +136,26 @@ describe('signOut push-token cleanup (single choke point)', () => {
     expect(authApi.logout).toHaveBeenCalledTimes(1);
     expect(secureStoreMock.deleteItemAsync).toHaveBeenCalledWith('aoi.session.v1');
     expect(view.getByTestId('sign-out').textContent).toBe('signed_out');
+    view.unmount();
+  });
+
+  it('republishes the stored tokens to the api-client on restore (token plumbing)', async () => {
+    const authApi = createAuthApiMock();
+    setAuthApi(authApi);
+    secureStoreMock.getItemAsync.mockResolvedValue(STORED_SESSION);
+
+    const view = renderSession();
+    await waitForSignedIn(view);
+
+    // Session restore must publish tokens to the api-client, or remote mode
+    // sends requests without an Authorization header (regression pin).
+    expect(getApiTokens()).toEqual({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
+    await clickSignOut(view);
+    expect(getApiTokens()).toBeNull();
     view.unmount();
   });
 });

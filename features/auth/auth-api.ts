@@ -1,29 +1,46 @@
 import { getAuthApiBaseUrl, isAuthStubMode } from './auth-config';
 import { mockAuthApi } from './mock-auth-api';
 import type {
+  AppleIdTokenSignInRequest,
   AuthApi,
   AuthSessionPayload,
-  WorkOSAuthorizeRequest,
-  WorkOSCallbackRequest,
-  WorkOSAppleNativeRequest,
+  GoogleIdTokenSignInRequest,
+  IdTokenSignInResponse,
 } from './types';
 
+/**
+ * Remote auth API — thin adapters over the worker's Better Auth-backed
+ * `/v1/auth/*` endpoints (see `packages/api/src/routes/session-auth.ts`).
+ *
+ * The worker keeps the client's Bearer contract: sign-in returns
+ * `{ accessToken, refreshToken, expiresInSec, user }` where the token is a
+ * Better Auth session token. This adapter maps that to the app's
+ * `{ user, tokens }` payload shape (expiresAt derived from expiresInSec).
+ */
 class RemoteAuthApi implements AuthApi {
   constructor(private readonly baseUrl: string) {}
 
-  async workosAuthorize(input: WorkOSAuthorizeRequest) {
-    return this.post<Awaited<ReturnType<AuthApi['workosAuthorize']>>>(
-      '/v1/auth/workos/authorize',
-      input
-    );
+  async signInWithAppleIdToken(input: AppleIdTokenSignInRequest) {
+    return this.postIdTokenSignIn('/v1/auth/apple', input);
   }
 
-  async workosCallback(input: WorkOSCallbackRequest) {
-    return this.post<AuthSessionPayload>('/v1/auth/workos/callback', input);
+  async signInWithGoogleIdToken(input: GoogleIdTokenSignInRequest) {
+    return this.postIdTokenSignIn('/v1/auth/google', input);
   }
 
-  async workosAppleNative(input: WorkOSAppleNativeRequest) {
-    return this.post<AuthSessionPayload>('/v1/auth/workos/apple', input);
+  private async postIdTokenSignIn(
+    pathname: string,
+    payload: AppleIdTokenSignInRequest | GoogleIdTokenSignInRequest
+  ): Promise<AuthSessionPayload> {
+    const response = await this.post<IdTokenSignInResponse>(pathname, payload);
+    return {
+      user: response.user,
+      tokens: {
+        accessToken: response.accessToken,
+        refreshToken: response.refreshToken,
+        expiresAt: new Date(Date.now() + response.expiresInSec * 1000).toISOString(),
+      },
+    };
   }
 
   async getSession(accessToken: string) {
@@ -38,7 +55,7 @@ class RemoteAuthApi implements AuthApi {
       throw new Error('Unable to fetch session.');
     }
 
-    const payload = (await response.json()) as AuthSessionPayload;
+    const payload = (await response.json()) as { user: AuthSessionPayload['user'] };
     return payload.user;
   }
 
@@ -93,6 +110,7 @@ export function getAuthApi() {
   return authApi;
 }
 
-export function setAuthApi(nextApi: AuthApi) {
-  authApi = nextApi;
+/** Test hook: inject a fake AuthApi (see tests/unit/session). */
+export function setAuthApi(api: AuthApi | null) {
+  authApi = api;
 }

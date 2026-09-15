@@ -1,54 +1,75 @@
-import { useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ProviderAuthActions } from '@/components/auth/provider-auth-actions';
-import { ThemedText } from '@/components/themed-text';
-import { Surface } from '@/components/ui/surface';
-import { Spacing } from '@/constants/theme';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { ImmersiveHero } from '@/components/landing/immersive-hero';
+import { MidnightBackdrop } from '@/components/landing/midnight-backdrop';
+import { LANDING_ERROR, landingThemeForColorScheme } from '@/constants/landing-theme';
 
 export default function SignInScreen() {
   const router = useRouter();
-  const muted = useThemeColor({}, 'muted');
-  const background = useThemeColor({}, 'background');
+  const focused = useIsFocused();
+  const insets = useSafeAreaInsets();
+  const theme = landingThemeForColorScheme('dark');
 
   const handleContinue = useCallback(() => {
     router.replace('/');
   }, [router]);
 
   return (
-    <ScrollView
-      style={{ backgroundColor: background }}
-      contentContainerStyle={styles.contentContainer}
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardDismissMode="interactive"
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      <Surface variant="raised" style={styles.card}>
-        <ThemedText type="meta" style={{ color: muted }} selectable>
-          Sign in
-        </ThemedText>
-        <ThemedText type="title" selectable>
-          Continue to your private space
-        </ThemedText>
-        <ThemedText type="caption" style={{ color: muted }} selectable>
-          Use Apple or Google to continue.
-        </ThemedText>
-        <ProviderAuthActions onSuccess={handleContinue} />
-      </Surface>
-    </ScrollView>
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <StatusBar style="light" />
+      <MidnightBackdrop focused={focused} />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom: insets.bottom + 32,
+          },
+        ]}
+      >
+        <View style={styles.content}>
+          <ImmersiveHero
+            variant="signin"
+            cta={
+              <ProviderAuthActions
+                appearance={{
+                  colorScheme: 'dark',
+                  helperColor: theme.subtle,
+                  googleBorderColor: theme.border,
+                  errorColor: LANDING_ERROR,
+                }}
+                onSuccess={handleContinue}
+              />
+            }
+          />
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  contentContainer: {
-    paddingHorizontal: Spacing[16],
-    paddingTop: Spacing[16],
-    paddingBottom: Spacing[40],
+  root: {
+    flex: 1,
   },
-  card: {
-    gap: Spacing[12],
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  content: {
+    flex: 1,
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
 });
