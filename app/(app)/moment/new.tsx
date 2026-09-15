@@ -1,52 +1,48 @@
-import { Stack, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback } from "react";
+import { StyleSheet } from "react-native";
+import Animated, {
+	useAnimatedKeyboard,
+	useAnimatedStyle,
+} from "react-native-reanimated";
 
-import {
-	MomentForm,
-	type MomentFormValues,
-} from "@/components/moments/moment-form";
-import { useMoments } from "@/features/moments/moments-context";
-import { useSession } from "@/features/session/session-context";
+import { InlineMemoryComposer } from "@/components/moments/inline-memory-composer";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
-export default function NewMomentScreen() {
+export default function NewMemoryScreen() {
 	const router = useRouter();
-	const { addMoment } = useMoments();
-	const { user } = useSession();
+	const background = useThemeColor({}, "background");
+	const isIos = process.env.EXPO_OS === "ios";
+	const { compose } = useLocalSearchParams<{ compose?: string | string[] }>();
 
-	const handleCancel = useCallback(() => {
-		router.back();
+	const handleIntentConsumed = useCallback(() => {
+		router.setParams({ compose: undefined });
 	}, [router]);
 
-	const handleSubmit = useCallback(
-		async (values: MomentFormValues) => {
-			await addMoment({
-				type: values.type,
-				title: values.title,
-				body: values.body,
-				occurredAt: values.occurredAt,
-				targetAt: values.targetAt,
-				authorId: user?.id ?? "user_you",
-				authorRole: "you",
-				authorName: user?.displayName ?? "You",
-				mediaPreview: values.mediaPreview ?? undefined,
-				audioUri: values.audioUri,
-			});
-			router.back();
-		},
-		[addMoment, router, user],
-	);
+	// The sheet owns its chrome (Cancel/title/Save live in the composer),
+	// so the navigator renders no header — see the static headerShown in
+	// (app)/_layout. Keyboard avoidance tracks the reported keyboard
+	// height directly: KeyboardAvoidingView derives its offset from layout
+	// measurements that go stale during the sheet's detent animation
+	// (controls end up under the keyboard and stick there), while the
+	// animated height stays correct. Android resizes its window instead,
+	// so the padding applies iOS-only.
+	const keyboard = useAnimatedKeyboard();
+	const keyboardStyle = useAnimatedStyle(() => ({
+		paddingBottom: isIos ? keyboard.height.value : 0,
+	}));
 
 	return (
-		<>
-			<Stack.Screen options={{ title: "Add moment" }} />
-			<MomentForm
-				heroTitle="Capture a moment"
-				heroSubtitle="What kind of moment was it?"
-				onCancel={handleCancel}
-				onSubmit={handleSubmit}
-				submitLabel="Save moment"
-				submittingLabel="Saving…"
-			/>
-		</>
+		<Animated.View
+			style={[styles.root, { backgroundColor: background }, keyboardStyle]}
+		>
+			<InlineMemoryComposer intent={compose} onIntentConsumed={handleIntentConsumed} />
+		</Animated.View>
 	);
 }
+
+const styles = StyleSheet.create({
+	root: {
+		flex: 1,
+	},
+});

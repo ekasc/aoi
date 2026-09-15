@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,22 +12,23 @@ import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
 import { Spacing } from "@/constants/theme";
 import { useMoments } from "@/features/moments/moments-context";
+import { useMoment } from "@/features/moments/use-moment";
 import { isOwnMoment } from "@/features/moments/ownership";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 export default function EditMomentScreen() {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
-	const { id } = useLocalSearchParams<{ id?: string }>();
+	const { id, at } = useLocalSearchParams<{ id?: string; at?: string | string[] }>();
 	const momentId = Array.isArray(id) ? id[0] : id;
-	const { moments, isLoading, updateMoment } = useMoments();
+	const atHint = Array.isArray(at) ? at[0] : at;
+	const { isLoading: contextLoading } = useMoments();
+	const { moment, isLoading: momentLoading } = useMoment(momentId, atHint ?? null);
+	const { updateMoment } = useMoments();
 	const background = useThemeColor({}, "background");
 	const muted = useThemeColor({}, "muted");
 
-	const moment = useMemo(
-		() => moments.find((item) => item.id === momentId) ?? null,
-		[moments, momentId],
-	);
+	const isLoading = contextLoading || momentLoading;
 
 	const handleCancel = useCallback(() => {
 		router.back();
@@ -46,6 +47,7 @@ export default function EditMomentScreen() {
 				targetAt: values.targetAt,
 				mediaPreview: values.mediaPreview,
 				audioUri: values.audioUri,
+				mediaId: values.mediaId,
 			});
 			router.back();
 		},
