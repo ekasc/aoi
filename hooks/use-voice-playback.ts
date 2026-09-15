@@ -14,7 +14,15 @@ export type VoicePlayback = {
   progress: number;
   /** Seconds elapsed while playing, the whole length otherwise. */
   seconds: number;
+  /** Whole length in seconds, 0 until the player has loaded one. */
+  duration: number;
+  /** Seconds elapsed, whatever the transport is doing. */
+  currentTime: number;
   toggle: () => void;
+  /** Jump to a position, for scrubbing a waveform. */
+  seek: (seconds: number) => void;
+  /** Start or stop without toggling, for a scrub that must not race itself. */
+  setPlaying: (playing: boolean) => void;
 };
 
 /** `0:33` — the player's clock, in one place. */
@@ -54,6 +62,33 @@ export function useVoicePlayback(uri: string): VoicePlayback {
     setTick((value) => value + 1);
   }, [player]);
 
+  const setPlaying = useCallback(
+    (playing: boolean) => {
+      if (playing === player.playing) {
+        return;
+      }
+      if (playing) {
+        player.play();
+      } else {
+        player.pause();
+      }
+      setTick((value) => value + 1);
+    },
+    [player],
+  );
+
+  // Seeks are fire-and-forget: a scrub issues them faster than the player
+  // settles, and the last one wins.
+  const seek = useCallback(
+    (seconds: number) => {
+      if (!Number.isFinite(seconds) || seconds < 0) {
+        return;
+      }
+      void player.seekTo(seconds).catch(() => {});
+    },
+    [player],
+  );
+
   const isPlaying = player.playing;
   const duration = player.duration ?? 0;
   const currentTime = player.currentTime ?? 0;
@@ -63,6 +98,10 @@ export function useVoicePlayback(uri: string): VoicePlayback {
     isPlaying,
     progress: duration > 0 ? Math.min(1, currentTime / duration) : 0,
     seconds: isPlaying ? currentTime : duration,
+    duration,
+    currentTime,
     toggle,
+    seek,
+    setPlaying,
   };
 }

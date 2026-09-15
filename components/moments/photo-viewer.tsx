@@ -10,7 +10,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -31,6 +31,10 @@ import {
   type ViewerMorph,
 } from '@/components/moments/zoomable-photo';
 
+import {
+  useMediaCloseAnimation,
+  useMediaDismiss,
+} from '@/components/moments/viewer-media-dismiss';
 import { ViewerVideoPage, ViewerVoicePage } from '@/components/moments/viewer-media-page';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
@@ -312,20 +316,35 @@ function ViewerSession({
   const current = photos[Math.min(page, total - 1)];
   const currentIsPhoto = (current?.kind ?? 'photo') === 'photo';
 
+  // A clip or a voice note has no thumbnail to land in, so it leaves the way
+  // the hand would take it: shrinking away from wherever it was let go.
+  const closeMediaPage = useMediaCloseAnimation({
+    morph,
+    onClose,
+    onDismissStart: handleDismissStart,
+  });
+  const mediaDismiss = useMediaDismiss({
+    active: true,
+    morph,
+    onClose,
+    onDismissStart: handleDismissStart,
+  });
+
   const handleClose = useCallback(() => {
     if (closing) {
       return;
     }
-    // A clip or a voice note has no thumbnail of its own to land on, so its
-    // close is immediate rather than a morph that would have nothing to do.
-    // Photos keep the morph they had, and hand back when it lands.
-    if (!currentIsPhoto || (!origin && reduceMotion)) {
+    if (!currentIsPhoto) {
+      closeMediaPage();
+      return;
+    }
+    if (!origin && reduceMotion) {
       onClose();
       return;
     }
     // Morph first, close when the photo has reached the thumbnail.
     setClosing(true);
-  }, [closing, currentIsPhoto, onClose, origin, reduceMotion]);
+  }, [closing, closeMediaPage, currentIsPhoto, onClose, origin, reduceMotion]);
 
   const handleOpenMemory = useCallback(() => {
     if (!current) {
@@ -355,32 +374,37 @@ function ViewerSession({
       // Concrete window height: percentage heights collapse inside the
       // horizontal scroll content container, leaving a blank viewer.
       const frame = [styles.page, { width: windowWidth, height: windowHeight }];
-      if (item.kind === 'video') {
-        return (
-          <View style={frame}>
-            <ViewerVideoPage
-              active={index === page}
-              height={windowHeight}
-              label={item.label}
-              posterUri={item.posterUri}
-              uri={item.uri}
-              width={windowWidth}
-            />
-          </View>
+      if (item.kind === 'video' || item.kind === 'voice') {
+        const body = (
+          <Animated.View style={[frame, mediaDismiss.style]}>
+            {item.kind === 'video' ? (
+              <ViewerVideoPage
+                active={index === page}
+                height={windowHeight}
+                label={item.label}
+                posterUri={item.posterUri}
+                uri={item.uri}
+                width={windowWidth}
+              />
+            ) : (
+              <ViewerVoicePage
+                active={index === page}
+                height={windowHeight}
+                label={item.label}
+                seed={item.seed ?? item.uri}
+                uri={item.uri}
+                width={windowWidth}
+              />
+            )}
+          </Animated.View>
         );
-      }
-      if (item.kind === 'voice') {
-        return (
-          <View style={frame}>
-            <ViewerVoicePage
-              active={index === page}
-              height={windowHeight}
-              label={item.label}
-              seed={item.seed ?? item.uri}
-              uri={item.uri}
-              width={windowWidth}
-            />
-          </View>
+        // The pull-to-close belongs to the page the reader is on: the pager
+        // mounts its neighbours, and a gesture on an off-screen page is a
+        // gesture nobody can make.
+        return index === page ? (
+          <GestureDetector gesture={mediaDismiss.gesture}>{body}</GestureDetector>
+        ) : (
+          body
         );
       }
       return (
@@ -412,6 +436,8 @@ function ViewerSession({
       handleDismissStart,
       handleImageReady,
       handlePagerLockChange,
+      mediaDismiss.gesture,
+      mediaDismiss.style,
       onClose,
     ],
   );

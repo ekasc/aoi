@@ -143,6 +143,17 @@ vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: () => '#000000',
 }));
 
+const mediaCloseSpy = vi.fn();
+
+// The media pages' close is a shrink-and-fade that owns its own completion
+// (covered by viewer-media-dismiss's contract test); this file checks that the
+// session routes a clip or a voice note through it instead of closing flat.
+vi.mock('@/components/moments/viewer-media-dismiss', () => ({
+  MEDIA_DISMISS_SHRINK: 0.14,
+  useMediaDismiss: () => ({ gesture: {}, style: {} }),
+  useMediaCloseAnimation: () => mediaCloseSpy,
+}));
+
 const PHOTOS: ViewerPhoto[] = [
   { uri: 'file:///one.jpg', label: 'Lake day', momentId: 'm-1' },
   { uri: 'file:///two.jpg', label: 'Lake day', momentId: 'm-1' },
@@ -237,13 +248,15 @@ describe('PhotoViewer across media kinds', () => {
     expect(active).toHaveLength(0);
   });
 
-  it('closes a non-photo page immediately, with no morph to wait for', () => {
-    // The Feed's close path still morphs the photo home; this page has no
-    // thumbnail of its own, so the control must not leave the viewer open.
+  it('closes a clip or a voice note through the shrink, not flat', () => {
+    // The Feed's close path morphs a photo home. A page with no thumbnail of
+    // its own shrinks away instead, and the animation owns the close.
     const onClose = vi.fn();
+    mediaCloseSpy.mockClear();
     renderViewer({ photos: MIXED, initialIndex: 1, onClose });
     fireEvent.click(screen.getByLabelText('Close photo'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mediaCloseSpy).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

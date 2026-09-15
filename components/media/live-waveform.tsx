@@ -10,17 +10,27 @@ export type LiveWaveformProps = {
   /** How many bars the levels hold. Passed in: reading it off a shared value
    *  during render would not re-render when it changed. */
   columns: number;
-  /**
-   * Bars behind the playhead carry the accent colour, so the same drawing
-   * says both what the sound is doing and how far in it is.
-   */
-  progress: number;
   height: number;
   barWidth?: number;
+  /**
+   * Explicit width, for the copy that is clipped by the playhead: a wave that
+   * is laid out inside a narrowing box would compress its bars instead of
+   * being cut off at the playhead.
+   */
+  width?: number;
+  /**
+   * Which side of the playhead this copy draws. The player draws the wave
+   * twice — the whole note in the resting colour, and the played part in the
+   * accent, clipped to the playhead — so the played region follows a scrub on
+   * the UI thread instead of needing a colour animation per bar.
+   */
+  tone: 'rest' | 'played';
 };
 
-/** Floor and ceiling, so silence still reads as a line rather than nothing. */
+/** Floor, so silence still reads as a line rather than nothing. */
 const MIN_SCALE = 0.06;
+/** Resting bars are quieter than the played ones, which is the playhead cue. */
+const REST_OPACITY = 0.45;
 
 /**
  * The waveform of a voice note, drawn from its samples.
@@ -35,17 +45,15 @@ function WaveBar({
   levels,
   height,
   barWidth,
-  playedColor,
-  restColor,
-  played,
+  color,
+  opacity,
 }: {
   index: number;
   levels: SharedValue<number[]>;
   height: number;
   barWidth: number;
-  playedColor: string;
-  restColor: string;
-  played: boolean;
+  color: string;
+  opacity: number;
 }) {
   const style = useAnimatedStyle(() => ({
     transform: [{ scaleY: Math.max(MIN_SCALE, levels.value[index] ?? 0) }],
@@ -55,12 +63,8 @@ function WaveBar({
     <Animated.View
       style={[
         styles.bar,
-        {
-          backgroundColor: played ? playedColor : restColor,
-          height,
-          opacity: played ? 1 : 0.4,
-          width: barWidth,
-        },
+        { backgroundColor: color, height, opacity, width: barWidth },
+        // Transform only: a static opacity here would be overwritten.
         style,
       ]}
     />
@@ -70,26 +74,30 @@ function WaveBar({
 function LiveWaveformComponent({
   levels,
   columns,
-  progress,
   height,
   barWidth = 3,
+  width,
+  tone,
 }: LiveWaveformProps) {
   const accent = useThemeColor({}, 'accent');
   const muted = useThemeColor({}, 'muted');
-  const played = Math.round(Math.min(1, Math.max(0, progress)) * columns);
 
   return (
-    <View style={[styles.wave, { height }]}>
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={[styles.wave, { height, width: width ?? '100%' }]}
+    >
       {Array.from({ length: columns }, (_, index) => (
         <WaveBar
           barWidth={barWidth}
+          color={tone === 'played' ? accent : muted}
           height={height}
           index={index}
           key={index}
           levels={levels}
-          played={index < played}
-          playedColor={accent}
-          restColor={muted}
+          opacity={tone === 'played' ? 1 : REST_OPACITY}
         />
       ))}
     </View>

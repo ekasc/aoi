@@ -1,13 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { LiveWaveform } from '@/components/media/live-waveform';
 import { VideoSurface } from '@/components/media/video-player';
 import { ThemedText } from '@/components/themed-text';
 import { Radii, Spacing } from '@/constants/theme';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
+import {
+  SCRUB_READOUT_INTERVAL_MS,
+  scrubFractionForOffset,
+  scrubSecondsForOffset,
+} from '@/features/moments/audio-scrub';
 import { formatPlaybackSeconds, useVoicePlayback } from '@/hooks/use-voice-playback';
 import { useLiveWaveform, waveformColumnCount } from '@/hooks/use-live-waveform';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -120,23 +127,116 @@ function RestingVoicePage({ label }: { label: string }) {
  * own samples as it plays (see useLiveWaveform), so it is the note's shape
  * rather than a shape chosen for it — and it spans the width, because a
  * waveform that stops a third of the way short reads as a broken one.
+ *
+ * The wave is also the scrubbing surface: tap it to jump, drag along it to
+ * go back and forth. Horizontal drags on the band scrub and vertical drags
+ * still belong to the viewer's dismiss, so neither gesture has to be guessed
+ * at, and the wave never has to claim a touch the reader meant for the page.
  */
 function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   const accent = useThemeColor({}, 'accent');
   const muted = useThemeColor({}, 'muted');
   const onAccent = useThemeColor({}, 'onAccent');
   const textPrimary = useThemeColor({}, 'textPrimary');
-  const { player, isPlaying, progress, seconds, toggle } = useVoicePlayback(uri);
+  const playback = useVoicePlayback(uri);
+  const { isPlaying, progress, duration, currentTime, toggle, seek, setPlaying } = playback;
   const started = useRef(false);
   // The wave is only built once the width is known: its bar count has to be
   // fixed before the levels array is created, or the bars and the data
   // disagree about how long the note is.
   const [waveWidth, setWaveWidth] = useState(0);
   const columns = waveformColumnCount(Math.max(waveWidth - WAVE_GUTTERS, 120), WAVE_BAR_WIDTH);
-  const { levels, supported } = useLiveWaveform(player, columns);
-  const handleWaveLayout = useCallback((event: LayoutChangeEvent) => {
-    setWaveWidth(event.nativeEvent.layout.width);
+  const { levels, supported } = useLiveWaveform(playback.player, columns);
+  // The playhead is a shared value: it follows the finger on the UI thread,
+  // and the whole note is drawn twice under it rather than recoloured per bar.
+  const playhead = useSharedValue(0);
+  const scrubbing = useSharedValue(false);
+  const wasPlaying = useRef(false);
+  const lastReadout = useRef(0);
+  const [scrubSeconds, setScrubSeconds] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!scrubbing.value) {
+      playhead.value = progress;
+    }
+  }, [playhead, progress, scrubbing]);
+
+  const publishScrubSeconds = useCallback((value: number) => {
+    const now = Date.now();
+    if (now - lastReadout.current < SCRUB_READOUT_INTERVAL_MS) {
+      return;
+    }
+    lastReadout.current = now;
+    setScrubSeconds(value);
   }, []);
+
+  // A scrub pauses the note so the finger is not fighting playback, and hands
+  // the transport back the way it found it.
+  const beginScrub = useCallback(() => {
+    wasPlaying.current = isPlaying;
+    setPlaying(false);
+  }, [isPlaying, setPlaying]);
+
+  const finishScrub = useCallback(
+    (resume: boolean) => {
+      setScrubSeconds(null);
+      if (resume && wasPlaying.current) {
+        setPlaying(true);
+      }
+    },
+    [setPlaying],
+  );
+
+  const scrubTo = useCallback(
+    (offsetX: number, publish: boolean) => {
+      const secondsAtFinger = scrubSecondsForOffset(offsetX, waveWidth, duration);
+      seek(secondsAtFinger);
+      if (publish) {
+        publishScrubSeconds(secondsAtFinger);
+      }
+    },
+    [duration, publishScrubSeconds, seek, waveWidth],
+  );
+
+  const scrubGesture = useMemo(() => {
+    const drag = Gesture.Pan()
+      // Horizontal along the band scrubs; a vertical drag is the viewer's
+      // dismiss and passes straight through.
+      .activeOffsetX([-6, 6])
+      .failOffsetY([-18, 18])
+      .onStart(() => {
+        scrubbing.value = true;
+        runOnJS(beginScrub)();
+      })
+      .onUpdate((event) => {
+        playhead.value = scrubFractionForOffset(event.x, waveWidth);
+        runOnJS(scrubTo)(event.x, true);
+      })
+      .onFinalize((_, success) => {
+        scrubbing.value = false;
+        runOnJS(finishScrub)(success);
+      });
+
+    const tap = Gesture.Tap()
+      .onEnd((event, success) => {
+        if (!success) {
+          return;
+        }
+        playhead.value = scrubFractionForOffset(event.x, waveWidth);
+        runOnJS(scrubTo)(event.x, true);
+      });
+
+    // Whichever the hand meant first wins: a drag on movement, a tap on lift.
+    return Gesture.Race(drag, tap);
+  }, [beginScrub, finishScrub, playhead, scrubTo, scrubbing, waveWidth]);
+
+  const handleWaveLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const width = event.nativeEvent.layout.width;
+      setWaveWidth(width);
+    },
+    [],
+  );
 
   // A full-screen recording that lands silent looks broken, so it starts
   // itself once. The control below still owns play and pause.
@@ -149,6 +249,16 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const playedClip = useAnimatedStyle(() => ({
+    width: playhead.value * waveWidth,
+  }));
+  const playheadStyle = useAnimatedStyle(() => ({
+    opacity: waveWidth > 0 ? 1 : 0,
+    transform: [{ translateX: playhead.value * waveWidth }],
+  }));
+
+  const readout = scrubSeconds ?? currentTime;
+
   return (
     <View style={styles.voiceBody}>
       <ThemedText type="title" style={{ color: textPrimary }}>
@@ -157,17 +267,37 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
       <ThemedText type="caption" style={{ color: muted }}>
         {label}
       </ThemedText>
-      <View onLayout={handleWaveLayout} style={styles.waveWrap}>
-        {waveWidth > 0 ? (
-          <LiveWaveform
-            barWidth={WAVE_BAR_WIDTH}
-            columns={columns}
-            height={WAVE_HEIGHT}
-            levels={levels}
-            progress={progress}
-          />
-        ) : null}
-      </View>
+      <GestureDetector gesture={scrubGesture}>
+        <View onLayout={handleWaveLayout} style={styles.waveWrap}>
+          {waveWidth > 0 ? (
+            <>
+              <LiveWaveform
+                barWidth={WAVE_BAR_WIDTH}
+                columns={columns}
+                height={WAVE_HEIGHT}
+                levels={levels}
+                tone="rest"
+                width={waveWidth}
+              />
+              {/* The played part, clipped at the playhead. */}
+              <Animated.View style={[styles.playedClip, playedClip]}>
+                <LiveWaveform
+                  barWidth={WAVE_BAR_WIDTH}
+                  columns={columns}
+                  height={WAVE_HEIGHT}
+                  levels={levels}
+                  tone="played"
+                  width={waveWidth}
+                />
+              </Animated.View>
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.playhead, { backgroundColor: accent }, playheadStyle]}
+              />
+            </>
+          ) : null}
+        </View>
+      </GestureDetector>
       <Pressable
         accessibilityHint="Plays and pauses this voice note"
         accessibilityLabel={`${isPlaying ? 'Pause' : 'Play'} voice note: ${label}`}
@@ -179,7 +309,8 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
         <Ionicons color={onAccent} name={isPlaying ? 'pause' : 'play'} size={24} />
       </Pressable>
       <ThemedText type="caption" style={{ color: muted, fontVariant: ['tabular-nums'] }}>
-        {formatPlaybackSeconds(seconds)}
+        {formatPlaybackSeconds(readout)}
+        {duration > 0 ? ` / ${formatPlaybackSeconds(duration)}` : ''}
         {supported ? '' : ' · waveform unavailable here'}
       </ThemedText>
     </View>
@@ -248,8 +379,23 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   waveWrap: {
-    paddingVertical: Spacing[16],
+    height: WAVE_HEIGHT,
+    justifyContent: 'center',
+    marginVertical: Spacing[16],
     width: '100%',
+  },
+  playedClip: {
+    height: WAVE_HEIGHT,
+    left: 0,
+    overflow: 'hidden',
+    position: 'absolute',
+    top: 0,
+  },
+  playhead: {
+    bottom: 0,
+    position: 'absolute',
+    top: 0,
+    width: 2,
   },
   voiceButton: {
     alignItems: 'center',

@@ -137,8 +137,11 @@ describe('ViewerVoicePage waveform', () => {
   it('draws bars across the width it was given, not a fixed strip', async () => {
     const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
     render(createElement(ViewerVoicePage, voiceProps));
-    // 390pt page, 16pt gutters each side, 3pt bars on 2pt gaps: 71 bars.
-    expect(barScales()).toHaveLength(71);
+    // 390pt page, 16pt gutters each side, 3pt bars on 2pt gaps: 71 bars,
+    // drawn twice — the whole note, and the played part clipped under the
+    // playhead — so the played region can follow a scrub without recolouring
+    // 71 bars per frame.
+    expect(barScales()).toHaveLength(142);
     // Nothing has been heard yet, so the line is flat rather than decorative.
     expect(new Set(barScales())).toEqual(new Set([0.06]));
   });
@@ -155,11 +158,14 @@ describe('ViewerVoicePage waveform', () => {
       rerender(createElement(ViewerVoicePage, voiceProps));
     });
     const scales = barScales();
+    const restCopy = scales.slice(0, scales.length / 2);
     // The window has 16 frames for 71 bars, so the bars only cover the
     // frames that exist and the loud ones sit at the end.
     expect(Math.max(...scales)).toBeCloseTo(0.9, 2);
-    expect(scales[0]).toBeCloseTo(0.06, 2);
+    expect(restCopy[0]).toBeCloseTo(0.06, 2);
     expect(scales.filter((scale) => scale > 0.5).length).toBeGreaterThan(0);
+    // Both copies read the same levels: one wave, two tones.
+    expect(scales.slice(scales.length / 2)).toEqual(restCopy);
   });
 
   it('asks for sampling and gives it back', async () => {

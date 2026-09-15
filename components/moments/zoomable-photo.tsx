@@ -153,6 +153,19 @@ export function scrubProgress(dx: number, dy: number, frameHeight: number): numb
 export const DRAG_RESISTANCE_RANGE = 180;
 
 /**
+ * Does a released drag close the viewer, or spring back?
+ *
+ * One rule for every page: past a fraction of the way, or moving fast enough
+ * that the hand clearly meant it. Photos land back in their tile; a clip or a
+ * voice note has no tile and shrinks away instead, but the decision is the
+ * same decision.
+ */
+export function shouldDismissOnRelease(progress: number, speed: number): boolean {
+  'worklet';
+  return progress >= DISMISS_PROGRESS || speed > DISMISS_VELOCITY;
+}
+
+/**
  * Finger attachment: the photo follows the hand, damped, so it keeps weight
  * instead of being welded to the glass. The sign is kept, so this works in
  * every direction.
@@ -728,7 +741,7 @@ export function ZoomablePhoto({
           const distance = Math.hypot(event.translationX, event.translationY);
           const speed = Math.hypot(event.velocityX, event.velocityY);
           const t = scrubProgress(event.translationX, event.translationY, windowHeight);
-          if (t >= DISMISS_PROGRESS || speed > DISMISS_VELOCITY) {
+          if (shouldDismissOnRelease(t, speed)) {
             runOnJS(handleDismissStart)();
             // Continue the motion the hand started, at the hand's own pace, and
             // settle into the tile: a spring carries that velocity, a timing
