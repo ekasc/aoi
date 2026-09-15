@@ -11,12 +11,16 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ekasc.aoi",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "EXDevMenuShowFloatingActionButton": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FCF9F2",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -30,15 +34,16 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/expo-dev-menu-fab",
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#F7F2EA",
+          "backgroundColor": "#FCF9F2",
           "dark": {
-            "backgroundColor": "#13110E"
+            "backgroundColor": "#16120E"
           }
         }
       ],
@@ -46,20 +51,29 @@
       "expo-font",
       "expo-secure-store",
       "expo-sqlite",
-      "expo-web-browser",
-      "expo-notifications",
-      "expo-audio",
-      "expo-asset",
       [
-        "expo-location",
+        "expo-image-picker",
         {
-          "locationWhenInUsePermission": "Aoi uses your position only while you have location sharing turned on, so your partner can see you're on your way.",
-          "locationAlwaysAndWhenInUsePermission": "Aoi shares your position while Live sharing is on, so your partner knows you'll be home soon. You can turn it off at any time.",
-          "isIosBackgroundLocationEnabled": true,
-          "isAndroidBackgroundLocationEnabled": true
+          "photosPermission": "Aoi needs access to your photo library so you can keep photos as memories.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
-      "expo-task-manager"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Aoi needs microphone access so you can record voice memories."
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.27942860919-4vl2396jsee0j0h2tjnp27b9dohac6rh"
+        }
+      ],
+      "expo-notifications",
+      "expo-asset",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

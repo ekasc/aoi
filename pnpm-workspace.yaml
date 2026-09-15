@@ -1,13 +1,22 @@
 packages:
   - 'packages/*'
 allowBuilds:
+  better-sqlite3: true
   esbuild: true
   msgpackr-extract: true
   sharp: true
   unrs-resolver: false
+  workerd: true
 onlyBuiltDependencies:
   - esbuild
   - unrs-resolver
-patchedDependencies:
-  '@expo/metro-runtime@6.1.2': patches/@expo__metro-runtime@6.1.2.patch
-  expo-router: patches/expo-router.patch
+  - better-sqlite3
+  - workerd
+# NOTE (2026-09-06): SDK 54 pnpm patches disabled for SDK 57 upgrade.
+# - '@expo/metro-runtime@6.1.2' patch added missing `exports` map; check if
+#   ~57.0.15 still needs it before re-adding.
+# - 'expo-router' patch backfilled build/_ctx-shared.js; SDK 57 router
+#   ships typed-routes differently, so re-evaluate after upgrade.
+# patchedDependencies:
+#   '@expo/metro-runtime@6.1.2': patches/@expo__metro-runtime@6.1.2.patch
+#   expo-router: patches/expo-router.patch

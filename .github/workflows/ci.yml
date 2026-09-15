@@ -65,4 +65,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter @aoi/api typecheck
-      - run: pnpm --filter @aoi/api build 2>/dev/null || echo 'No build script defined for API — typecheck passed'
+      # Non-publishing Worker bundle. No masking: any build failure fails
+      # this step (and the job) so a broken Worker build is always red.
+      - run: pnpm --filter @aoi/api build:cloudflare

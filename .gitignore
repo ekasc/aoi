@@ -56,3 +56,5 @@ app-example
 
 # Local tool state
 .pi/
+packages/api/.dev.vars
+packages/api/.wrangler/
