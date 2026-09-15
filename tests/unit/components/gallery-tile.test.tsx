@@ -8,7 +8,6 @@ import type { GalleryItem, GalleryPhoto } from '@/features/moments/gallery';
 let imageProps: any = null;
 let measured = true;
 let videoSurfaceProps: any = null;
-let audioWaveProps: any = null;
 const playback = { isPlaying: false, progress: 0.5, seconds: 12, toggle: vi.fn() };
 
 vi.mock('expo-image', () => ({
@@ -28,13 +27,6 @@ vi.mock('@/components/media/video-player', () => ({
 vi.mock('@/hooks/use-voice-playback', () => ({
   useVoicePlayback: () => playback,
   formatPlaybackSeconds: (value: number) => `${value}`,
-}));
-
-vi.mock('@/components/media/audio-waveform', () => ({
-  AudioWaveform: (props: any) => {
-    audioWaveProps = props;
-    return null;
-  },
 }));
 
 vi.mock('@/features/composer/staged-uri', () => ({
@@ -194,7 +186,7 @@ describe('GalleryVideoTile', () => {
 });
 
 describe('GalleryVoiceTile', () => {
-  it('draws the note print, and a tap opens the viewer rather than playing here', async () => {
+  it('shows a microphone, never a made-up waveform, and a tap opens the viewer', async () => {
     const onPress = vi.fn();
     const { GalleryVoiceTile } = await import('@/components/moments/gallery-tile');
     render(
@@ -205,8 +197,9 @@ describe('GalleryVoiceTile', () => {
         onPress,
       }),
     );
-    // A wall of notes must never be a wall of sound: the tile is a print.
-    expect(audioWaveProps).toMatchObject({ animate: false, playing: false, seed: 'm:audio' });
+    // A wall of notes must never be a wall of sound, and a tile must not
+    // claim a shape the audio never gave it: it is a microphone, not a wave.
+    expect(screen.queryByTestId('live-waveform')).toBeNull();
     fireEvent.click(screen.getByLabelText('Open voice note 3 of 5 from March 2026'));
     expect(onPress).toHaveBeenCalledWith(voiceNote, {
       x: 12,

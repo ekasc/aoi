@@ -1,14 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
-import { AudioWaveform } from '@/components/media/audio-waveform';
+import { LiveWaveform } from '@/components/media/live-waveform';
 import { VideoSurface } from '@/components/media/video-player';
 import { ThemedText } from '@/components/themed-text';
 import { Radii, Spacing } from '@/constants/theme';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 import { formatPlaybackSeconds, useVoicePlayback } from '@/hooks/use-voice-playback';
+import { useLiveWaveform, waveformColumnCount } from '@/hooks/use-live-waveform';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 /**
@@ -16,14 +17,16 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * and a voice note. They are why the album can page through everything a
  * month holds instead of only its photos.
  *
- * Both only come alive on the page the reader is actually on. A pager mounts
- * its neighbours, and a video or a recording that starts on a page nobody is
+ * Both only come alive on the page the reader is on. A pager mounts its
+ * neighbours, and a clip or a recording that starts on a page nobody is
  * looking at is the worst kind of bug: sound from nowhere. Off-page, each of
- * these is a still frame of itself.
+ * these is a still frame of itself — and neither starts by itself even on the
+ * page the reader is on. Looking is not asking to listen.
  */
 
-const WAVE_BARS = 34;
-const WAVE_HEIGHT = 96;
+const WAVE_HEIGHT = 128;
+const WAVE_BAR_WIDTH = 3;
+const WAVE_GUTTERS = Spacing[16] * 2;
 
 export type ViewerVideoPageProps = {
   uri: string;
@@ -45,67 +48,98 @@ export function ViewerVideoPage({
   active,
 }: ViewerVideoPageProps) {
   const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
+  const textPrimary = useThemeColor({}, 'textPrimary');
+  const [started, setStarted] = useState(false);
+  const handlePlay = useCallback(() => setStarted(true), []);
+  const playing = active && started;
+
+  const still = posterUri ? (
+    <Image
+      accessible={false}
+      contentFit="contain"
+      source={{ uri: resolveStagedUri(posterUri) }}
+      style={styles.still}
+    />
+  ) : (
+    <View style={[styles.still, { backgroundColor: backgroundSubtle }]} />
+  );
+
+  if (playing) {
+    return (
+      <View style={[styles.page, { width, height }]}>
+        <VideoSurface contentFit="contain" label={label} uri={uri} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.page, { width, height }]}>
       {active ? (
-        <VideoSurface contentFit="contain" label={label} uri={uri} />
-      ) : posterUri ? (
-        <Image
-          accessible={false}
-          contentFit="contain"
-          source={{ uri: resolveStagedUri(posterUri) }}
-          style={styles.still}
-        />
+        // Only the page the reader is on offers the clip: an off-page still
+        // is scenery, and a control on it would be a button nobody can press.
+        <Pressable
+          accessibilityHint="Plays this clip"
+          accessibilityLabel={`Play video: ${label}`}
+          accessibilityRole="button"
+          onPress={handlePlay}
+          style={styles.stillPress}
+        >
+          {still}
+          <View pointerEvents="none" style={styles.playOverlay}>
+            <View style={styles.playButton}>
+              <Ionicons color={textPrimary} name="play" size={30} style={styles.playGlyph} />
+            </View>
+          </View>
+        </Pressable>
       ) : (
-        <View style={[styles.still, { backgroundColor: backgroundSubtle }]} />
+        <View style={styles.stillPress}>{still}</View>
       )}
     </View>
   );
 }
 
-/** The voice page while it is off-screen: the print, without the playback. */
-function RestingVoicePage({ seed, label }: { seed: string; label: string }) {
+/** The voice page off the reader's eye: a flat line, and no player at all. */
+function RestingVoicePage({ label }: { label: string }) {
   const muted = useThemeColor({}, 'muted');
   const textPrimary = useThemeColor({}, 'textPrimary');
-  const accent = useThemeColor({}, 'accent');
 
   return (
     <View style={styles.voiceBody}>
-      <Ionicons color={muted} name="mic-outline" size={22} />
-      <ThemedText type="title" style={[styles.voiceTitle, { color: textPrimary }]}>
+      <ThemedText type="title" style={{ color: textPrimary }}>
         Voice note
       </ThemedText>
       <ThemedText type="caption" style={{ color: muted }}>
         {label}
       </ThemedText>
-      <View style={styles.waveWrap}>
-        <AudioWaveform
-          animate={false}
-          count={WAVE_BARS}
-          height={WAVE_HEIGHT}
-          playedColor={accent}
-          playing={false}
-          progress={0}
-          restColor={muted}
-          seed={seed}
-        />
-      </View>
     </View>
   );
 }
 
-/** The page the reader is on: it plays, and its wave moves with the note. */
-function PlayingVoicePage({ seed, label, uri }: { seed: string; label: string; uri: string }) {
+/**
+ * The page the reader is on. The waveform here is measured from the audio's
+ * own samples as it plays (see useLiveWaveform), so it is the note's shape
+ * rather than a shape chosen for it — and it spans the width, because a
+ * waveform that stops a third of the way short reads as a broken one.
+ */
+function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   const accent = useThemeColor({}, 'accent');
   const muted = useThemeColor({}, 'muted');
   const onAccent = useThemeColor({}, 'onAccent');
   const textPrimary = useThemeColor({}, 'textPrimary');
-  const { isPlaying, progress, seconds, toggle } = useVoicePlayback(uri);
+  const { player, isPlaying, progress, seconds, toggle } = useVoicePlayback(uri);
   const started = useRef(false);
+  // The wave is only built once the width is known: its bar count has to be
+  // fixed before the levels array is created, or the bars and the data
+  // disagree about how long the note is.
+  const [waveWidth, setWaveWidth] = useState(0);
+  const columns = waveformColumnCount(Math.max(waveWidth - WAVE_GUTTERS, 120), WAVE_BAR_WIDTH);
+  const { levels, supported } = useLiveWaveform(player, columns);
+  const handleWaveLayout = useCallback((event: LayoutChangeEvent) => {
+    setWaveWidth(event.nativeEvent.layout.width);
+  }, []);
 
-  // A full-screen recording that lands silent would look broken, so it
-  // starts itself once. The control below still owns play and pause.
+  // A full-screen recording that lands silent looks broken, so it starts
+  // itself once. The control below still owns play and pause.
   useEffect(() => {
     if (started.current) {
       return;
@@ -117,22 +151,22 @@ function PlayingVoicePage({ seed, label, uri }: { seed: string; label: string; u
 
   return (
     <View style={styles.voiceBody}>
-      <ThemedText type="title" style={[styles.voiceTitle, { color: textPrimary }]}>
+      <ThemedText type="title" style={{ color: textPrimary }}>
         Voice note
       </ThemedText>
       <ThemedText type="caption" style={{ color: muted }}>
         {label}
       </ThemedText>
-      <View style={styles.waveWrap}>
-        <AudioWaveform
-          count={WAVE_BARS}
-          height={WAVE_HEIGHT}
-          playedColor={accent}
-          playing={isPlaying}
-          progress={progress}
-          restColor={muted}
-          seed={seed}
-        />
+      <View onLayout={handleWaveLayout} style={styles.waveWrap}>
+        {waveWidth > 0 ? (
+          <LiveWaveform
+            barWidth={WAVE_BAR_WIDTH}
+            columns={columns}
+            height={WAVE_HEIGHT}
+            levels={levels}
+            progress={progress}
+          />
+        ) : null}
       </View>
       <Pressable
         accessibilityHint="Plays and pauses this voice note"
@@ -144,11 +178,9 @@ function PlayingVoicePage({ seed, label, uri }: { seed: string; label: string; u
       >
         <Ionicons color={onAccent} name={isPlaying ? 'pause' : 'play'} size={24} />
       </Pressable>
-      <ThemedText
-        type="caption"
-        style={{ color: muted, fontVariant: ['tabular-nums'] }}
-      >
+      <ThemedText type="caption" style={{ color: muted, fontVariant: ['tabular-nums'] }}>
         {formatPlaybackSeconds(seconds)}
+        {supported ? '' : ' · waveform unavailable here'}
       </ThemedText>
     </View>
   );
@@ -157,20 +189,20 @@ function PlayingVoicePage({ seed, label, uri }: { seed: string; label: string; u
 export type ViewerVoicePageProps = {
   uri: string;
   label: string;
-  /** Stable shape seed, so the page and the wall tile draw the same print. */
-  seed: string;
+  /** Kept for callers that seed a shape; the live waveform ignores it. */
+  seed?: string;
   width: number;
   height: number;
   active: boolean;
 };
 
-export function ViewerVoicePage({ uri, label, seed, width, height, active }: ViewerVoicePageProps) {
+export function ViewerVoicePage({ uri, label, width, height, active }: ViewerVoicePageProps) {
   return (
     <View style={[styles.page, { width, height }]}>
       {active ? (
-        <PlayingVoicePage label={label} seed={seed} uri={uri} />
+        <PlayingVoicePage label={label} uri={uri} />
       ) : (
-        <RestingVoicePage label={label} seed={seed} />
+        <RestingVoicePage label={label} />
       )}
     </View>
   );
@@ -181,18 +213,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  stillPress: {
+    height: '100%',
+    width: '100%',
+  },
   still: {
     height: '100%',
     width: '100%',
   },
+  playOverlay: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  playButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.42)',
+    borderRadius: Radii.pill,
+    height: 68,
+    justifyContent: 'center',
+    width: 68,
+  },
+  playGlyph: {
+    marginLeft: 4,
+  },
   voiceBody: {
     alignItems: 'center',
     gap: Spacing[12],
-    paddingHorizontal: Spacing[32],
+    paddingHorizontal: Spacing[16],
     width: '100%',
-  },
-  voiceTitle: {
-    textAlign: 'center',
   },
   waveWrap: {
     paddingVertical: Spacing[16],

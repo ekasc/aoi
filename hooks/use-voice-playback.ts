@@ -1,9 +1,14 @@
-import { useAudioPlayer } from 'expo-audio';
+import { useAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { useCallback, useEffect, useState } from 'react';
 
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 
 export type VoicePlayback = {
+  /**
+   * The live player, for the surfaces that need more than transport: the
+   * full-screen page samples its PCM to draw a real waveform.
+   */
+  player: AudioPlayer;
   isPlaying: boolean;
   /** 0..1 of the whole recording. */
   progress: number;
@@ -54,6 +59,7 @@ export function useVoicePlayback(uri: string): VoicePlayback {
   const currentTime = player.currentTime ?? 0;
 
   return {
+    player,
     isPlaying,
     progress: duration > 0 ? Math.min(1, currentTime / duration) : 0,
     seconds: isPlaying ? currentTime : duration,

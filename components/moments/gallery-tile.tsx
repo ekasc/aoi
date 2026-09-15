@@ -3,7 +3,6 @@ import { Image } from 'expo-image';
 import { memo, useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AudioWaveform } from '@/components/media/audio-waveform';
 import type { PhotoOrigin } from '@/components/moments/zoomable-photo';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 import type { GalleryItem } from '@/features/moments/gallery';
@@ -147,13 +146,11 @@ export const GalleryVideoTile = memo(GalleryVideoTileComponent);
 
 // ── Voice ───────────────────────────────────────────────────────────────
 
-/** Bars a tile can hold without the print turning into noise. */
-const TILE_WAVE_BARS = 13;
-
 /**
- * A voice note's print: no still to show, so it gets a quiet ground and the
- * note's own waveform shape. It does not play here — tapping opens the
- * viewer, where the wave moves with the recording.
+ * A voice note's tile: no still to show, so it gets a quiet ground and a
+ * microphone. Deliberately not a waveform — a waveform is a claim about the
+ * sound, and the only honest one is measured from the audio, which happens on
+ * the page this tile opens. Tapping it opens the viewer; nothing plays here.
  */
 function GalleryVoiceTileComponent({
   item,
@@ -161,8 +158,7 @@ function GalleryVoiceTileComponent({
   accessibilityLabel,
   onPress,
 }: GalleryTileProps) {
-  const accent = useThemeColor({}, 'accent');
-  const muted = useThemeColor({}, 'muted');
+  const textPrimary = useThemeColor({}, 'textPrimary');
   const surface2 = useThemeColor({}, 'surface2');
   const { nodeRef, handlePress } = useMeasuredTilePress({ item, onPress });
 
@@ -180,17 +176,11 @@ function GalleryVoiceTileComponent({
         pressed ? styles.pressed : null,
       ]}
     >
-      <View pointerEvents="none" style={styles.waveWrap}>
-        <AudioWaveform
-          animate={false}
-          count={TILE_WAVE_BARS}
-          height={Math.round(size * 0.3)}
-          playedColor={accent}
-          playing={false}
-          // The tile is a print of the whole note, not a playhead.
-          progress={1}
-          restColor={muted}
-          seed={item.key}
+      <View pointerEvents="none" style={styles.voiceMark}>
+        <Ionicons
+          color={textPrimary}
+          name="mic-outline"
+          size={Math.round(size * 0.26)}
         />
       </View>
     </Pressable>
@@ -226,7 +216,8 @@ const styles = StyleSheet.create({
   videoGlyph: {
     marginLeft: 1.5,
   },
-  waveWrap: {
-    width: '62%',
+  voiceMark: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
