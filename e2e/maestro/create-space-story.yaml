@@ -1,0 +1,16 @@
+# Create flow: sign in → create Space without partner/date → skip first
+# memory → Story. Runs after auth-stub-smoke (same app state) or standalone.
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- tapOn: "Continue with Google"
+- assertVisible: "Save the little things"
+- tapOn: "Create a Space"
+- assertVisible: "About you two"
+- tapOn: "What should Aoi call you?"
+- inputText: "Maestro"
+- tapOn: "Create Space"
+- assertVisible: "Your first memory"
+- tapOn: "Skip for now"
+- assertVisible: "Story"

@@ -1,0 +1,29 @@
+# Plans: month navigation both directions, event create, Someday.
+# Date pickers are native wheels and proposal/goal sheets need them —
+# navigation and the title field are automated; the rest is manual-device.
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- tapOn: "Continue with Google"
+- tapOn: "Create a Space"
+- tapOn: "What should Aoi call you?"
+- inputText: "Maestro"
+- tapOn: "Create Space"
+- tapOn: "Skip for now"
+- tapOn: "Plans"
+- assertVisible: "Plans"
+- tapOn: "Previous month"
+- tapOn: "Next month"
+- tapOn: "Next month"
+- tapOn: "Add an event for the selected day"
+- tapOn: "Event title"
+- inputText: "Maestro dinner"
+- tapOn: "Save event"
+- assertVisible: "Maestro dinner"
+- tapOn: "Someday"
+- assertVisible: "Someday"
+- tapOn: "Something for someday…"
+- inputText: "See the northern lights"
+- tapOn: "Add to the someday list"
+- assertVisible: "See the northern lights"

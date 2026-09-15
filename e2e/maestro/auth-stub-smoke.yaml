@@ -1,29 +1,16 @@
+# Aoi Maestro E2E (stub mode only)
+#
+# Run against a stub-mode dev build (EXPO_PUBLIC_AUTH_STUB_MODE=true) on an
+# emulator: `maestro test e2e/maestro/<flow>.yaml`
+#
+# Deliberately NOT covered here (no reliable automation — see MANUAL.md):
+# photo/voice capture (native pickers), real purchases, cross-device partner
+# join, push delivery, PDF share sheets.
+
 appId: com.ekasc.aoi
 ---
 - launchApp:
     clearState: true
-- runFlow:
-    when:
-      visible: "http://localhost:8081"
-    commands:
-      - tapOn: "http://localhost:8081"
-- runFlow:
-    when:
-      visible: "This is the developer menu. It gives you access to useful tools in your development builds."
-    commands:
-      - tapOn: "Continue"
-- runFlow:
-    when:
-      visible: "Toggle performance monitor"
-    commands:
-      - tapOn: "Close"
-- extendedWaitUntil:
-    visible: "Set up your shared space"
-    timeout: 120000
-- runFlow:
-    when:
-      visible: "Continue with Google"
-    commands:
-      - tapOn: "Continue with Google"
-- assertVisible: "Set up your shared space"
-- assertVisible: "Step 1 of 3"
+- assertVisible: "Continue to your private space"
+- tapOn: "Continue with Google"
+- assertVisible: "Save the little things"

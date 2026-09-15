@@ -1,0 +1,18 @@
+# Lifecycle: sign out returns to sign-in; signing back in restores the
+# Space. Leave/delete are destructive — covered by API tests; the delete
+# confirmation copy is asserted here without confirming.
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- tapOn: "Continue with Google"
+- tapOn: "Create a Space"
+- tapOn: "What should Aoi call you?"
+- inputText: "Maestro"
+- tapOn: "Create Space"
+- tapOn: "Skip for now"
+- tapOn: "Open Space settings"
+- tapOn: "Sign out"
+- assertVisible: "Continue to your private space"
+- tapOn: "Continue with Google"
+- assertVisible: "Story"

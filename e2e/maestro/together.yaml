@@ -1,0 +1,22 @@
+# Together: sealed letter stays sealed, squeeze sends, reflection opens.
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- tapOn: "Continue with Google"
+- tapOn: "Create a Space"
+- tapOn: "What should Aoi call you?"
+- inputText: "Maestro"
+- tapOn: "Create Space"
+- tapOn: "Skip for now"
+- tapOn: "Together"
+- assertVisible: "Letters"
+- tapOn: "Write a letter"
+- assertVisible: "Write it now; they'll open it on the day you choose."
+- tapOn: "Write it as if they'll read it on that day…"
+- inputText: "A letter from the emulator"
+- tapOn: "Seal it"
+- assertVisible: "Sealed."
+- tapOn: "Back to the shelf"
+- assertVisible: "Letters"
+- tapOn: "Send a squeeze to your partner"

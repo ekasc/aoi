@@ -1,0 +1,20 @@
+# Plus boundaries (stub UI level): paywall shows the real benefit set.
+# Export gate and interception copy render. Real purchase + webhook
+# enforcement are covered by API tests; store purchase is manual-device.
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- tapOn: "Continue with Google"
+- tapOn: "Create a Space"
+- tapOn: "What should Aoi call you?"
+- inputText: "Maestro"
+- tapOn: "Create Space"
+- tapOn: "Skip for now"
+- tapOn: "Open Space settings"
+- tapOn: "Unlock Plus"
+- assertVisible: "More room for photos and voice memories"
+- assertVisible: "More letters for the future"
+- assertVisible: "PDF chapter keepsakes"
+- tapOn: "Not now"
+- assertVisible: "Space"

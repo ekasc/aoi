@@ -1,0 +1,24 @@
+# Memory: note via the Us Keep-a-memory toggle into the mini NoteSheet; detail shows it, Wall holds no fake tiles.
+# Photo/voice capture needs native pickers — manual-device check (MANUAL.md).
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- tapOn: "Continue with Google"
+- tapOn: "Create a Space"
+- tapOn: "What should Aoi call you?"
+- inputText: "Maestro"
+- tapOn: "Create Space"
+- tapOn: "Skip for now"
+- tapOn: "Us"
+- assertVisible: "Keep a memory"
+# Us capture is progressively disclosed: the Keep a memory toggle reveals the
+# inline Photo/Note/Voice targets; Note opens the mini NoteSheet (title
+# "Keep a note" with Save — not the trace composer "Keep it").
+- tapOn: "Keep a memory"
+- tapOn: "Note"
+- assertVisible: "Keep a note"
+- tapOn: "What just crossed your mind about them?"
+- inputText: "Maestro was here"
+- tapOn: "Save"
+- assertVisible: "Maestro was here"
