@@ -23,7 +23,7 @@ export const WEEKLY_QUESTIONS = [
   'What did they do this week that made things easier for you?',
   "What's a small comfort of theirs that always works?",
   'What place did you think about going to together this week?',
-  'What reminded you of them this week — a song, a smell, a taste?',
+  'What reminded you of them this week, a song, a smell, a taste?',
   'What quiet moment together are you grateful for from this week?',
   "What's something you'd love to ask them about over dinner?",
   "What's a tiny thing they do that you'd miss if it ever stopped?",

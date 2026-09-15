@@ -13,8 +13,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeDateTimeField } from "@/components/forms/native-date-time-field";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
-import { Surface } from "@/components/ui/surface";
 import { Spacing } from "@/constants/theme";
+import { FontFamilies } from "@/constants/typography";
 import { CALENDAR_PRESET_LABELS } from "@/features/calendar/types";
 import type { CalendarPresetLabel } from "@/features/calendar/types";
 import { useProposals } from "@/features/proposals/proposals-context";
@@ -73,11 +73,20 @@ export default function NewProposalScreen() {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const isRangeInvalid = endsAt.getTime() <= startsAt.getTime();
-	const isPastStart = startsAt.getTime() <= Date.now();
 
-	const inputStyle = useMemo(
+	const titleInputStyle = useMemo(
 		() => [
-			styles.input,
+			styles.titleInput,
+			{
+				borderColor: border,
+				color: text,
+			},
+		],
+		[border, text],
+	);
+	const customInputStyle = useMemo(
+		() => [
+			styles.customInput,
 			{
 				borderColor: border,
 				backgroundColor: surface2,
@@ -103,7 +112,8 @@ export default function NewProposalScreen() {
 			return;
 		}
 
-		if (isPastStart) {
+		// Evaluated at send time so a draft left open can never slip into the past.
+		if (startsAt.getTime() <= Date.now()) {
 			setError("A suggestion can only point to the future.");
 			return;
 		}
@@ -138,7 +148,6 @@ export default function NewProposalScreen() {
 	}, [
 		customLabel,
 		endsAt,
-		isPastStart,
 		isRangeInvalid,
 		presetLabel,
 		propose,
@@ -161,12 +170,12 @@ export default function NewProposalScreen() {
 					keyboardShouldPersistTaps="handled"
 					showsVerticalScrollIndicator={false}
 				>
-					<ThemedText type="caption" selectable style={{ color: muted }}>
-						A gentle idea, never a demand — they can answer whenever, or pass
+					<ThemedText type="supporting" selectable style={{ color: muted }}>
+						A gentle idea, never a demand, they can answer whenever, or pass
 						with a quiet &quot;not now&quot;.
 					</ThemedText>
 
-					<Surface variant="raised" style={styles.section}>
+					<View style={styles.titleBlock}>
 						<ThemedText type="meta">The idea</ThemedText>
 						<TextInput
 							accessibilityLabel="Suggestion title"
@@ -180,81 +189,90 @@ export default function NewProposalScreen() {
 							}}
 							placeholder="How about the farmers market?"
 							placeholderTextColor={muted}
-							style={inputStyle}
+							style={titleInputStyle}
 							value={title}
 						/>
-					</Surface>
+					</View>
 
-					<Surface style={styles.section}>
+					<View style={styles.section}>
 						<ThemedText type="meta">When</ThemedText>
-						<NativeDateTimeField
-							accessibilityLabel="Choose start date"
-							label="Start date"
-							mode="date"
-							onChange={(value) => {
-								setStartsAt((current) => {
-									const nextStartDate = applyDatePart(current, value);
-									setEndsAt((currentEndDate) =>
-										ensureEndAfterStart(nextStartDate, currentEndDate),
-									);
-									return nextStartDate;
-								});
-								setError("");
-							}}
-							value={startsAt}
-						/>
-						<NativeDateTimeField
-							accessibilityLabel="Choose start time"
-							label="Start time"
-							mode="time"
-							onChange={(value) => {
-								setStartsAt((current) => {
-									const nextStartDate = applyTimePart(current, value);
-									setEndsAt((currentEndDate) =>
-										ensureEndAfterStart(nextStartDate, currentEndDate),
-									);
-									return nextStartDate;
-								});
-								setError("");
-							}}
-							value={startsAt}
-						/>
-						<NativeDateTimeField
-							accessibilityLabel="Choose end date"
-							label="End date"
-							mode="date"
-							minimumDate={startsAt}
-							onChange={(value) => {
-								setEndsAt((current) => applyDatePart(current, value));
-								setError("");
-							}}
-							value={endsAt}
-						/>
-						<NativeDateTimeField
-							accessibilityLabel="Choose end time"
-							label="End time"
-							mode="time"
-							onChange={(value) => {
-								setEndsAt((current) => applyTimePart(current, value));
-								setError("");
-							}}
-							value={endsAt}
-						/>
-						<ThemedText type="caption" selectable style={{ color: muted }}>
-							{startsAt.toLocaleString("en-US")} —{" "}
+						<View style={[styles.rowGroup, { borderColor: border }]}>
+							<NativeDateTimeField
+								accessibilityLabel="Choose start date"
+								label="Start date"
+								mode="date"
+								onChange={(value) => {
+									setStartsAt((current) => {
+										const nextStartDate = applyDatePart(current, value);
+										setEndsAt((currentEndDate) =>
+											ensureEndAfterStart(nextStartDate, currentEndDate),
+										);
+										return nextStartDate;
+									});
+									setError("");
+								}}
+								value={startsAt}
+								variant="row"
+							/>
+							<View style={[styles.rowDivider, { backgroundColor: border }]} />
+							<NativeDateTimeField
+								accessibilityLabel="Choose start time"
+								label="Start time"
+								mode="time"
+								onChange={(value) => {
+									setStartsAt((current) => {
+										const nextStartDate = applyTimePart(current, value);
+										setEndsAt((currentEndDate) =>
+											ensureEndAfterStart(nextStartDate, currentEndDate),
+										);
+										return nextStartDate;
+									});
+									setError("");
+								}}
+								value={startsAt}
+								variant="row"
+							/>
+							<View style={[styles.rowDivider, { backgroundColor: border }]} />
+							<NativeDateTimeField
+								accessibilityLabel="Choose end date"
+								label="End date"
+								mode="date"
+								minimumDate={startsAt}
+								onChange={(value) => {
+									setEndsAt((current) => applyDatePart(current, value));
+									setError("");
+								}}
+								value={endsAt}
+								variant="row"
+							/>
+							<View style={[styles.rowDivider, { backgroundColor: border }]} />
+							<NativeDateTimeField
+								accessibilityLabel="Choose end time"
+								label="End time"
+								mode="time"
+								onChange={(value) => {
+									setEndsAt((current) => applyTimePart(current, value));
+									setError("");
+								}}
+								value={endsAt}
+								variant="row"
+							/>
+						</View>
+						<ThemedText type="supporting" selectable style={{ color: muted }}>
+							{startsAt.toLocaleString("en-US")}, {" "}
 							{endsAt.toLocaleTimeString("en-US", {
 								hour: "numeric",
 								minute: "2-digit",
 							})}
 						</ThemedText>
 						{isRangeInvalid ? (
-							<ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+							<ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
 								The ending needs to come after the start.
 							</ThemedText>
 						) : null}
-					</Surface>
+					</View>
 
-					<Surface style={styles.section}>
+					<View style={styles.section}>
 						<ThemedText type="meta">Label (optional)</ThemedText>
 						<View accessibilityRole="radiogroup">
 							<View style={styles.choiceRow}>
@@ -315,14 +333,14 @@ export default function NewProposalScreen() {
 								onChangeText={setCustomLabel}
 								placeholder="Optional custom label"
 								placeholderTextColor={muted}
-								style={inputStyle}
+								style={customInputStyle}
 								value={customLabel}
 							/>
 						) : null}
-					</Surface>
+					</View>
 
 					{error ? (
-						<ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+						<ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
 							{error}
 						</ThemedText>
 					) : null}
@@ -346,14 +364,33 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	contentContainer: {
-		paddingHorizontal: Spacing[16],
-		paddingTop: Spacing[16],
-		gap: Spacing[12],
+		paddingHorizontal: Spacing[24],
+		paddingTop: Spacing[24],
+		gap: Spacing[24],
 	},
-	section: {
+	titleBlock: {
 		gap: Spacing[8],
 	},
-	input: {
+	titleInput: {
+		fontFamily: FontFamilies.display,
+		fontSize: 22,
+		lineHeight: 30,
+		letterSpacing: -0.2,
+		minHeight: 44,
+		paddingVertical: Spacing[8],
+		borderBottomWidth: StyleSheet.hairlineWidth,
+	},
+	section: {
+		gap: Spacing[12],
+	},
+	rowGroup: {
+		borderTopWidth: StyleSheet.hairlineWidth,
+		borderBottomWidth: StyleSheet.hairlineWidth,
+	},
+	rowDivider: {
+		height: StyleSheet.hairlineWidth,
+	},
+	customInput: {
 		minHeight: 44,
 		borderWidth: StyleSheet.hairlineWidth,
 		borderRadius: 14,
@@ -376,7 +413,7 @@ const styles = StyleSheet.create({
 	},
 	footer: {
 		borderTopWidth: StyleSheet.hairlineWidth,
-		paddingHorizontal: Spacing[16],
+		paddingHorizontal: Spacing[24],
 		paddingTop: Spacing[12],
 		gap: Spacing[8],
 	},

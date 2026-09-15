@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
-import { Motion, Spacing } from "@/constants/theme";
+import { Motion, Radii, Spacing } from "@/constants/theme";
 import { useQuestion } from "@/features/question/question-context";
 import { WEEKLY_ANSWER_MAX_LENGTH } from "@/features/question/types";
 import { useSpace } from "@/features/space/space-context";
@@ -25,26 +25,26 @@ const REVEAL_ANIMATION = FadeIn.duration(Motion.slow).reduceMotion(
 );
 
 function AnswerCard({
-	answer,
-	label,
-	labelColor,
+  answer,
+  label,
+  labelColor,
 }: {
-	answer: string;
-	label: string;
-	labelColor: string;
+  answer: string;
+  label: string;
+  labelColor: string;
 }) {
-	return (
-		<Animated.View entering={REVEAL_ANIMATION}>
-			<Surface style={styles.answerCard}>
-				<ThemedText type="meta" style={{ color: labelColor }}>
-					{label}
-				</ThemedText>
-				<ThemedText type="body" selectable>
-					{answer}
-				</ThemedText>
-			</Surface>
-		</Animated.View>
-	);
+  return (
+    <Animated.View entering={REVEAL_ANIMATION}>
+      <Surface style={styles.answerCard}>
+        <ThemedText type="meta" style={{ color: labelColor }}>
+          {label}
+        </ThemedText>
+        <ThemedText type="body" selectable>
+          {answer}
+        </ThemedText>
+      </Surface>
+    </Animated.View>
+  );
 }
 
 /**
@@ -64,6 +64,7 @@ export default function QuestionScreen() {
 	const muted = useThemeColor({}, "muted");
 	const partnerAccent = useThemeColor({}, "partnerAccent");
 	const text = useThemeColor({}, "text");
+	const warning = useThemeColor({}, "warning");
 	const [draft, setDraft] = useState("");
 	const [isEditingRevealed, setIsEditingRevealed] = useState(false);
 	const [saveError, setSaveError] = useState<string | null>(null);
@@ -102,7 +103,7 @@ export default function QuestionScreen() {
 			setIsEditingRevealed(false);
 		} catch {
 			setSaveError(
-				"Your answer couldn't be saved right now — try again in a moment.",
+				"Your answer couldn't be saved right now, try again in a moment.",
 			);
 		}
 	}, [canSave, submitAnswer, trimmedDraft]);
@@ -111,28 +112,28 @@ export default function QuestionScreen() {
 		setIsEditingRevealed(true);
 	}, []);
 
-	const contentContainerStyle = useMemo(
-		() => [
-			styles.contentContainer,
-			{
-				paddingTop: Spacing[16],
-				paddingBottom: insets.bottom + Spacing[24],
-			},
-		],
-		[insets.bottom],
-	);
+  const scrollContentStyle = useMemo(
+    () => [
+      styles.scrollContent,
+      {
+        paddingTop: Spacing[16],
+        paddingBottom: insets.bottom + Spacing[24],
+      },
+    ],
+    [insets.bottom],
+  );
 
-	return (
-		<KeyboardAvoidingView
-			behavior={isIos ? "padding" : undefined}
-			style={[styles.root, { backgroundColor: background }]}
-		>
-			<Stack.Screen options={{ title: "This week" }} />
-			<ScrollView
-				contentContainerStyle={contentContainerStyle}
-				keyboardShouldPersistTaps="handled"
-				showsVerticalScrollIndicator={false}
-			>
+  return (
+    <KeyboardAvoidingView
+      behavior={isIos ? "padding" : undefined}
+      style={[styles.root, { backgroundColor: background }]}
+    >
+      <Stack.Screen options={{ title: "This week" }} />
+      <ScrollView
+        contentContainerStyle={scrollContentStyle}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 				{isLoading && !state ? (
 					<View style={styles.center}>
 						<ActivityIndicator color={accent} />
@@ -151,14 +152,19 @@ export default function QuestionScreen() {
 					</Surface>
 				) : state ? (
 					<>
-						<ThemedText type="caption" style={{ color: muted }}>
-							One question this week — answer whenever you like.
-						</ThemedText>
-						<ThemedText type="title">{state.question}</ThemedText>
+						<View style={styles.promptBlock}>
+							<ThemedText type="caption" style={{ color: muted }}>
+								One question this week, answer whenever you like.
+							</ThemedText>
+							<ThemedText type="title" accessibilityRole="header">
+								{state.question}
+							</ThemedText>
+						</View>
 
 						{showComposer ? (
 							<Surface style={styles.composer}>
 								<TextInput
+									accessibilityLabel="Your reflection answer"
 									maxLength={WEEKLY_ANSWER_MAX_LENGTH}
 									multiline
 									onChangeText={setDraft}
@@ -173,19 +179,24 @@ export default function QuestionScreen() {
 										{saveError}
 									</ThemedText>
 								) : null}
-								<Button
-									disabled={!canSave}
-									label={hasSavedAnswer ? "Update my answer" : "Keep my answer"}
-									onPress={() => void handleSave()}
-								/>
-								{hasSavedAnswer && !state.revealed ? (
-									<ThemedText type="caption" style={{ color: muted }}>
-										Saved. It unlocks when {partnerName} has written too.
-									</ThemedText>
-								) : null}
+								<View style={styles.controlStack}>
+									<Button
+										disabled={!canSave}
+										label={hasSavedAnswer ? "Update my answer" : "Keep my answer"}
+										onPress={() => void handleSave()}
+									/>
+									{hasSavedAnswer && !state.revealed ? (
+										<View style={styles.lockedRow}>
+											<View style={[styles.lockedDot, { backgroundColor: warning }]} />
+											<ThemedText type="caption" style={{ color: warning }}>
+												Saved. It unlocks when {partnerName} has written too.
+											</ThemedText>
+										</View>
+									) : null}
+								</View>
 							</Surface>
 						) : (
-							<View style={styles.revealStack}>
+							<View style={styles.revealGroup}>
 								<AnswerCard
 									answer={state.yourAnswer ?? ""}
 									label="You"
@@ -196,17 +207,19 @@ export default function QuestionScreen() {
 									label={partnerName}
 									labelColor={partnerAccent}
 								/>
-								<Button
-									label="Edit my answer"
-									onPress={handleEditRevealed}
-									variant="ghost"
-								/>
+								<View style={styles.editWrap}>
+									<Button
+										label="Edit my answer"
+										onPress={handleEditRevealed}
+										variant="ghost"
+									/>
+								</View>
 							</View>
 						)}
 					</>
 				) : null}
-			</ScrollView>
-		</KeyboardAvoidingView>
+      </ScrollView>
+    </KeyboardAvoidingView>
 	);
 }
 
@@ -214,19 +227,24 @@ const styles = StyleSheet.create({
 	root: {
 		flex: 1,
 	},
-	contentContainer: {
+	scrollContent: {
+		flexGrow: 1,
 		gap: Spacing[16],
 		paddingHorizontal: Spacing[16],
 	},
 	center: {
+		flex: 1,
 		alignItems: "center",
 		justifyContent: "center",
-		paddingVertical: Spacing[40],
+	},
+	promptBlock: {
+		gap: Spacing[8],
 	},
 	errorCard: {
 		alignItems: "stretch",
 		gap: Spacing[4],
 		padding: Spacing[16],
+		borderRadius: Radii.lg,
 	},
 	retrySpacer: {
 		height: Spacing[8],
@@ -234,16 +252,36 @@ const styles = StyleSheet.create({
 	composer: {
 		gap: Spacing[12],
 		padding: Spacing[16],
+		borderRadius: Radii.lg,
 	},
 	input: {
 		fontSize: 17,
 		lineHeight: 24,
-		minHeight: 96,
+		minHeight: 112,
+		textAlignVertical: "top",
+	},
+	controlStack: {
+		gap: Spacing[8],
+	},
+	lockedRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: Spacing[8],
+	},
+	lockedDot: {
+		width: 8,
+		height: 8,
+		borderRadius: Radii.pill,
+		flexShrink: 0,
 	},
 	answerCard: {
 		gap: Spacing[8],
+		borderRadius: Radii.lg,
 	},
-	revealStack: {
+	revealGroup: {
 		gap: Spacing[12],
+	},
+	editWrap: {
+		alignItems: "center",
 	},
 });

@@ -119,7 +119,7 @@ function createPartnerSeedProposal(seededAt: Date): StoredProposal {
     id: STUB_PARTNER_PROPOSAL_ID,
     proposerRole: 'partner',
     proposerName: 'Them',
-    title: 'A pretend suggestion — try answering it',
+    title: 'A pretend suggestion, try answering it',
     proposedStart: start.toISOString(),
     proposedEnd: end.toISOString(),
     label: { preset: 'Date' },
