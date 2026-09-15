@@ -11,8 +11,14 @@ const DRAFT_GRID_SOURCE = readFileSync(
   'components/moments/draft-media-grid.tsx',
   'utf8'
 );
-const AUDIO_PLAYER_SOURCE = readFileSync(
-  'components/media/audio-player.tsx',
+// Voice playback resolves in the hook both the player row and the gallery's
+// audio tile share; the row itself no longer touches the URI.
+const VOICE_PLAYBACK_SOURCE = readFileSync(
+  'hooks/use-voice-playback.ts',
+  'utf8'
+);
+const GALLERY_TILE_SOURCE = readFileSync(
+  'components/moments/gallery-tile.tsx',
   'utf8'
 );
 const MOMENT_CARD_SOURCE = readFileSync(
@@ -39,7 +45,11 @@ describe('staged media display/upload boundaries resolve URIs', () => {
   });
 
   it('voice playback resolves its uri (staged previews and local-only feed audio)', () => {
-    expect(AUDIO_PLAYER_SOURCE).toContain('resolveStagedUri(uri)');
+    expect(VOICE_PLAYBACK_SOURCE).toContain('resolveStagedUri(uri)');
+  });
+
+  it('gallery tiles resolve both the photo and the video still', () => {
+    expect(GALLERY_TILE_SOURCE.match(/resolveStagedUri\(/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
   it('feed and detail photos resolve legacy mediaPreview (relative when local-only)', () => {
@@ -61,7 +71,8 @@ describe('staged media display/upload boundaries resolve URIs', () => {
   it('every boundary imports the shared resolver', () => {
     for (const source of [
       DRAFT_GRID_SOURCE,
-      AUDIO_PLAYER_SOURCE,
+      VOICE_PLAYBACK_SOURCE,
+      GALLERY_TILE_SOURCE,
       MOMENT_CARD_SOURCE,
       MOMENT_ATTACHMENTS_SOURCE,
       DETAIL_SOURCE,

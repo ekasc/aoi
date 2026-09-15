@@ -1,13 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { resolveStagedUri } from '@/features/composer/staged-uri';
+import { formatPlaybackSeconds, useVoicePlayback } from '@/hooks/use-voice-playback';
 import { useThemeColor } from '@/hooks/use-theme-color';
-
-import { useAudioPlayer } from 'expo-audio';
 
 export type AudioPlayerProps = {
   uri: string;
@@ -18,18 +16,6 @@ export type AudioPlayerProps = {
   label?: string;
 };
 
-function formatSeconds(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '0:00';
-  }
-
-  const totalSeconds = Math.round(value);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
 /**
  * Minimal playback for voice traces: one button, a progress thread, time.
  */
@@ -38,37 +24,13 @@ function AudioPlayerComponent({ uri, label }: AudioPlayerProps) {
   const onAccent = useThemeColor({}, 'onAccent');
   const surface2 = useThemeColor({}, 'surface2');
   const muted = useThemeColor({}, 'muted');
-  // Staged voice notes are Documents-relative paths until upload; remote
-  // URLs pass through untouched.
-  const player = useAudioPlayer(resolveStagedUri(uri));
-  const [, setTick] = useState(0);
-
-  // Light polling keeps progress honest without re-render storms.
-  useEffect(() => {
-    const interval = setInterval(() => setTick((value) => value + 1), 400);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const isPlaying = player.playing;
-  const duration = player.duration ?? 0;
-  const currentTime = player.currentTime ?? 0;
-  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  const { isPlaying, progress, seconds, toggle } = useVoicePlayback(uri);
 
   // Unlabelled keeps the original wording; a labelled player names what it
   // holds, so a row of recordings is never a row of identical buttons.
   const playLabel = label
     ? `${isPlaying ? 'Pause' : 'Play'} voice note: ${label}`
     : `${isPlaying ? 'Pause' : 'Play'} voice note`;
-
-  const handleToggle = useCallback(() => {
-    if (player.playing) {
-      player.pause();
-    } else {
-      player.play();
-    }
-    setTick((value) => value + 1);
-  }, [player]);
 
   return (
     <View
@@ -79,7 +41,7 @@ function AudioPlayerComponent({ uri, label }: AudioPlayerProps) {
       <Pressable
         accessibilityLabel={playLabel}
         accessibilityRole="button"
-        onPress={handleToggle}
+        onPress={toggle}
         style={[styles.playButton, { backgroundColor: accent }]}
       >
         <Ionicons color={onAccent} name={isPlaying ? 'pause' : 'play'} size={16} />
@@ -97,7 +59,7 @@ function AudioPlayerComponent({ uri, label }: AudioPlayerProps) {
         style={{ color: muted, fontVariant: ['tabular-nums'] }}
         suppressHighlighting
       >
-        {formatSeconds(isPlaying ? currentTime : duration)}
+        {formatPlaybackSeconds(seconds)}
       </ThemedText>
     </View>
   );

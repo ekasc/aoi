@@ -23,9 +23,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MemorySky, fabBottomOffset } from "@/components/home/memory-sky";
 import { SpaceAvatarButton } from "@/components/space/space-avatar-button";
-import { GalleryMediaRow } from "@/components/moments/gallery-media-row";
 import { GalleryMonthHeader } from "@/components/moments/gallery-month-header";
-import { GalleryTile } from "@/components/moments/gallery-tile";
+import {
+	GalleryPhotoTile,
+	GalleryVideoTile,
+	GalleryVoiceTile,
+} from "@/components/moments/gallery-tile";
 import { MomentCard } from "@/components/moments/moment-card";
 import { PhotoViewer, type ViewerPhoto } from "@/components/moments/photo-viewer";
 import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
@@ -46,6 +49,8 @@ import {
 	buildGalleryRows,
 	buildGallerySections,
 	galleryPhotosOf,
+	galleryTileLabel,
+	isGalleryPhoto,
 	type GalleryPhoto,
 	type GalleryRow,
 } from "@/features/moments/gallery";
@@ -441,10 +446,11 @@ export default function MemoriesScreen() {
 	}, [feed.pending, sections, isFiltering]);
 
 
-	// Dense 3-column grid: tiles size to the padded list, whichever is
-	// narrower (the capped content column or the window).
+	// Dense 3-column grid, edge to edge: tiles size to the list itself,
+	// whichever is narrower (the capped content column or the window), and
+	// only the 2pt gutters come out of that width.
 	const galleryTileSize = useMemo(() => {
-		const contentWidth = Math.min(windowWidth, ROOT_MAX_WIDTH) - Spacing[24] * 2;
+		const contentWidth = Math.min(windowWidth, ROOT_MAX_WIDTH);
 		const usable = contentWidth - GALLERY_GAP * (GALLERY_COLUMNS - 1);
 		return Math.max(1, Math.floor(usable / GALLERY_COLUMNS));
 	}, [windowWidth]);
@@ -811,22 +817,43 @@ export default function MemoriesScreen() {
 					/>
 				);
 			}
-			// Video and voice need a transport, so they take a full-width line
-			// of the album instead of a tile.
-			if (item.kind === "media") {
-				return <GalleryMediaRow item={item.item} sectionLabel={item.sectionLabel} />;
-			}
 			return (
 				<View style={styles.galleryGridRow}>
-					{item.photos.map((photo, tile) => (
-						<GalleryTile
-							accessibilityLabel={`Open photo ${item.photoStartIndex + tile + 1} of ${item.photoTotal} from ${item.sectionLabel}`}
-							key={photo.key}
-							onPress={handleOpenPhoto}
-							photo={photo}
-							size={galleryTileSize}
-						/>
-					))}
+					{item.items.map((tile, column) => {
+						const position = `${item.itemStartIndex + column + 1} of ${item.itemTotal}`;
+						const context = `${position} from ${item.sectionLabel}`;
+						if (tile.kind === "voice") {
+							return (
+								<GalleryVoiceTile
+									item={tile}
+									key={tile.key}
+									label={galleryTileLabel(tile, context)}
+									size={galleryTileSize}
+								/>
+							);
+						}
+						if (tile.kind === "video") {
+							return (
+								<GalleryVideoTile
+									item={tile}
+									key={tile.key}
+									label={galleryTileLabel(tile, context)}
+									size={galleryTileSize}
+								/>
+							);
+						}
+						// Photos last: the predicate is what narrows the union, and
+						// a wall tile is always one of the three kinds.
+						return isGalleryPhoto(tile) ? (
+							<GalleryPhotoTile
+								accessibilityLabel={`Open photo ${context}`}
+								item={tile}
+								key={tile.key}
+								onPress={handleOpenPhoto}
+								size={galleryTileSize}
+							/>
+						) : null;
+					})}
 				</View>
 			);
 		},
@@ -1523,7 +1550,6 @@ const styles = StyleSheet.create({
 	galleryGridRow: {
 		flexDirection: "row",
 		gap: GALLERY_GAP,
-		paddingHorizontal: Spacing[24],
 		paddingBottom: GALLERY_GAP,
 	},
 	loadMoreWrap: {

@@ -4,12 +4,13 @@ import type { Moment, MomentAuthorRole } from '@/features/moments/types';
 /**
  * Pure Gallery extraction (no hooks, no native deps).
  *
- * The Gallery is the archive read as an album: the same oldest-first feed,
- * one item per real piece of media, months oldest first and media oldest
- * first inside each month. Photos tile in a dense square grid, videos take a
- * full-width print, and voice notes take a full-width row of their own — a
- * recording needs a transport, so it reads as a line of the album rather
- * than a print.
+ * The Gallery is the archive as a GRID: the same oldest-first feed, one
+ * square tile per real piece of media, months oldest first and media oldest
+ * first inside each month. Photos, videos and voice notes all become tiles
+ * of the same size, so the wall reads at a glance the way a camera roll
+ * does. Nothing here explains a memory — no bylines, no titles, no captions:
+ * that is the Feed's job, and a second presentation that repeats it would
+ * just be the Feed again.
  *
  * Ordered attachments win wholesale: the attachment contract is image/audio
  * only, and the legacy single-media fields are derived from the first
@@ -117,6 +118,15 @@ export function galleryPhotosOf(moment: Moment): GalleryPhoto[] {
   return galleryItemsOf(moment).filter(isGalleryPhoto);
 }
 
+/**
+ * What a tile's play control announces: the memory's own title when it has
+ * one, otherwise where the media sits ("2 of 5 from September 2026"). Never
+ * just "video".
+ */
+export function galleryTileLabel(item: GalleryItem, context: string): string {
+  return item.title ? `${item.title} (${context})` : context;
+}
+
 export type GalleryCounts = {
   photo: number;
   video: number;
@@ -164,80 +174,43 @@ export function buildGallerySections(moments: Moment[]): GallerySection[] {
   return sections;
 }
 
-/** Full-width month heading row: the album divider for one month. */
+/** Full-width month heading row: the grid's divider for one month. */
 export type GalleryMonthRow = {
   kind: 'month';
   key: string;
   section: GallerySection;
 };
 
-/** One dense grid row of up to `GALLERY_COLUMNS` photos. */
+/** One dense grid row of up to `GALLERY_COLUMNS` tiles, of any kind. */
 export type GalleryGridRow = {
   kind: 'grid';
   key: string;
-  photos: GalleryPhoto[];
+  items: GalleryItem[];
   sectionLabel: string;
-  /** Where this row starts within the month's PHOTOS (tile labels). */
-  photoStartIndex: number;
-  /** Photos in the whole month, so a tile can say "3 of 12". */
-  photoTotal: number;
+  /** Where this row starts within the month (tile labels count it). */
+  itemStartIndex: number;
+  /** Tiles in the whole month, so a tile can say "3 of 12". */
+  itemTotal: number;
 };
 
-/** A full-width video or voice row. */
-export type GalleryMediaRow = {
-  kind: 'media';
-  key: string;
-  item: GalleryItem;
-  sectionLabel: string;
-};
+export type GalleryRow = GalleryMonthRow | GalleryGridRow;
 
-export type GalleryRow = GalleryMonthRow | GalleryGridRow | GalleryMediaRow;
-
-/**
- * Flatten sections into FlatList rows: a month divider, then the month's
- * media in order — consecutive photos packed into dense
- * `GALLERY_COLUMNS`-wide rows, each video or voice note forcing its own
- * full-width row. Virtualization stays at row granularity while dividers
- * keep full width.
- */
 export function buildGalleryRows(sections: GallerySection[]): GalleryRow[] {
   const rows: GalleryRow[] = [];
   for (const section of sections) {
     rows.push({ kind: 'month', key: `month:${section.monthKey}`, section });
-    let pending: GalleryPhoto[] = [];
-    let photoIndex = 0;
-    const flush = () => {
-      if (pending.length === 0) {
-        return;
-      }
+    // Every kind tiles the same way: one dense row of GALLERY_COLUMNS,
+    // partition only, so a video or a voice note never breaks the grid.
+    for (let index = 0; index < section.items.length; index += GALLERY_COLUMNS) {
       rows.push({
         kind: 'grid',
-        key: `grid:${section.monthKey}:${pending[0].key}`,
-        photos: pending,
+        key: `grid:${section.monthKey}:${index}`,
+        items: section.items.slice(index, index + GALLERY_COLUMNS),
         sectionLabel: section.label,
-        photoStartIndex: photoIndex,
-        photoTotal: section.counts.photo,
-      });
-      photoIndex += pending.length;
-      pending = [];
-    };
-    for (const item of section.items) {
-      if (isGalleryPhoto(item)) {
-        pending.push(item);
-        if (pending.length === GALLERY_COLUMNS) {
-          flush();
-        }
-        continue;
-      }
-      flush();
-      rows.push({
-        kind: 'media',
-        key: `media:${item.key}`,
-        item,
-        sectionLabel: section.label,
+        itemStartIndex: index,
+        itemTotal: section.items.length,
       });
     }
-    flush();
   }
   return rows;
 }

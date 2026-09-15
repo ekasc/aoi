@@ -6,10 +6,12 @@ import {
   countGalleryItems,
   galleryItemsOf,
   galleryPhotosOf,
+  galleryTileLabel,
   isGalleryPhoto,
   GALLERY_COLUMNS,
   type GalleryItem,
   type GalleryPhoto,
+  type GalleryRow,
   type GallerySection,
 } from '@/features/moments/gallery';
 import { formatGalleryCounts } from '@/features/moments/labels';
@@ -294,28 +296,28 @@ describe('buildGallerySections', () => {
 // ── buildGalleryRows ────────────────────────────────────────────────────
 
 describe('buildGalleryRows', () => {
-  it('emits a month divider then dense rows of at most GALLERY_COLUMNS photos', () => {
-    const photos = Array.from({ length: 7 }, (_, index) => photoItem(`p${index}`));
-    const rows = buildGalleryRows([section({ items: photos })]);
+  it('emits a month divider then dense rows of at most GALLERY_COLUMNS tiles', () => {
+    const items = Array.from({ length: 7 }, (_, index) => photoItem(`p${index}`));
+    const rows = buildGalleryRows([section({ items })]);
 
     expect(rows[0]).toMatchObject({ kind: 'month', key: 'month:2026-03' });
     const gridRows = rows.slice(1);
-    expect(gridRows.map((row) => (row.kind === 'grid' ? row.photos.length : 0))).toEqual([
+    expect(gridRows.map((row) => (row.kind === 'grid' ? row.items.length : 0))).toEqual([
       GALLERY_COLUMNS,
       GALLERY_COLUMNS,
       1,
     ]);
-    // Tile labels count within the month's PHOTOS, so "3 of 7" is true.
+    // Tile labels count within the month, so "3 of 7" is true.
     expect(gridRows[0]).toMatchObject({
       kind: 'grid',
       sectionLabel: 'March 2026',
-      photoStartIndex: 0,
-      photoTotal: 7,
+      itemStartIndex: 0,
+      itemTotal: 7,
     });
-    expect(gridRows[2]).toMatchObject({ kind: 'grid', photoStartIndex: 6 });
+    expect(gridRows[2]).toMatchObject({ kind: 'grid', itemStartIndex: 6 });
   });
 
-  it('gives video and voice their own full-width row, between the photo runs', () => {
+  it('tiles every kind the same way: video and voice never break the grid', () => {
     const rows = buildGalleryRows([
       section({
         items: [
@@ -329,20 +331,13 @@ describe('buildGalleryRows', () => {
       }),
     ]);
 
-    expect(rows.map((row) => row.kind)).toEqual([
-      'month',
-      'grid',
-      'media',
-      'grid',
-      'media',
-      'grid',
-    ]);
-    // The photo run is cut at the clip: media never shares a tile row.
-    expect(rows[1]).toMatchObject({ kind: 'grid', photos: [{ key: 'p1' }, { key: 'p2' }] });
-    expect(rows[2]).toMatchObject({ kind: 'media', item: { key: 'clip', kind: 'video' } });
-    expect(rows[3]).toMatchObject({ kind: 'grid', photos: [{ key: 'p3' }] });
-    expect(rows[4]).toMatchObject({ kind: 'media', item: { key: 'v1', kind: 'voice' } });
-    expect(rows[5]).toMatchObject({ kind: 'grid', photos: [{ key: 'p4' }] });
+    // One divider, then rows of three — a grid, not a feed of rows.
+    expect(rows.map((row) => row.kind)).toEqual(['month', 'grid', 'grid']);
+    const [first, second] = rows.slice(1) as Extract<GalleryRow, { kind: 'grid' }>[];
+    expect(first.items.map((item) => item.key)).toEqual(['p1', 'p2', 'clip']);
+    expect(second.items.map((item) => item.key)).toEqual(['p3', 'v1', 'p4']);
+    expect(second.itemStartIndex).toBe(GALLERY_COLUMNS);
+    expect(second.itemTotal).toBe(6);
   });
 
   it('keeps each month grouped under its own divider, keys stable', () => {
@@ -358,15 +353,25 @@ describe('buildGalleryRows', () => {
     expect(rows.map((row) => row.kind)).toEqual(['month', 'grid', 'month', 'grid']);
     expect(rows.map((row) => row.key)).toEqual([
       'month:2026-03',
-      'grid:2026-03:one',
+      'grid:2026-03:0',
       'month:2026-02',
-      'grid:2026-02:three',
+      'grid:2026-02:0',
     ]);
   });
 
-  it('emits nothing but the divider for a month whose media is all on rows', () => {
-    const rows = buildGalleryRows([section({ items: [voiceItem('v1')] })]);
-    expect(rows.map((row) => row.kind)).toEqual(['month', 'media']);
+  it('emits nothing but the divider for a month with no media', () => {
+    expect(buildGalleryRows([section({ items: [] })])).toHaveLength(1);
+  });
+});
+
+describe('galleryTileLabel', () => {
+  it('names the memory when it has a title, otherwise where the media sits', () => {
+    expect(galleryTileLabel({ ...photoItem('a'), title: '' }, '2 of 5 from September 2026')).toBe(
+      '2 of 5 from September 2026',
+    );
+    expect(
+      galleryTileLabel({ ...photoItem('a'), title: 'Beach dog' }, '2 of 5 from September 2026'),
+    ).toBe('Beach dog (2 of 5 from September 2026)');
   });
 });
 

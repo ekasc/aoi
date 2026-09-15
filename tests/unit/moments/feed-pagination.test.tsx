@@ -394,7 +394,11 @@ vi.mock('@/components/ui/glass-surface', () => ({
 
 vi.mock('@/components/moments/moment-card', () => ({ MomentCard: () => null }));
 
-vi.mock('@/components/moments/gallery-tile', () => ({ GalleryTile: () => null }));
+vi.mock('@/components/moments/gallery-tile', () => ({
+  GalleryPhotoTile: () => null,
+  GalleryVideoTile: () => null,
+  GalleryVoiceTile: () => null,
+}));
 
 vi.mock('@/components/moments/pending-memory-row', () => ({ PendingMemoryRow: () => null }));
 

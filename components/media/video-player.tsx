@@ -22,7 +22,16 @@ export type VideoPlayerProps = {
  * loads (and buffers) the clip, so the feed never spins up a native player
  * per row — the poster is just an image until the reader asks to watch.
  */
-function VideoSurface({ uri, label }: { uri: string; label: string }) {
+export function VideoSurface({
+  uri,
+  label,
+  contentFit = 'contain',
+}: {
+  uri: string;
+  label: string;
+  /** The feed letterboxes inside its frame; a square tile fills it. */
+  contentFit?: 'contain' | 'cover';
+}) {
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
     instance.play();
@@ -31,7 +40,7 @@ function VideoSurface({ uri, label }: { uri: string; label: string }) {
   return (
     <VideoView
       accessibilityLabel={label}
-      contentFit="contain"
+      contentFit={contentFit}
       nativeControls
       player={player}
       style={styles.fill}
