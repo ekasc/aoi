@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   backdropFor,
+  buildMorphGeometry,
   clampPanOffset,
   clampZoom,
   progressVelocityFor,
@@ -208,6 +209,54 @@ describe('morph geometry', () => {
   });
 });
 
+describe('morph geometry', () => {
+  it('builds a clip box with the thumbnail aspect that contains the photo', () => {
+    // A 3:4 photo on a 390x844 screen, landing on a 96x96 thumbnail.
+    const g = buildMorphGeometry(1200, 1600, 390, 844, 96, 96);
+    // The photo's own fullscreen box, contain-fit.
+    expect(g.fullWidth).toBeCloseTo(390, 4);
+    expect(g.fullHeight).toBeCloseTo(520, 4);
+    // The clip box takes the thumbnail's aspect (square here) and contains
+    // that box, so the image can start contained and end covering it.
+    expect(g.baseWidth).toBeCloseTo(g.baseHeight, 4);
+    expect(g.baseWidth).toBeGreaterThanOrEqual(g.fullWidth);
+    expect(g.baseHeight).toBeGreaterThanOrEqual(g.fullHeight);
+    // The crop scale makes the contained image fill the clip box (covering
+    // it, exactly on one axis), which is what turns contain into the
+    // thumbnail's own cropped fill by the time it lands.
+    expect(g.fullWidth * g.coverScale).toBeGreaterThanOrEqual(g.baseWidth - 0.001);
+    expect(g.fullHeight * g.coverScale).toBeGreaterThanOrEqual(g.baseHeight - 0.001);
+    // At least one axis is exactly covered (the other overflows, which is
+    // what a cover crop is).
+    expect(
+      Math.min(
+        (g.fullWidth * g.coverScale) / g.baseWidth,
+        (g.fullHeight * g.coverScale) / g.baseHeight,
+      ),
+    ).toBeCloseTo(1, 3);
+  });
+
+  it('follows the thumbnail aspect for wide and tall thumbnails alike', () => {
+    const wide = buildMorphGeometry(1200, 1600, 390, 844, 200, 100);
+    expect(wide.baseWidth / wide.baseHeight).toBeCloseTo(2, 4);
+    expect(wide.baseWidth).toBeGreaterThanOrEqual(wide.fullWidth);
+    const tall = buildMorphGeometry(1600, 1200, 390, 844, 100, 200);
+    expect(tall.baseWidth / tall.baseHeight).toBeCloseTo(0.5, 4);
+    expect(tall.baseHeight).toBeGreaterThanOrEqual(tall.fullHeight);
+  });
+
+  it('degrades safely with no measurable thumbnail', () => {
+    const g = buildMorphGeometry(1200, 1600, 390, 844, 0, 0);
+    expect(g.baseWidth).toBeGreaterThan(0);
+    expect(g.baseHeight).toBeGreaterThan(0);
+    expect(Number.isFinite(g.coverScale)).toBe(true);
+    // And with no source size either: still finite, still sized.
+    const empty = buildMorphGeometry(0, 0, 390, 844, 96, 96);
+    expect(Number.isFinite(empty.baseWidth)).toBe(true);
+    expect(Number.isFinite(empty.coverScale)).toBe(true);
+  });
+});
+
 describe('zoom maths', () => {
   it('clamps pinch scale to the zoom window', () => {
     expect(clampZoom(2.5)).toBe(2.5);
@@ -292,18 +341,48 @@ describe('gesture and transition contracts (source)', () => {
   it('presents from real geometry, and never leaves a modal that eats touches', () => {
     // The Modal must not fade on its own, or the zoom and the fade fight.
     expect(viewer).toContain('animationType="none"');
-    // The overlay waits for the viewer's layout, then animates from the
-    // thumbnail; the photo's own size only refines the frames.
-    expect(viewer).toContain('const presented = laidOut;');
+    // The overlay waits for the viewer's layout AND the clip box's layout, so
+    // the zoom starts against geometry React has committed.
+    expect(viewer).toContain('const presented = laidOut && (geometryReady || overlayFailsafe);');
     expect(viewer).toMatch(/withDelay\(\s*OPEN_MORPH_DELAY/);
-    // A gate that never opens would freeze the screen behind an invisible
-    // modal, so touches pass through until it presents.
-    expect(viewer).toMatch(/pointerEvents=\{presented && !handingBack \? ['"]auto['"] : ['"]none['"]\}/);
-    expect(viewer).toMatch(/setTimeout\(\(\) => setLaidOut\(true\), 120\)/);
+    // A timer is the failsafe: an overlay that never presents would swallow
+    // every touch, so it appears and the zoom is skipped instead.
+    expect(viewer).toMatch(/setTimeout\(\(\) => setOverlayFailsafe\(true\), 400\)/);
+    // Two flags, not one: a failsafe that opened the zoom gate too would morph
+    // against geometry nobody reported.
+    expect(viewer).toContain('const [overlayFailsafe, setOverlayFailsafe] = useState(false);');
+    expect(viewer).toMatch(/if \(!origin \|\| reduceMotion \|\| !geometryReady\) \{/);
     // And once a dismiss starts, the photo is only finishing its landing: the
     // reader can touch the feed underneath without waiting for it to settle.
     expect(viewer).toContain('setHandingBack(true)');
     expect(photo).toContain('runOnJS(handleDismissStart)()');
+    expect(viewer).toMatch(/pointerEvents=\{presented && !handingBack \? ['"]auto['"] : ['"]none['"]\}/);
+  });
+
+  it('pins the clip box: static layout, transform-only animation, radius on the box', () => {
+    // The box's aspect is the thumbnail's, so its corners land on the
+    // thumbnail's corners, at the thumbnail's radius, and the rounding is
+    // visible for the whole swipe instead of only at the end.
+    expect(photo).toContain('buildMorphGeometry(');
+    expect(photo).toMatch(/onLayout=\{handleMorphLayout\}/);
+    expect(photo).toContain('borderRadius: shellRadiusFor(t, home.radius.value, scale)');
+    // The clip box's size comes from the geometry state and never animates:
+    // animating a rect per frame froze the app on device. Everything the
+    // animated styles return is a transform, a radius or an opacity.
+    // The image is always laid out, including before its own size is known,
+    // so it can report the geometry that resizes the box.
+    expect(photo).toContain('width: geometry?.baseWidth ?? frame.width');
+    expect(photo).toContain('height: geometry?.baseHeight ?? frame.height');
+    // The three animated styles are transform/radius/opacity only, and the
+    // crop layer is what turns contain into the thumbnail's own crop.
+    for (const name of ['shellStyle', 'cropStyle', 'zoomStyle']) {
+      expect(photo).toContain(`${name} = useAnimatedStyle(`);
+    }
+    expect(photo).toMatch(/cropStyle = useAnimatedStyle\(\(\) => \(\{/);
+    expect(photo).toContain('scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.value');
+    // The gesture surface stays the whole window, not the shrinking box.
+    expect(photo).toMatch(/<View style=\{styles\.surface\}>/);
+    expect(photo).toMatch(/centerLayer/);
   });
 
   it('exposes the zoom without fingers, and announces the photo once', () => {

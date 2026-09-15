@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -225,6 +225,54 @@ export function containRect(
   };
 }
 
+/**
+ * The static layout one session morphs between. `base` is the box the clip
+ * lives on: it takes the THUMBNAIL's aspect (so its corners are the corners
+ * the photo lands on) and is sized to contain the photo's fullscreen box, so
+ * the image can start contain-fit and end covering it.
+ *
+ * Everything here is computed once per session and never animated: only the
+ * transform and the radius move, which is what keeps this off the layout
+ * thread (animating a rect per frame froze the app on device).
+ */
+export function buildMorphGeometry(
+  sourceWidth: number,
+  sourceHeight: number,
+  frameWidth: number,
+  frameHeight: number,
+  homeWidth: number,
+  homeHeight: number,
+): {
+  baseWidth: number;
+  baseHeight: number;
+  fullWidth: number;
+  fullHeight: number;
+  coverScale: number;
+} {
+  'worklet';
+  const full = containRect(sourceWidth, sourceHeight, {
+    x: 0,
+    y: 0,
+    width: frameWidth,
+    height: frameHeight,
+  });
+  const homeAspect =
+    homeWidth > 0 && homeHeight > 0 ? homeWidth / homeHeight : frameWidth / frameHeight;
+  const baseWidth = Math.max(full.width, full.height * homeAspect);
+  const baseHeight = homeAspect > 0 ? baseWidth / homeAspect : frameHeight;
+  const coverScale =
+    full.width > 0 && full.height > 0
+      ? Math.max(baseWidth / full.width, baseHeight / full.height)
+      : 1;
+  return {
+    baseWidth,
+    baseHeight,
+    fullWidth: full.width,
+    fullHeight: full.height,
+    coverScale,
+  };
+}
+
 /** Cover-fit rect of a source inside a frame (centered, cropped). */
 export function coverRect(sourceWidth: number, sourceHeight: number, frame: Rect): Rect {
   'worklet';
@@ -395,6 +443,13 @@ export function ZoomablePhoto({
   const sourceHeight = useSharedValue(0);
   const zoomedFlag = useSharedValue(false);
   const [locked, setLocked] = useState(false);
+  // Where the photo sits and how big its clip box is, computed once from the
+  // image's own load. Held as state because it is LAYOUT, and layout has to be
+  // static: the clip box carries the corner radius, so the rounding rides the
+  // photo through the whole swipe instead of happening on a full-window
+  // rectangle's far-away corners.
+  const [geometry, setGeometry] = useState<ReturnType<typeof buildMorphGeometry> | null>(null);
+  const readySentRef = useRef(false);
   void locked;
 
   const frame = useMemo(
@@ -419,6 +474,16 @@ export function ZoomablePhoto({
       }
       sourceWidth.value = width;
       sourceHeight.value = height;
+      setGeometry(
+        buildMorphGeometry(
+          width,
+          height,
+          windowWidth,
+          windowHeight,
+          home.width.value,
+          home.height.value,
+        ),
+      );
       if (active) {
         // The visible photo tells the viewer its intrinsic size, which is
         // what the morph needs to interpolate the image's rect, and the
@@ -836,75 +901,121 @@ export function ZoomablePhoto({
     [zoom, zoomTo],
   );
 
-  // The shell: the photo's frame, moved and scaled from the whole window at
-  // rest to covering the thumbnail at home. Transform-only on purpose — it is
-  // composited, so it cannot stall layout the way an animated rect does (a
-  // per-frame width/height animation inside a Modal froze the app).
-  const shellStyle = useAnimatedStyle(() => {
-    const t = morph.t.value;
-    const hasHome = home.valid.value;
-    const target = hasHome
-      ? {
-          x: home.x.value,
-          y: home.y.value,
-          width: home.width.value,
-          height: home.height.value,
-        }
-      : frame;
-    // Scale that makes the window cover the thumbnail (the thumbnail is a
-    // cropped fill, so covering reproduces it), eased with the same progress.
-    const cover = hasHome
-      ? Math.max(target.width / frame.width, target.height / frame.height)
-      : 1;
-    const scale = 1 + (Math.min(cover, 1) - 1) * t;
-    const centerX = frame.x + frame.width / 2;
-    const centerY = frame.y + frame.height / 2;
-    const targetCenterX = hasHome ? target.x + target.width / 2 : centerX;
-    const targetCenterY = hasHome ? target.y + target.height / 2 : centerY;
-    return {
-      transform: [
-        { translateX: morph.residualX.value },
-        { translateY: morph.residualY.value },
-        { translateX: (targetCenterX - centerX) * t },
-        { translateY: (targetCenterY - centerY) * t },
-        { scale },
-      ],
-      borderRadius: shellRadiusFor(t, home.radius.value, scale),
-      opacity: morph.overlay.value,
-    };
-  });
+  // The clip box: the photo's frame, moved and scaled from centred at rest to
+  // exactly covering the thumbnail at home. It is sized statically (its
+  // aspect is the thumbnail's), so only transform and radius animate — a
+  // per-frame width/height animation inside a Modal froze the app.
+  const shellStyle = useAnimatedStyle(
+    () => {
+      const t = morph.t.value;
+      const hasHome = home.valid.value;
+      const baseWidth = geometry?.baseWidth ?? frame.width;
+      const baseHeight = geometry?.baseHeight ?? frame.height;
+      const target = hasHome
+        ? {
+            x: home.x.value,
+            y: home.y.value,
+            width: home.width.value,
+            height: home.height.value,
+          }
+        : frame;
+      const cover = hasHome
+        ? Math.max(target.width / baseWidth, target.height / baseHeight)
+        : 1;
+      const scale = 1 + (Math.min(cover, 1) - 1) * t;
+      const centerX = frame.x + frame.width / 2;
+      const centerY = frame.y + frame.height / 2;
+      const targetCenterX = hasHome ? target.x + target.width / 2 : centerX;
+      const targetCenterY = hasHome ? target.y + target.height / 2 : centerY;
+      return {
+        transform: [
+          { translateX: morph.residualX.value },
+          { translateY: morph.residualY.value },
+          { translateX: (targetCenterX - centerX) * t },
+          { translateY: (targetCenterY - centerY) * t },
+          { scale },
+        ],
+        // Exact: the box's aspect IS the thumbnail's, so at t = 1 its corners
+        // land on the thumbnail's corners at the thumbnail's radius.
+        borderRadius: shellRadiusFor(t, home.radius.value, scale),
+        opacity: morph.overlay.value,
+      };
+    },
+    [geometry, frame, home, morph],
+  );
+
+  // The image turns from contain into the thumbnail's cover crop, so it
+  // fills the clip box by the time it lands: one uniform scale, because both
+  // rects keep the source aspect.
+  const cropStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.value }],
+  }));
+
+  /** Once the clip box has laid out, the session may present. */
+  const handleMorphLayout = useCallback(() => {
+    // Only the real geometry counts: the box lays out once at the frame size
+    // while the image loads, and again at its own size. Presenting on the
+    // first would start the zoom from a box that is about to change.
+    if (!active || !geometry || readySentRef.current) {
+      return;
+    }
+    readySentRef.current = true;
+    onImageReady?.();
+  }, [active, geometry, onImageReady]);
 
   const zoomStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: panX.value }, { translateY: panY.value }, { scale: zoom.value }],
   }));
 
   return (
-    <Animated.View style={[styles.shell, shellStyle]}>
+    <View style={styles.surface}>
       <GestureDetector gesture={Gesture.Simultaneous(pinch, pan, doubleTap)}>
-        <Animated.View
-          // A View is only an accessibility element when it says so.
-          accessible
-          accessibilityActions={[
-            { name: 'zoomIn', label: 'Zoom in' },
-            { name: 'zoomOut', label: 'Zoom out' },
-            { name: 'resetZoom', label: 'Reset zoom' },
-          ]}
-          accessibilityLabel={label}
-          accessibilityRole="image"
-          onAccessibilityAction={handleAccessibilityAction}
-          style={[styles.fill, zoomStyle]}
-        >
-          <AnimatedImage
-            accessible={false}
-            contentFit="contain"
-            onLoad={handleLoad}
-            source={{ uri: resolveStagedUri(uri) }}
-            style={styles.image}
-            transition={0}
-          />
-        </Animated.View>
+        <View style={styles.gestureLayer}>
+          <View pointerEvents="none" style={styles.centerLayer}>
+            <Animated.View
+              onLayout={handleMorphLayout}
+              style={[
+                {
+                  // Until the image reports its size the box is the frame: the
+                  // image has to be laid out somewhere for that report to
+                  // happen at all, so it can never be gated on the geometry it
+                  // itself produces.
+                  width: geometry?.baseWidth ?? frame.width,
+                  height: geometry?.baseHeight ?? frame.height,
+                },
+                styles.shell,
+                shellStyle,
+              ]}
+            >
+              <Animated.View
+                // A View is only an accessibility element when it says so.
+                accessible
+                accessibilityActions={[
+                  { name: 'zoomIn', label: 'Zoom in' },
+                  { name: 'zoomOut', label: 'Zoom out' },
+                  { name: 'resetZoom', label: 'Reset zoom' },
+                ]}
+                accessibilityLabel={label}
+                accessibilityRole="image"
+                onAccessibilityAction={handleAccessibilityAction}
+                style={[styles.fill, zoomStyle]}
+              >
+                <Animated.View style={[styles.fill, cropStyle]}>
+                  <AnimatedImage
+                    accessible={false}
+                    contentFit="contain"
+                    onLoad={handleLoad}
+                    source={{ uri: resolveStagedUri(uri) }}
+                    style={styles.fill}
+                    transition={0}
+                  />
+                </Animated.View>
+              </Animated.View>
+            </Animated.View>
+          </View>
+        </View>
       </GestureDetector>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -914,16 +1025,35 @@ function releasePagerAfter(delay: number, announceLock: (locked: boolean) => voi
 }
 
 const styles = StyleSheet.create({
+  surface: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  gestureLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  // Centring is layout, not arithmetic: the clip box is centred by the frame
+  // it sits in, so no computed offset can put it in the wrong place.
+  centerLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   shell: {
-    width: '100%',
-    height: '100%',
     overflow: 'hidden',
   },
   fill: {
-    width: '100%',
-    height: '100%',
-  },
-  image: {
     width: '100%',
     height: '100%',
   },

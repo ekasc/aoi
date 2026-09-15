@@ -205,34 +205,39 @@ function ViewerSession({
     homeValid.value = !!origin;
   }, [homeHeight, homeRadius, homeValid, homeWidth, homeX, homeY, origin]);
 
-  // The overlay presents once the viewer has laid out, so the zoom starts
-  // from real geometry rather than a guessed frame. It does NOT wait on the
-  // photo's own load report: an image that is already cached can skip that
-  // event, and a gate that never opens leaves an invisible Modal swallowing
-  // every touch, which reads as a frozen app. A timer covers a missing
-  // layout event too.
+  // The overlay presents once the viewer has laid out AND the visible photo's
+  // clip box has laid out, so the zoom starts from real geometry rather than
+  // geometry React has not committed yet (which is what put an earlier
+  // attempt off-centre). A timer is the failsafe: a gate that never opens
+  // leaves an invisible Modal eating every touch, which reads as a frozen app,
+  // so the overlay appears anyway and the zoom is simply skipped.
   const [laidOut, setLaidOut] = useState(false);
+  // Two flags on purpose. The failsafe opens the OVERLAY so it can never
+  // swallow touches, but the zoom must not run on geometry nobody reported:
+  // keying both off one flag would let the failsafe morph against a guess.
+  const [geometryReady, setGeometryReady] = useState(false);
+  const [overlayFailsafe, setOverlayFailsafe] = useState(false);
   const handleRootLayout = useCallback(() => {
     setLaidOut(true);
   }, []);
   useEffect(() => {
-    const task = setTimeout(() => setLaidOut(true), 120);
+    const task = setTimeout(() => setOverlayFailsafe(true), 400);
     return () => clearTimeout(task);
   }, []);
   const handleImageReady = useCallback(() => {
-    // Geometry only refines the mid-frames; it is never a gate.
+    setGeometryReady(true);
   }, []);
   const handleDismissStart = useCallback(() => {
     setHandingBack(true);
   }, []);
-  const presented = laidOut;
+  const presented = laidOut && (geometryReady || overlayFailsafe);
 
   useLayoutEffect(() => {
     if (!presented) {
       return;
     }
     overlay.value = 1;
-    if (!origin || reduceMotion) {
+    if (!origin || reduceMotion || !geometryReady) {
       t.value = 0;
       residualX.value = 0;
       residualY.value = 0;
@@ -248,7 +253,7 @@ function ViewerSession({
       withTiming(0, { duration: OPEN_MORPH_DURATION, easing: OPEN_EASING }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presented, origin, reduceMotion]);
+  }, [presented, geometryReady, origin, reduceMotion]);
 
   const handleClose = useCallback(() => {
     if (closing) {
