@@ -115,6 +115,18 @@ const PHOTOS: ViewerPhoto[] = [
   { uri: 'file:///three.jpg', label: 'Lake day', momentId: 'm-1' },
 ];
 
+const FIVE: ViewerPhoto[] = [
+  ...PHOTOS,
+  { uri: 'file:///four.jpg', label: 'Lake day', momentId: 'm-1' },
+  { uri: 'file:///five.jpg', label: 'Lake day', momentId: 'm-1' },
+];
+
+/** A second gallery: different owning memory, different photos. */
+const OTHER_SET: ViewerPhoto[] = [
+  { uri: 'file:///trip-a.jpg', label: 'Trip', momentId: 'm-2' },
+  { uri: 'file:///trip-b.jpg', label: 'Trip', momentId: 'm-2' },
+];
+
 function renderViewer(props?: Partial<React.ComponentProps<typeof PhotoViewer>>) {
   return render(
     <PhotoViewer
@@ -142,6 +154,156 @@ describe('PhotoViewer swipeable set', () => {
     expect(capturedList.initialScrollIndex).toBe(2);
     expect(capturedList.horizontal).toBe(true);
     expect(capturedList.pagingEnabled).toBe(true);
+  });
+
+  it('agrees with the photo on screen: opening at index 3 reads Photo 4 of 5', () => {
+    renderViewer({ photos: FIVE, initialIndex: 3 });
+    expect(capturedList.initialScrollIndex).toBe(3);
+    expect(screen.getByText('Photo 4 of 5')).toBeTruthy();
+  });
+
+  it('re-syncs when a later session opens on another photo', () => {
+    const { rerender } = renderViewer({ photos: FIVE, initialIndex: 3 });
+    expect(screen.getByText('Photo 4 of 5')).toBeTruthy();
+    rerender(
+      <PhotoViewer
+        visible={false}
+        photos={FIVE}
+        initialIndex={3}
+        onClose={() => {}}
+        onOpenMemory={() => {}}
+      />
+    );
+    rerender(
+      <PhotoViewer
+        visible
+        photos={FIVE}
+        initialIndex={1}
+        onClose={() => {}}
+        onOpenMemory={() => {}}
+      />
+    );
+    expect(capturedList.initialScrollIndex).toBe(1);
+    expect(screen.getByText('Photo 2 of 5')).toBeTruthy();
+  });
+
+  it('never inherits the previous position when a different set opens', () => {
+    const { rerender } = renderViewer({ photos: FIVE, initialIndex: 4 });
+    expect(screen.getByText('Photo 5 of 5')).toBeTruthy();
+    rerender(
+      <PhotoViewer
+        visible={false}
+        photos={FIVE}
+        initialIndex={4}
+        onClose={() => {}}
+        onOpenMemory={() => {}}
+      />
+    );
+    rerender(
+      <PhotoViewer
+        visible
+        photos={OTHER_SET}
+        initialIndex={0}
+        onClose={() => {}}
+        onOpenMemory={() => {}}
+      />
+    );
+    expect(capturedList.initialScrollIndex).toBe(0);
+    expect(screen.getByText('Photo 1 of 2')).toBeTruthy();
+  });
+
+  it('clamps an out-of-range opening index to the set', () => {
+    renderViewer({ photos: FIVE, initialIndex: 99 });
+    expect(capturedList.initialScrollIndex).toBe(4);
+    expect(screen.getByText('Photo 5 of 5')).toBeTruthy();
+  });
+
+  it('clamps a negative opening index to the first photo', () => {
+    renderViewer({ photos: FIVE, initialIndex: -3 });
+    expect(capturedList.initialScrollIndex).toBe(0);
+    expect(screen.getByText('Photo 1 of 5')).toBeTruthy();
+  });
+
+  it('does not snap back when the same session re-renders after a swipe', () => {
+    const { rerender } = renderViewer({ photos: FIVE, initialIndex: 0 });
+    act(() => {
+      capturedList.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 390 * 3 } } });
+    });
+    expect(screen.getByText('Photo 4 of 5')).toBeTruthy();
+    const list = screen.getByTestId('viewer-list');
+    // The reset is a session transition, never page !== safeInitialIndex:
+    // swiping is not a new session, so the list neither remounts nor moves.
+    rerender(
+      <PhotoViewer
+        visible
+        photos={FIVE}
+        initialIndex={0}
+        onClose={() => {}}
+        onOpenMemory={() => {}}
+      />
+    );
+    expect(screen.getByText('Photo 4 of 5')).toBeTruthy();
+    expect(screen.getByTestId('viewer-list')).toBe(list);
+  });
+
+  it('mounts a fresh list when the set changes under an open viewer', () => {
+    const { rerender } = renderViewer({ photos: FIVE, initialIndex: 0 });
+    expect(screen.getByText('Photo 1 of 5')).toBeTruthy();
+    const before = screen.getByTestId('viewer-list');
+    // initialScrollIndex only applies on mount, so a set that changes while
+    // the viewer is open has to mount a new list at the canonical index
+    // rather than keep a scroll position the counter no longer matches.
+    rerender(
+      <PhotoViewer
+        visible
+        photos={OTHER_SET}
+        initialIndex={1}
+        onClose={() => {}}
+        onOpenMemory={() => {}}
+      />
+    );
+    expect(screen.getByTestId('viewer-list')).not.toBe(before);
+    expect(capturedList.initialScrollIndex).toBe(1);
+    expect(screen.getByText('Photo 2 of 2')).toBeTruthy();
+  });
+
+  it('treats a same-length replacement set as a new session', () => {
+    // Length is not identity: these two sets differ only by their photos.
+    const setA: ViewerPhoto[] = [
+      { uri: 'file:///a-1.jpg', label: 'Set A', momentId: 'm-a' },
+      { uri: 'file:///a-2.jpg', label: 'Set A', momentId: 'm-a' },
+      { uri: 'file:///a-3.jpg', label: 'Set A', momentId: 'm-a' },
+    ];
+    const setB: ViewerPhoto[] = [
+      { uri: 'file:///b-1.jpg', label: 'Set B', momentId: 'm-b' },
+      { uri: 'file:///b-2.jpg', label: 'Set B', momentId: 'm-b' },
+      { uri: 'file:///b-3.jpg', label: 'Set B', momentId: 'm-b' },
+    ];
+    const onOpenMemory = vi.fn();
+    const { rerender } = renderViewer({ photos: setA, initialIndex: 1, onOpenMemory });
+    expect(screen.getByText('Photo 2 of 3')).toBeTruthy();
+    // Swipe away first, so a stale page would be visible as a wrong counter.
+    act(() => {
+      capturedList.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 390 * 2 } } });
+    });
+    expect(screen.getByText('Photo 3 of 3')).toBeTruthy();
+    const before = screen.getByTestId('viewer-list');
+
+    rerender(
+      <PhotoViewer
+        visible
+        photos={setB}
+        initialIndex={1}
+        onClose={() => {}}
+        onOpenMemory={onOpenMemory}
+      />
+    );
+
+    expect(screen.getByTestId('viewer-list')).not.toBe(before);
+    expect(capturedList.initialScrollIndex).toBe(1);
+    expect(screen.getByText('Photo 2 of 3')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Open memory'));
+    expect(onOpenMemory).toHaveBeenCalledWith(setB[1]);
   });
 
   it('swiping updates the counter and Open memory follows the visible photo', () => {

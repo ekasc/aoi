@@ -39,6 +39,21 @@ function makeMoment(overrides: Record<string, any> = {}) {
   };
 }
 
+/**
+ * A scroll event with the geometry RN always attaches: the top-edge arm
+ * measures the distance it may travel against content height minus viewport
+ * height, so a feed with less range arms at its own maximum.
+ */
+function scrollEvent(y: number, range = 4000) {
+  return {
+    nativeEvent: {
+      contentOffset: { x: 0, y },
+      contentSize: { width: 390, height: 844 + range },
+      layoutMeasurement: { width: 390, height: 844 },
+    },
+  };
+}
+
 function makePending(overrides: Record<string, any> = {}) {
   return {
     clientId: 'pending-1',
@@ -238,11 +253,27 @@ vi.mock('react-native', () => {
     Animated: {
       View,
       Value: class {
+        setValue() {}
+        addListener() {
+          return '0';
+        }
+        removeListener() {}
         interpolate() {
           return {};
         }
       },
       event: () => () => {},
+      // The Memories header settles on scroll rest (Animated.parallel over
+      // two timings); the driver is stubbed so scroll events stay testable.
+      timing: () => ({
+        start: (callback?: (result: { finished: boolean }) => void) =>
+          callback?.({ finished: true }),
+        stop: () => {},
+      }),
+      spring: () => ({ start: () => {}, stop: () => {} }),
+      delay: () => ({ start: () => {}, stop: () => {} }),
+      parallel: () => ({ start: () => {}, stop: () => {} }),
+      sequence: () => ({ start: () => {}, stop: () => {} }),
       createAnimatedComponent: (Component: unknown) => Component,
     },
     View,
@@ -509,21 +540,39 @@ describe('Memories story feed (oldest-first archive)', () => {
     expect(html.indexOf('moment-oldie')).toBeLessThan(html.indexOf('moment-fresh'));
   });
 
-  it('pages earlier memories on scroll-end (infinite scroll owns paging)', async () => {
+  it('pages earlier memories from the top edge only (older pages prepend above)', async () => {
     feedMoments = [makeMoment({ id: 'm-1' })];
     feedHasMore = true;
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    // The archive reads oldest-first and older pages land at the top, so a
+    // bottom-edge trigger would fetch the wrong edge of the feed.
+    expect(capturedList.onEndReached).toBeUndefined();
+    expect(capturedList.onEndReachedThreshold).toBeUndefined();
+    expect(capturedList.ListFooterComponent ?? null).toBeNull();
+    // Mounting never pages through history.
     await act(async () => {
-      capturedList.onEndReached();
+      capturedList.onScroll(scrollEvent(0));
+    });
+    expect(loadMoreMoments).not.toHaveBeenCalled();
+    // Neither does reaching the bottom.
+    await act(async () => {
+      capturedList.onScroll(scrollEvent(4000));
+    });
+    expect(loadMoreMoments).not.toHaveBeenCalled();
+    // Leaving the top and coming back pages once; the arm is then spent, so
+    // resting at the top is not a second trigger.
+    await act(async () => {
+      capturedList.onScroll(scrollEvent(320));
+    });
+    await act(async () => {
+      capturedList.onScroll(scrollEvent(0));
     });
     expect(loadMoreMoments).toHaveBeenCalledTimes(1);
     await act(async () => {
-      capturedList.onEndReached();
+      capturedList.onScroll(scrollEvent(0));
     });
-    expect(loadMoreMoments).toHaveBeenCalledTimes(2);
-    // One paging mechanism: no second manual trigger beside onEndReached.
-    expect(screen.queryByText('Load earlier memories')).toBeNull();
+    expect(loadMoreMoments).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes the feed on pull-to-refresh', async () => {

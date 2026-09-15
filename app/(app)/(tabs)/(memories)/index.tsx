@@ -81,6 +81,13 @@ const GALLERY_GAP = 2;
 /** Scroll-up distance past the deep point that reopens the header anywhere. */
 const REOPEN_DISTANCE = 24;
 
+/**
+ * Distance the reader travels away from the top before the top edge is
+ * allowed to page again. Shortened to the list's actual scroll range, so a
+ * feed with less range than this can still arm.
+ */
+const TOP_ARM_DISTANCE = 200;
+
 /** Milliseconds a header settle/reopen takes (header-only; feed never moves). */
 const HEADER_ANIM_DURATION = 220;
 
@@ -212,19 +219,34 @@ export default function MemoriesScreen() {
 	// anywhere in the feed — a header-only fade over the static list, so the
 	// feed still never moves.
 	// Oldest lives at the top, so scrolling back to it pages older history
-	// above (pinned by maintainVisibleContentPosition, no jump). The arm
-	// requires leaving the top first, so launch never cascades history.
+	// above (pinned by maintainVisibleContentPosition, no jump). This arm is
+	// the only automatic, scroll-driven paging trigger: older pages land at
+	// the top, so a bottom-edge trigger would fetch the wrong edge — and on a
+	// feed shorter than the viewport it would fire during layout and chew
+	// through history the reader never asked for. The header carries a manual
+	// control for the gestures a short feed cannot make (see listHeader). The
+	// arm requires leaving the top first, so launch never cascades history —
+	// and it is measured against the range the list actually has (see
+	// onScroll), so a short feed still arms.
 	const topArmRef = useRef(false);
 	const onScroll = useCallback(
 		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
-			const y = Math.max(0, event.nativeEvent.contentOffset.y);
+			const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+			const y = Math.max(0, contentOffset.y);
 			lastYRef.current = y;
 			// Frost tracks the absolute offset over the full shed distance, so
 			// the sky stays crisp through the first stretch of scrolling and
 			// only fully frosts once the header is condensed (or reopened
 			// deep, where rows sit underneath it).
 			frost.setValue(Math.min(1, y / COLLAPSE_DISTANCE));
-			if (y > 200) {
+			// The arm is a distance travelled away from the top, but a feed
+			// that cannot travel the whole way (a short archive, or a filter
+			// that leaves a few rows) must still be able to reach older
+			// history: the distance shrinks to the range the list has. A list
+			// with no range at all never scrolls, so its header owns an
+			// explicit control instead (see listHeader).
+			const range = Math.max(0, contentSize.height - layoutMeasurement.height);
+			if (y >= Math.min(TOP_ARM_DISTANCE, range) && y > 0) {
 				topArmRef.current = true;
 			}
 			if (y <= 1 && topArmRef.current && feed.hasMore && !feed.isPaging) {
@@ -887,7 +909,14 @@ export default function MemoriesScreen() {
 	);
 
 
-	const listFooter = useMemo(() => {
+	// Older history prepends above the current rows, so the fetch control
+	// belongs at the TOP of the list. One slot, two shapes: the in-flight
+	// caption, and — whenever the archive has more to give and nothing is in
+	// flight — a control the reader can ask directly. The top edge still pages
+	// on its own for a scrollable feed (see onScroll), but a feed that fits its
+	// viewport never scrolls, so it has no top-edge gesture to make: this control
+	// is how its older history stays reachable. Nothing here pages unasked.
+	const listHeader = useMemo(() => {
 		if (!feed.hasMore) {
 			return null;
 		}
@@ -896,19 +925,31 @@ export default function MemoriesScreen() {
 		if (feed.totalCount === 0 && feed.pending.length === 0) {
 			return null;
 		}
-		// Infinite scroll owns paging; a quiet caption confirms the fetch
-		// instead of a second manual trigger next to onEndReached.
-		if (!feed.isPaging) {
-			return null;
+		if (feed.isPaging) {
+			return (
+				<View accessibilityLiveRegion="polite" style={styles.loadMoreWrap}>
+					<ThemedText type="caption" style={{ color: muted }}>
+						Loading earlier…
+					</ThemedText>
+				</View>
+			);
 		}
 		return (
 			<View style={styles.loadMoreWrap}>
-				<ThemedText type="caption" style={{ color: muted }}>
-					Loading earlier…
-				</ThemedText>
+				<Pressable
+					accessibilityHint="Loads memories from before the ones on screen"
+					accessibilityLabel="Load earlier memories"
+					accessibilityRole="button"
+					onPress={feed.loadMore}
+					style={styles.loadEarlier}
+				>
+					<ThemedText type="caption" style={{ color: accent }}>
+						Load earlier memories
+					</ThemedText>
+				</Pressable>
 			</View>
 		);
-	}, [feed, muted]);
+	}, [feed, muted, accent]);
 
 
 	const contentContainerStyle = useMemo(
@@ -1152,9 +1193,7 @@ export default function MemoriesScreen() {
 					keyboardDismissMode="on-drag"
 					keyExtractor={galleryKeyExtractor}
 					ListEmptyComponent={emptyState}
-					ListFooterComponent={listFooter}
-						onEndReached={() => feed.loadMore()}
-					onEndReachedThreshold={0.5}
+					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
 					refreshing={feed.isRefreshing}
 					renderItem={renderGalleryItem}
@@ -1180,9 +1219,7 @@ export default function MemoriesScreen() {
 					keyboardDismissMode="on-drag"
 					keyExtractor={feedKeyExtractor}
 					ListEmptyComponent={emptyState}
-					ListFooterComponent={listFooter}
-					onEndReached={() => feed.loadMore()}
-					onEndReachedThreshold={0.5}
+					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
 					refreshing={feed.isRefreshing}
 					renderItem={renderFeedItem}
@@ -1438,6 +1475,12 @@ const styles = StyleSheet.create({
 	loadMoreWrap: {
 		alignItems: "center",
 		paddingVertical: Spacing[8],
+	},
+	loadEarlier: {
+		alignItems: "center",
+		justifyContent: "center",
+		minHeight: 44,
+		paddingHorizontal: Spacing[24],
 	},
 	contentContainer: {
 		paddingBottom: Spacing[24],

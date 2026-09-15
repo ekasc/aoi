@@ -535,7 +535,12 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     // inset the sky); the list pads its rows, same as Plans.
     const rootBlock = INDEX_SOURCE.match(/root: \{[^}]*\}/)?.[0] ?? '';
     expect(rootBlock).not.toContain('paddingHorizontal');
-    expect(INDEX_SOURCE).toContain('ListFooterComponent={listFooter}');
+    // Older history prepends above, so the fetch caption and the paging
+    // edge both live at the top: the caption is the list's header, and no
+    // bottom-edge trigger exists on either presentation.
+    expect(INDEX_SOURCE).toContain('ListHeaderComponent={listHeader}');
+    expect(INDEX_SOURCE).not.toContain('ListFooterComponent');
+    expect(INDEX_SOURCE).not.toContain('onEndReached');
     // No overlap spacers: content never enters the sky zone.
     expect(INDEX_SOURCE).not.toContain('marginTop: -');
     expect(INDEX_SOURCE).not.toContain('marginTop:-');
