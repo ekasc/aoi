@@ -83,6 +83,21 @@ vi.mock('expo-image', () => ({
     createElement('img', { src: source?.uri, 'aria-label': accessibilityLabel }),
 }));
 
+const capturedZoomProps: any[] = [];
+
+vi.mock('@/components/moments/zoomable-photo', () => ({
+  // Keeps the photo in the tree (the img assertions) and captures the
+  // pager-lock reports the viewer wires.
+  ZoomablePhoto: (props: any) => {
+    capturedZoomProps.push(props);
+    return createElement('img', {
+      src: props.uri,
+      'aria-label': props.label,
+      'data-testid': 'zoomable-photo',
+    });
+  },
+}));
+
 vi.mock('@/components/themed-text', () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -139,6 +154,10 @@ function renderViewer(props?: Partial<React.ComponentProps<typeof PhotoViewer>>)
     />
   );
 }
+
+beforeEach(() => {
+  capturedZoomProps.length = 0;
+});
 
 describe('PhotoViewer swipeable set', () => {
   it('renders every photo with a counter for a set', () => {
@@ -315,6 +334,24 @@ describe('PhotoViewer swipeable set', () => {
     expect(screen.getByText('Photo 3 of 3')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Open memory'));
     expect(onOpenMemory).toHaveBeenCalledWith(PHOTOS[2]);
+  });
+
+  it('locks paging while a photo reports itself enlarged', () => {
+    renderViewer({ photos: FIVE, initialIndex: 0 });
+    expect(capturedList.scrollEnabled).toBe(true);
+
+    // A pinch begins: the pager must stop owning the horizontal axis so the
+    // photo's own pan can use it.
+    act(() => {
+      capturedZoomProps[capturedZoomProps.length - 1].onPagerLockChange(true);
+    });
+    expect(capturedList.scrollEnabled).toBe(false);
+
+    // Back at rest: paging returns.
+    act(() => {
+      capturedZoomProps[capturedZoomProps.length - 1].onPagerLockChange(false);
+    });
+    expect(capturedList.scrollEnabled).toBe(true);
   });
 
   it('closes from the Close control', () => {

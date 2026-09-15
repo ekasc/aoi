@@ -128,8 +128,10 @@ function ViewerSession({
   const textPrimary = useThemeColor({}, 'textPrimary');
   const muted = useThemeColor({}, 'muted');
   const [page, setPage] = useState(initialIndex);
-  // A zoomed photo locks horizontal paging so pan gestures own the photo.
-  const [pagerEnabled, setPagerEnabled] = useState(true);
+  // An enlarged photo locks horizontal paging so its pan owns both axes.
+  // The lock arrives when a pinch begins and lifts when the photo is back at
+  // rest, so paging can never start against a zoomed photo.
+  const [pagerLocked, setPagerLocked] = useState(false);
   // Dismiss-drag fade for the viewer ground, written straight from the
   // photo gestures (UI thread, no bridge hop).
   const dismiss = useSharedValue(0);
@@ -167,6 +169,10 @@ function ViewerSession({
     [total, windowWidth],
   );
 
+  const handlePagerLockChange = useCallback((locked: boolean) => {
+    setPagerLocked(locked);
+  }, []);
+
   const renderPhoto = useCallback(
     ({ item }: ListRenderItemInfo<ViewerPhoto>) => (
       // Concrete window height: percentage heights collapse inside the
@@ -177,11 +183,11 @@ function ViewerSession({
           label={item.label}
           onDismiss={onClose}
           onDismissProgress={handleDismissProgress}
-          onZoomChange={(zoomed) => setPagerEnabled(!zoomed)}
+          onPagerLockChange={handlePagerLockChange}
         />
       </View>
     ),
-    [windowWidth, windowHeight, handleDismissProgress, onClose],
+    [windowWidth, windowHeight, handleDismissProgress, handlePagerLockChange, onClose],
   );
 
   // The modal is transparent, so a dismiss drag fades this scrim to reveal
@@ -206,7 +212,7 @@ function ViewerSession({
         data={photos}
         horizontal
         pagingEnabled
-        scrollEnabled={pagerEnabled}
+        scrollEnabled={!pagerLocked}
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
         getItemLayout={(_data, index) => ({
