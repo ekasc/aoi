@@ -68,6 +68,31 @@ describe('findResurfaces', () => {
 
     expect(resurfaces.map((r) => r.moment.id)).toEqual(['y1', 'y2', 'y3']);
   });
+
+  test('excludes goal-typed moments (Plans content never resurfaces)', () => {
+    const moments = [
+      { ...makeMoment('goal-1', '2025-08-03T09:00:00.000Z'), type: 'goal' as const },
+      makeMoment('note-1', '2025-08-03T09:00:00.000Z'),
+    ];
+
+    const resurfaces = findResurfaces(moments, NOW);
+
+    expect(resurfaces.map((r) => r.moment.id)).toEqual(['note-1']);
+  });
+
+  test('is deterministic for the same eligible dataset', () => {
+    const moments = [
+      makeMoment('b', '2024-08-03T09:00:00.000Z'),
+      makeMoment('a', '2025-08-03T09:00:00.000Z'),
+      makeMoment('c', '2023-08-03T09:00:00.000Z'),
+    ];
+
+    const first = findResurfaces(moments, NOW).map((r) => r.moment.id);
+    const second = findResurfaces([...moments].reverse(), NOW).map((r) => r.moment.id);
+
+    expect(first).toEqual(second);
+    expect(first).toEqual(['a', 'b', 'c']);
+  });
 });
 
 describe('formatResurfaceLabel', () => {

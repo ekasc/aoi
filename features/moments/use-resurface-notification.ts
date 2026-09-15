@@ -87,7 +87,7 @@ export function useResurfaceNotification(moments: Moment[]): void {
         await Notifications.scheduleNotificationAsync({
           content: {
             title: formatResurfaceLabel(top.yearsAgo),
-            body: `“${excerpt}” — worth a look back together.`,
+            body: `“${excerpt}”, worth a look back together.`,
             sound: false,
           },
           trigger: {

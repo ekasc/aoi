@@ -18,7 +18,7 @@ export const mockMoments: Moment[] = [
     id: 'm_2026_0114_milestone',
     type: 'milestone',
     title: 'A chapter begins',
-    body: 'This timeline structure will hold milestones, notes, goals, and media moments.',
+    body: 'Slow Sunday morning, coffee on the porch and plans for the week ahead.',
     occurredAt: '2026-01-14T11:00:00.000Z',
     createdAt: '2026-01-14T11:03:00.000Z',
     authorId: 'user_you',

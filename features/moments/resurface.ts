@@ -21,6 +21,19 @@ function isSameMonthAndDay(value: Date, reference: Date): boolean {
 /**
  * Find moments worth resurfacing today. Returns at most MAX_RESURFACES
  * entries, closest year first, so the most recent memory leads.
+ *
+ * Eligibility (P4B): only published memories in the list — same month/day
+ * as today, at least one year back. Excluded by construction or by filter:
+ * - sealed letters / proposals are not moments, so they never appear here;
+ * - deleted moments are dropped from the moments list upstream (tombstones
+ *   are separate), so they never appear here;
+ * - goal-typed moments are excluded explicitly — future goals and Plans
+ *   content must not surface as memories;
+ * - anything from the current year (including extremely recent memories)
+ *   is excluded by the yearsAgo < 1 guard.
+ *
+ * Deterministic: same input always yields the same output in the same
+ * order, so the card never flickers between renders.
  */
 export function findResurfaces(
   moments: Moment[],
@@ -30,6 +43,11 @@ export function findResurfaces(
   const results: Resurface[] = [];
 
   for (const moment of moments) {
+    // Plans-owned content never resurfaces as a memory.
+    if (moment.type === 'goal') {
+      continue;
+    }
+
     const occurredAt = new Date(moment.occurredAt);
 
     if (Number.isNaN(occurredAt.getTime())) {

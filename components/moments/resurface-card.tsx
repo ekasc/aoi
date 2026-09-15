@@ -1,90 +1,108 @@
-import { Ionicons } from '@expo/vector-icons';
-import { memo, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
+import { memo } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Divider } from '@/components/ui/divider';
-import { Surface } from '@/components/ui/surface';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { formatResurfaceLabel, type Resurface } from '@/features/moments/resurface';
+import type { Moment } from '@/features/moments/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type ResurfaceCardProps = {
   resurfaces: Resurface[];
+  onOpenMemory: (moment: Moment) => void;
 };
 
 /**
- * "On this day" — memories that surface back to the couple on the timeline.
- * Delivered to you, not something you have to go looking for.
+ * A quiet "on this day" section near the top of Story: at most a few
+ * past memories (same month/day, at least a year back — the date claim is
+ * true by construction), each with its photo or a short excerpt, a
+ * historical date, and one tap into the source memory. Renders nothing
+ * when there is no eligible candidate. Visually secondary to chronology:
+ * no badges, no autoplay, no promotional hero.
  */
-function ResurfaceCardComponent({ resurfaces }: ResurfaceCardProps) {
-  const accent = useThemeColor({}, 'accent');
-  const surface = useThemeColor({}, 'surface');
+function ResurfaceCardComponent({ resurfaces, onOpenMemory }: ResurfaceCardProps) {
   const muted = useThemeColor({}, 'muted');
-  const text = useThemeColor({}, 'text');
-
-  const cardStyle = useMemo(
-    () => [styles.card, { backgroundColor: surface, borderColor: accent }],
-    [accent, surface]
-  );
+  const surface2 = useThemeColor({}, 'surface2');
 
   if (resurfaces.length === 0) {
     return null;
   }
 
   return (
-    <Surface variant="raised" style={cardStyle} accessibilityRole="summary">
-      <View style={styles.headerRow}>
-        <Ionicons color={accent} name="sparkles" size={16} />
-        <ThemedText type="meta" style={{ color: accent }}>
-          On this day
-        </ThemedText>
-      </View>
-      <Divider style={styles.divider} />
-      {resurfaces.map((resurface, index) => (
-        <View key={resurface.moment.id}>
-          {index > 0 ? <Divider style={styles.entryDivider} /> : null}
-          <View style={styles.entry}>
-            <ThemedText type="caption" style={{ color: muted }}>
-              {formatResurfaceLabel(resurface.yearsAgo)}
-            </ThemedText>
-            <ThemedText
-              type="body"
-              style={[styles.excerpt, { color: text }]}
-              numberOfLines={2}
-            >
-              {resurface.moment.title.trim() || resurface.moment.body.trim() || 'Untitled moment'}
-            </ThemedText>
-          </View>
-        </View>
-      ))}
-    </Surface>
+    <View
+      accessibilityRole="summary"
+      style={[styles.section, { backgroundColor: surface2 }]}
+    >
+      <ThemedText type="meta" style={{ color: muted }}>
+        On this day
+      </ThemedText>
+      {resurfaces.map((resurface) => {
+        const { moment } = resurface;
+        const excerpt =
+          moment.title.trim() ||
+          moment.body.trim() ||
+          (moment.audioUri ? 'A voice memory' : '');
+        const accessibilityLabel = `Open memory from ${formatResurfaceLabel(
+          resurface.yearsAgo,
+        )}`;
+
+        return (
+          <Pressable
+            accessibilityLabel={accessibilityLabel}
+            accessibilityRole="button"
+            key={moment.id}
+            onPress={() => onOpenMemory(moment)}
+            style={styles.entry}
+          >
+            {moment.mediaPreview ? (
+              <Image
+                accessible={false}
+                contentFit="cover"
+                source={{ uri: moment.mediaPreview }}
+                style={styles.thumb}
+                transition={200}
+              />
+            ) : null}
+            <View style={styles.textBlock}>
+              <ThemedText type="caption" style={{ color: muted }}>
+                {formatResurfaceLabel(resurface.yearsAgo)}
+              </ThemedText>
+              {excerpt ? (
+                <ThemedText type="body" numberOfLines={2}>
+                  {excerpt}
+                </ThemedText>
+              ) : null}
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
 export const ResurfaceCard = memo(ResurfaceCardComponent);
 
 const styles = StyleSheet.create({
-  card: {
-    borderWidth: 1,
+  section: {
+    gap: Spacing[12],
+    borderRadius: Radii.md,
     padding: Spacing[16],
   },
-  headerRow: {
+  entry: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing[8],
+    gap: Spacing[12],
+    minHeight: 44,
+    paddingVertical: Spacing[4],
   },
-  divider: {
-    marginTop: Spacing[12],
+  thumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
   },
-  entry: {
-    paddingTop: Spacing[12],
+  textBlock: {
+    flex: 1,
     gap: Spacing[4],
-  },
-  entryDivider: {
-    marginTop: Spacing[12],
-  },
-  excerpt: {
-    fontStyle: 'italic',
   },
 });
