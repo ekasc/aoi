@@ -13,11 +13,13 @@ import { Spacing } from '@/constants/theme';
 import { FontFamilies } from '@/constants/typography';
 import { clampPhotoAspect } from '@/components/moments/moment-card';
 import {
+  MeasuredPress,
   MomentAttachments,
   hasOrderedAttachments,
   orderedImageAttachments,
 } from '@/components/moments/moment-attachments';
 import { PhotoViewer, type ViewerPhoto } from '@/components/moments/photo-viewer';
+import type { PhotoOrigin } from '@/components/moments/zoomable-photo';
 import { haptics } from '@/features/haptics/haptics';
 import { useMoments } from '@/features/moments/moments-context';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
@@ -58,6 +60,8 @@ export default function MomentDetailScreen() {
   // Fullscreen photo session: the same viewer the feed uses (pinch zoom,
   // drag to dismiss), opened on the photo the reader tapped.
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // Window frame of the photo that opened the session (morph origin).
+  const [viewerOrigin, setViewerOrigin] = useState<PhotoOrigin | undefined>(undefined);
   const [overflowVisible, setOverflowVisible] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -92,8 +96,9 @@ export default function MomentDetailScreen() {
       })),
     [orderedImages, moment],
   );
-  const handleOpenFullscreen = useCallback((index: number) => {
+  const handleOpenFullscreen = useCallback((index: number, origin?: PhotoOrigin) => {
     haptics.select();
+    setViewerOrigin(origin);
     setViewerIndex(index);
   }, []);
   const handleCloseFullscreen = useCallback(() => {
@@ -258,11 +263,10 @@ export default function MomentDetailScreen() {
       {hasOrdered ? (
         <MomentAttachments moment={moment} onPhotoPress={handleOpenFullscreen} />
       ) : moment.mediaPreview ? (
-        <Pressable
+        <MeasuredPress
           accessibilityHint="Opens fullscreen"
           accessibilityLabel={title ? `Open photo for ${title} fullscreen` : 'Open photo fullscreen'}
-          accessibilityRole="button"
-          onPress={() => handleOpenFullscreen(0)}
+          onPress={(origin) => handleOpenFullscreen(0, origin)}
         >
           <Image
             accessible={false}
@@ -271,7 +275,7 @@ export default function MomentDetailScreen() {
             onLoad={handlePhotoLoad}
             style={[styles.photo, { aspectRatio: photoAspect ?? 4 / 3 }]}
           />
-        </Pressable>
+        </MeasuredPress>
       ) : null}
       <View style={styles.prose}>
         {title ? (

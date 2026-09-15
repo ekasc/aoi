@@ -53,6 +53,7 @@ vi.mock('react-native-reanimated', () => {
   (chain as Record<string, unknown>).withInitialValues = () => chain;
   return {
     default: {
+      createAnimatedComponent: (component: unknown) => component,
       View: ({ children }: { children?: unknown }) =>
         createElement('div', {}, children),
     },

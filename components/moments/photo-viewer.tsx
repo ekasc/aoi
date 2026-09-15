@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Modal,
@@ -11,10 +11,25 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ZoomablePhoto } from '@/components/moments/zoomable-photo';
+import {
+  OPEN_EASING,
+  OPEN_MORPH_DELAY,
+  OPEN_MORPH_DURATION,
+  ZoomablePhoto,
+  backdropFor,
+  type PhotoOrigin,
+  type ViewerHome,
+  type ViewerMorph,
+} from '@/components/moments/zoomable-photo';
 
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
@@ -37,6 +52,12 @@ export type PhotoViewerProps = {
   photos: ViewerPhoto[];
   /** Page the viewer opens on; swiping moves freely after. */
   initialIndex?: number;
+  /**
+   * Window frame of the thumbnail this session was tapped on: the session
+   * grows out of it and every dismiss morphs back into it. Optional — without
+   * one the viewer simply presents and fades.
+   */
+  origin?: PhotoOrigin;
   onClose: () => void;
   /** Opens the owning memory of the currently visible photo. */
   onOpenMemory: (photo: ViewerPhoto) => void;
@@ -59,6 +80,7 @@ export function PhotoViewer({
   visible,
   photos,
   initialIndex = 0,
+  origin,
   onClose,
   onOpenMemory,
 }: PhotoViewerProps) {
@@ -85,7 +107,9 @@ export function PhotoViewer({
 
   return (
     <Modal
-      animationType={reduceMotion ? 'none' : 'fade'}
+      // Never fade the Modal itself: the overlay's own zoom IS the
+      // presentation, and two animations on the same open read as a flicker.
+      animationType="none"
       onRequestClose={onClose}
       presentationStyle="overFullScreen"
       statusBarTranslucent
@@ -97,6 +121,7 @@ export function PhotoViewer({
           key={sessionKey}
           photos={photos}
           initialIndex={safeInitialIndex}
+          origin={origin}
           onClose={onClose}
           onOpenMemory={onOpenMemory}
         />
@@ -114,38 +139,128 @@ export function PhotoViewer({
 function ViewerSession({
   photos,
   initialIndex,
+  origin,
   onClose,
   onOpenMemory,
 }: {
   photos: ViewerPhoto[];
   initialIndex: number;
+  origin?: PhotoOrigin;
   onClose: () => void;
   onOpenMemory: (photo: ViewerPhoto) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const background = useThemeColor({}, 'background');
   const textPrimary = useThemeColor({}, 'textPrimary');
   const muted = useThemeColor({}, 'muted');
   const [page, setPage] = useState(initialIndex);
-  // An enlarged photo locks horizontal paging so its pan owns both axes.
-  // The lock arrives when a pinch begins and lifts when the photo is back at
+  // An enlarged photo locks horizontal paging so its pan owns both axes. The
+  // lock arrives when a pinch begins and lifts when the photo is back at
   // rest, so paging can never start against a zoomed photo.
   const [pagerLocked, setPagerLocked] = useState(false);
-  // Dismiss-drag fade for the viewer ground, written straight from the
-  // photo gestures (UI thread, no bridge hop).
-  const dismiss = useSharedValue(0);
-  // Shared values are stable for the life of the component; the fade writer
-  // needs no dependencies (mutating one inside its own callback while also
-  // listing it is what the lint rule forbids).
-  const handleDismissProgress = useCallback(
-    (progress: number, animated: boolean) => {
-      'worklet';
-      dismiss.value = animated ? withTiming(progress) : progress;
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+  // The Close control asks the visible photo to play the dismiss morph.
+  const [closing, setClosing] = useState(false);
+  // Once a dismiss is under way the viewer stops taking touches: the photo is
+  // only finishing its landing, and the reader may already want the feed.
+  const [handingBack, setHandingBack] = useState(false);
+  // The whole transition lives here as ONE progress value (plus a little
+  // finger attachment), so the open, the drag and the close are the same
+  // animation at different points rather than three that have to agree.
+  const t = useSharedValue(1);
+  const residualX = useSharedValue(0);
+  const residualY = useSharedValue(0);
+  const sourceWidth = useSharedValue(0);
+  const sourceHeight = useSharedValue(0);
+  const overlay = useSharedValue(0);
+  const morph = useMemo<ViewerMorph>(
+    () => ({ t, residualX, residualY, sourceWidth, sourceHeight, overlay }),
+    [overlay, residualX, residualY, sourceHeight, sourceWidth, t],
   );
+  // Home: the thumbnail this session came from, in window coordinates.
+  const homeX = useSharedValue(origin?.x ?? 0);
+  const homeY = useSharedValue(origin?.y ?? 0);
+  const homeWidth = useSharedValue(origin?.width ?? 0);
+  const homeHeight = useSharedValue(origin?.height ?? 0);
+  const homeRadius = useSharedValue(origin?.radius ?? 0);
+  const homeValid = useSharedValue(!!origin);
+  const home = useMemo<ViewerHome>(
+    () => ({
+      x: homeX,
+      y: homeY,
+      width: homeWidth,
+      height: homeHeight,
+      radius: homeRadius,
+      valid: homeValid,
+    }),
+    [homeHeight, homeRadius, homeValid, homeWidth, homeX, homeY],
+  );
+  useEffect(() => {
+    homeX.value = origin?.x ?? 0;
+    homeY.value = origin?.y ?? 0;
+    homeWidth.value = origin?.width ?? 0;
+    homeHeight.value = origin?.height ?? 0;
+    homeRadius.value = origin?.radius ?? 0;
+    homeValid.value = !!origin;
+  }, [homeHeight, homeRadius, homeValid, homeWidth, homeX, homeY, origin]);
+
+  // The overlay presents once the viewer has laid out, so the zoom starts
+  // from real geometry rather than a guessed frame. It does NOT wait on the
+  // photo's own load report: an image that is already cached can skip that
+  // event, and a gate that never opens leaves an invisible Modal swallowing
+  // every touch, which reads as a frozen app. A timer covers a missing
+  // layout event too.
+  const [laidOut, setLaidOut] = useState(false);
+  const handleRootLayout = useCallback(() => {
+    setLaidOut(true);
+  }, []);
+  useEffect(() => {
+    const task = setTimeout(() => setLaidOut(true), 120);
+    return () => clearTimeout(task);
+  }, []);
+  const handleImageReady = useCallback(() => {
+    // Geometry only refines the mid-frames; it is never a gate.
+  }, []);
+  const handleDismissStart = useCallback(() => {
+    setHandingBack(true);
+  }, []);
+  const presented = laidOut;
+
+  useLayoutEffect(() => {
+    if (!presented) {
+      return;
+    }
+    overlay.value = 1;
+    if (!origin || reduceMotion) {
+      t.value = 0;
+      residualX.value = 0;
+      residualY.value = 0;
+      return;
+    }
+    // From the thumbnail to fit the screen. The delay lets the first frame
+    // land before the animation starts, so nothing jumps on the way in.
+    t.value = 1;
+    residualX.value = 0;
+    residualY.value = 0;
+    t.value = withDelay(
+      OPEN_MORPH_DELAY,
+      withTiming(0, { duration: OPEN_MORPH_DURATION, easing: OPEN_EASING }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presented, origin, reduceMotion]);
+
+  const handleClose = useCallback(() => {
+    if (closing) {
+      return;
+    }
+    if (!origin && reduceMotion) {
+      onClose();
+      return;
+    }
+    // Morph first, close when the photo has reached the thumbnail.
+    setClosing(true);
+  }, [closing, onClose, origin, reduceMotion]);
 
   const total = photos.length;
   const current = photos[Math.min(page, total - 1)];
@@ -174,36 +289,63 @@ function ViewerSession({
   }, []);
 
   const renderPhoto = useCallback(
-    ({ item }: ListRenderItemInfo<ViewerPhoto>) => (
+    ({ item, index }: ListRenderItemInfo<ViewerPhoto>) => (
       // Concrete window height: percentage heights collapse inside the
       // horizontal scroll content container, leaving a blank viewer.
       <View style={[styles.page, { width: windowWidth, height: windowHeight }]}>
         <ZoomablePhoto
-          uri={item.uri}
+          active={index === page}
+          home={home}
           label={item.label}
+          morph={morph}
+          // Only the visible photo morphs out: the pages either side stay put
+          // while the viewer closes over them.
+          morphOut={closing && index === page}
           onDismiss={onClose}
-          onDismissProgress={handleDismissProgress}
+          onDismissStart={handleDismissStart}
+          onImageReady={index === page ? handleImageReady : undefined}
           onPagerLockChange={handlePagerLockChange}
+          uri={item.uri}
         />
       </View>
     ),
-    [windowWidth, windowHeight, handleDismissProgress, handlePagerLockChange, onClose],
+    [
+      windowWidth,
+      windowHeight,
+      morph,
+      home,
+      closing,
+      page,
+      handleDismissStart,
+      handleImageReady,
+      handlePagerLockChange,
+      onClose,
+    ],
   );
 
   // The modal is transparent, so a dismiss drag fades this scrim to reveal
   // the screen behind it. Fading a scrim (over the live screen) instead of
   // the modal's own content is what keeps the gesture from flashing white:
   // a full-screen modal's own backing is the system background.
+  // The viewer ground IS the scrim (the modal is transparent over the live
+  // screen), so it fades with the drag and comes back with the spring.
   const scrimStyle = useAnimatedStyle(() => ({
-    opacity: 1 - dismiss.value * 0.75,
+    opacity: overlay.value * backdropFor(t.value),
   }));
   // Controls leave with the drag; they never sit over the revealed screen.
   const chromeStyle = useAnimatedStyle(() => ({
-    opacity: 1 - dismiss.value,
+    opacity: overlay.value * backdropFor(t.value),
   }));
 
   return (
-    <View accessibilityViewIsModal style={styles.inner}>
+    <View
+      accessibilityViewIsModal
+      // Until it presents, the modal must not eat touches: a transparent
+      // overlay that cannot be dismissed would freeze the screen behind it.
+      pointerEvents={presented && !handingBack ? 'auto' : 'none'}
+      onLayout={handleRootLayout}
+      style={styles.inner}
+    >
       <Animated.View
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, { backgroundColor: background }, scrimStyle]}
@@ -230,7 +372,7 @@ function ViewerSession({
           <IconButton
             accessibilityLabel="Close photo"
             label="Close photo"
-            onPress={onClose}
+            onPress={handleClose}
             variant="secondary"
           >
             <Ionicons color={textPrimary} name="close" size={20} />

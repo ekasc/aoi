@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -12,6 +12,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import type { PhotoOrigin } from '@/components/moments/zoomable-photo';
 import { AudioPlayer } from '@/components/media/audio-player';
 import { MediaFrame } from '@/components/ui/media-frame';
 import { Radii, Spacing } from '@/constants/theme';
@@ -108,6 +109,59 @@ const STRIP_PHOTO_FRACTION = 0.78;
 const STRIP_PHOTO_MAX = 320;
 const STRIP_GAP = Spacing[8];
 
+/**
+ * Press wrapper that reports the frame it was tapped on, in window
+ * coordinates, so the fullscreen viewer can morph out of (and back into) the
+ * exact thumbnail the reader touched. Falls back to a plain press when the
+ * node cannot be measured (mocked trees, races).
+ */
+export function MeasuredPress({
+  accessibilityHint,
+  accessibilityLabel,
+  children,
+  delayLongPress,
+  onLongPress,
+  onPress,
+  radius,
+}: {
+  accessibilityHint: string;
+  accessibilityLabel: string;
+  children: ReactNode;
+  delayLongPress?: number;
+  onLongPress?: () => void;
+  onPress?: (origin?: PhotoOrigin) => void;
+  radius?: number;
+}) {
+  const nodeRef = useRef<View>(null);
+  const handlePress = useCallback(() => {
+    if (!onPress) {
+      return;
+    }
+    const node = nodeRef.current;
+    if (!node || typeof node.measureInWindow !== 'function') {
+      onPress();
+      return;
+    }
+    node.measureInWindow((x, y, width, height) => {
+      onPress({ x, y, width, height, radius });
+    });
+  }, [onPress, radius]);
+
+  return (
+    <Pressable
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      delayLongPress={delayLongPress}
+      onLongPress={onLongPress}
+      onPress={onPress ? handlePress : undefined}
+      ref={nodeRef}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 export function FeedPhoto({
   uri,
   label,
@@ -120,7 +174,7 @@ export function FeedPhoto({
   label: string;
   aspectRatio?: number;
   /** Fullscreen tap; when present the print becomes a button. */
-  onPress?: () => void;
+  onPress?: (origin?: PhotoOrigin) => void;
   /** Own-moment hold for actions; rides the same button when present. */
   onLongPress?: () => void;
   /** Button name; defaults to the print label. */
@@ -160,20 +214,37 @@ export function FeedPhoto({
     return frame;
   }
   return (
-    <Pressable
+    <MeasuredPress
       accessibilityHint={onPress ? 'Opens fullscreen' : 'Hold to edit or remove this moment'}
       accessibilityLabel={actionLabel ?? label}
-      accessibilityRole="button"
       delayLongPress={400}
       onLongPress={onLongPress}
       onPress={onPress}
+      radius={Radii.md}
     >
       {frame}
-    </Pressable>
+    </MeasuredPress>
   );
 }
 
 type OrderedImage = { mediaId: string; url: string };
+
+/**
+ * Hands a fullscreen tap on, with the measured frame only when there is one:
+ * keeping the index-only call shape otherwise means every existing caller
+ * keeps working unchanged.
+ */
+function forwardPhotoPress(
+  onPhotoPress: (index: number, origin?: PhotoOrigin) => void,
+  index: number,
+  origin?: PhotoOrigin,
+): void {
+  if (origin) {
+    onPhotoPress(index, origin);
+    return;
+  }
+  onPhotoPress(index);
+}
 
 /**
  * Timeline photo sets read as one sideways strip: peek-sized prints in a
@@ -190,7 +261,7 @@ function MomentImagePager({
 }: {
   images: OrderedImage[];
   /** Fullscreen tap per print; prints stay plain when absent. */
-  onPhotoPress?: (index: number) => void;
+  onPhotoPress?: (index: number, origin?: PhotoOrigin) => void;
   /** Own-moment hold per print; rides the print button when present. */
   onPhotoLongPress?: () => void;
 }) {
@@ -219,7 +290,7 @@ function MomentImagePager({
       uri={image.url}
       label={`Photo ${index + 1} of ${total}`}
       aspectRatio={TIMELINE_PHOTO_ASPECT}
-      onPress={onPhotoPress ? () => onPhotoPress(index) : undefined}
+      onPress={onPhotoPress ? (origin) => forwardPhotoPress(onPhotoPress, index, origin) : undefined}
       onLongPress={onPhotoLongPress}
       actionLabel={`Open photo ${index + 1} of ${total} fullscreen`}
     />
@@ -265,7 +336,7 @@ export function MomentOrderedImages({
   /** Timeline sets swipe as one content-aligned carousel; article/detail keeps the stack. */
   paged?: boolean;
   /** Fullscreen tap per photo (timeline); prints stay plain when absent. */
-  onPhotoPress?: (index: number) => void;
+  onPhotoPress?: (index: number, origin?: PhotoOrigin) => void;
   /** Own-moment hold per photo; rides the photo button when present. */
   onPhotoLongPress?: () => void;
 }) {
@@ -304,7 +375,7 @@ export function MomentOrderedImages({
         // feed uses (zoom, drag to dismiss); the frame itself becomes the
         // button, so the photo is announced once.
         return (
-          <Pressable
+          <MeasuredPress
             accessibilityHint={
               onPhotoPress && onPhotoLongPress
                 ? 'Opens fullscreen; hold to edit or remove this moment'
@@ -318,14 +389,14 @@ export function MomentOrderedImages({
             accessibilityLabel={
               onPhotoPress ? `Open photo ${index + 1} of ${images.length} fullscreen` : label
             }
-            accessibilityRole="button"
             delayLongPress={400}
             key={attachment.mediaId}
             onLongPress={onPhotoLongPress}
-            onPress={onPhotoPress ? () => onPhotoPress(index) : undefined}
+            onPress={onPhotoPress ? (origin) => forwardPhotoPress(onPhotoPress, index, origin) : undefined}
+            radius={Radii.sheet}
           >
             <AttachmentImage uri={attachment.url} label={undefined} />
-          </Pressable>
+          </MeasuredPress>
         );
       })}
     </View>
@@ -350,7 +421,7 @@ export function MomentAttachments({
 }: {
   moment: Moment;
   /** Fullscreen tap per photo; the article stack stays plain when absent. */
-  onPhotoPress?: (index: number) => void;
+  onPhotoPress?: (index: number, origin?: PhotoOrigin) => void;
 }) {
   if (!hasOrderedAttachments(moment)) return null;
   return (

@@ -562,6 +562,8 @@ vi.mock('react-native-reanimated', () => {
       sin: {},
       quad: {},
       cubic: {},
+      bezier: () => ({}),
+      cubic: {},
       inOut: (easing: any) => easing,
       in: (easing: any) => easing,
       out: (easing: any) => easing,

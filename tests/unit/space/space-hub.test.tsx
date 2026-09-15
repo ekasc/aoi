@@ -93,6 +93,7 @@ vi.mock('react-native', () => {
       timing: () => ({ start: (done?: () => void) => done?.() }),
     },
     Easing: {
+      bezier: () => ({}),
       out: (curve: unknown) => curve,
       exp: {},
     },

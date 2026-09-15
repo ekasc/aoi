@@ -55,6 +55,7 @@ vi.mock('react-native-reanimated', () => {
   chain.reduceMotion = () => chain;
   return {
     default: {
+      createAnimatedComponent: (component: unknown) => component,
       View: ({
         children,
         testID,

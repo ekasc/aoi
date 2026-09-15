@@ -99,7 +99,10 @@ vi.mock('react-native-reanimated', () => {
   chain.delay = () => chain;
   chain.reduceMotion = () => chain;
   return {
-    default: { View: ({ children }: { children?: unknown }) => createElement('div', {}, children) },
+    default: {
+      View: ({ children }: { children?: unknown }) => createElement('div', {}, children),
+      createAnimatedComponent: (component: unknown) => component,
+    },
     FadeIn: chain,
     FadeInDown: chain,
     ReduceMotion: { System: 'system' },
@@ -108,6 +111,16 @@ vi.mock('react-native-reanimated', () => {
     useAnimatedStyle: () => ({}),
     withTiming: (value: unknown) => value,
     runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
+    withDelay: (_delay: number, value: unknown) => value,
+    withSpring: (value: unknown) => value,
+    Easing: {
+      bezier: () => ({}),
+      in: (v: unknown) => v,
+      out: (v: unknown) => v,
+      inOut: (v: unknown) => v,
+      linear: {},
+      cubic: {},
+    },
   };
 });
 

@@ -144,6 +144,7 @@ vi.mock('react-native', () => {
       }),
     },
     Easing: {
+      bezier: () => ({}),
       out: (curve: unknown) => curve,
       exp: {},
     },

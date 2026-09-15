@@ -26,6 +26,7 @@ import { SpaceAvatarButton } from "@/components/space/space-avatar-button";
 import { GalleryTile } from "@/components/moments/gallery-tile";
 import { MomentCard } from "@/components/moments/moment-card";
 import { PhotoViewer, type ViewerPhoto } from "@/components/moments/photo-viewer";
+import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { PendingMemoryRow } from "@/components/moments/pending-memory-row";
 import { ThemedText } from "@/components/themed-text";
 import { ActionSheet } from "@/components/ui/action-sheet";
@@ -152,7 +153,12 @@ export default function MemoriesScreen() {
 	const [view, setView] = useState<MemoriesView>("feed");
 	const [switcherHidden, setSwitcherHidden] = useState(false);
 	const [isSearching, setIsSearching] = useState(false);
-	const [viewerPhoto, setViewerPhoto] = useState<{ photos: ViewerPhoto[]; index: number } | null>(null);
+	const [viewerPhoto, setViewerPhoto] = useState<{
+		photos: ViewerPhoto[];
+		index: number;
+		/** Window frame of the tile that opened this session (morph origin). */
+		origin?: PhotoOrigin;
+	} | null>(null);
 	const [query, setQuery] = useState("");
 	const [typeFilter, setTypeFilter] = useState<FeedTypeFilter>("all");
 	const [searchFocused, setSearchFocused] = useState(false);
@@ -588,7 +594,7 @@ export default function MemoriesScreen() {
 	// Feed photos open the whole set fullscreen: tap a print and the viewer
 	// starts on that page, swiping across the rest of the memory's photos.
 	const handleOpenFeedPhoto = useCallback(
-		(momentId: string, photoIndex: number) => {
+		(momentId: string, photoIndex: number, origin?: PhotoOrigin) => {
 			const moment = momentsById.get(momentId);
 			if (!moment) {
 				return;
@@ -605,6 +611,7 @@ export default function MemoriesScreen() {
 					label: title || "Memory photo",
 				})),
 				index: Math.min(Math.max(0, photoIndex), galleryPhotos.length - 1),
+				origin,
 			});
 		},
 		[momentsById],
@@ -615,7 +622,7 @@ export default function MemoriesScreen() {
 	// so a gallery of one memory's photos can be swiped through instead of
 	// dead-ending on a single frame.
 	const handleOpenPhoto = useCallback(
-		(photo: GalleryPhoto) => {
+		(photo: GalleryPhoto, origin?: PhotoOrigin) => {
 			const moment = momentsById.get(photo.momentId);
 			if (!moment) {
 				return;
@@ -624,10 +631,7 @@ export default function MemoriesScreen() {
 			const tappedIndex = galleryPhotos.findIndex(
 				(candidate) => candidate.key === photo.key,
 			);
-			handleOpenFeedPhoto(
-				photo.momentId,
-				tappedIndex >= 0 ? tappedIndex : 0,
-			);
+			handleOpenFeedPhoto(photo.momentId, tappedIndex >= 0 ? tappedIndex : 0, origin);
 		},
 		[momentsById, handleOpenFeedPhoto],
 	);
@@ -1345,6 +1349,7 @@ export default function MemoriesScreen() {
 			<PhotoViewer
 				photos={viewerPhoto?.photos ?? []}
 				initialIndex={viewerPhoto?.index ?? 0}
+				origin={viewerPhoto?.origin}
 				onClose={handleCloseViewer}
 				onOpenMemory={handleOpenViewerMemory}
 				visible={viewerPhoto !== null}

@@ -86,8 +86,14 @@ vi.mock('expo-image', () => ({
 const capturedZoomProps: any[] = [];
 
 vi.mock('@/components/moments/zoomable-photo', () => ({
+  OPEN_EASING: {},
+  OPEN_MORPH_DELAY: 16,
+  OPEN_MORPH_DURATION: 300,
+  backdropFor: (t: number) => 1 - t,
   // Keeps the photo in the tree (the img assertions) and captures the
-  // pager-lock reports the viewer wires.
+  // pager-lock reports and morph requests the viewer wires. The real photo
+  // animates home on morphOut and only then calls onDismiss; the tests call
+  // that themselves so the ordering is asserted, not assumed.
   ZoomablePhoto: (props: any) => {
     capturedZoomProps.push(props);
     return createElement('img', {
@@ -354,11 +360,53 @@ describe('PhotoViewer swipeable set', () => {
     expect(capturedList.scrollEnabled).toBe(true);
   });
 
-  it('closes from the Close control', () => {
+  it('closes from the Close control, after the photo morphs home', () => {
     const onClose = vi.fn();
     renderViewer({ onClose });
     fireEvent.click(screen.getByLabelText('Close photo'));
+    // The control asks for the morph; the close follows the morph, not the tap.
+    const morphing = capturedZoomProps.filter((props) => props.morphOut);
+    expect(morphing).toHaveLength(1);
+    expect(onClose).not.toHaveBeenCalled();
+    act(() => {
+      morphing[0].onDismiss();
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('morphs the visible photo home before closing', () => {
+    const onClose = vi.fn();
+    renderViewer({ photos: FIVE, initialIndex: 2, onClose });
+
+    // Only the visible page morphs: the pages either side stay put while the
+    // viewer closes over them.
+    fireEvent.click(screen.getByLabelText('Close photo'));
+    expect(capturedZoomProps.filter((props) => props.morphOut)).toHaveLength(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('seeds the session home from the thumbnail that opened it', () => {
+    const origin = { x: 12, y: 240, width: 96, height: 96, radius: 4 };
+    renderViewer({ photos: FIVE, initialIndex: 1, origin });
+    // Every page shares the session's home (the morph geometry) and its
+    // progress, so the open and the drag are one animation...
+    const home = capturedZoomProps[0].home;
+    expect(home.x.value).toBe(12);
+    expect(home.y.value).toBe(240);
+    expect(home.width.value).toBe(96);
+    expect(home.height.value).toBe(96);
+    expect(home.radius.value).toBe(4);
+    expect(home.valid.value).toBe(true);
+    // ...but only the visible page scrubs it.
+    expect(capturedZoomProps[1].active).toBe(true);
+    expect(capturedZoomProps[0].active).toBe(false);
+    expect(capturedZoomProps[2].active).toBe(false);
+  });
+
+  it('has no home to morph into when nothing was measured', () => {
+    renderViewer({ photos: FIVE, initialIndex: 0 });
+    expect(capturedZoomProps[0].home.valid.value).toBe(false);
+    expect(capturedZoomProps[0].morph.t.value).toBe(1);
   });
 
   it('renders a lone photo with no counter', () => {

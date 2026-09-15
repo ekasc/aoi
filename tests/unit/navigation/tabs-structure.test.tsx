@@ -227,6 +227,7 @@ vi.mock('react-native-reanimated', () => {
     default: {
       View: ({ children }: { children?: unknown }) =>
         createElement('div', {}, children),
+      createAnimatedComponent: (component: unknown) => component,
     },
     FadeIn: chain,
     FadeInDown: chain,
@@ -245,6 +246,7 @@ vi.mock('react-native-reanimated', () => {
     cancelAnimation: () => {},
     Easing: {
       linear: {},
+      bezier: () => ({}),
       sin: {},
       quad: {},
       cubic: {},

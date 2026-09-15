@@ -7,6 +7,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { AudioPlayer } from "@/components/media/audio-player";
 import { VideoPlayer } from "@/components/media/video-player";
 import { FeedPhoto, MomentOrderedAudios, MomentOrderedImages, hasOrderedAttachments, orderedImageAttachments } from "@/components/moments/moment-attachments";
+import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { ThemedText } from "@/components/themed-text";
 import { MediaFrame } from "@/components/ui/media-frame";
 import { Spacing } from "@/constants/theme";
@@ -27,7 +28,7 @@ export type MomentCardProps = {
 	/** Present only for the viewer's own moments; long-press opens actions. */
 	onLongPress?: (momentId: string) => void;
 	/** Fullscreen photo tap: tapping a feed photo opens the viewer instead. */
-	onPhotoPress?: (momentId: string, photoIndex: number) => void;
+	onPhotoPress?: (momentId: string, photoIndex: number, origin?: PhotoOrigin) => void;
 	/** Explicit menu trigger, independent of the native long-press gesture. */
 	onActions?: (momentId: string) => void;
 	/**
@@ -324,7 +325,12 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoP
 			<FeedPhoto
 				uri={moment.mediaPreview}
 				label="Memory photo"
-				onPress={onPhotoPress ? () => onPhotoPress(moment.id, 0) : undefined}
+				onPress={
+					onPhotoPress
+						? (origin) =>
+								origin ? onPhotoPress(moment.id, 0, origin) : onPhotoPress(moment.id, 0)
+						: undefined
+				}
 				onLongPress={handleLongPress}
 				actionLabel="Open photo fullscreen"
 			/>
@@ -336,7 +342,14 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoP
 					<MomentOrderedImages
 						moment={moment}
 						paged
-						onPhotoPress={onPhotoPress ? (index) => onPhotoPress(moment.id, index) : undefined}
+						onPhotoPress={
+							onPhotoPress
+								? (index, origin) =>
+										origin
+											? onPhotoPress(moment.id, index, origin)
+											: onPhotoPress(moment.id, index)
+								: undefined
+						}
 						onPhotoLongPress={handleLongPress}
 					/>
 				)
@@ -453,7 +466,14 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoP
 						<MomentOrderedImages
 							moment={moment}
 							paged
-							onPhotoPress={onPhotoPress ? (index) => onPhotoPress(moment.id, index) : undefined}
+							onPhotoPress={
+							onPhotoPress
+								? (index, origin) =>
+										origin
+											? onPhotoPress(moment.id, index, origin)
+											: onPhotoPress(moment.id, index)
+								: undefined
+						}
 							onPhotoLongPress={handleLongPress}
 						/>
 					</View>
