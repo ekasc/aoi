@@ -1,16 +1,14 @@
-import { useFonts } from 'expo-font';
-
-import { FontFamilies } from '@/constants/typography';
-
+/**
+ * Font loading is a no-op in production: Aoi ships zero font binaries
+ * (P9A — the provisional TTFs were retired for lack of redistribution
+ * rights). All type resolves through the `FontFamilies` system stack, so
+ * there is nothing to load and nothing that can fail. The hook is kept so
+ * every existing call site (`fontsLoaded` gate in the root layout) works
+ * unchanged if a licensed face ever lands behind `FontFamilies` again.
+ */
 export function useAoiFonts() {
-  const [loaded, error] = useFonts({
-    [FontFamilies.display]: require('../assets/fonts/aoi-display-newyork.ttf'),
-    [FontFamilies.body]: require('../assets/fonts/aoi-body-trebuchet.ttf'),
-    [FontFamilies.meta]: require('../assets/fonts/aoi-meta-mono.ttf'),
-  });
-
   return {
-    fontsLoaded: loaded || Boolean(error),
-    fontError: error ?? null,
+    fontsLoaded: true as boolean,
+    fontError: null as Error | null,
   };
 }

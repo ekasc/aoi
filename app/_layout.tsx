@@ -1,19 +1,17 @@
+import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
 import { Stack } from "expo-router/stack";
 import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { PropsWithChildren } from "react";
-
-// Defines the Live-mode background location task before anything else can
-// run — Expo requires the task to exist at app scope (including cold starts
-// launched by the OS for location updates).
-import "@/features/location/background-task";
+import { useEffect, useMemo, useState } from "react";
 
 import { LaunchSplash } from "@/components/launch-splash";
+import { DebugHarness } from "@/components/dev/debug-harness";
+import { ensureDevSeed } from "@/features/dev/dev-seed";
 import { MomentsProvider } from "@/features/moments/moments-context";
 import { SessionProvider, useSession } from "@/features/session/session-context";
 import { SpaceProvider, useSpace } from "@/features/space/space-context";
+import { SubscriptionProvider } from "@/features/subscription/subscription-context";
 import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
 import { useAoiFonts } from "@/hooks/use-aoi-fonts";
 
@@ -29,68 +27,42 @@ Notifications.setNotificationHandler({
 	}),
 });
 
-// Inline React Navigation theme objects (replacing @react-navigation/native import)
-type NavigationColors = {
-  primary: string;
-  background: string;
-  card: string;
-  text: string;
-  border: string;
-  notification: string;
-};
-
-type NavigationTheme = {
-  dark: boolean;
-  colors: NavigationColors;
-  fonts: any;
-};
-
-const NavigationDefaultTheme: NavigationTheme = {
-  dark: false,
-  colors: {
-    primary: '#007AFF',
-    background: '#F2F2F7',
-    card: '#FFFFFF',
-    text: '#000000',
-    border: '#C6C6C8',
-    notification: '#FF3B30',
-  },
-  fonts: {},
-};
-
-const NavigationDarkTheme: NavigationTheme = {
-  dark: true,
-  colors: {
-    primary: '#0A84FF',
-    background: '#000000',
-    card: '#1C1C1E',
-    text: '#FFFFFF',
-    border: '#38383A',
-    notification: '#FF453A',
-  },
-  fonts: {},
-};
-
-const NavigationThemeContext = createContext<NavigationTheme>(NavigationDefaultTheme);
-
-function NavigationThemeProvider({ children, value }: PropsWithChildren<{ value: NavigationTheme }>) {
-  return (
-    <NavigationThemeContext.Provider value={value}>
-      {children}
-    </NavigationThemeContext.Provider>
-  );
-}
-
+// React Navigation's own theme provider (imported via expo-router since
+// SDK 56 forbids `@react-navigation/*` imports in app code), fed from Aoi's
+// theme context so headers, sheets, and modals use the app's colors and
+// fonts instead of the system defaults.
 export default function RootLayout() {
 	const { fontsLoaded } = useAoiFonts();
+	// Dev-only: write the seeded session/space BEFORE the providers hydrate,
+	// so the real app tree boots signed in with the mock world. Resolves
+	// immediately when EXPO_PUBLIC_DEV_SEED is unset.
+	const [seedReady, setSeedReady] = useState(false);
+
+	useEffect(() => {
+		let cancelled = false;
+		void ensureDevSeed().finally(() => {
+			if (!cancelled) {
+				setSeedReady(true);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	if (!seedReady) {
+		return null;
+	}
 
 	return (
 		<SessionProvider>
 			<SpaceProvider>
 				<AoiThemeProvider>
-					<MomentsProvider>
-						<RootNavigation fontsLoaded={fontsLoaded} />
-					</MomentsProvider>
+					<SubscriptionProvider>
+						<MomentsProvider>
+							<RootNavigation fontsLoaded={fontsLoaded} />
+						</MomentsProvider>
+					</SubscriptionProvider>
 				</AoiThemeProvider>
 			</SpaceProvider>
 		</SessionProvider>
@@ -103,17 +75,15 @@ type RootNavigationProps = {
 
 function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 	const {
-		status: sessionStatus,
-		user,
 		isHydrated: isSessionHydrated,
 	} = useSession();
-	const { status: spaceStatus, space, isHydrated: isSpaceHydrated } = useSpace();
+	const { isHydrated: isSpaceHydrated } = useSpace();
 	const { mode, colors, isHydrated } = useAoiTheme();
 	const themeName = mode === "dark" ? "dark" : "light";
 	const [showLaunchSplash, setShowLaunchSplash] = useState(true);
 
 	const navigationTheme = useMemo(() => {
-		const baseTheme = mode === "dark" ? NavigationDarkTheme : NavigationDefaultTheme;
+		const baseTheme = mode === "dark" ? DarkTheme : DefaultTheme;
 
 		return {
 			...baseTheme,
@@ -156,32 +126,6 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 		};
 	}, [fontsLoaded, isHydrated]);
 
-	const relationship = useMemo(() => {
-		if (
-			sessionStatus !== "signed_in" ||
-			spaceStatus !== "ready" ||
-			!space ||
-			!user
-		) {
-			return null;
-		}
-
-		const relationshipDate = new Date(space.relationshipStartDate);
-		const isValidDate = !Number.isNaN(relationshipDate.getTime());
-
-		return {
-			youName: user.displayName,
-			partnerName: space.partnerName,
-			sinceLabel: isValidDate
-				? relationshipDate.toLocaleDateString("en-US", {
-						month: "long",
-						day: "numeric",
-						year: "numeric",
-				  })
-				: "a shared chapter",
-		};
-	}, [sessionStatus, space, spaceStatus, user]);
-
 	if (
 		!fontsLoaded ||
 		!isHydrated ||
@@ -189,32 +133,40 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 		!isSpaceHydrated ||
 		showLaunchSplash
 	) {
-		return (
-			<LaunchSplash
-				colors={colors}
-				relationship={relationship}
-				themeName={themeName}
-			/>
-		);
+		return <LaunchSplash />;
 	}
 
 	return (
-		<NavigationThemeProvider value={navigationTheme}>
-			<Stack
-				screenOptions={{
-					contentStyle: { backgroundColor: colors.background },
-				}}
-			>
-				<Stack.Screen
-					name="(public)"
-					options={{ headerShown: false }}
+		<ThemeProvider value={navigationTheme}>
+			<DebugHarness>
+				<Stack
+					screenOptions={{
+						contentStyle: { backgroundColor: colors.background },
+					}}
+				>
+					<Stack.Screen
+						name="(public)"
+						options={{ headerShown: false }}
+					/>
+					<Stack.Screen name="(auth)" options={{ headerShown: false }} />
+					<Stack.Screen name="(app)" options={{ headerShown: false }} />
+					<Stack.Screen
+						name="dev-story"
+						options={{ headerShown: false }}
+					/>
+					<Stack.Screen
+						name="dev-chapter"
+						options={{ headerShown: false }}
+					/>
+					<Stack.Screen
+						name="dev-composer"
+						options={{ headerShown: false }}
+					/>
+				</Stack>
+				<StatusBar
+					style={themeName === "dark" ? "light" : "dark"}
 				/>
-				<Stack.Screen name="(auth)" options={{ headerShown: false }} />
-				<Stack.Screen name="(app)" options={{ headerShown: false }} />
-			</Stack>
-			<StatusBar
-				style={themeName === "dark" ? "light" : "dark"}
-			/>
-		</NavigationThemeProvider>
+			</DebugHarness>
+		</ThemeProvider>
 	);
 }

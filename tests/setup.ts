@@ -96,6 +96,8 @@ vi.mock('react-native', () => {
     Image,
     Platform: { OS: 'ios', select: (obj: any) => obj.ios },
     Dimensions: { get: () => ({ width: 390, height: 844 }) },
+    useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
+    useColorScheme: () => 'light',
     PixelRatio: { get: () => 3 },
     StatusBar: { currentHeight: 44 },
     TouchableOpacity: View,
@@ -110,10 +112,19 @@ vi.mock('react-native', () => {
       currentState: 'active',
       addEventListener: () => ({ remove: () => {} }),
     },
+    // Only the reduce-motion surface WindowRain uses. The resting
+    // default is off; tests capture the change handler to simulate
+    // a dynamic system-setting flip.
+    AccessibilityInfo: {
+      isReduceMotionEnabled: () => Promise.resolve(false),
+      addEventListener: () => ({ remove: () => {} }),
+      removeEventListener: () => {},
+    },
   };
 });
 
 vi.mock('expo', () => ({}));
+
 
 vi.mock('@expo/vector-icons', () => {
   const React = require('react');
@@ -148,6 +159,35 @@ vi.mock('expo-audio', () => ({
   setAudioModeAsync: async () => {},
 }));
 
+// expo-video is a native module; unit tests only need the JS surface the
+// dev-preview VideoPlayer touches. The mock runs the setup callback so
+// loop/autoplay wiring is exercised, and VideoView renders a labelled div.
+vi.mock('expo-video', () => {
+  const React = require('react');
+  return {
+    useVideoPlayer: (_source: unknown, setup?: (player: any) => void) => {
+      const player = {
+        loop: false,
+        muted: false,
+        playing: false,
+        currentTime: 0,
+        duration: 0,
+        play: () => {},
+        pause: () => {},
+        replace: () => {},
+      };
+      setup?.(player);
+      return player;
+    },
+    VideoView: ({ style, accessibilityLabel }: any) =>
+      React.createElement('div', {
+        style,
+        'data-testid': 'video-view',
+        ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
+      }),
+  };
+});
+
 vi.mock('expo-notifications', () => ({
   requestPermissionsAsync: async () => ({ granted: false }),
   scheduleNotificationAsync: async () => '',
@@ -166,41 +206,26 @@ vi.mock('expo-notifications', () => ({
 vi.mock('expo-haptics', () => ({
   impactAsync: async () => {},
   notificationAsync: async () => {},
-  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
-  NotificationFeedbackType: { Success: 'success' },
+  selectionAsync: async () => {},
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 
-vi.mock('expo-location', () => ({
-  Accuracy: { Balanced: 3 },
-  requestForegroundPermissionsAsync: async () => ({ granted: false }),
-  requestBackgroundPermissionsAsync: async () => ({ granted: false }),
-  isBackgroundLocationAvailableAsync: async () => false,
-  getCurrentPositionAsync: async () => ({
-    coords: { latitude: 0, longitude: 0, accuracy: 0 },
-  }),
-  watchPositionAsync: async () => ({ remove: () => {} }),
-  startLocationUpdatesAsync: async () => {},
-  stopLocationUpdatesAsync: async () => {},
-  hasStartedLocationUpdatesAsync: async () => false,
-}));
-
-vi.mock('expo-task-manager', () => ({
-  defineTask: () => {},
-}));
-
-vi.mock('react-native-maps', () => {
-  const React = require('react');
-  const MapView = ({ children, style, ...props }: any) =>
-    React.createElement('div', { style: flattenStyle(style), 'data-testid': 'map-view', ...props }, children);
-  const Marker = (props: any) =>
-    React.createElement('span', { 'data-testid': 'map-marker', ...props });
-
+// Deterministic per-call UUIDs: unique across drafts (so identical content
+// still yields distinct ids) while remaining stable strings for assertions.
+vi.mock('expo-crypto', () => {
+  let counter = 0;
   return {
-    __esModule: true,
-    default: MapView,
-    Marker,
+    randomUUID: () => {
+      counter += 1;
+      return `00000000-0000-4000-8000-${String(counter).padStart(12, '0')}`;
+    },
   };
 });
+
+// NOTE (P9A): expo-location / expo-task-manager / react-native-maps mocks
+// were removed with the v1 location client. If location ever returns,
+// re-add module mocks here first.
 
 class MockAsyncStorage {
   store = new Map<string, string>();
@@ -245,6 +270,90 @@ vi.mock('expo-asset', () => ({
 vi.mock('expo-constants', () => ({
   default: { expoConfig: {}, manifest: {} },
   expo: { extra: {} },
+}));
+
+// Glass surfaces render real blur/glass on device; in happy-dom they are
+// plain host views (same contract as GlassView.js off-iOS).
+vi.mock('expo-glass-effect', () => {
+  const React = require('react');
+  return {
+    GlassView: ({ children, style }: any) =>
+      React.createElement('div', { style }, children),
+    isLiquidGlassAvailable: () => false,
+  };
+});
+
+vi.mock('expo-blur', () => {
+  const React = require('react');
+  return {
+    BlurView: ({ children, style }: any) =>
+      React.createElement('div', { style }, children),
+  };
+});
+
+// Gesture Handler: a chainable no-op so sheets render in jsdom. Tests that
+// exercise real gesture math override this with a file-local mock.
+vi.mock('react-native-gesture-handler', () => {
+  const React = require('react');
+  const chain: any = new Proxy(() => chain, { get: () => chain });
+  return {
+    Gesture: { Pan: () => chain, Tap: () => chain, LongPress: () => chain },
+    GestureDetector: ({ children }: any) => React.createElement('div', {}, children),
+    GestureHandlerRootView: ({ children, style }: any) =>
+      React.createElement('div', { style }, children),
+  };
+});
+
+// Native bottom sheet: the real module pulls SwiftUI (native) or vaul (web).
+// This stand-in tracks presented state through the imperative ref so the
+// NativeSheet wrapper and its consumers are testable in jsdom.
+vi.mock('@expo/ui/community/bottom-sheet', () => {
+  const React = require('react');
+  function BottomSheetModal({ ref, onClose, onDismiss, children }: any) {
+    const [presented, setPresented] = React.useState(false);
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        present: () => setPresented(true),
+        close: () => setPresented(false),
+        dismiss: () => setPresented(false),
+        forceClose: () => setPresented(false),
+        snapToIndex: () => {},
+        snapToPosition: () => {},
+        expand: () => {},
+        collapse: () => {},
+      }),
+      []
+    );
+    if (!presented) {
+      return null;
+    }
+    const dismiss = () => {
+      setPresented(false);
+      onClose?.();
+      onDismiss?.();
+    };
+    return React.createElement(
+      'div',
+      { 'data-testid': 'native-sheet' },
+      React.createElement(
+        'button',
+        { 'data-testid': 'native-sheet-dismiss', onClick: dismiss },
+        'dismiss'
+      ),
+      children
+    );
+  }
+  return { BottomSheetModal };
+});
+
+// Leave guard: the real hook needs a navigation container. The stand-in
+// records the latest guard so tests can assert the block and replay an
+// intercepted exit.
+vi.mock('@/hooks/use-prevent-leave', () => ({
+  usePreventLeave: (prevent: boolean, onBlocked: (leave: () => void) => void) => {
+    (globalThis as any).__preventLeave = { prevent, onBlocked };
+  },
 }));
 
 vi.mock('expo-file-system', () => ({
@@ -369,6 +478,98 @@ vi.mock('expo-sqlite', () => ({
   useSQLiteContext: () => mockDbSingleton,
 }));
 
+// react-native-reanimated ships ESM that Vite cannot resolve in unit
+// tests, and its UI runtime does not exist in happy-dom. Provide the
+// JS-thread surface components under test actually use: mutable shared
+// values, one-shot derived values, static reduced-motion, and
+// pass-through animation builders.
+vi.mock('react-native-reanimated', () => {
+  const React = require('react');
+
+  const stripAnimatedProps = (props: Record<string, any>) => {
+    const {
+      entering,
+      exiting,
+      layout,
+      sharedTransitionTag,
+      ...rest
+    } = props;
+    return rest;
+  };
+
+  const AnimatedView = (props: any) => {
+    const {
+      children,
+      style,
+      testID,
+      entering,
+      exiting,
+      layout,
+      sharedTransitionTag,
+      ...rest
+    } = props;
+    const flatStyle = Array.isArray(style)
+      ? Object.assign({}, ...style.filter(Boolean))
+      : style;
+    return React.createElement(
+      'div',
+      { ...rest, style: flatStyle, ...(testID ? { 'data-testid': testID } : {}) },
+      children
+    );
+  };
+
+  const enteringStub = () => enteringStub;
+  Object.assign(enteringStub, {
+    duration: () => enteringStub,
+    delay: () => enteringStub,
+    reduceMotion: () => enteringStub,
+    springify: () => enteringStub,
+    damping: () => enteringStub,
+    stiffness: () => enteringStub,
+    mass: () => enteringStub,
+    overshootClamping: () => enteringStub,
+  });
+
+  return {
+    default: {
+      View: AnimatedView,
+      createAnimatedComponent: (Component: any) => Component,
+    },
+    View: AnimatedView,
+    FadeIn: enteringStub,
+    FadeInDown: enteringStub,
+    FadeInUp: enteringStub,
+    FadeOut: enteringStub,
+    SlideInDown: enteringStub,
+    SlideInUp: enteringStub,
+    SlideOutDown: enteringStub,
+    useSharedValue: (initial: any) => React.useRef({ value: initial }).current,
+    useDerivedValue: (fn: any) => React.useState(() => ({ value: fn() }))[0],
+    useReducedMotion: () => false,
+    useAnimatedStyle: () => ({}),
+    interpolate: (_value: number, _input: number[], output: number[]) => output[0],
+    Extrapolation: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
+    useAnimatedKeyboard: () => ({ height: { value: 0 }, state: { value: 0 } }),
+    withTiming: (value: any) => value,
+    withSpring: (value: any) => value,
+    runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
+    withRepeat: (value: any) => value,
+    withDelay: (_delay: number, value: any) => value,
+    withSequence: (...values: any[]) => values[values.length - 1],
+    cancelAnimation: () => {},
+    Easing: {
+      linear: {},
+      sin: {},
+      quad: {},
+      cubic: {},
+      inOut: (easing: any) => easing,
+      in: (easing: any) => easing,
+      out: (easing: any) => easing,
+    },
+    ReduceMotion: { System: 0, Always: 1, Never: 2 },
+  };
+});
+
 vi.mock('expo-image', () => ({
   Image: ({ source, style, ...props }: any) => {
     const React = require('react');
@@ -376,5 +577,43 @@ vi.mock('expo-image', () => ({
     return React.createElement('img', { style: flatStyle, src: source?.uri, alt: '', ...props });
   },
 }));
+
+
+
+// react-native-skia renders to a native GPU canvas — in unit tests render
+// the scene graph structurally instead: shapes become labelled divs so
+// tests can assert on composition, paints/shaders render as null.
+vi.mock('@shopify/react-native-skia', () => {
+  const React = require('react');
+
+  // Note: Skia shapes take paint props (`style="stroke"`, `color`,
+  // `opacity`, geometry) that must NOT reach the DOM — `style` in
+  // particular is a paint-style string, not CSS.
+  const shape = (type: string) => {
+    const Shape = ({ children }: any) =>
+      React.createElement('div', { 'data-skia': type }, children);
+    Shape.displayName = `MockSkia${type}`;
+    return Shape;
+  };
+
+  const Nil = () => null;
+
+  return {
+    Canvas: ({ children, style }: any) =>
+      React.createElement('div', { 'data-testid': 'skia-canvas', style }, children),
+    Circle: shape('Circle'),
+    Oval: shape('Oval'),
+    Group: shape('Group'),
+    Path: shape('Path'),
+    Rect: shape('Rect'),
+    RadialGradient: Nil,
+    SweepGradient: Nil,
+    LinearGradient: Nil,
+    Blur: Nil,
+    Fill: Nil,
+    vec: (x: number, y: number = x) => ({ x, y }),
+    Skia: { Path: { Make: () => ({ addArc: () => undefined }) } },
+  };
+});
 
 vi.stubGlobal('__DEV__', false);

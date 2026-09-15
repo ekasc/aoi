@@ -26,6 +26,7 @@ vi.mock('@/features/api-client', () => ({
 
 const mockFetchMoments = vi.fn();
 const mockFetchActivity = vi.fn();
+const mockFetchBucketSummary = vi.fn();
 const mockCreateMoment = vi.fn();
 const mockUpdateMoment = vi.fn();
 const mockDeleteMoment = vi.fn();
@@ -33,6 +34,7 @@ const mockDeleteMoment = vi.fn();
 vi.mock('@/features/moments/remote-moments-api', () => ({
   fetchMoments: (...args: unknown[]) => mockFetchMoments(...args),
   fetchActivity: (...args: unknown[]) => mockFetchActivity(...args),
+  fetchBucketSummary: (...args: unknown[]) => mockFetchBucketSummary(...args),
   createMoment: (...args: unknown[]) => mockCreateMoment(...args),
   updateMoment: (...args: unknown[]) => mockUpdateMoment(...args),
   deleteMoment: (...args: unknown[]) => mockDeleteMoment(...args),
@@ -210,5 +212,170 @@ describe('useMoments (remote refresh guards)', () => {
     });
     expect(result.current.moments).toHaveLength(1);
     expect(result.current.moments[0].title).toBe('After');
+  });
+});
+
+describe('useMoments cursor pagination (Wall-driven)', () => {
+  beforeEach(() => {
+    mockAppStateListeners.length = 0;
+    mockFetchMoments.mockReset();
+    mockFetchActivity.mockReset();
+    mockFetchActivity.mockResolvedValue({ activity: [] });
+  });
+
+  async function renderRemoteMoments() {
+    const { MomentsProvider, useMoments } = await import(
+      '@/features/moments/moments-context'
+    );
+    return renderHook(() => useMoments(), {
+      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
+    });
+  }
+
+  it('loads the first bounded page and reports a remaining cursor', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m1', 'First')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.moments).toHaveLength(1));
+
+    expect(mockFetchMoments).toHaveBeenCalledTimes(1);
+    expect(mockFetchMoments).toHaveBeenCalledWith(undefined, 100);
+    expect(result.current.hasMoreMoments).toBe(true);
+  });
+
+  it('advances the cursor, dedupes, terminates, and never refetches', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m1', 'First')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.hasMoreMoments).toBe(true));
+
+    mockFetchMoments.mockResolvedValueOnce({
+      // m1 repeats (overlap) plus the genuinely new m2.
+      moments: [remoteMoment('m1', 'First'), remoteMoment('m2', 'Second')],
+    });
+
+    let more: boolean | undefined;
+    await act(async () => {
+      more = await result.current.loadMoreMoments();
+    });
+
+    expect(more).toBe(false);
+    expect(mockFetchMoments).toHaveBeenCalledTimes(2);
+    expect(mockFetchMoments).toHaveBeenLastCalledWith('cursor-1', 100);
+    expect(result.current.moments.map((moment) => moment.id)).toEqual(['m1', 'm2']);
+    expect(result.current.hasMoreMoments).toBe(false);
+
+    // Exhausted: further calls never touch the network.
+    await act(async () => {
+      more = await result.current.loadMoreMoments();
+    });
+    expect(more).toBe(false);
+    expect(mockFetchMoments).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries the same page after a failure without skipping it', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m1', 'First')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.hasMoreMoments).toBe(true));
+
+    mockFetchMoments.mockRejectedValueOnce(new Error('network down'));
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(result.current.hasMoreMoments).toBe(true);
+    expect(result.current.moments).toHaveLength(1);
+
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m2', 'Second')],
+    });
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    // The retry re-requested the unadvanced cursor, not the next page.
+    expect(mockFetchMoments).toHaveBeenLastCalledWith('cursor-1', 100);
+    expect(result.current.moments.map((moment) => moment.id)).toEqual(['m1', 'm2']);
+    expect(result.current.hasMoreMoments).toBe(false);
+  });
+});
+
+describe('useMoments chapter reads (range + summary, Story-independent)', () => {
+  beforeEach(() => {
+    mockAppStateListeners.length = 0;
+    mockFetchMoments.mockReset();
+    mockFetchActivity.mockReset();
+    mockFetchActivity.mockResolvedValue({ activity: [] });
+    mockFetchBucketSummary.mockReset();
+  });
+
+  async function renderRemoteMoments() {
+    const { MomentsProvider, useMoments } = await import(
+      '@/features/moments/moments-context'
+    );
+    return renderHook(() => useMoments(), {
+      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
+    });
+  }
+
+  it('pages a chapter range to completion without touching the Story cursor', async () => {
+    mockFetchMoments.mockResolvedValueOnce({ moments: [] });
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    mockFetchMoments.mockClear();
+
+    const from = Date.parse('2026-08-01T00:00:00.000Z');
+    const to = Date.parse('2026-09-01T00:00:00.000Z');
+    mockFetchMoments
+      .mockResolvedValueOnce({
+        moments: [remoteMoment('m2', 'Second')],
+        nextCursor: 'range-cursor',
+      })
+      .mockResolvedValueOnce({ moments: [remoteMoment('m1', 'First')] });
+
+    let members: { id: string }[] = [];
+    await act(async () => {
+      members = await result.current.loadChapterRange(from, to);
+    });
+
+    expect(mockFetchMoments).toHaveBeenCalledTimes(2);
+    expect(mockFetchMoments).toHaveBeenNthCalledWith(1, undefined, 100, { fromMs: from, toMs: to });
+    expect(mockFetchMoments).toHaveBeenNthCalledWith(2, 'range-cursor', 100, { fromMs: from, toMs: to });
+    // Oldest-first regardless of page arrival order; Story list untouched.
+    expect(members.map((moment) => moment.id)).toEqual(['m1', 'm2']);
+    expect(result.current.moments).toHaveLength(0);
+    expect(result.current.hasMoreMoments).toBe(false);
+  });
+
+  it('passes bucket bounds through without touching moment pagination', async () => {
+    mockFetchMoments.mockResolvedValueOnce({ moments: [] });
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    mockFetchMoments.mockClear();
+    mockFetchBucketSummary.mockResolvedValueOnce({
+      buckets: [{ fromMs: 1, toMs: 2, count: 3, cover: null }],
+      hasOlder: true,
+    });
+
+    let summary: { buckets: unknown[]; hasOlder: boolean } | undefined;
+    await act(async () => {
+      summary = await result.current.loadBucketSummary([{ fromMs: 1, toMs: 2 }]);
+    });
+
+    expect(mockFetchBucketSummary).toHaveBeenCalledTimes(1);
+    expect(mockFetchBucketSummary).toHaveBeenCalledWith([{ fromMs: 1, toMs: 2 }]);
+    expect(summary).toEqual({
+      buckets: [{ fromMs: 1, toMs: 2, count: 3, cover: null }],
+      hasOlder: true,
+    });
+    expect(mockFetchMoments).not.toHaveBeenCalled();
   });
 });
