@@ -259,7 +259,6 @@ vi.mock('@/features/moments/moments-context', () => ({
     isLoading: false,
     hasMoreMoments: false,
     loadMoreMoments: vi.fn(async () => false),
-    loadBucketSummary: vi.fn(async () => ({ buckets: [], hasOlder: false })),
     loadChapterRange: vi.fn(async () => []),
     refresh: vi.fn(),
     error: null,
@@ -285,7 +284,6 @@ vi.mock('@/components/home/memory-sky', () => ({
 }));
 
 vi.mock('@/components/moments/moment-card', () => ({ MomentCard: () => null }));
-vi.mock('@/components/moments/resurface-card', () => ({ ResurfaceCard: () => null }));
 vi.mock('@/components/moments/tombstone-marker', () => ({ TombstoneMarker: () => null }));
 vi.mock('@/components/ui/action-sheet', () => ({ ActionSheet: () => null }));
 vi.mock('@/components/moments/pending-memory-row', () => ({ PendingMemoryRow: () => null }));

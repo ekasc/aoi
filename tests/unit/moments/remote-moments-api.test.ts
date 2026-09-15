@@ -148,27 +148,4 @@ describe('remote-moments-api', () => {
     await fetchMoments('1730000000000|moment-9');
   });
 
-  it('fetches the bounded anchor window for a saved id', async () => {
-    const anchor = '11111111-1111-4111-8111-111111111111';
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      expect(url).toContain('/v1/spaces/current/moments/timeline?');
-      expect(url).toContain(`anchor=${anchor}`);
-      expect(url).toContain('limit=30');
-      return jsonResponse({
-        moments: [],
-        olderCursor: null,
-        newerCursor: null,
-        firstUnread: null,
-        unreadCount: 0,
-      });
-    });
-    stubFetch(fetchMock);
-
-    const { fetchTimeline } = await import('@/features/moments/remote-moments-api');
-    const page = await fetchTimeline({ anchor, limit: 30 });
-    expect(page.moments).toEqual([]);
-    expect(page.firstUnread).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
 });

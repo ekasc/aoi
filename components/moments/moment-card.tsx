@@ -13,7 +13,12 @@ import { Spacing } from "@/constants/theme";
 import type { Moment } from "@/features/moments/types";
 import { UNTITLED_MOMENT_TITLE } from "@/features/moments/types";
 import { resolveStagedUri } from "@/features/composer/staged-uri";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import {
+	formatMomentDate,
+	formatMomentShortDate,
+	formatMomentTime,
+} from '@/features/moments/labels';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type MomentCardProps = {
 	moment: Moment;
@@ -78,64 +83,13 @@ function isEditedMoment(moment: Moment): boolean {
 	return updatedAt - createdAt > EDITED_TOLERANCE_MS;
 }
 
-function formatDateLabel(value: string) {
-	const date = new Date(value);
-
-	if (Number.isNaN(date.getTime())) {
-		return "Date TBD";
-	}
-
-	return date.toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
-}
-
-function formatTimeLabel(value: string) {
-	const date = new Date(value);
-
-	if (Number.isNaN(date.getTime())) {
-		return "";
-	}
-
-	return date.toLocaleTimeString("en-US", {
-		hour: "numeric",
-		minute: "2-digit",
-	});
-}
-
-/** Compact `Sep 10` for the timeline caption; the month/year lives in the
- *  feed's month heading, so the caption only needs the day. */
-function formatShortDateLabel(value: string) {
-	const date = new Date(value);
-
-	if (Number.isNaN(date.getTime())) {
-		return "";
-	}
-
-	return date.toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-	});
-}
-
+/** A goal's target date, or "Someday" when it has none we can read. */
 function formatGoalTargetLabel(targetAt?: string | null) {
 	if (!targetAt) {
 		return "Someday";
 	}
 
-	const targetDate = new Date(targetAt);
-
-	if (Number.isNaN(targetDate.getTime())) {
-		return "Someday";
-	}
-
-	return targetDate.toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
+	return formatMomentDate(targetAt, "Someday");
 }
 
 function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoPress, nativeActionsMenu, presentation = "article" }: MomentCardProps) {
@@ -181,17 +135,17 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoP
 	const isEdited = useMemo(() => isEditedMoment(moment), [moment]);
 
 	const dateLabel = useMemo(
-		() => formatDateLabel(moment.occurredAt),
+		() => formatMomentDate(moment.occurredAt, 'Date TBD'),
 		[moment.occurredAt],
 	);
 
 	const shortDateLabel = useMemo(
-		() => formatShortDateLabel(moment.occurredAt),
+		() => formatMomentShortDate(moment.occurredAt),
 		[moment.occurredAt],
 	);
 
 	const timeLabel = useMemo(
-		() => formatTimeLabel(moment.occurredAt),
+		() => formatMomentTime(moment.occurredAt),
 		[moment.occurredAt],
 	);
 

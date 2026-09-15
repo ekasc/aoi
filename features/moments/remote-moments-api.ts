@@ -1,5 +1,4 @@
 import { apiFetch } from '@/features/api-client';
-import type { BucketSummary, TimelineResponse } from '@aoi/shared';
 import type {
   CreateMomentInput,
   Moment,
@@ -31,19 +30,6 @@ export async function fetchMoments(
     path += `&type=${encodeURIComponent(range.type)}`;
   }
   return apiFetch<MomentListResponse>(path);
-}
-
-/**
- * Bounded chapter-discovery summary over client-computed absolute bounds
- * (no moment bodies). One request for up to 24 buckets + explicit hasOlder.
- */
-export async function fetchBucketSummary(
-  buckets: { fromMs: number; toMs: number }[]
-): Promise<{ buckets: BucketSummary[]; hasOlder: boolean }> {
-  const encoded = buckets.map((bucket) => `${bucket.fromMs}:${bucket.toMs}`).join(',');
-  return apiFetch<{ buckets: BucketSummary[]; hasOlder: boolean }>(
-    `/v1/spaces/current/moments/summary?buckets=${encodeURIComponent(encoded)}`
-  );
 }
 
 export async function createMoment(input: CreateMomentInput): Promise<Moment> {
@@ -99,47 +85,4 @@ export async function deleteMoment(momentId: string): Promise<void> {
 
 export async function fetchActivity(): Promise<SpaceActivityResponse> {
   return apiFetch<SpaceActivityResponse>('/v1/spaces/current/activity');
-}
-
-/**
- * Bidirectional chronological timeline (chat-style, latest at bottom).
- * Separate from the legacy newest-first list so old clients never regress:
- * ascending (occurredAt, id), bounded window around the server-computed
- * FIRST unread (or latest when fully read). Cursors are opaque
- * `occurredAtMs|id`; before/after are mutually exclusive.
- */
-export async function fetchTimeline(options?: {
-  before?: string;
-  after?: string;
-  anchor?: string;
-  limit?: number;
-}): Promise<TimelineResponse> {
-  const limit = Math.min(Math.max(options?.limit ?? 30, 1), 100);
-  const params = new URLSearchParams();
-  params.set('limit', String(limit));
-  if (options?.before) {
-    params.set('before', options.before);
-  }
-  if (options?.after) {
-    params.set('after', options.after);
-  }
-  if (options?.anchor) {
-    params.set('anchor', options.anchor);
-  }
-  return apiFetch<TimelineResponse>(
-    `/v1/spaces/current/moments/timeline?${params.toString()}`
-  );
-}
-
-/**
- * Mark moments read for the viewer. Viewer-scoped, partner-only,
- * idempotent; own/deleted/goal/outside-space ids are silently skipped
- * server-side. Small bounded batch (1..100 uuids). Never enqueues a
- * notification and never surfaces read receipts to the partner UI.
- */
-export async function markMomentsRead(momentIds: string[]): Promise<{ ok: true }> {
-  return apiFetch<{ ok: true }>('/v1/spaces/current/moments/read', {
-    method: 'POST',
-    body: JSON.stringify({ momentIds }),
-  });
 }

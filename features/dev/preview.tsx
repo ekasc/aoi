@@ -333,7 +333,6 @@ const PARTNER = {
   authorRole: 'partner' as const,
   authorName: 'June',
   isOwn: false,
-  isRead: false,
 };
 
 function atMidnight(daysAgo: number, hour = 12, now: number = Date.now()): string {
@@ -361,7 +360,6 @@ function seedMoment(overrides: Partial<Moment> & Pick<Moment, 'id' | 'occurredAt
     authorRole: 'you',
     authorName: 'Maya',
     isOwn: true,
-    isRead: true,
     mediaPreview: undefined,
     audioUri: null,
     videoUri: null,

@@ -1,4 +1,4 @@
-import type { BucketSummary, MomentAttachment, MomentAttachmentInput } from '@aoi/shared';
+import type { MomentAttachment, MomentAttachmentInput } from '@aoi/shared';
 
 export type { MomentAttachment, MomentAttachmentInput };
 
@@ -30,12 +30,6 @@ export type Moment = {
    * Optional for locally constructed moments; unknown must mean "not own".
    */
   isOwn?: boolean;
-  /**
-   * Per-viewer read state for the bidirectional timeline. Optional so
-   * legacy fixtures/list paths stay compatible; the timeline endpoint
-   * always returns it. Own moments are intrinsically read.
-   */
-  isRead?: boolean;
   mediaPreview?: string | null;
   audioUri?: string | null;
   /**
@@ -144,21 +138,18 @@ export type MomentsContextValue = {
    */
   hasMoreMoments: boolean;
   /**
+   * Why the last older page failed, if it did. Paging keeps the cursor so a
+   * retry asks for the same page; without this, a failed page would look
+   * exactly like a page that never arrived.
+   */
+  pagingError: string | null;
+  /**
    * Fetches the next bounded page and appends it (deduped by id). Resolves
    * true while a further page may remain. No-op when exhausted or when a
    * page is already in flight. A failed page leaves the cursor unadvanced
    * so the next call retries the same page.
    */
   loadMoreMoments: () => Promise<boolean>;
-  /**
-   * Bounded chapter-discovery summary over client-computed absolute bounds
-   * (no bodies): per-bucket counts + earliest-photo covers in request order,
-   * plus whether any eligible memory predates the earliest bucket. Never
-   * advances the Story cursor.
-   */
-  loadBucketSummary: (
-    buckets: { fromMs: number; toMs: number }[]
-  ) => Promise<{ buckets: BucketSummary[]; hasOlder: boolean }>;
   /**
    * Loads every goal moment (Plans-owned future goals), paging the
    * type-filtered read to completion. Independent of — and never advancing

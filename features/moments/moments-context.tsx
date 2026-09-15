@@ -17,12 +17,11 @@ import { mockMoments } from '@/features/moments/mock-data';
 import {
   fetchMoments,
   fetchActivity,
-  fetchBucketSummary,
   createMoment as remoteCreateMoment,
   updateMoment as remoteUpdateMoment,
   deleteMoment as remoteDeleteMoment,
 } from '@/features/moments/remote-moments-api';
-import { filterChapterRange, summarizeBuckets } from '@/features/moments/chapters';
+import { filterChapterRange } from '@/features/moments/chapters';
 import type {
   CreateMomentInput,
   Moment,
@@ -40,13 +39,47 @@ const _useRemote = !isStubMode();
 const ACTIVITY_RETENTION_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// One bound for every feed fetch: the head load and each older page. The
+// server caps a page here too (and defaults far lower), and the feed wants a
+// wide opening window because the reader scrolls an archive.
+const MOMENTS_PAGE_LIMIT = 100;
+
 // ── Helpers (both modes) ─────────────────────────────────────────────────
 
+/**
+ * Oldest first — the feed's reading order — with the id as tiebreak so two
+ * memories sharing a timestamp never swap places between pages (a swap under
+ * `maintainVisibleContentPosition` moves the reader's row).
+ */
 function sortMomentsOldestFirst(moments: Moment[]) {
-  return [...moments].sort(
-    (left, right) =>
-      new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime()
-  );
+  return [...moments].sort(compareOldestFirst);
+}
+
+/** Milliseconds, or -Infinity when the date cannot be read. */
+function occurredMs(moment: Moment): number {
+  const ms = new Date(moment.occurredAt).getTime();
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+}
+
+function compareOldestFirst(left: Moment, right: Moment): number {
+  const leftMs = occurredMs(left);
+  const rightMs = occurredMs(right);
+  if (leftMs !== rightMs) {
+    return leftMs < rightMs ? -1 : 1;
+  }
+  if (left.id === right.id) {
+    return 0;
+  }
+  return left.id < right.id ? -1 : 1;
+}
+
+/**
+ * Rows strictly older than the given row, oldest first. A head refresh keeps
+ * these: they are deeper history the reader already paged to, and the server
+ * page that just arrived says nothing about them.
+ */
+function olderThan(anchor: Moment): (moment: Moment) => boolean {
+  return (moment) => compareOldestFirst(moment, anchor) < 0;
 }
 
 function normalizeText(value?: string) {
@@ -65,40 +98,51 @@ function mergeMomentsById(current: Moment[], incoming: Moment[]): Moment[] {
   return sortMomentsOldestFirst([...byId.values()]);
 }
 
+/**
+ * Stub-mode attachment compat, shared by create and update: the input
+ * carries `{ mediaId, kind }` only, while stored moments carry
+ * `{ mediaId, kind, url }`. Synthesize stable serve URLs for explicit
+ * inputs (mirrors the server compat) and fall back to one legacy-derived
+ * entry so old photos stay visible.
+ */
+function toStoredAttachments(
+  input: Pick<CreateMomentInput, 'attachments' | 'localAttachments' | 'mediaId' | 'audioUri' | 'mediaPreview'>,
+): NonNullable<Moment['attachments']> {
+  if (input.attachments !== undefined) {
+    return input.attachments.map((a) => ({
+      mediaId: a.mediaId,
+      kind: a.kind,
+      url: mediaObjectUrl(a.mediaId, a.kind === 'audio' ? 'original' : 'display'),
+    }));
+  }
+  if (input.localAttachments && input.localAttachments.length > 0) {
+    // Stub mode: every picked image/voice note, in order, addressed by its
+    // local URI. `mediaId` is a local placeholder (never sent).
+    return input.localAttachments.map((a, index) => ({
+      mediaId: `local_${index}_${a.kind}`,
+      kind: a.kind,
+      url: a.url,
+    }));
+  }
+  if (input.mediaId) {
+    return [
+      {
+        mediaId: input.mediaId,
+        kind: input.audioUri ? 'audio' : 'image',
+        url: input.audioUri ?? input.mediaPreview ?? '',
+      },
+    ];
+  }
+  return [];
+}
+
 function toLocalMoment(input: CreateMomentInput): Moment {
   const now = new Date();
   const occurredAt = input.occurredAt ?? now.toISOString();
   const title = normalizeText(input.title);
   const body = normalizeText(input.body);
   const authorRole = input.authorRole ?? 'you';
-  // Stub-mode attachment compat: the create input carries `{ mediaId, kind }`
-  // only, while stored moments carry `{ mediaId, kind, url }`. Synthesize
-  // stable serve URLs for explicit inputs (mirrors the server compat);
-  // fall back to one legacy-derived entry so old photos stay visible.
-  const attachments: NonNullable<Moment['attachments']> =
-    input.attachments !== undefined
-      ? input.attachments.map((a) => ({
-          mediaId: a.mediaId,
-          kind: a.kind,
-          url: mediaObjectUrl(a.mediaId, a.kind === 'audio' ? 'original' : 'display'),
-        }))
-      : input.localAttachments && input.localAttachments.length > 0
-        ? // Stub mode: every picked image/voice note, in order, addressed by
-          // its local URI. `mediaId` is a local placeholder (never sent).
-          input.localAttachments.map((a, index) => ({
-            mediaId: `local_${index}_${a.kind}`,
-            kind: a.kind,
-            url: a.url,
-          }))
-        : input.mediaId
-          ? [
-              {
-                mediaId: input.mediaId,
-                kind: (input.audioUri ? 'audio' : 'image') as 'image' | 'audio',
-                url: (input.audioUri ?? input.mediaPreview ?? '') as string,
-              },
-            ]
-          : [];
+  const attachments = toStoredAttachments(input);
 
   return {
     id: `moment_${now.getTime()}_${Math.floor(Math.random() * 100000)}`,
@@ -168,37 +212,58 @@ function useRemoteMoments(): MomentsContextValue {
   // stay bounded and exhausted cursors never refetch.
   const momentsCursorRef = useRef<string | null | undefined>(undefined);
   const loadMoreInFlightRef = useRef(false);
+  const headLoadInFlightRef = useRef(false);
   const [hasMoreMoments, setHasMoreMoments] = useState(false);
+  const [pagingError, setPagingError] = useState<string | null>(null);
 
   const loadMoments = useCallback(async () => {
     const requestId = ++momentsRequestSeq.current;
+    headLoadInFlightRef.current = true;
     // Background refreshes stay silent once data exists — no spinner flicker
     // on every app focus.
     if (!hasMomentsData.current) {
       setIsLoading(true);
     }
     setError(null);
-    // A fresh load restarts pagination from the first bounded page; screens
-    // chain loadMoreMoments from there to whatever depth they need.
-    momentsCursorRef.current = undefined;
-    setHasMoreMoments(false);
 
     try {
-      const response = await fetchMoments(undefined, 100);
+      const response = await fetchMoments(undefined, MOMENTS_PAGE_LIMIT);
 
       if (requestId !== momentsRequestSeq.current) {
         return; // A newer request is in flight, drop this stale response.
       }
-      momentsCursorRef.current = response.nextCursor ?? null;
-      setHasMoreMoments(momentsCursorRef.current !== null);
+      const page = sortMomentsOldestFirst(response.moments);
+      const oldestInPage = page[0];
       hasMomentsData.current = true;
-      setMoments(sortMomentsOldestFirst(response.moments));
+      // A refresh re-reads the HEAD of the archive, it does not throw away
+      // the deeper pages the reader already opened: rows older than this
+      // page survive, rows inside it are whatever the server just said (so a
+      // deleted row inside that window does disappear).
+      setMoments((prev) => {
+        if (!oldestInPage) {
+          return [];
+        }
+        return sortMomentsOldestFirst([
+          ...prev.filter(olderThan(oldestInPage)),
+          ...page,
+        ]);
+      });
+      // The cursor is the deepest page boundary the reader has reached. A
+      // refresh only owns it before paging has started — otherwise it would
+      // rewind the window and leave a hole between the head and the cursor.
+      if (momentsCursorRef.current === undefined) {
+        momentsCursorRef.current = response.nextCursor ?? null;
+      }
+      setHasMoreMoments(momentsCursorRef.current !== null);
     } catch (err) {
       if (requestId !== momentsRequestSeq.current) {
         return;
       }
+      // The cursor and hasMore are untouched: a head load that failed must
+      // not silently end history paging.
       setError(err instanceof Error ? err.message : 'Failed to load moments');
     } finally {
+      headLoadInFlightRef.current = false;
       if (requestId === momentsRequestSeq.current) {
         setIsLoading(false);
       }
@@ -223,32 +288,44 @@ function useRemoteMoments(): MomentsContextValue {
   }, [loadActivity, loadMoments]);
 
   const loadMoreMoments = useCallback(async (): Promise<boolean> => {
-    if (loadMoreInFlightRef.current || momentsCursorRef.current === null) {
+    // Never page against a head load that is still in flight: it may be
+    // about to replace the window the cursor points past.
+    if (
+      loadMoreInFlightRef.current ||
+      headLoadInFlightRef.current ||
+      momentsCursorRef.current === null
+    ) {
       return momentsCursorRef.current !== null;
     }
     loadMoreInFlightRef.current = true;
-    const requestId = ++momentsRequestSeq.current;
+    // Pages do not bump the request sequence: a page must not invalidate a
+    // head refresh or a mutation that started after it. They capture the
+    // current one instead, so anything newer that lands drops the page.
+    const generation = momentsRequestSeq.current;
+    setPagingError(null);
     try {
-      const response = await fetchMoments(momentsCursorRef.current, 100);
-      if (requestId !== momentsRequestSeq.current) {
-        return true; // Superseded, a newer request owns the cursor now.
+      const response = await fetchMoments(momentsCursorRef.current, MOMENTS_PAGE_LIMIT);
+      if (generation !== momentsRequestSeq.current) {
+        return true; // Superseded: the newer operation owns the window now.
       }
       momentsCursorRef.current = response.nextCursor ?? null;
       setHasMoreMoments(momentsCursorRef.current !== null);
       hasMomentsData.current = true;
       setMoments((prev) => mergeMomentsById(prev, response.moments));
       return momentsCursorRef.current !== null;
-    } catch {
-      // The cursor doesn't advance on failure, so the next call retries the
-      // same bounded page instead of skipping it.
+    } catch (err) {
+      // The cursor doesn't advance on failure, so a retry fetches the same
+      // bounded page instead of skipping it — but the failure is reported,
+      // because a page that never arrives must not look like "nothing yet".
+      if (generation === momentsRequestSeq.current) {
+        setPagingError(
+          err instanceof Error ? err.message : 'Failed to load earlier memories'
+        );
+      }
       return momentsCursorRef.current !== null;
     } finally {
       loadMoreInFlightRef.current = false;
     }
-  }, []);
-
-  const loadBucketSummary = useCallback(async (buckets: { fromMs: number; toMs: number }[]) => {
-    return fetchBucketSummary(buckets);
   }, []);
 
   const loadChapterRange = useCallback(async (fromMs: number, toMs: number): Promise<Moment[]> => {
@@ -257,7 +334,7 @@ function useRemoteMoments(): MomentsContextValue {
     const collected: Moment[] = [];
     let cursor: string | undefined;
     for (;;) {
-      const page = await fetchMoments(cursor, 100, { fromMs, toMs });
+      const page = await fetchMoments(cursor, MOMENTS_PAGE_LIMIT, { fromMs, toMs });
       collected.push(...page.moments);
       if (!page.nextCursor) {
         break;
@@ -281,7 +358,7 @@ function useRemoteMoments(): MomentsContextValue {
     const collected: Moment[] = [];
     let cursor: string | undefined;
     for (;;) {
-      const page = await fetchMoments(cursor, 100, { type: 'goal' });
+      const page = await fetchMoments(cursor, MOMENTS_PAGE_LIMIT, { type: 'goal' });
       collected.push(...page.moments);
       if (!page.nextCursor) {
         break;
@@ -361,7 +438,7 @@ function useRemoteMoments(): MomentsContextValue {
       error,
       hasMoreMoments,
       loadMoreMoments,
-      loadBucketSummary,
+      pagingError,
       loadChapterRange,
       loadGoals,
       addMoment,
@@ -376,10 +453,10 @@ function useRemoteMoments(): MomentsContextValue {
       hasMoreMoments,
       isLoading,
       loadChapterRange,
-      loadBucketSummary,
       loadGoals,
       loadMoreMoments,
       moments,
+      pagingError,
       refresh,
       removeMoment,
       updateMoment,
@@ -436,14 +513,13 @@ function useStubMoments(): MomentsContextValue {
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const nextMoment = toLocalMoment(input);
-    await new Promise<void>((resolve) => {
-      setLocalMoments((currentMoments) => {
-        const updated = sortMomentsOldestFirst([...currentMoments, nextMoment]);
-        // Use setTimeout to resolve after state update (best-effort for stub)
-        setTimeout(resolve, 0);
-        return updated;
-      });
-    });
+    // Pure updater: the next list is derived from the current one inside the
+    // updater, and the promise resolves once the caller's own await settles.
+    // (The old version resolved a promise from inside the updater, which is a
+    // side effect in render-phase code and can resolve twice under StrictMode.)
+    setLocalMoments((currentMoments) =>
+      sortMomentsOldestFirst([...currentMoments, nextMoment])
+    );
     return nextMoment;
   }, []);
 
@@ -470,6 +546,13 @@ function useStubMoments(): MomentsContextValue {
         }
         if (patch.audioUri !== undefined) updatedMoment.audioUri = patch.audioUri;
         if (patch.mediaId !== undefined) updatedMoment.mediaId = patch.mediaId;
+        // Stub mode applies an attachment replacement exactly like create:
+        // omitting it leaves the set alone, and `[]` clears it.
+        if (patch.attachments !== undefined) {
+          updatedMoment.attachments = toStoredAttachments({
+            attachments: patch.attachments,
+          });
+        }
 
         const rest = currentMoments.filter((moment) => moment.id !== momentId);
         return [...rest, updatedMoment];
@@ -507,10 +590,6 @@ function useStubMoments(): MomentsContextValue {
 
   const loadMoreMoments = useCallback(async () => false, []);
 
-  const loadBucketSummary = useCallback(async (buckets: { fromMs: number; toMs: number }[]) => {
-    return summarizeBuckets(moments, buckets);
-  }, [moments]);
-
   const loadChapterRange = useCallback(async (fromMs: number, toMs: number) => {
     return filterChapterRange(moments, fromMs, toMs);
   }, [moments]);
@@ -537,7 +616,7 @@ function useStubMoments(): MomentsContextValue {
       error: null,
       hasMoreMoments: false,
       loadMoreMoments,
-      loadBucketSummary,
+      pagingError: null,
       loadChapterRange,
       loadGoals,
       addMoment,
@@ -545,7 +624,7 @@ function useStubMoments(): MomentsContextValue {
       removeMoment,
       refresh,
     }),
-    [activity, addMoment, loadChapterRange, loadBucketSummary, loadGoals, loadMoreMoments, moments, refresh, removeMoment, updateMoment]
+    [activity, addMoment, loadChapterRange, loadGoals, loadMoreMoments, moments, refresh, removeMoment, updateMoment]
   );
 }
 

@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -9,18 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Radii, Spacing } from '@/constants/theme';
 import { useComposer } from '@/features/composer/composer-context';
 import type { PendingRecord } from '@/features/composer/types';
+import { formatMomentTime } from '@/features/moments/labels';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type PendingMemoryRowProps = {
   record: PendingRecord;
   isSending: boolean;
 };
-
-function formatTimeLabel(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
 
 /**
  * Private pending preview for the viewer's own unsent memory. Never marked
@@ -48,30 +43,44 @@ export function PendingMemoryRow({ record, isSending }: PendingMemoryRowProps) {
       ? 'Waiting to send'
       : (record.errorMessage ?? 'Could not send yet.');
 
+  // A failed action used to be swallowed: the reader tapped Retry and the row
+  // simply sat there. The rejection is shown where the status already lives.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const runAction = useCallback((action: () => Promise<void>, message: string) => {
+    setActionError(null);
+    void action().catch(() => setActionError(message));
+  }, []);
   const handleRetry = useCallback(() => {
-    void retry(record.clientId).catch(() => {});
-  }, [retry, record.clientId]);
+    runAction(() => retry(record.clientId), 'Couldn\'t start sending. Try again.');
+  }, [runAction, retry, record.clientId]);
   const handleEdit = useCallback(() => {
-    void editPending(record.clientId).catch(() => {});
-  }, [editPending, record.clientId]);
+    runAction(() => editPending(record.clientId), 'Couldn\'t open this draft.');
+  }, [runAction, editPending, record.clientId]);
   const handleRemove = useCallback(() => {
-    void discardPending(record.clientId).catch(() => {});
-  }, [discardPending, record.clientId]);
+    runAction(() => discardPending(record.clientId), 'Couldn\'t remove this draft.');
+  }, [runAction, discardPending, record.clientId]);
   const handleSeePlus = useCallback(() => {
     router.push('/(app)/paywall');
   }, [router]);
+  const timeLabel = formatMomentTime(record.occurredAt);
 
   return (
     <View
       accessibilityLabel={failed ? 'Memory waiting to send, needs attention' : 'Memory sending'}
+      accessibilityLiveRegion="polite"
       style={[styles.entry, { backgroundColor: surface2, borderColor: border }]}
     >
       <View style={styles.metaRow}>
         <ThemedText type="caption" selectable style={{ color: muted, fontVariant: ['tabular-nums'] }}>
-          {formatTimeLabel(record.occurredAt) ? `You · ${formatTimeLabel(record.occurredAt)} · ` : 'You · '}
+          {timeLabel ? `You · ${timeLabel} · ` : 'You · '}
           {statusLabel}
         </ThemedText>
       </View>
+      {actionError ? (
+        <ThemedText type="caption" style={{ color: danger }}>
+          {actionError}
+        </ThemedText>
+      ) : null}
       {body ? <ThemedText type="supporting" selectable>{body}</ThemedText> : null}
       {!body && images.length === 0 && audios.length === 0 ? (
         <ThemedText type="caption" style={{ color: muted }}>Keeping…</ThemedText>

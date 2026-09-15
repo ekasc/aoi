@@ -118,7 +118,6 @@ vi.mock('@/features/moments/moments-context', () => ({
     isLoading: false,
     hasMoreMoments: false,
     loadMoreMoments: vi.fn(async () => false),
-    loadBucketSummary: vi.fn(async () => ({ buckets: [], hasOlder: false })),
     loadChapterRange,
     addMoment,
     removeMoment: vi.fn(),

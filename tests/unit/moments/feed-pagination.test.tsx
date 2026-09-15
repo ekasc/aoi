@@ -44,6 +44,8 @@ const MOMENTS: Moment[] = [
 
 const loadMoreMoments = vi.fn(async () => false);
 let hasMoreMoments = true;
+/** Mirrors the context's paging failure, so the header states are testable. */
+let pagingError: string | null = null;
 
 /** Captured FlatList props per presentation, so the wiring is assertable. */
 const capturedLists: Record<string, Record<string, any>> = {};
@@ -299,6 +301,7 @@ vi.mock('@/features/moments/moments-context', () => ({
     error: null,
     refresh: vi.fn(async () => {}),
     hasMoreMoments,
+    pagingError,
     loadMoreMoments: (...args: unknown[]) => loadMoreMoments(...(args as [])),
     loadChapterRange: vi.fn(async () => []),
     loadGoals: vi.fn(async () => []),
@@ -448,10 +451,10 @@ function galleryList(): Captured {
  * content height minus viewport height, which is what the arm measures
  * itself against.
  */
-function scroll(y: number, options: { range?: number } = {}): void {
+function scrollList(list: Captured, y: number, options: { range?: number } = {}): void {
   const range = options.range ?? 4000;
-  const onScroll = feedList().onScroll;
-  if (typeof onScroll !== 'function') throw new Error('the feed list has no scroll handler');
+  const onScroll = list.onScroll;
+  if (typeof onScroll !== 'function') throw new Error('this list has no scroll handler');
   act(() => {
     onScroll({
       nativeEvent: {
@@ -461,6 +464,10 @@ function scroll(y: number, options: { range?: number } = {}): void {
       },
     });
   });
+}
+
+function scroll(y: number, options: { range?: number } = {}): void {
+  scrollList(feedList(), y, options);
 }
 
 async function renderMemories() {
@@ -482,6 +489,7 @@ beforeEach(() => {
   );
   releasePage = null;
   hasMoreMoments = true;
+  pagingError = null;
 });
 
 async function settlePage(): Promise<void> {
@@ -620,6 +628,41 @@ describe('Memories feed paging edge', () => {
     scroll(0);
     expect(loadMoreMoments).toHaveBeenCalledTimes(1);
     await settlePage();
+    expect(loadMoreMoments).toHaveBeenCalledTimes(1);
+  });
+
+  it('disarms the top edge when the presentation changes', async () => {
+    await renderMemories();
+    // Arm the top edge on the Feed, then switch: the Gallery mounts at y = 0,
+    // where a stale arm would spend itself on a page nobody asked for.
+    scroll(320);
+    fireEvent.click(screen.getByText('Gallery'));
+    scrollList(galleryList(), 0);
+    expect(loadMoreMoments).not.toHaveBeenCalled();
+    await act(async () => {});
+    expect(loadMoreMoments).not.toHaveBeenCalled();
+  });
+
+  it('disarms the top edge when the query narrows the archive', async () => {
+    await renderMemories();
+    scroll(320);
+    fireEvent.click(screen.getByLabelText('Search memories'));
+    const field = screen.getByPlaceholderText('Search memories');
+    fireEvent.change(field, { target: { value: 'lake' } });
+    // A filter can clamp the list back to the top; the stale arm may not fire.
+    scroll(0);
+    expect(loadMoreMoments).not.toHaveBeenCalled();
+  });
+
+  it('offers a retry when a page fails, and re-asks for the same page', async () => {
+    // A page that failed keeps its cursor and says so, instead of looking
+    // like a page that simply has not arrived.
+    pagingError = 'offline';
+    await renderMemories();
+    const retry = screen.getByLabelText("Couldn't load earlier memories. Try again");
+    expect(screen.queryByLabelText('Load earlier memories')).toBeNull();
+
+    fireEvent.click(retry);
     expect(loadMoreMoments).toHaveBeenCalledTimes(1);
   });
 

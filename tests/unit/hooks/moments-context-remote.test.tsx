@@ -26,7 +26,6 @@ vi.mock('@/features/api-client', () => ({
 
 const mockFetchMoments = vi.fn();
 const mockFetchActivity = vi.fn();
-const mockFetchBucketSummary = vi.fn();
 const mockCreateMoment = vi.fn();
 const mockUpdateMoment = vi.fn();
 const mockDeleteMoment = vi.fn();
@@ -34,7 +33,6 @@ const mockDeleteMoment = vi.fn();
 vi.mock('@/features/moments/remote-moments-api', () => ({
   fetchMoments: (...args: unknown[]) => mockFetchMoments(...args),
   fetchActivity: (...args: unknown[]) => mockFetchActivity(...args),
-  fetchBucketSummary: (...args: unknown[]) => mockFetchBucketSummary(...args),
   createMoment: (...args: unknown[]) => mockCreateMoment(...args),
   updateMoment: (...args: unknown[]) => mockUpdateMoment(...args),
   deleteMoment: (...args: unknown[]) => mockDeleteMoment(...args),
@@ -59,15 +57,19 @@ function deferred<T>() {
 type Page = { moments: any[]; nextCursor?: string };
 
 function remoteMoment(id: string, title: string) {
+  return remoteMomentAt(id, title, '2026-03-15T10:00:00.000Z');
+}
+
+function remoteMomentAt(id: string, title: string, occurredAt: string) {
   return {
     id,
     type: 'note' as const,
     title,
     body: '',
-    occurredAt: '2026-03-15T10:00:00.000Z',
+    occurredAt,
     targetAt: null,
-    createdAt: '2026-03-15T10:00:00.000Z',
-    updatedAt: '2026-03-15T10:00:00.000Z',
+    createdAt: occurredAt,
+    updatedAt: occurredAt,
     authorId: 'user_you',
     authorRole: 'you' as const,
     authorName: 'You',
@@ -150,7 +152,10 @@ describe('useMoments (remote refresh guards)', () => {
     await act(async () => {
       focusLoad.resolve({ moments: [remoteMoment('m2', 'Second')] });
     });
-    await waitFor(() => expect(result.current.moments[0].title).toBe('Second'));
+    // The head page landed, and the row it does not mention is older than the
+    // page's oldest row: the loaded archive keeps it rather than rewinding.
+    await waitFor(() => expect(result.current.moments).toHaveLength(2));
+    expect(result.current.moments.map((moment) => moment.title)).toEqual(['First', 'Second']);
     expect(result.current.isLoading).toBe(false);
   });
 
@@ -231,6 +236,176 @@ describe('useMoments cursor pagination (Wall-driven)', () => {
       wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
     });
   }
+
+  function triggerFocus() {
+    act(() => {
+      mockAppStateListeners.forEach((listener) => listener('active'));
+    });
+  }
+
+  it('keeps the paged depth across a focus refresh', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMomentAt('m3', 'Newest', '2026-03-15T10:00:00.000Z')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.hasMoreMoments).toBe(true));
+
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMomentAt('m2', 'Older', '2026-02-15T10:00:00.000Z')],
+      nextCursor: 'cursor-2',
+    });
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(result.current.moments.map((moment) => moment.title)).toEqual(['Older', 'Newest']);
+
+    // A focus refresh re-reads the head; the deeper page the reader opened
+    // must survive it.
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [
+        remoteMomentAt('m3', 'Newest', '2026-03-15T10:00:00.000Z'),
+        remoteMomentAt('m4', 'Fresh', '2026-03-20T10:00:00.000Z'),
+      ],
+      nextCursor: 'cursor-1',
+    });
+    triggerFocus();
+    await waitFor(() =>
+      expect(result.current.moments.map((moment) => moment.title)).toEqual([
+        'Older',
+        'Newest',
+        'Fresh',
+      ]),
+    );
+
+    // And paging continues from the deepest cursor, not the head's, so the
+    // rows in between can never go missing.
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMomentAt('m1', 'Oldest', '2026-01-15T10:00:00.000Z')],
+    });
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(mockFetchMoments).toHaveBeenLastCalledWith('cursor-2', 100);
+    expect(result.current.moments.map((moment) => moment.title)).toEqual([
+      'Oldest',
+      'Older',
+      'Newest',
+      'Fresh',
+    ]);
+  });
+
+  it('drops a row the refreshed window no longer reports', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [
+        remoteMomentAt('m4', 'Newest', '2026-03-20T10:00:00.000Z'),
+        remoteMomentAt('m2', 'Deleted', '2026-03-01T10:00:00.000Z'),
+        remoteMomentAt('m1', 'Oldest', '2026-01-05T10:00:00.000Z'),
+      ],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.moments).toHaveLength(3));
+
+    // The partner deletes a memory that sits inside the window the head page
+    // covers (newer than the page's oldest row): it disappears on refresh.
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [
+        remoteMomentAt('m4', 'Newest', '2026-03-20T10:00:00.000Z'),
+        remoteMomentAt('m1', 'Oldest', '2026-01-05T10:00:00.000Z'),
+      ],
+      nextCursor: 'cursor-1',
+    });
+    triggerFocus();
+    await waitFor(() =>
+      expect(result.current.moments.map((moment) => moment.title)).toEqual(['Oldest', 'Newest']),
+    );
+  });
+
+  it('keeps paging alive when the head refresh fails', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m1', 'First')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.hasMoreMoments).toBe(true));
+
+    mockFetchMoments.mockRejectedValueOnce(new Error('offline'));
+    triggerFocus();
+    await waitFor(() => expect(result.current.error).toBe('offline'));
+
+    // The failed head load must not silently end history paging.
+    expect(result.current.hasMoreMoments).toBe(true);
+    mockFetchMoments.mockResolvedValueOnce({ moments: [remoteMoment('m2', 'Older')] });
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(mockFetchMoments).toHaveBeenLastCalledWith('cursor-1', 100);
+    expect(result.current.moments).toHaveLength(2);
+  });
+
+  it('reports a paging failure and retries the same page', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m1', 'First')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.hasMoreMoments).toBe(true));
+    expect(result.current.pagingError).toBeNull();
+
+    mockFetchMoments.mockRejectedValueOnce(new Error('boom'));
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(result.current.pagingError).toBe('boom');
+
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m2', 'Second')],
+      nextCursor: 'cursor-2',
+    });
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(mockFetchMoments).toHaveBeenLastCalledWith('cursor-1', 100);
+    expect(result.current.pagingError).toBeNull();
+    expect(result.current.moments).toHaveLength(2);
+  });
+
+  it('never pages against a head refresh that is still in flight', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m1', 'First')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.hasMoreMoments).toBe(true));
+
+    const focusLoad = deferred<Page>();
+    mockFetchMoments.mockReturnValueOnce(focusLoad.promise);
+    triggerFocus();
+    await waitFor(() => expect(mockFetchMoments).toHaveBeenCalledTimes(2));
+
+    const callsBefore = mockFetchMoments.mock.calls.length;
+    let more = false;
+    await act(async () => {
+      more = await result.current.loadMoreMoments();
+    });
+    // Suppressed, and still reports the cursor as usable.
+    expect(mockFetchMoments.mock.calls.length).toBe(callsBefore);
+    expect(more).toBe(true);
+
+    await act(async () => {
+      focusLoad.resolve({
+        moments: [remoteMoment('m1', 'First')],
+        nextCursor: 'cursor-1',
+      });
+    });
+    expect(result.current.pagingError).toBeNull();
+  });
 
   it('loads the first bounded page and reports a remaining cursor', async () => {
     mockFetchMoments.mockResolvedValueOnce({
@@ -314,7 +489,6 @@ describe('useMoments chapter reads (range + summary, Story-independent)', () => 
     mockFetchMoments.mockReset();
     mockFetchActivity.mockReset();
     mockFetchActivity.mockResolvedValue({ activity: [] });
-    mockFetchBucketSummary.mockReset();
   });
 
   async function renderRemoteMoments() {
@@ -355,27 +529,4 @@ describe('useMoments chapter reads (range + summary, Story-independent)', () => 
     expect(result.current.hasMoreMoments).toBe(false);
   });
 
-  it('passes bucket bounds through without touching moment pagination', async () => {
-    mockFetchMoments.mockResolvedValueOnce({ moments: [] });
-    const { result } = await renderRemoteMoments();
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    mockFetchMoments.mockClear();
-    mockFetchBucketSummary.mockResolvedValueOnce({
-      buckets: [{ fromMs: 1, toMs: 2, count: 3, cover: null }],
-      hasOlder: true,
-    });
-
-    let summary: { buckets: unknown[]; hasOlder: boolean } | undefined;
-    await act(async () => {
-      summary = await result.current.loadBucketSummary([{ fromMs: 1, toMs: 2 }]);
-    });
-
-    expect(mockFetchBucketSummary).toHaveBeenCalledTimes(1);
-    expect(mockFetchBucketSummary).toHaveBeenCalledWith([{ fromMs: 1, toMs: 2 }]);
-    expect(summary).toEqual({
-      buckets: [{ fromMs: 1, toMs: 2, count: 3, cover: null }],
-      hasOlder: true,
-    });
-    expect(mockFetchMoments).not.toHaveBeenCalled();
-  });
 });

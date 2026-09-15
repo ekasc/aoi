@@ -3,16 +3,15 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { createElement } from 'react';
 
 import {
-  sortFeedNewestFirst,
+  groupFeedChronological,
+  sortFeedOldestFirst,
   groupFeedByMonth,
   formatFeedMonthHeading,
   feedMonthKey,
   visiblePendingRecords,
-  countFeedTypes,
   feedTypeOf,
   filterFeedMoments,
   matchesFeedQuery,
-  monthJumpTargets,
 } from '@/features/moments/story-feed';
 
 // ── Shared fixtures ────────────────────────────────────────────────────
@@ -31,7 +30,6 @@ function makeMoment(overrides: Record<string, any> = {}) {
     authorRole: 'you' as const,
     authorName: 'You',
     isOwn: true,
-    isRead: true,
     mediaPreview: undefined,
     audioUri: null,
     mediaId: null,
@@ -73,46 +71,60 @@ function makePending(overrides: Record<string, any> = {}) {
 }
 
 describe('story-feed pure helpers', () => {
-  it('sorts newest-first with a deterministic id tie-break', () => {
+  it('trails undated memories instead of leading the archive', () => {
+    const sections = groupFeedChronological([
+      makeMoment({ id: 'undated', occurredAt: 'not-a-date' }),
+      makeMoment({ id: 'older', occurredAt: '2026-01-05T10:00:00.000Z' }),
+      makeMoment({ id: 'newer', occurredAt: '2026-03-15T10:00:00.000Z' }),
+    ]);
+    // The Undated section is last, and its memories are not the archive's
+    // opening rows.
+    expect(sections[sections.length - 1].monthKey).toBe('undated');
+    const ordered = sections.flatMap((section) => section.moments.map((m) => m.id));
+    expect(ordered).toEqual(['older', 'newer', 'undated']);
+  });
+
+  it('sorts oldest-first with a deterministic id tie-break', () => {
     const b = makeMoment({ id: 'b', occurredAt: '2026-03-15T10:00:00.000Z' });
     const a = makeMoment({ id: 'a', occurredAt: '2026-03-15T10:00:00.000Z' });
     const older = makeMoment({ id: 'older', occurredAt: '2026-03-14T10:00:00.000Z' });
     const newer = makeMoment({ id: 'newer', occurredAt: '2026-03-16T10:00:00.000Z' });
-    expect(sortFeedNewestFirst([older, b, newer, a]).map((m) => m.id)).toEqual([
-      'newer',
+    expect(sortFeedOldestFirst([older, b, newer, a]).map((m) => m.id)).toEqual([
+      'older',
       'a',
       'b',
-      'older',
+      'newer',
     ]);
   });
 
   it('excludes Plans-owned goals from the feed', () => {
     const goal = makeMoment({ id: 'goal-1', type: 'goal' });
     const note = makeMoment({ id: 'note-1', type: 'note' });
-    expect(sortFeedNewestFirst([goal, note]).map((m) => m.id)).toEqual(['note-1']);
+    expect(sortFeedOldestFirst([goal, note]).map((m) => m.id)).toEqual(['note-1']);
   });
 
   it('parks unparseable dates at the end instead of dropping them', () => {
     const bad = makeMoment({ id: 'bad', occurredAt: 'not-a-date' });
     const good = makeMoment({ id: 'good', occurredAt: '2026-03-15T10:00:00.000Z' });
-    expect(sortFeedNewestFirst([bad, good]).map((m) => m.id)).toEqual(['good', 'bad']);
+    expect(sortFeedOldestFirst([bad, good]).map((m) => m.id)).toEqual(['good', 'bad']);
     expect(feedMonthKey('not-a-date')).toBeNull();
     expect(formatFeedMonthHeading('not-a-date')).toBe('');
   });
 
-  it('groups months newest-first with counts and chapter ids', () => {
-    const feed = sortFeedNewestFirst([
+  it('groups months oldest-first with counts and chapter ids', () => {
+    const feed = sortFeedOldestFirst([
       makeMoment({ id: 'feb-1', occurredAt: '2026-02-10T10:00:00.000Z' }),
       makeMoment({ id: 'mar-1', occurredAt: '2026-03-10T10:00:00.000Z' }),
       makeMoment({ id: 'mar-2', occurredAt: '2026-03-20T10:00:00.000Z' }),
       makeMoment({ id: 'bad', occurredAt: 'nope' }),
     ]);
     const sections = groupFeedByMonth(feed);
-    expect(sections.map((s) => s.id)).toEqual(['month:2026-03', 'month:2026-02', 'month:undated']);
-    expect(sections[0].label).toBe('March 2026');
-    expect(sections[0].countLabel).toBe('2 memories');
-    expect(sections[0].moments.map((m) => m.id)).toEqual(['mar-2', 'mar-1']);
-    expect(sections[1].countLabel).toBe('1 memory');
+    expect(sections.map((s) => s.id)).toEqual(['month:2026-02', 'month:2026-03', 'month:undated']);
+    expect(sections[0].label).toBe('February 2026');
+    expect(sections[0].countLabel).toBe('1 memory');
+    expect(sections[1].label).toBe('March 2026');
+    expect(sections[1].countLabel).toBe('2 memories');
+    expect(sections[1].moments.map((m) => m.id)).toEqual(['mar-1', 'mar-2']);
     expect(sections[2].label).toBe('Undated');
   });
 
@@ -160,7 +172,6 @@ vi.mock('@/features/moments/moments-context', () => ({
     error: feedError,
     hasMoreMoments: feedHasMore,
     loadMoreMoments,
-    loadBucketSummary: vi.fn(async () => ({ buckets: [], hasOlder: false })),
     loadChapterRange: vi.fn(async () => []),
     loadGoals: vi.fn(async () => []),
     addMoment: vi.fn(),
@@ -373,11 +384,6 @@ vi.mock('@/components/moments/moment-card', () => ({
           )
         : null,
     ),
-}));
-
-vi.mock('@/components/moments/resurface-card', () => ({
-  ResurfaceCard: ({ resurfaces }: any) =>
-    createElement('div', { 'data-testid': 'resurface', 'data-count': resurfaces.length }),
 }));
 
 vi.mock('@/components/moments/pending-memory-row', () => ({
@@ -793,29 +799,6 @@ describe('archive search, filters, and month index (pure)', () => {
     expect(filterFeedMoments(all, { query: '', type: 'photos' }).map((m) => m.id)).toEqual(['p1']);
     expect(filterFeedMoments(all, { query: 'windows', type: 'all' }).map((m) => m.id)).toEqual(['x1']);
     expect(filterFeedMoments(all, { query: 'porch', type: 'voice' })).toHaveLength(0);
-  });
-
-  it('counts each type for the chips', () => {
-    expect(countFeedTypes([photo, note, voice, partner])).toEqual({
-      all: 4,
-      photos: 1,
-      notes: 2,
-      voice: 1,
-      letters: 0,
-    });
-  });
-
-  it('indexes each month row for the jump targets', () => {
-    const rows = [
-      { kind: 'moment', key: 'a' },
-      { kind: 'month', key: 'month:2026-03', section: { monthKey: '2026-03', label: 'March 2026' } },
-      { kind: 'moment', key: 'b' },
-      { kind: 'month', key: 'month:2026-02', section: { monthKey: '2026-02', label: 'February 2026' } },
-    ];
-    expect(monthJumpTargets(rows)).toEqual([
-      { monthKey: '2026-03', label: 'March 2026', shortLabel: 'Mar 2026', index: 1 },
-      { monthKey: '2026-02', label: 'February 2026', shortLabel: 'Feb 2026', index: 3 },
-    ]);
   });
 });
 

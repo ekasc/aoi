@@ -27,6 +27,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { Radii, Spacing } from '@/constants/theme';
 import { FontFamilies } from '@/constants/typography';
 import { userSafeMessage, useComposer } from '@/features/composer/composer-context';
+import { MOMENT_LOCALE } from '@/features/moments/labels';
 import { haptics } from '@/features/haptics/haptics';
 import { useSubscription } from '@/features/subscription/subscription-context';
 import { usePreventLeave } from '@/hooks/use-prevent-leave';
@@ -61,9 +62,9 @@ function isTodayLocal(iso: string): boolean {
 function formatShortDate(date: Date): string {
   const now = new Date();
   if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(MOMENT_LOCALE, { month: 'short', day: 'numeric' });
   }
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleDateString(MOMENT_LOCALE, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function withLocalYMD(baseIso: string, picked: Date): string {

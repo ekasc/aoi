@@ -3,18 +3,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useComposer } from '@/features/composer/composer-context';
 import { useMoments } from '@/features/moments/moments-context';
 import {
-  groupFeedByMonth,
-  sortFeedNewestFirst,
+  sortFeedOldestFirst,
   visiblePendingRecords,
-  type FeedMonthSection,
 } from '@/features/moments/story-feed';
 import type { PendingRecord } from '@/features/composer/types';
 import type { Moment } from '@/features/moments/types';
 
+/** Acknowledgement retries before a delivered record is left for the next pass. */
+const ACK_ATTEMPTS = 3;
+const ACK_RETRY_DELAY_MS = 1500;
+
 export type StoryFeedValue = {
-  /** Month sections, newest month first. */
-  sections: FeedMonthSection[];
-  /** The flat, newest-first feed list the sections were built from. */
+  /** The flat, oldest-first feed list: the single ordering the screen reads. */
   moments: Moment[];
   /** Total feed memories across sections (pending excluded). */
   totalCount: number;
@@ -28,6 +28,8 @@ export type StoryFeedValue = {
   isPaging: boolean;
   isRefreshing: boolean;
   error: string | null;
+  /** Why the last older page failed, if it did; cleared when one lands. */
+  pagingError: string | null;
   hasMore: boolean;
   /** Append the next bounded page. No-op while paging or exhausted. */
   loadMore: () => void;
@@ -44,7 +46,15 @@ export type StoryFeedValue = {
  * lands in the feed.
  */
 export function useStoryFeed(): StoryFeedValue {
-  const { moments, isLoading, error, hasMoreMoments, loadMoreMoments, refresh } = useMoments();
+  const {
+    moments,
+    isLoading,
+    error,
+    hasMoreMoments,
+    loadMoreMoments,
+    pagingError,
+    refresh,
+  } = useMoments();
   const { pending: composerPending, sendingIds, acknowledgeDelivered } = useComposer();
 
   const [isPaging, setIsPaging] = useState(false);
@@ -52,9 +62,13 @@ export function useStoryFeed(): StoryFeedValue {
   const [keptTick, setKeptTick] = useState(0);
   const pagingRef = useRef(false);
   const refreshingRef = useRef(false);
+  const ackTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
 
-  const feed = useMemo(() => sortFeedNewestFirst(moments), [moments]);
-  const sections = useMemo(() => groupFeedByMonth(feed), [feed]);
+  // One ordering, the one the archive is read in: oldest first, goals
+  // excluded. The screen groups this list; it never re-sorts it back and
+  // forth. (The context list is already oldest-first; this is the feed's own
+  // filter boundary, which also drops Plans-owned goals.)
+  const feed = useMemo(() => sortFeedOldestFirst(moments), [moments]);
 
   const feedIds = useMemo(() => {
     const ids = new Set<string>();
@@ -78,6 +92,39 @@ export function useStoryFeed(): StoryFeedValue {
     () => composerPending.filter((record) => record.status === 'delivered' && record.deliveredMoment),
     [composerPending],
   );
+
+  // An acknowledgement is a persisted write: dropping one strands the
+  // record in "Kept in your story" forever, so a failure is retried a bounded
+  // number of times instead of being swallowed.
+  const acknowledge = useCallback(
+    (clientId: string) => {
+      const attempt = (remaining: number) => {
+        void acknowledgeDelivered(clientId).catch(() => {
+          if (remaining <= 1) {
+            return;
+          }
+          const timer = setTimeout(() => {
+            ackTimersRef.current.delete(timer);
+            attempt(remaining - 1);
+          }, ACK_RETRY_DELAY_MS);
+          ackTimersRef.current.add(timer);
+        });
+      };
+      attempt(ACK_ATTEMPTS);
+    },
+    [acknowledgeDelivered],
+  );
+
+  useEffect(() => {
+    const timers = ackTimersRef.current;
+    return () => {
+      for (const timer of timers) {
+        clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
+
   useEffect(() => {
     if (delivered.length === 0) {
       return;
@@ -91,11 +138,11 @@ export function useStoryFeed(): StoryFeedValue {
     const task = setTimeout(() => {
       setKeptTick((count) => count + landed.length);
       for (const record of landed) {
-        void acknowledgeDelivered(record.clientId).catch(() => {});
+        acknowledge(record.clientId);
       }
     }, 0);
     return () => clearTimeout(task);
-  }, [delivered, feedIds, acknowledgeDelivered]);
+  }, [delivered, feedIds, acknowledge]);
 
   const loadMore = useCallback(() => {
     if (pagingRef.current || !hasMoreMoments) {
@@ -123,7 +170,6 @@ export function useStoryFeed(): StoryFeedValue {
 
   return useMemo(
     () => ({
-      sections,
       moments: feed,
       totalCount: feed.length,
       pending,
@@ -133,12 +179,12 @@ export function useStoryFeed(): StoryFeedValue {
       isPaging,
       isRefreshing,
       error,
+      pagingError,
       hasMore: hasMoreMoments,
       loadMore,
       refresh: refreshFeed,
     }),
     [
-      sections,
       feed,
       pending,
       sendingIds,
@@ -147,6 +193,7 @@ export function useStoryFeed(): StoryFeedValue {
       isPaging,
       isRefreshing,
       error,
+      pagingError,
       hasMoreMoments,
       loadMore,
       refreshFeed,

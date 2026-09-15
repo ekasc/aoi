@@ -413,12 +413,6 @@ vi.mock('@/features/squeeze/squeeze-context', () => ({
   useSqueeze: () => ({ sendSqueeze: sendSqueezeSpy, isSending: false }),
 }));
 
-// Unused by the Story feed (months derive from loaded moments); kept so
-// the shared moments mock keeps its full shape for other suites.
-const storyLoadBucketSummary = vi.fn(async () => {
-  // Feed months derive from loaded moments; bucket discovery is gone.
-  return { buckets: [], hasOlder: false };
-});
 const storyLoadMoreMoments = vi.fn(async () => false);
 const storyMoments = [
   {
@@ -445,7 +439,6 @@ vi.mock('@/features/moments/moments-context', () => ({
     refresh: vi.fn(async () => {}),
     hasMoreMoments: false,
     loadMoreMoments: storyLoadMoreMoments,
-    loadBucketSummary: storyLoadBucketSummary,
     loadChapterRange: vi.fn(async () => []),
     loadGoals: vi.fn(async () => []),
   }),
@@ -511,10 +504,6 @@ vi.mock('@/features/proposals/proposals-context', () => ({
 
 vi.mock('@/components/moments/moment-card', () => ({
   MomentCard: () => null,
-}));
-
-vi.mock('@/components/moments/resurface-card', () => ({
-  ResurfaceCard: () => null,
 }));
 
 vi.mock('@/components/moments/tombstone-marker', () => ({

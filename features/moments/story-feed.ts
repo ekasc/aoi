@@ -1,4 +1,5 @@
 import type { PendingRecord } from '@/features/composer/types';
+import { MOMENT_LOCALE } from '@/features/moments/labels';
 import type { Moment } from '@/features/moments/types';
 
 // Pure Story-feed helpers (no hooks, no native deps). The feed is a single
@@ -14,23 +15,6 @@ const EXCLUDED_FEED_TYPES: ReadonlySet<string> = new Set(['goal']);
 function occurredMs(value: string): number {
   const ms = new Date(value).getTime();
   return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
-}
-
-/** Newest-first feed order; equal timestamps break by id for stability. */
-export function compareFeedDesc(left: Moment, right: Moment): number {
-  const diff = occurredMs(right.occurredAt) - occurredMs(left.occurredAt);
-  if (diff !== 0) {
-    return diff;
-  }
-  if (left.id === right.id) {
-    return 0;
-  }
-  return left.id < right.id ? -1 : 1;
-}
-
-/** Feed-eligible copy of a moments list, newest first. */
-export function sortFeedNewestFirst(moments: Moment[]): Moment[] {
-  return moments.filter((moment) => !EXCLUDED_FEED_TYPES.has(moment.type)).sort(compareFeedDesc);
 }
 
 /** Local-calendar month key (YYYY-MM) for a memory's actual occurredAt. */
@@ -49,7 +33,7 @@ export function formatFeedMonthHeading(occurredAt: string): string {
   if (Number.isNaN(date.getTime())) {
     return '';
   }
-  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  return date.toLocaleDateString(MOMENT_LOCALE, { month: 'long', year: 'numeric' });
 }
 
 export type FeedMonthSection = {
@@ -64,11 +48,33 @@ export type FeedMonthSection = {
   moments: Moment[];
 };
 
-/** Feed-eligible copy of a moments list, oldest first (chat order). */
+/**
+ * Feed-eligible copy of a moments list, oldest first (chat order), with
+ * undated memories trailing: a memory whose date cannot be read is not the
+ * oldest thing in the archive, it is the one that has no place in it.
+ */
 export function sortFeedOldestFirst(moments: Moment[]): Moment[] {
   return moments
     .filter((moment) => !EXCLUDED_FEED_TYPES.has(moment.type))
-    .sort((left, right) => compareFeedDesc(right, left));
+    .sort(compareFeedAsc);
+}
+
+/** Oldest-first order, undated last, id as the tiebreak. */
+function compareFeedAsc(left: Moment, right: Moment): number {
+  const leftMs = occurredMs(left.occurredAt);
+  const rightMs = occurredMs(right.occurredAt);
+  const leftUndated = !Number.isFinite(leftMs);
+  const rightUndated = !Number.isFinite(rightMs);
+  if (leftUndated !== rightUndated) {
+    return leftUndated ? 1 : -1;
+  }
+  if (leftMs !== rightMs) {
+    return leftMs < rightMs ? -1 : 1;
+  }
+  if (left.id === right.id) {
+    return 0;
+  }
+  return left.id < right.id ? -1 : 1;
 }
 
 /**
@@ -81,9 +87,10 @@ export function groupFeedChronological(moments: Moment[]): FeedMonthSection[] {
 }
 
 /**
- * Group an already newest-first feed list into month sections, newest
- * month first. Memories with unparseable dates collect in a trailing
- * `Undated` section so nothing silently vanishes.
+ * Group a feed list into month sections, in the order it arrives (the feed
+ * and the gallery both hand it oldest-first, so months read oldest-first).
+ * Memories with unparseable dates collect in a trailing `Undated` section so
+ * nothing silently vanishes.
  */
 export function groupFeedByMonth(feed: Moment[]): FeedMonthSection[] {
   const sections: FeedMonthSection[] = [];
@@ -142,10 +149,10 @@ export function visiblePendingRecords(
 }
 
 /** Archive filter for the Memories tab. */
-export type FeedTypeFilter = 'all' | 'photos' | 'notes' | 'voice' | 'letters';
+export type FeedTypeFilter = 'all' | 'photos' | 'notes' | 'voice';
 
 /** The kinds the archive is expected to hold; letters land next. */
-export type FeedArchiveType = 'photos' | 'notes' | 'voice' | 'letters' | 'other';
+export type FeedArchiveType = 'photos' | 'notes' | 'voice' | 'other';
 
 /** Which archive bucket a memory belongs to. */
 export function feedTypeOf(moment: Moment): FeedArchiveType {
@@ -192,64 +199,3 @@ export function filterFeedMoments(
   );
 }
 
-export type FeedTypeCounts = {
-  all: number;
-  photos: number;
-  notes: number;
-  voice: number;
-  letters: number;
-};
-
-export function countFeedTypes(moments: Moment[]): FeedTypeCounts {
-  const counts: FeedTypeCounts = {
-    all: moments.length,
-    photos: 0,
-    notes: 0,
-    voice: 0,
-    letters: 0,
-  };
-  for (const moment of moments) {
-    const type = feedTypeOf(moment);
-    if (type === 'photos') {
-      counts.photos += 1;
-    } else if (type === 'notes') {
-      counts.notes += 1;
-    } else if (type === 'voice') {
-      counts.voice += 1;
-    }
-  }
-  return counts;
-}
-
-/**
- * Row index of each month's first row, for the "jump to month" index. Rows
- * come from the same FeedRow list the list renders, so the index is exact.
- * `shortLabel` keeps the chip compact and distinct from the section header.
- */
-export function monthJumpTargets(
-  rows: { kind: string; key: string; section?: FeedMonthSection }[],
-): { monthKey: string; label: string; shortLabel: string; index: number }[] {
-  const targets: { monthKey: string; label: string; shortLabel: string; index: number }[] = [];
-  rows.forEach((row, index) => {
-    if (row.kind === 'month' && row.section) {
-      targets.push({
-        monthKey: row.section.monthKey,
-        label: row.section.label,
-        shortLabel: shortMonthLabel(row.section.monthKey),
-        index,
-      });
-    }
-  });
-  return targets;
-}
-
-function shortMonthLabel(monthKey: string): string {
-  if (monthKey === 'undated') {
-    return 'Undated';
-  }
-  const date = new Date(`${monthKey}-01T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return monthKey;
-  }
-  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-}

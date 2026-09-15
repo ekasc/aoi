@@ -82,6 +82,12 @@ const GALLERY_GAP = 2;
 const REOPEN_DISTANCE = 24;
 
 /**
+ * Height the on-demand search controls add to the header: the search row
+ * (44) plus its gap (8) plus the filter chips row (44).
+ */
+const SEARCH_CONTROLS_HEIGHT = 44 + Spacing[8] + 44;
+
+/**
  * Distance the reader travels away from the top before the top edge is
  * allowed to page again. Shortened to the list's actual scroll range, so a
  * feed with less range than this can still arm.
@@ -90,6 +96,9 @@ const TOP_ARM_DISTANCE = 200;
 
 /** Milliseconds a header settle/reopen takes (header-only; feed never moves). */
 const HEADER_ANIM_DURATION = 220;
+
+/** How long the "Kept in your story" confirmation stays up. */
+const KEPT_NOTICE_DURATION_MS = 5000;
 
 
 
@@ -157,7 +166,9 @@ export default function MemoriesScreen() {
 	const TABS_ROW = 52;
 	const HEADER_GAP = Spacing[8];
 	const HEADER_PAD_BOTTOM = Spacing[12];
-	const searchExtra = isSearching ? 96 : 0;
+	// A short list or a slow drag can park the header half-shed: it settles
+	// to the nearer endpoint on scroll rest (pure rule, unit-tested).
+	const searchExtra = isSearching ? SEARCH_CONTROLS_HEIGHT : 0;
 	const headerExpanded =
 		insets.top + TITLE_ROW + HEADER_GAP + TABS_ROW + HEADER_PAD_BOTTOM + searchExtra;
 	// Condensed height: the title row survives; the gap + switcher row are shed.
@@ -205,8 +216,18 @@ export default function MemoriesScreen() {
 				Animated.timing(collapseLayout, { toValue: target, duration, useNativeDriver: false }),
 			]);
 			settleRef.current = anim;
-			anim.start(() => {
+			// `stop()` also calls this completion, with finished === false. Only
+			// the animation that actually reached its target may resync the
+			// linkage origin, and only if it still owns the header (a newer
+			// settle or a view switch may have taken over meanwhile).
+			anim.start(({ finished }) => {
+				if (settleRef.current !== anim) {
+					return;
+				}
 				settleRef.current = null;
+				if (!finished) {
+					return;
+				}
 				originRef.current = lastYRef.current - target * COLLAPSE_DISTANCE;
 				maxYRef.current = lastYRef.current;
 			});
@@ -354,6 +375,7 @@ export default function MemoriesScreen() {
 	const border = useThemeColor({}, "border");
 	const surface = useThemeColor({}, "surface");
 	const onAccent = useThemeColor({}, "onAccent");
+	const danger = useThemeColor({}, "danger");
 	const text = useThemeColor({}, "textPrimary");
 	const { mode } = useAoiTheme();
 	// On pale-tinted light glass the near-white onAccent washes out, so the
@@ -412,27 +434,39 @@ export default function MemoriesScreen() {
 		(next: MemoriesView) => {
 			setView(next);
 			setViewerPhoto(null);
-			// The incoming list mounts at its own top: reopen the header the
-			// way a fresh list does. Values only — the native scroll view is
-			// never commanded. A settle in flight is stopped first so its
-			// completion cannot resync the origin to the outgoing list.
+			// The incoming list mounts at its own top: reopen the header the way
+			// a fresh list does. Values only — the native scroll view is never
+			// commanded. The settle is stopped BEFORE the reset, so a canceled
+			// animation cannot resync the origin to the outgoing list, and the
+			// paging arm is disarmed: the incoming list starts at y = 0, where a
+			// stale arm would fetch a page the reader never asked for.
+			settleRef.current?.stop();
+			settleRef.current = null;
 			originRef.current = 0;
 			maxYRef.current = 0;
 			lastYRef.current = 0;
 			progressRef.current = 0;
-			settleRef.current?.stop();
-			settleRef.current = null;
 			collapse.setValue(0);
 			collapseLayout.setValue(0);
 			frost.setValue(0);
 			switcherHiddenRef.current = false;
 			setSwitcherHidden(false);
+			topArmRef.current = false;
 		},
 		[collapse, collapseLayout, frost],
 	);
 
+	// Narrowing the archive (search, filters) can clamp an armed list back to
+	// the top, where the stale arm would spend itself on a page nobody asked
+	// for. Every filter change disarms it.
+	const handleQueryChange = useCallback((next: string) => {
+		topArmRef.current = false;
+		setQuery(next);
+	}, []);
+
 	const handleSelectFilter = useCallback((next: FeedTypeFilter) => {
 		haptics.select();
+		topArmRef.current = false;
 		setTypeFilter(next);
 	}, []);
 
@@ -440,6 +474,7 @@ export default function MemoriesScreen() {
 	// search clears the filter so the whole archive returns.
 	const handleToggleSearch = useCallback(() => {
 		if (isSearching) {
+			topArmRef.current = false;
 			setQuery("");
 			setTypeFilter("all");
 			setSearchFocused(false);
@@ -450,6 +485,7 @@ export default function MemoriesScreen() {
 	}, [isSearching]);
 
 	const handleClearFilters = useCallback(() => {
+		topArmRef.current = false;
 		setQuery("");
 		setTypeFilter("all");
 		setSearchFocused(false);
@@ -464,9 +500,10 @@ export default function MemoriesScreen() {
 	}, [shownMoments]);
 
 	// A just-kept memory flashes a quiet confirmation once its row lands in
-	// the feed. The row itself is the proof; nothing scrolls or jumps. The
-	// show/hide runs on timers (never a render-time sync) so positioning the
-	// notice never cascades renders.
+	// the feed. The row itself is the proof; nothing scrolls or jumps. One
+	// timer owns the whole lifetime — shown on the next tick (so positioning
+	// the notice never syncs state during a commit) and hidden when it
+	// expires — and React clears it on unmount like any other effect cleanup.
 	const keptTick = feed.keptTick;
 	const keptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	useEffect(() => {
@@ -475,13 +512,10 @@ export default function MemoriesScreen() {
 		}
 		const show = setTimeout(() => {
 			setKeptNotice(true);
-			if (keptTimerRef.current) {
-				clearTimeout(keptTimerRef.current);
-			}
 			keptTimerRef.current = setTimeout(() => {
 				keptTimerRef.current = null;
 				setKeptNotice(false);
-			}, 5000);
+			}, KEPT_NOTICE_DURATION_MS);
 		}, 0);
 		return () => {
 			clearTimeout(show);
@@ -491,14 +525,11 @@ export default function MemoriesScreen() {
 			}
 		};
 	}, [keptTick]);
-	useEffect(() => {
-		return () => {
-			if (keptTimerRef.current) {
-				clearTimeout(keptTimerRef.current);
-			}
-		};
-	}, []);
 	const handleDismissKeptNotice = useCallback(() => {
+		if (keptTimerRef.current) {
+			clearTimeout(keptTimerRef.current);
+			keptTimerRef.current = null;
+		}
 		setKeptNotice(false);
 	}, []);
 
@@ -653,19 +684,28 @@ export default function MemoriesScreen() {
 	const renderFeedItem = useCallback(
 		({ item, index }: ListRenderItemInfo<FeedRow>) => {
 			if (item.kind === "month") {
+				// An Undated section is not a month: there is no chapter behind it,
+				// so it reads as a heading instead of a link that cannot resolve.
+				const openable = item.section.monthKey !== "undated";
 				return (
-					<View style={styles.feedRow}>
-						<Pressable
-							accessibilityLabel={`Open ${item.section.label} chapter`}
-							accessibilityRole="button"
-							onPress={() => handleOpenMonth(item.section)}
-							style={[styles.monthRow, index === 0 ? styles.monthRowFirst : null]}
-						>
+					<View>
+						{openable ? (
+							<Pressable
+								accessibilityLabel={`Open ${item.section.label} chapter`}
+								accessibilityRole="button"
+								onPress={() => handleOpenMonth(item.section)}
+								style={[styles.monthRow, index === 0 ? styles.monthRowFirst : null]}
+							>
+								<ThemedText type="meta" style={{ color: muted, fontWeight: "600" }}>
+									{item.section.label}
+								</ThemedText>
+								<Ionicons color={muted} name="chevron-forward" size={14} />
+							</Pressable>
+						) : (
 							<ThemedText type="meta" style={{ color: muted, fontWeight: "600" }}>
 								{item.section.label}
 							</ThemedText>
-							<Ionicons color={muted} name="chevron-forward" size={14} />
-						</Pressable>
+						)}
 					</View>
 				);
 			}
@@ -673,7 +713,6 @@ export default function MemoriesScreen() {
 				return (
 					<View
 						style={[
-							styles.feedRow,
 							styles.entryCard,
 							{ borderColor: border, backgroundColor: surface },
 						]}
@@ -707,7 +746,7 @@ export default function MemoriesScreen() {
 			/>
 		);
 		return (
-			<View style={styles.feedRow}>
+			<View>
 				{own && useNativeMomentMenu ? (
 					<MenuView
 						actions={MOMENT_MENU_ACTIONS}
@@ -839,7 +878,9 @@ export default function MemoriesScreen() {
 
 	const emptyState = useMemo(
 		() => (
-			<View style={styles.emptyState}>
+			// The three faces of the empty list are async states, so the switch
+			// between them is announced instead of silently swapping text.
+			<View accessibilityLiveRegion="polite" style={styles.emptyState}>
 				{isFiltering ? (
 					<>
 						<ThemedText type="meta" style={{ color: muted }}>
@@ -934,6 +975,26 @@ export default function MemoriesScreen() {
 				</View>
 			);
 		}
+		// A page that failed keeps its cursor, so the same control asks for the
+		// same page again — but it says so instead of looking like a page that
+		// simply has not arrived.
+		if (feed.pagingError) {
+			return (
+				<View accessibilityLiveRegion="polite" style={styles.loadMoreWrap}>
+					<Pressable
+						accessibilityHint="Loads memories from before the ones on screen"
+						accessibilityLabel="Couldn't load earlier memories. Try again"
+						accessibilityRole="button"
+						onPress={feed.loadMore}
+						style={styles.loadEarlier}
+					>
+						<ThemedText type="caption" style={{ color: danger }}>
+							Couldn't load earlier memories. Try again
+						</ThemedText>
+					</Pressable>
+				</View>
+			);
+		}
 		return (
 			<View style={styles.loadMoreWrap}>
 				<Pressable
@@ -949,7 +1010,7 @@ export default function MemoriesScreen() {
 				</Pressable>
 			</View>
 		);
-	}, [feed, muted, accent]);
+	}, [feed, muted, accent, danger]);
 
 
 	const contentContainerStyle = useMemo(
@@ -1092,7 +1153,7 @@ export default function MemoriesScreen() {
 									autoComplete="off"
 									autoCorrect={false}
 									onBlur={() => setSearchFocused(false)}
-									onChangeText={setQuery}
+									onChangeText={handleQueryChange}
 									onFocus={() => setSearchFocused(true)}
 									placeholder="Search memories"
 									placeholderTextColor={muted}
@@ -1107,7 +1168,7 @@ export default function MemoriesScreen() {
 										accessibilityLabel="Clear search"
 										accessibilityRole="button"
 										hitSlop={13}
-										onPress={() => setQuery("")}
+										onPress={() => handleQueryChange("")}
 										style={styles.searchClear}
 									>
 										<Ionicons color={muted} name="close-circle" size={18} />
@@ -1297,30 +1358,6 @@ const styles = StyleSheet.create({
 		paddingBottom: Spacing[0],
 		gap: Spacing[8],
 	},
-	keptNotice: {
-		alignSelf: "flex-start",
-		paddingHorizontal: Spacing[24],
-		minHeight: 44,
-		justifyContent: "center",
-		paddingVertical: Spacing[8],
-	},
-	controlsScrim: {
-		position: "absolute",
-		top: -Spacing[8],
-		left: -Spacing[24],
-		right: -Spacing[24],
-		bottom: 0,
-	},
-	controls: {
-		gap: Spacing[12],
-		paddingTop: Spacing[8],
-		paddingBottom: Spacing[8],
-	},
-	controlsRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: Spacing[12],
-	},
 	switchWrap: {
 		flex: 1,
 	},
@@ -1402,12 +1439,6 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: Spacing[12],
 	},
-	skyLayer: {
-		position: "absolute",
-		top: 0,
-		left: 0,
-		right: 0,
-	},
 	keptOverlay: {
 		position: "absolute",
 		left: Spacing[24],
@@ -1445,7 +1476,6 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		justifyContent: "center",
 	},
-	feedRow: {},
 	monthRow: {
 		flexDirection: "row",
 		alignItems: "center",
