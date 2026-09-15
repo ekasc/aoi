@@ -248,6 +248,16 @@ describe('PhotoViewer across media kinds', () => {
     expect(active).toHaveLength(0);
   });
 
+  it('keeps Open memory for photos and drops it from the media pages', () => {
+    // A clip and a voice note are opened to be watched or heard; the wall's
+    // tile is the way back to the memory.
+    const { unmount } = renderViewer({ photos: PHOTOS, initialIndex: 0 });
+    expect(screen.getByLabelText('Open memory')).toBeTruthy();
+    unmount();
+    renderViewer({ photos: MIXED, initialIndex: 1 });
+    expect(screen.queryByLabelText('Open memory')).toBeNull();
+  });
+
   it('closes a clip or a voice note through the shrink, not flat', () => {
     // The Feed's close path morphs a photo home. A page with no thumbnail of
     // its own shrinks away instead, and the animation owns the close.

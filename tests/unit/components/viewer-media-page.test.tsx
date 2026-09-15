@@ -18,17 +18,22 @@ vi.mock('expo-audio', () => ({
   },
 }));
 
+const playback = {
+  duration: 33,
+  currentTime: 12,
+  isPlaying: true,
+  progress: 0.5,
+  seconds: 12,
+  seek: vi.fn(),
+  setPlaying: vi.fn(),
+  toggle: vi.fn(),
+};
+
 vi.mock('@/hooks/use-voice-playback', async (importOriginal) => {
   const actual: any = await importOriginal();
   return {
     ...actual,
-    useVoicePlayback: () => ({
-      player,
-      isPlaying: true,
-      progress: 0.5,
-      seconds: 3,
-      toggle: vi.fn(),
-    }),
+    useVoicePlayback: () => ({ ...playback, player }),
   };
 });
 
@@ -200,6 +205,20 @@ describe('ViewerVoicePage waveform', () => {
     // The same shared value the canvas draws from is the one the samples
     // land in, so nothing has to be copied into React state to be seen.
     expect(Math.max(...waveProps.levels.value)).toBeCloseTo(0.9, 2);
+  });
+
+  it('plays on arrival: a note that lands silent looks broken', async () => {
+    const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
+    playback.toggle.mockClear();
+    render(createElement(ViewerVoicePage, voiceProps));
+    expect(playback.toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays silent while its page is off screen', async () => {
+    const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
+    playback.toggle.mockClear();
+    render(createElement(ViewerVoicePage, { ...voiceProps, active: false }));
+    expect(playback.toggle).not.toHaveBeenCalled();
   });
 
   it('asks for sampling and gives it back', async () => {

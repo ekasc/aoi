@@ -515,7 +515,14 @@ function ViewerSession({
               {total}
             </ThemedText>
           ) : null}
-          <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
+          {/*
+            Photos keep the way into their memory. The media pages do not: a
+            clip or a voice note is opened to be watched or heard, and the
+            wall's tile leads back to the memory anyway.
+          */}
+          {currentIsPhoto ? (
+            <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
+          ) : null}
         </View>
       </Animated.View>
     </View>
