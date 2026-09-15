@@ -43,7 +43,7 @@ app/                  Expo Router routes (route groups below)
   (app)/proposal/     new.tsx (suggest a time to the partner)
   (app)/profile/      edit-relationship, import-milestones, little-things
   (app)/someday.tsx   the shared Someday list
-  (app)/memory-wall.tsx  the memory wall (photo + voice album)
+  (app)/chapter/[id].tsx  one month chapter (members + keepsake export)
   (app)/question.tsx  "one question this week" ritual
   (app)/location.tsx  location consent + sharing controls (default OFF)
   (app)/partner-map.tsx  single-pin partner map (no trails, no history)
@@ -124,9 +124,9 @@ Generic per-space change log (`space_activity` table): kind
 (`moment_deleted | moment_edited`), actor, occurredAt — **never content**
 (privacy: fact + who only). Rows are written in the same transaction as the
 moment change. `GET /v1/spaces/current/activity` returns at most the last
-7 days (capped 50, newest first). The timeline merges `moment_deleted` items
-into the rail as **tombstones** — a muted, non-interactive marker "{Name}
-removed a moment", shown for 7 days, so deletions are honest without drama.
+7 days (capped 50, newest first). The Story feed does not render tombstones
+(a deleted memory simply leaves the stream); activity stays available for
+future provenance surfaces.
 Remote mode re-fetches moments + activity on app focus (AppState listener,
 no polling); stub mode synthesizes tombstones from local deletes.
 
@@ -242,17 +242,45 @@ from `space.relationshipStartDate`; the moment count from the loaded moments
 list. Deliberately NOT engagement metrics: no graphs, rankings, streak framing,
 or notifications.
 
-### Memory wall
-All kept media gathered like a printed album — screen `app/(app)/memory-wall.tsx`,
-entered from ONE quiet button on the profile tab. One wall item per moment: its
-photo (`mediaPreview`, expo-image) when it has one, otherwise its voice trace
-(`audioUri` rendered as a full-width row reusing `AudioPlayer`). Sorted
-`occurredAt` desc (newest first); nothing ranked, nothing counted. Rows are
-memoized (`MemoryWallRow`) so tapping a photo never re-renders the list; a tap
-opens a full-screen Modal viewer with a "{date} · Kept by you/them" caption.
-Image rows pair two cells side by side (author dot colored accent /
-partnerAccent); a one-line empty state covers the blank wall. Pure UI over
-existing moment data — no new API.
+### Story feed (Memories tab)
+One oldest-first mixed stream, dashboard style: photo, note, and voice
+memories render inline in a single scroll, grouped under month sections.
+Each month header opens its chapter (`app/(app)/chapter/[id].tsx`, id
+`month:YYYY-MM`) with the keepsake export. Unsent composer memories pin to
+the top. The screen owns its own pinned in-screen header (title +
+Feed/Gallery switcher); the native stack header is off. Rows are
+Twitter-style: avatar + byline, then the caption, then content-aligned
+rounded media inside the text column — except photo sets, which escape
+the text column as an edge-bleed sideways strip (peek-sized prints, snap
+stops, dots) — separated by full-width hairlines. Untitled memories store
+an empty title and print no placeholder (the legacy `Untitled moment`
+reads as untitled too). Nothing in the timeline opens the detail: text
+and audio are complete inline, and photos open the fullscreen viewer
+(swipeable across the set) instead. The
+header is a pinned overlay the feed scrolls underneath: it condenses 1:1
+with the scroll (switcher fading as its row sheds), so the feed meets the
+title bar with no gap and nothing ever jumps — content only moves as much
+as the finger scrolls. Scrolling up 24px past the deep point reopens the
+header anywhere in the feed (header-only fade, feed static); scrolling
+down recondenses gradually from the reopen point. When a scroll comes to
+rest mid-condense the header settles to the nearer endpoint (always open
+below the shed distance), so it never parks half-shed. The sky stays pinned behind the header, and the
+title bar gains a frosted blur as rows slide under it (sky keeps showing
+through; text dissolves into it). There is no
+separate Photos destination, no
+chapter discovery list, no read state, and no unread divider. The single
+feed source is the shared moments context list (`useStoryFeed` in
+`features/moments/use-story-feed.ts` pages the same cursor the context
+owns); pure ordering/grouping lives in `features/moments/story-feed.ts`.
+Goals never render here (Plans owns them). Deletion just removes the row
+(the server still records `space_activity`; the feed renders no
+tombstones).
+
+### Memory wall (retired)
+Removed 2026-09: photos now render inline in the Story feed at full
+dashboard size, so the separate `memory-wall` route is gone. Do not
+reintroduce a standalone photo grid; photo browsing is the feed itself
+plus per-month chapters.
 
 ### One question this week
 An optional, never-nagging ritual: one handcrafted question per ISO week, both
@@ -607,15 +635,14 @@ media (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 
 ## 10. Current state & known seams (as of 2026-08)
 
-**Working end-to-end (stub):** auth screens, space onboarding, timeline with
-traces + resurface + goals lane, calendar CRUD + reminders (local
+**Working end-to-end (stub):** auth screens, space onboarding, Story feed
+(oldest-first mixed stream with month chapters), calendar CRUD + reminders (local
 notifications) + countdown lane + anniversaries + agenda view + all-day
 events + weekly recurrence (local 13-week expansion), proposals (device-local
 with a plainly-simulated partner: one seeded suggestion to answer, and a yes
 to your own suggestions a few seconds later), profile, settings, the little
 things, the Someday list (device-local), squeeze loop (simulated reply),
-voice traces (local), media picking, moments edit/delete + tombstones (local
-synthesis), time-together profile line, memory wall, "one question this week"
+voice traces (local), media picking, moments edit/delete (local synthesis), time-together profile line, "one question this week"
 (device-local answers; no simulated partner — the reveal waits for a real
 second voice), location sharing — honestly simulated: the pretend partner
 consents a couple of seconds after you opt in and grants a fixed,

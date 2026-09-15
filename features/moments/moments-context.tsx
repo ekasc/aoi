@@ -11,14 +11,18 @@ import {
 import { AppState } from 'react-native';
 
 import { isStubMode } from '@/features/api-client';
+import { mediaObjectUrl } from '@aoi/shared';
+import { getPreviewSeedMoments, usePreviewVariant } from '@/features/dev/preview';
 import { mockMoments } from '@/features/moments/mock-data';
 import {
   fetchMoments,
   fetchActivity,
+  fetchBucketSummary,
   createMoment as remoteCreateMoment,
   updateMoment as remoteUpdateMoment,
   deleteMoment as remoteDeleteMoment,
 } from '@/features/moments/remote-moments-api';
+import { filterChapterRange, summarizeBuckets } from '@/features/moments/chapters';
 import type {
   CreateMomentInput,
   Moment,
@@ -49,12 +53,52 @@ function normalizeText(value?: string) {
   return value?.trim() ?? '';
 }
 
+/** Append a fetched page without duplicating rows already held. */
+function mergeMomentsById(current: Moment[], incoming: Moment[]): Moment[] {
+  if (incoming.length === 0) {
+    return [...current];
+  }
+  const byId = new Map(current.map((moment) => [moment.id, moment]));
+  for (const moment of incoming) {
+    byId.set(moment.id, moment);
+  }
+  return sortMomentsOldestFirst([...byId.values()]);
+}
+
 function toLocalMoment(input: CreateMomentInput): Moment {
   const now = new Date();
   const occurredAt = input.occurredAt ?? now.toISOString();
-  const title = normalizeText(input.title) || 'Untitled moment';
+  const title = normalizeText(input.title);
   const body = normalizeText(input.body);
   const authorRole = input.authorRole ?? 'you';
+  // Stub-mode attachment compat: the create input carries `{ mediaId, kind }`
+  // only, while stored moments carry `{ mediaId, kind, url }`. Synthesize
+  // stable serve URLs for explicit inputs (mirrors the server compat);
+  // fall back to one legacy-derived entry so old photos stay visible.
+  const attachments: NonNullable<Moment['attachments']> =
+    input.attachments !== undefined
+      ? input.attachments.map((a) => ({
+          mediaId: a.mediaId,
+          kind: a.kind,
+          url: mediaObjectUrl(a.mediaId, a.kind === 'audio' ? 'original' : 'display'),
+        }))
+      : input.localAttachments && input.localAttachments.length > 0
+        ? // Stub mode: every picked image/voice note, in order, addressed by
+          // its local URI. `mediaId` is a local placeholder (never sent).
+          input.localAttachments.map((a, index) => ({
+            mediaId: `local_${index}_${a.kind}`,
+            kind: a.kind,
+            url: a.url,
+          }))
+        : input.mediaId
+          ? [
+              {
+                mediaId: input.mediaId,
+                kind: (input.audioUri ? 'audio' : 'image') as 'image' | 'audio',
+                url: (input.audioUri ?? input.mediaPreview ?? '') as string,
+              },
+            ]
+          : [];
 
   return {
     id: `moment_${now.getTime()}_${Math.floor(Math.random() * 100000)}`,
@@ -72,6 +116,8 @@ function toLocalMoment(input: CreateMomentInput): Moment {
     isOwn: authorRole === 'you',
     mediaPreview: input.mediaPreview,
     audioUri: input.audioUri ?? null,
+    mediaId: input.mediaId ?? null,
+    attachments,
   };
 }
 
@@ -90,6 +136,7 @@ function toImportedMoment(milestone: ImportedMilestone): Moment {
     authorName: 'You',
     // Milestones are imported by the current user for their own space.
     isOwn: true,
+    mediaId: null,
   };
 }
 
@@ -116,6 +163,12 @@ function useRemoteMoments(): MomentsContextValue {
   const momentsRequestSeq = useRef(0);
   const activityRequestSeq = useRef(0);
   const hasMomentsData = useRef(false);
+  // Shared cursor pagination: undefined = unstarted, string = next page,
+  // null = exhausted. Any screen may advance it via loadMoreMoments; pages
+  // stay bounded and exhausted cursors never refetch.
+  const momentsCursorRef = useRef<string | null | undefined>(undefined);
+  const loadMoreInFlightRef = useRef(false);
+  const [hasMoreMoments, setHasMoreMoments] = useState(false);
 
   const loadMoments = useCallback(async () => {
     const requestId = ++momentsRequestSeq.current;
@@ -125,22 +178,21 @@ function useRemoteMoments(): MomentsContextValue {
       setIsLoading(true);
     }
     setError(null);
+    // A fresh load restarts pagination from the first bounded page; screens
+    // chain loadMoreMoments from there to whatever depth they need.
+    momentsCursorRef.current = undefined;
+    setHasMoreMoments(false);
 
     try {
-      const allMoments: Moment[] = [];
-      let cursor: string | undefined;
-
-      do {
-        const response = await fetchMoments(cursor, 100);
-        allMoments.push(...response.moments);
-        cursor = response.nextCursor;
-      } while (cursor);
+      const response = await fetchMoments(undefined, 100);
 
       if (requestId !== momentsRequestSeq.current) {
-        return; // A newer request is in flight — drop this stale response.
+        return; // A newer request is in flight, drop this stale response.
       }
+      momentsCursorRef.current = response.nextCursor ?? null;
+      setHasMoreMoments(momentsCursorRef.current !== null);
       hasMomentsData.current = true;
-      setMoments(sortMomentsOldestFirst(allMoments));
+      setMoments(sortMomentsOldestFirst(response.moments));
     } catch (err) {
       if (requestId !== momentsRequestSeq.current) {
         return;
@@ -158,7 +210,7 @@ function useRemoteMoments(): MomentsContextValue {
     try {
       const response = await fetchActivity();
       if (requestId !== activityRequestSeq.current) {
-        return; // Stale response — a newer request owns the state.
+        return; // Stale response, a newer request owns the state.
       }
       setActivity(response.activity);
     } catch {
@@ -169,6 +221,83 @@ function useRemoteMoments(): MomentsContextValue {
   const refresh = useCallback(async () => {
     await Promise.all([loadMoments(), loadActivity()]);
   }, [loadActivity, loadMoments]);
+
+  const loadMoreMoments = useCallback(async (): Promise<boolean> => {
+    if (loadMoreInFlightRef.current || momentsCursorRef.current === null) {
+      return momentsCursorRef.current !== null;
+    }
+    loadMoreInFlightRef.current = true;
+    const requestId = ++momentsRequestSeq.current;
+    try {
+      const response = await fetchMoments(momentsCursorRef.current, 100);
+      if (requestId !== momentsRequestSeq.current) {
+        return true; // Superseded, a newer request owns the cursor now.
+      }
+      momentsCursorRef.current = response.nextCursor ?? null;
+      setHasMoreMoments(momentsCursorRef.current !== null);
+      hasMomentsData.current = true;
+      setMoments((prev) => mergeMomentsById(prev, response.moments));
+      return momentsCursorRef.current !== null;
+    } catch {
+      // The cursor doesn't advance on failure, so the next call retries the
+      // same bounded page instead of skipping it.
+      return momentsCursorRef.current !== null;
+    } finally {
+      loadMoreInFlightRef.current = false;
+    }
+  }, []);
+
+  const loadBucketSummary = useCallback(async (buckets: { fromMs: number; toMs: number }[]) => {
+    return fetchBucketSummary(buckets);
+  }, []);
+
+  const loadChapterRange = useCallback(async (fromMs: number, toMs: number): Promise<Moment[]> => {
+    // Page the range to completion (oldest-first for the reader). Bounded
+    // by the range itself — and never touching the Story cursor.
+    const collected: Moment[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await fetchMoments(cursor, 100, { fromMs, toMs });
+      collected.push(...page.moments);
+      if (!page.nextCursor) {
+        break;
+      }
+      cursor = page.nextCursor;
+    }
+    return collected.sort((left, right) => {
+      const timeDiff =
+        new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime();
+      if (timeDiff !== 0) {
+        return timeDiff;
+      }
+      return left.id < right.id ? -1 : 1;
+    });
+  }, []);
+
+  const loadGoals = useCallback(async (): Promise<Moment[]> => {
+    // Type-filtered pages to completion (oldest-first for the reader).
+    // Bounded by goal count, not archive size — and never touching the
+    // Story cursor.
+    const collected: Moment[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await fetchMoments(cursor, 100, { type: 'goal' });
+      collected.push(...page.moments);
+      if (!page.nextCursor) {
+        break;
+      }
+      cursor = page.nextCursor;
+    }
+    return collected.sort((left, right) => {
+      const leftTarget = left.targetAt ?? left.occurredAt;
+      const rightTarget = right.targetAt ?? right.occurredAt;
+      const timeDiff = new Date(leftTarget).getTime() - new Date(rightTarget).getTime();
+      if (timeDiff !== 0) {
+        return timeDiff;
+      }
+      return left.id < right.id ? -1 : 1;
+    });
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -191,6 +320,7 @@ function useRemoteMoments(): MomentsContextValue {
     // stale snapshot (fetched before this change) is dropped on arrival.
     momentsRequestSeq.current += 1;
     setMoments((prev) => sortMomentsOldestFirst([...prev, created]));
+    return created;
   }, []);
 
   const updateMoment = useCallback(
@@ -229,6 +359,11 @@ function useRemoteMoments(): MomentsContextValue {
       activity,
       isLoading,
       error,
+      hasMoreMoments,
+      loadMoreMoments,
+      loadBucketSummary,
+      loadChapterRange,
+      loadGoals,
       addMoment,
       updateMoment,
       removeMoment,
@@ -238,7 +373,12 @@ function useRemoteMoments(): MomentsContextValue {
       activity,
       addMoment,
       error,
+      hasMoreMoments,
       isLoading,
+      loadChapterRange,
+      loadBucketSummary,
+      loadGoals,
+      loadMoreMoments,
       moments,
       refresh,
       removeMoment,
@@ -252,6 +392,7 @@ function useRemoteMoments(): MomentsContextValue {
 function useStubMoments(): MomentsContextValue {
   const { user } = useSession();
   const { importedMilestones } = useSpace();
+  const preview = usePreviewVariant();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
   const [localActivity, setLocalActivity] = useState<SpaceActivityItem[]>([]);
@@ -262,8 +403,14 @@ function useStubMoments(): MomentsContextValue {
   );
 
   const baseMoments = useMemo(
-    () => [...mockMoments, ...importedMoments],
-    [importedMoments]
+    // Dev-preview routes swap the thin unit-test seeds for a rich visual
+    // spread (photos/voice/months) — same merging logic below. Inactive
+    // everywhere else, including all unit tests and production.
+    () =>
+      preview.active
+        ? getPreviewSeedMoments(preview.variant)
+        : [...mockMoments, ...importedMoments],
+    [preview, importedMoments]
   );
 
   const moments = useMemo(() => {
@@ -289,7 +436,7 @@ function useStubMoments(): MomentsContextValue {
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const nextMoment = toLocalMoment(input);
-    return new Promise<void>((resolve) => {
+    await new Promise<void>((resolve) => {
       setLocalMoments((currentMoments) => {
         const updated = sortMomentsOldestFirst([...currentMoments, nextMoment]);
         // Use setTimeout to resolve after state update (best-effort for stub)
@@ -297,6 +444,7 @@ function useStubMoments(): MomentsContextValue {
         return updated;
       });
     });
+    return nextMoment;
   }, []);
 
   const updateMoment = useCallback(
@@ -321,6 +469,7 @@ function useStubMoments(): MomentsContextValue {
           updatedMoment.mediaPreview = patch.mediaPreview ?? undefined;
         }
         if (patch.audioUri !== undefined) updatedMoment.audioUri = patch.audioUri;
+        if (patch.mediaId !== undefined) updatedMoment.mediaId = patch.mediaId;
 
         const rest = currentMoments.filter((moment) => moment.id !== momentId);
         return [...rest, updatedMoment];
@@ -356,29 +505,77 @@ function useStubMoments(): MomentsContextValue {
     // Local data is always current — nothing to sync in stub mode.
   }, []);
 
+  const loadMoreMoments = useCallback(async () => false, []);
+
+  const loadBucketSummary = useCallback(async (buckets: { fromMs: number; toMs: number }[]) => {
+    return summarizeBuckets(moments, buckets);
+  }, [moments]);
+
+  const loadChapterRange = useCallback(async (fromMs: number, toMs: number) => {
+    return filterChapterRange(moments, fromMs, toMs);
+  }, [moments]);
+
+  const loadGoals = useCallback(async () => {
+    return moments
+      .filter((moment) => moment.type === 'goal')
+      .sort((left, right) => {
+        const leftTarget = left.targetAt ?? left.occurredAt;
+        const rightTarget = right.targetAt ?? right.occurredAt;
+        const timeDiff = new Date(leftTarget).getTime() - new Date(rightTarget).getTime();
+        if (timeDiff !== 0) {
+          return timeDiff;
+        }
+        return left.id < right.id ? -1 : 1;
+      });
+  }, [moments]);
+
   return useMemo(
     () => ({
       moments,
       activity,
       isLoading: false,
       error: null,
+      hasMoreMoments: false,
+      loadMoreMoments,
+      loadBucketSummary,
+      loadChapterRange,
+      loadGoals,
       addMoment,
       updateMoment,
       removeMoment,
       refresh,
     }),
-    [activity, addMoment, moments, refresh, removeMoment, updateMoment]
+    [activity, addMoment, loadChapterRange, loadBucketSummary, loadGoals, loadMoreMoments, moments, refresh, removeMoment, updateMoment]
   );
 }
 
 // ── Provider ─────────────────────────────────────────────────────────────
+// Structural split: the outer provider calls NO hooks itself — it selects
+// which implementation component to render. Each implementation owns an
+// independent, unconditional hook tree, so hook order is stable per mount.
 
-export function MomentsProvider({ children }: PropsWithChildren) {
-  const value = _useRemote ? useRemoteMoments() : useStubMoments();
+function RemoteMomentsProvider({ children }: PropsWithChildren) {
+  const value = useRemoteMoments();
 
   return (
     <MomentsContext.Provider value={value}>{children}</MomentsContext.Provider>
   );
+}
+
+function StubMomentsProvider({ children }: PropsWithChildren) {
+  const value = useStubMoments();
+
+  return (
+    <MomentsContext.Provider value={value}>{children}</MomentsContext.Provider>
+  );
+}
+
+export function MomentsProvider({ children }: PropsWithChildren) {
+  if (_useRemote) {
+    return <RemoteMomentsProvider>{children}</RemoteMomentsProvider>;
+  }
+
+  return <StubMomentsProvider>{children}</StubMomentsProvider>;
 }
 
 export function useMoments() {
