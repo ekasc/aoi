@@ -61,7 +61,8 @@ function AttachmentImage({
   frameStyle,
 }: {
   uri: string;
-  label: string;
+  /** Announced label, or undefined when a parent button names the photo. */
+  label?: string;
   /** Optional fixed frame override; otherwise the photo's own measured ratio. */
   aspectRatio?: number;
   /**
@@ -80,6 +81,9 @@ function AttachmentImage({
   return (
     <MediaFrame aspectRatio={aspectRatio ?? aspect ?? 4 / 3} style={frameStyle}>
       <Image
+        // A frame inside a parent button is decorative: the button already
+        // names the photo, and announcing both reads twice.
+        accessible={label === undefined ? false : undefined}
         accessibilityLabel={label}
         source={{ uri: resolveStagedUri(uri) }}
         style={styles.image}
@@ -284,13 +288,46 @@ export function MomentOrderedImages({
   }
   return (
     <View style={styles.root}>
-      {images.map((attachment, index) => (
-        <AttachmentImage
-          key={attachment.mediaId}
-          uri={attachment.url}
-          label={`Memory photo ${index + 1} of ${images.length}`}
-        />
-      ))}
+      {images.map((attachment, index) => {
+        const label = `Memory photo ${index + 1} of ${images.length}`;
+        const frame = (
+          <AttachmentImage
+            key={attachment.mediaId}
+            uri={attachment.url}
+            label={onPhotoPress ? undefined : label}
+          />
+        );
+        if (!onPhotoPress && !onPhotoLongPress) {
+          return <View key={attachment.mediaId}>{frame}</View>;
+        }
+        // The detail screen's photos open the same fullscreen viewer the
+        // feed uses (zoom, drag to dismiss); the frame itself becomes the
+        // button, so the photo is announced once.
+        return (
+          <Pressable
+            accessibilityHint={
+              onPhotoPress && onPhotoLongPress
+                ? 'Opens fullscreen; hold to edit or remove this moment'
+                : onPhotoPress
+                  ? 'Opens fullscreen'
+                  : 'Hold to edit or remove this moment'
+            }
+            // Only promise the tap when there is one: a hold-only frame
+            // keeps the photo's own name instead of naming a tap that does
+            // nothing.
+            accessibilityLabel={
+              onPhotoPress ? `Open photo ${index + 1} of ${images.length} fullscreen` : label
+            }
+            accessibilityRole="button"
+            delayLongPress={400}
+            key={attachment.mediaId}
+            onLongPress={onPhotoLongPress}
+            onPress={onPhotoPress ? () => onPhotoPress(index) : undefined}
+          >
+            <AttachmentImage uri={attachment.url} label={undefined} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -307,11 +344,18 @@ export function MomentOrderedAudios({ moment }: { moment: Moment }) {
   );
 }
 
-export function MomentAttachments({ moment }: { moment: Moment }) {
+export function MomentAttachments({
+  moment,
+  onPhotoPress,
+}: {
+  moment: Moment;
+  /** Fullscreen tap per photo; the article stack stays plain when absent. */
+  onPhotoPress?: (index: number) => void;
+}) {
   if (!hasOrderedAttachments(moment)) return null;
   return (
     <View style={styles.root}>
-      <MomentOrderedImages moment={moment} />
+      <MomentOrderedImages moment={moment} onPhotoPress={onPhotoPress} />
       <MomentOrderedAudios moment={moment} />
     </View>
   );

@@ -64,6 +64,21 @@ vi.mock('@/features/moments/moments-context', () => ({
   }),
 }));
 
+const capturedViewer: { current: any } = { current: null };
+
+vi.mock('@/components/moments/photo-viewer', () => ({
+  PhotoViewer: (props: any) => {
+    capturedViewer.current = props;
+    return props.visible
+      ? createElement(
+          'div',
+          { 'data-testid': 'photo-viewer' },
+          `Photo ${props.initialIndex + 1} of ${props.photos.length}`,
+        )
+      : null;
+  },
+}));
+
 vi.mock('@/components/ui/action-sheet', () => ({
   ActionSheet: ({ visible, title, description, actions }: { visible: boolean; title?: string; description?: string; actions: { label: string; onPress: () => void }[] }) => {
     if (!visible) return null;
@@ -117,6 +132,7 @@ describe('Moment read detail', () => {
     detailRemoveMoment.mockReset();
     detailRemoveMoment.mockResolvedValue(undefined);
     (globalThis as any).__detailFocus = undefined;
+    capturedViewer.current = null;
   });
 
   it('shows an owner-only Edit affordance for an own moment', async () => {
@@ -130,6 +146,32 @@ describe('Moment read detail', () => {
       pathname: '/(app)/moment/edit/[id]',
       params: { id: 'm-1', at: '2024-05-10T12:00:00.000Z' },
     });
+  });
+
+  it('opens a detail photo fullscreen at the photo the reader tapped', async () => {
+    detailMoments = [
+      {
+        ...baseMoment(),
+        attachments: [
+          { mediaId: 'a', kind: 'image', url: 'https://cdn.test/1.jpg' },
+          { mediaId: 'b', kind: 'image', url: 'https://cdn.test/2.jpg' },
+        ],
+      } as any,
+    ];
+    detailParams = { id: 'm-1' };
+    await renderDetail();
+
+    // The detail screen's photos reach the same viewer the feed uses, at the
+    // tapped photo, instead of being inert images.
+    expect(capturedViewer.current?.visible ?? false).toBe(false);
+
+    fireEvent.click(screen.getByLabelText('Open photo 2 of 2 fullscreen'));
+
+    // The detail screen's photos reach the same viewer the feed uses, opened
+    // on the tapped photo with the whole set behind it.
+    expect(capturedViewer.current?.visible).toBe(true);
+    expect(capturedViewer.current?.initialIndex).toBe(1);
+    expect(capturedViewer.current?.photos).toHaveLength(2);
   });
 
   it('hides Edit for a partner moment and still reads content', async () => {

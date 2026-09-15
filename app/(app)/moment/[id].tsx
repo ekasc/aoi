@@ -12,7 +12,13 @@ import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
 import { FontFamilies } from '@/constants/typography';
 import { clampPhotoAspect } from '@/components/moments/moment-card';
-import { MomentAttachments, hasOrderedAttachments } from '@/components/moments/moment-attachments';
+import {
+  MomentAttachments,
+  hasOrderedAttachments,
+  orderedImageAttachments,
+} from '@/components/moments/moment-attachments';
+import { PhotoViewer, type ViewerPhoto } from '@/components/moments/photo-viewer';
+import { haptics } from '@/features/haptics/haptics';
 import { useMoments } from '@/features/moments/moments-context';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 import { useMoment } from '@/features/moments/use-moment';
@@ -49,6 +55,9 @@ export default function MomentDetailScreen() {
   const { moment, isLoading, error, reload } = useMoment(momentId, atHint ?? null);
   const { removeMoment } = useMoments();
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
+  // Fullscreen photo session: the same viewer the feed uses (pinch zoom,
+  // drag to dismiss), opened on the photo the reader tapped.
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [overflowVisible, setOverflowVisible] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -61,6 +70,34 @@ export default function MomentDetailScreen() {
     if (Number.isFinite(width) && Number.isFinite(height) && height > 0) {
       setPhotoAspect(clampPhotoAspect(width / height));
     }
+  }, []);
+
+  // Photos this memory can show fullscreen, in order: the ordered
+  // attachments when present, else the legacy single preview.
+  const orderedImages = useMemo(() => {
+    if (!moment) {
+      return [] as { url: string }[];
+    }
+    if (hasOrderedAttachments(moment)) {
+      return orderedImageAttachments(moment);
+    }
+    return moment.mediaPreview ? [{ url: moment.mediaPreview }] : [];
+  }, [moment]);
+  const viewerPhotos = useMemo<ViewerPhoto[]>(
+    () =>
+      orderedImages.map((image) => ({
+        uri: image.url,
+        label: moment?.title?.trim() ? `Photo: ${moment.title.trim()}` : 'Memory photo',
+        momentId: moment?.id ?? '',
+      })),
+    [orderedImages, moment],
+  );
+  const handleOpenFullscreen = useCallback((index: number) => {
+    haptics.select();
+    setViewerIndex(index);
+  }, []);
+  const handleCloseFullscreen = useCallback(() => {
+    setViewerIndex(null);
   }, []);
 
   const firstFocusRef = useRef(true);
@@ -219,15 +256,22 @@ export default function MomentDetailScreen() {
     >
       <Stack.Screen options={detailScreenOptions} />
       {hasOrdered ? (
-        <MomentAttachments moment={moment} />
+        <MomentAttachments moment={moment} onPhotoPress={handleOpenFullscreen} />
       ) : moment.mediaPreview ? (
-        <Image
-          accessibilityLabel={title ? `Photo for ${title}` : 'Memory photo'}
-          contentFit="contain"
-          source={{ uri: resolveStagedUri(moment.mediaPreview) }}
-          onLoad={handlePhotoLoad}
-          style={[styles.photo, { aspectRatio: photoAspect ?? 4 / 3 }]}
-        />
+        <Pressable
+          accessibilityHint="Opens fullscreen"
+          accessibilityLabel={title ? `Open photo for ${title} fullscreen` : 'Open photo fullscreen'}
+          accessibilityRole="button"
+          onPress={() => handleOpenFullscreen(0)}
+        >
+          <Image
+            accessible={false}
+            contentFit="contain"
+            source={{ uri: resolveStagedUri(moment.mediaPreview) }}
+            onLoad={handlePhotoLoad}
+            style={[styles.photo, { aspectRatio: photoAspect ?? 4 / 3 }]}
+          />
+        </Pressable>
       ) : null}
       <View style={styles.prose}>
         {title ? (
@@ -271,6 +315,13 @@ export default function MomentDetailScreen() {
         ) : null}
       </View>
     </ScrollView>
+    <PhotoViewer
+      initialIndex={viewerIndex ?? 0}
+      onClose={handleCloseFullscreen}
+      onOpenMemory={handleCloseFullscreen}
+      photos={viewerPhotos}
+      visible={viewerIndex !== null}
+    />
     <ActionSheet
       actions={overflowActions}
       onClose={handleCloseOverflow}
