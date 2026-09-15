@@ -8,6 +8,7 @@ import type { GalleryItem, GalleryPhoto } from '@/features/moments/gallery';
 let imageProps: any = null;
 let measured = true;
 let videoSurfaceProps: any = null;
+let audioWaveProps: any = null;
 const playback = { isPlaying: false, progress: 0.5, seconds: 12, toggle: vi.fn() };
 
 vi.mock('expo-image', () => ({
@@ -27,6 +28,13 @@ vi.mock('@/components/media/video-player', () => ({
 vi.mock('@/hooks/use-voice-playback', () => ({
   useVoicePlayback: () => playback,
   formatPlaybackSeconds: (value: number) => `${value}`,
+}));
+
+vi.mock('@/components/media/audio-waveform', () => ({
+  AudioWaveform: (props: any) => {
+    audioWaveProps = props;
+    return null;
+  },
 }));
 
 vi.mock('@/features/composer/staged-uri', () => ({
@@ -88,7 +96,7 @@ const video: GalleryItem = {
   posterUri: 'file:///poster.jpg',
 };
 
-const voice: GalleryItem = {
+const voiceNote: GalleryItem = {
   ...photo,
   key: 'm:audio',
   kind: 'voice',
@@ -156,58 +164,57 @@ describe('GalleryPhotoTile', () => {
 });
 
 describe('GalleryVideoTile', () => {
-  it('shows the still with a play badge, and only builds a player once asked', async () => {
-    videoSurfaceProps = null;
+  it('is a still with a play badge whose tap opens the viewer at that tile', async () => {
+    measured = true;
+    const onPress = vi.fn();
     const { GalleryVideoTile } = await import('@/components/moments/gallery-tile');
     render(
       createElement(GalleryVideoTile, {
         item: video,
         size: 96,
-        label: 'Beach dog (2 of 5 from March 2026)',
+        accessibilityLabel: 'Open video Beach dog (2 of 5 from March 2026)',
+        onPress,
       }),
     );
+    // The still, not the clip: nothing plays until the viewer opens it.
     expect(imageProps.source).toEqual({ uri: 'resolved:file:///poster.jpg' });
     expect(imageProps.recyclingKey).toBe('m:video');
     expect(videoSurfaceProps).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Play video: Beach dog (2 of 5 from March 2026)'));
-    // The clip plays where it sits: cover-fit in the square, native controls.
-    expect(videoSurfaceProps).toMatchObject({ uri: 'https://cdn.test/clip.mp4', contentFit: 'cover' });
-    expect(screen.queryByLabelText('Play video: Beach dog (2 of 5 from March 2026)')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Open video Beach dog (2 of 5 from March 2026)'));
+    expect(onPress).toHaveBeenCalledWith(video, {
+      x: 12,
+      y: 24,
+      width: 96,
+      height: 96,
+      radius: 0,
+    });
+    expect(videoSurfaceProps).toBeNull();
   });
 });
 
 describe('GalleryVoiceTile', () => {
-  it('plays in place: the waveform is the control, and it carries progress', async () => {
-    playback.isPlaying = false;
-    playback.toggle.mockClear();
-    imageProps = null;
+  it('draws the note print, and a tap opens the viewer rather than playing here', async () => {
+    const onPress = vi.fn();
     const { GalleryVoiceTile } = await import('@/components/moments/gallery-tile');
     render(
       createElement(GalleryVoiceTile, {
-        item: voice,
+        item: voiceNote,
         size: 96,
-        label: '3 of 5 from March 2026',
+        accessibilityLabel: 'Open voice note 3 of 5 from March 2026',
+        onPress,
       }),
     );
-    // Nothing to show: a voice print has no still, so the waveform is the tile.
-    expect(imageProps).toBeNull();
-    fireEvent.click(screen.getByLabelText('Play voice note: 3 of 5 from March 2026'));
-    expect(playback.toggle).toHaveBeenCalledTimes(1);
-  });
-
-  it('announces pause while it is playing', async () => {
-    playback.isPlaying = true;
-    const { GalleryVoiceTile } = await import('@/components/moments/gallery-tile');
-    render(
-      createElement(GalleryVoiceTile, {
-        item: voice,
-        size: 96,
-        accessibilityLabel: 'Play voice note 3 of 5 from March 2026',
-        label: '3 of 5 from March 2026',
-      }),
-    );
-    expect(screen.getByLabelText('Pause voice note: 3 of 5 from March 2026')).toBeTruthy();
-    playback.isPlaying = false;
+    // A wall of notes must never be a wall of sound: the tile is a print.
+    expect(audioWaveProps).toMatchObject({ animate: false, playing: false, seed: 'm:audio' });
+    fireEvent.click(screen.getByLabelText('Open voice note 3 of 5 from March 2026'));
+    expect(onPress).toHaveBeenCalledWith(voiceNote, {
+      x: 12,
+      y: 24,
+      width: 96,
+      height: 96,
+      radius: 0,
+    });
+    expect(playback.toggle).not.toHaveBeenCalled();
   });
 });

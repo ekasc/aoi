@@ -50,8 +50,7 @@ import {
 	buildGallerySections,
 	galleryPhotosOf,
 	galleryTileLabel,
-	isGalleryPhoto,
-	type GalleryPhoto,
+	type GalleryItem,
 	type GalleryRow,
 } from "@/features/moments/gallery";
 import {
@@ -422,9 +421,36 @@ export default function MemoriesScreen() {
 	// oldest-first and each month's memories run oldest-first inside it —
 	// the story reads top to bottom, newest at the bottom.
 	const sections = useMemo(() => groupFeedChronological(shownMoments), [shownMoments]);
-	const galleryRows = useMemo(
-		() => buildGalleryRows(buildGallerySections(shownMoments)),
+	const gallerySections = useMemo(
+		() => buildGallerySections(shownMoments),
 		[shownMoments],
+	);
+
+	const galleryRows = useMemo(
+		() => buildGalleryRows(gallerySections),
+		[gallerySections],
+	);
+
+	// The album the full-screen viewer pages through: every tile the wall
+	// shows, in the order the wall shows them, whatever kind each one is. The
+	// Gallery is the only surface that opens this set — the Feed keeps its own
+	// per-memory set, so nothing here changes what a feed photo does.
+	const galleryAlbum = useMemo<ViewerPhoto[]>(
+		() =>
+			gallerySections.flatMap((section) =>
+				section.items.map((item) => {
+					const context = `${section.label}`;
+					return {
+						kind: item.kind,
+						uri: item.uri,
+						momentId: item.momentId,
+						posterUri: item.posterUri,
+						seed: item.key,
+						label: galleryTileLabel(item, context),
+					};
+				}),
+			),
+		[gallerySections],
 	);
 
 	const rows = useMemo<FeedRow[]>(() => {
@@ -637,23 +663,21 @@ export default function MemoriesScreen() {
 		[momentsById],
 	);
 
-	// A grid tile opens the same way a feed photo does: the memory's whole set
-	// at the tapped photo, matched by its stable tile key (momentId:mediaId),
-	// so a gallery of one memory's photos can be swiped through instead of
-	// dead-ending on a single frame.
-	const handleOpenPhoto = useCallback(
-		(photo: GalleryPhoto, origin?: PhotoOrigin) => {
-			const moment = momentsById.get(photo.momentId);
-			if (!moment) {
+	// A wall tile opens the album at the tile the reader touched, and swiping
+	// moves to the next piece of media — photo, clip or voice note alike. The
+	// index comes from the item's stable key, so a tap on any tile lands on
+	// that tile even after the wall has paged older history in behind it.
+	const handleOpenGalleryItem = useCallback(
+		(item: GalleryItem, origin?: PhotoOrigin) => {
+			const tappedIndex = galleryAlbum.findIndex(
+				(candidate) => candidate.seed === item.key,
+			);
+			if (tappedIndex < 0) {
 				return;
 			}
-			const galleryPhotos = galleryPhotosOf(moment);
-			const tappedIndex = galleryPhotos.findIndex(
-				(candidate) => candidate.key === photo.key,
-			);
-			handleOpenFeedPhoto(photo.momentId, tappedIndex >= 0 ? tappedIndex : 0, origin);
+			setViewerPhoto({ photos: galleryAlbum, index: tappedIndex, origin });
 		},
-		[momentsById, handleOpenFeedPhoto],
+		[galleryAlbum],
 	);
 
 	// The viewer keeps the parent context: opening the memory is the same
@@ -822,12 +846,14 @@ export default function MemoriesScreen() {
 					{item.items.map((tile, column) => {
 						const position = `${item.itemStartIndex + column + 1} of ${item.itemTotal}`;
 						const context = `${position} from ${item.sectionLabel}`;
+						const name = galleryTileLabel(tile, context);
 						if (tile.kind === "voice") {
 							return (
 								<GalleryVoiceTile
+									accessibilityLabel={`Open voice note ${context}`}
 									item={tile}
 									key={tile.key}
-									label={galleryTileLabel(tile, context)}
+									onPress={handleOpenGalleryItem}
 									size={galleryTileSize}
 								/>
 							);
@@ -835,29 +861,28 @@ export default function MemoriesScreen() {
 						if (tile.kind === "video") {
 							return (
 								<GalleryVideoTile
+									accessibilityLabel={`Open video ${name}`}
 									item={tile}
 									key={tile.key}
-									label={galleryTileLabel(tile, context)}
+									onPress={handleOpenGalleryItem}
 									size={galleryTileSize}
 								/>
 							);
 						}
-						// Photos last: the predicate is what narrows the union, and
-						// a wall tile is always one of the three kinds.
-						return isGalleryPhoto(tile) ? (
+						return (
 							<GalleryPhotoTile
 								accessibilityLabel={`Open photo ${context}`}
 								item={tile}
 								key={tile.key}
-								onPress={handleOpenPhoto}
+								onPress={handleOpenGalleryItem}
 								size={galleryTileSize}
 							/>
-						) : null;
+						);
 					})}
 				</View>
 			);
 		},
-		[galleryTileSize, handleOpenMonth, handleOpenPhoto],
+		[galleryTileSize, handleOpenGalleryItem, handleOpenMonth],
 	);
 
 	const handleCloseActionSheet = useCallback(() => {

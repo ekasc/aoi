@@ -1,13 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { memo, useCallback, useRef, useState } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { VideoSurface } from '@/components/media/video-player';
+import { AudioWaveform } from '@/components/media/audio-waveform';
 import type { PhotoOrigin } from '@/components/moments/zoomable-photo';
-import { useVoicePlayback } from '@/hooks/use-voice-playback';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
-import type { GalleryItem, GalleryPhoto } from '@/features/moments/gallery';
+import type { GalleryItem } from '@/features/moments/gallery';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 /**
@@ -16,38 +15,28 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * explains each memory, the grid just shows them, edge to edge, the way a
  * camera roll or a profile grid does.
  *
+ * Every tile opens the same full-screen viewer, whatever it holds: photos
+ * zoom and page, a clip plays, a voice note gets its sound print. Nothing
+ * plays inside a tile, so a wall of clips is never a wall of noise.
+ *
  * The corner radius still has to be declared, because the viewer morphs out
  * of the tile the reader touched and starts from that shape.
  */
 export const GALLERY_TILE_RADIUS = 0;
 
-/** A square tile's frame, shared by all three kinds. */
-function tileFrame(size: number) {
-  return { width: size, height: size };
-}
-
-// ── Photo ───────────────────────────────────────────────────────────────
-
-export type GalleryPhotoTileProps = {
-  /** The wall only ever hands this tile a photo. */
-  item: GalleryPhoto;
+export type GalleryTileProps = {
+  item: GalleryItem;
   /** Square edge in points; the grid owns the math. */
   size: number;
   /** Announced name for the tap. */
   accessibilityLabel: string;
   /** The tap reports its own window frame so the viewer can morph from it. */
-  onPress: (item: GalleryPhoto, origin?: PhotoOrigin) => void;
+  onPress: (item: GalleryItem, origin?: PhotoOrigin) => void;
 };
 
-function GalleryPhotoTileComponent({
-  item,
-  size,
-  accessibilityLabel,
-  onPress,
-}: GalleryPhotoTileProps) {
-  const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
+/** Reports where the tile was, so a viewer session grows out of it. */
+function useMeasuredTilePress({ item, onPress }: Pick<GalleryTileProps, 'item' | 'onPress'>) {
   const nodeRef = useRef<View>(null);
-
   const handlePress = useCallback(() => {
     const node = nodeRef.current;
     if (!node || typeof node.measureInWindow !== 'function') {
@@ -59,6 +48,23 @@ function GalleryPhotoTileComponent({
       onPress(item, { x, y, width, height, radius: GALLERY_TILE_RADIUS });
     });
   }, [item, onPress]);
+  return { nodeRef, handlePress };
+}
+
+function tileFrame(size: number) {
+  return { height: size, width: size };
+}
+
+// ── Photo ───────────────────────────────────────────────────────────────
+
+function GalleryPhotoTileComponent({
+  item,
+  size,
+  accessibilityLabel,
+  onPress,
+}: GalleryTileProps) {
+  const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
+  const { nodeRef, handlePress } = useMeasuredTilePress({ item, onPress });
 
   return (
     <Pressable
@@ -81,7 +87,7 @@ function GalleryPhotoTileComponent({
         // decodes: the key tells expo-image this is a different image.
         recyclingKey={item.key}
         source={{ uri: resolveStagedUri(item.uri) }}
-        style={styles.image}
+        style={styles.fill}
         transition={160}
       />
     </Pressable>
@@ -92,38 +98,27 @@ export const GalleryPhotoTile = memo(GalleryPhotoTileComponent);
 
 // ── Video ───────────────────────────────────────────────────────────────
 
-export type GalleryVideoTileProps = {
-  item: GalleryItem;
-  /** Square edge in points; the grid owns the math. */
-  size: number;
-  /** Named on the play control, so a wall of clips is never anonymous. */
-  label: string;
-};
-
 /**
- * A video print: its still stands in until the reader asks to watch, then
- * the clip plays in place with native controls (play, scrub, fullscreen).
- * Nothing is created or buffered for a clip nobody started.
+ * A video print: its still, with a play badge saying there is a clip behind
+ * it. The clip itself belongs to the viewer, where it gets the whole screen
+ * and its own transport.
  */
-function GalleryVideoTileComponent({ item, size, label }: GalleryVideoTileProps) {
-  const [started, setStarted] = useState(false);
+function GalleryVideoTileComponent({
+  item,
+  size,
+  accessibilityLabel,
+  onPress,
+}: GalleryTileProps) {
   const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
-  const handlePlay = useCallback(() => setStarted(true), []);
-
-  if (started) {
-    return (
-      <View style={[styles.tile, tileFrame(size), { backgroundColor: backgroundSubtle }]}>
-        <VideoSurface contentFit="cover" label={label} uri={item.uri} />
-      </View>
-    );
-  }
+  const { nodeRef, handlePress } = useMeasuredTilePress({ item, onPress });
 
   return (
     <Pressable
-      accessibilityHint="Plays in place"
-      accessibilityLabel={`Play video: ${label}`}
+      accessibilityHint="Opens full screen"
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      onPress={handlePlay}
+      onPress={handlePress}
+      ref={nodeRef}
       style={({ pressed }) => [
         styles.tile,
         tileFrame(size),
@@ -137,7 +132,7 @@ function GalleryVideoTileComponent({ item, size, label }: GalleryVideoTileProps)
           contentFit="cover"
           recyclingKey={item.key}
           source={{ uri: resolveStagedUri(item.posterUri) }}
-          style={styles.image}
+          style={styles.fill}
           transition={160}
         />
       ) : null}
@@ -152,33 +147,32 @@ export const GalleryVideoTile = memo(GalleryVideoTileComponent);
 
 // ── Voice ───────────────────────────────────────────────────────────────
 
-/** Relative bar heights, so a voice note reads as a small sound print. */
-const VOICE_BARS = [0.32, 0.62, 0.44, 0.78, 0.52, 0.36];
-
-export type GalleryVoiceTileProps = {
-  item: GalleryItem;
-  size: number;
-  /** Named on the play control: whose voice, and when. */
-  label: string;
-};
+/** Bars a tile can hold without the print turning into noise. */
+const TILE_WAVE_BARS = 13;
 
 /**
- * A voice print: no poster to show, so it gets a quiet ground and a
- * waveform that fills left to right with the recording. Tapping it plays
- * in place — playback never navigates, the same rule the feed keeps.
+ * A voice note's print: no still to show, so it gets a quiet ground and the
+ * note's own waveform shape. It does not play here — tapping opens the
+ * viewer, where the wave moves with the recording.
  */
-function GalleryVoiceTileComponent({ item, size, label }: GalleryVoiceTileProps) {
+function GalleryVoiceTileComponent({
+  item,
+  size,
+  accessibilityLabel,
+  onPress,
+}: GalleryTileProps) {
   const accent = useThemeColor({}, 'accent');
-  const surface2 = useThemeColor({}, 'surface2');
   const muted = useThemeColor({}, 'muted');
-  const { isPlaying, progress, toggle } = useVoicePlayback(item.uri);
+  const surface2 = useThemeColor({}, 'surface2');
+  const { nodeRef, handlePress } = useMeasuredTilePress({ item, onPress });
 
   return (
     <Pressable
-      accessibilityHint="Plays in place"
-      accessibilityLabel={`${isPlaying ? 'Pause' : 'Play'} voice note: ${label}`}
+      accessibilityHint="Opens full screen"
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      onPress={toggle}
+      onPress={handlePress}
+      ref={nodeRef}
       style={({ pressed }) => [
         styles.tile,
         tileFrame(size),
@@ -186,28 +180,18 @@ function GalleryVoiceTileComponent({ item, size, label }: GalleryVoiceTileProps)
         pressed ? styles.pressed : null,
       ]}
     >
-      <View
-        pointerEvents="none"
-        style={[
-          styles.waveform,
-          // Sized in points, never in percentages: percentage padding
-          // resolves against the parent and pushed the tile past its square.
-          { height: size * 0.32, width: Math.round(size * 0.62) },
-        ]}
-      >
-        {VOICE_BARS.map((height, index) => (
-          <View
-            key={height + String(index)}
-            style={[
-              styles.bar,
-              {
-                backgroundColor: (index + 1) / VOICE_BARS.length <= progress ? accent : muted,
-                height: `${Math.round(height * 100)}%`,
-                opacity: (index + 1) / VOICE_BARS.length <= progress ? 1 : 0.45,
-              },
-            ]}
-          />
-        ))}
+      <View pointerEvents="none" style={styles.waveWrap}>
+        <AudioWaveform
+          animate={false}
+          count={TILE_WAVE_BARS}
+          height={Math.round(size * 0.3)}
+          playedColor={accent}
+          playing={false}
+          // The tile is a print of the whole note, not a playhead.
+          progress={1}
+          restColor={muted}
+          seed={item.key}
+        />
       </View>
     </Pressable>
   );
@@ -221,8 +205,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-
-  image: {
+  fill: {
     height: '100%',
     width: '100%',
   },
@@ -243,14 +226,7 @@ const styles = StyleSheet.create({
   videoGlyph: {
     marginLeft: 1.5,
   },
-  waveform: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 3,
-    width: '100%',
-  },
-  bar: {
-    borderRadius: 999,
-    flex: 1,
+  waveWrap: {
+    width: '62%',
   },
 });

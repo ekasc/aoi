@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Modal,
@@ -31,6 +31,7 @@ import {
   type ViewerMorph,
 } from '@/components/moments/zoomable-photo';
 
+import { ViewerVideoPage, ViewerVoicePage } from '@/components/moments/viewer-media-page';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { ThemedText } from '@/components/themed-text';
@@ -38,13 +39,28 @@ import { Spacing } from '@/constants/theme';
 import { haptics } from '@/features/haptics/haptics';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
+export type ViewerPageKind = 'photo' | 'video' | 'voice';
+
+/** How long a page that has no thumbnail to morph into takes to arrive. */
+const FADE_DURATION = 180;
+
 export type ViewerPhoto = {
-  /** Raw photo URI; staged paths resolve here at the media boundary. */
+  /**
+   * What this page holds. The Feed only ever pages photos (it shows video
+   * and voice in place, on the card); the Gallery's album pages all three.
+   * Optional so every existing caller stays a photo page.
+   */
+  kind?: ViewerPageKind;
+  /** Raw media URI; staged paths resolve here at the media boundary. */
   uri: string;
-  /** Announced label for this photo. */
+  /** Announced label for this page. */
   label: string;
   /** Owning memory id — the parent context for Open memory. */
   momentId: string;
+  /** Video still, used while the clip's page is off-screen. */
+  posterUri?: string | null;
+  /** Shape seed for a voice note's sound print. Defaults to the URI. */
+  seed?: string;
 };
 
 export type PhotoViewerProps = {
@@ -76,6 +92,35 @@ export type PhotoViewerProps = {
  * to none under reduced motion. Paging and gestures stay, since the finger
  * drives them.
  */
+/**
+ * Puts the pager on the session's page and keeps it there.
+ *
+ * `initialScrollIndex` alone is not enough: the list mounts inside a Modal,
+ * which on some platforms lays out a frame after the scroll would have been
+ * applied, so the scroll no-ops and the viewer opens on the first page while
+ * the counter names the tapped one. Re-asserting the position once the list
+ * has laid out costs nothing when the first attempt worked.
+ */
+function useCanonicalPage(
+  listRef: React.RefObject<FlatList<ViewerPhoto> | null>,
+  index: number,
+) {
+  const scrollToPage = useCallback(() => {
+    if (index <= 0) {
+      return;
+    }
+    // getItemLayout makes this exact; the guard is for a list that has not
+    // measured yet, where FlatList would otherwise throw.
+    try {
+      listRef.current?.scrollToIndex({ animated: false, index });
+    } catch {
+      // A pager that cannot scroll yet keeps the opening frame; the reader
+      // can still swipe, and nothing about the session depends on this.
+    }
+  }, [index, listRef]);
+  return scrollToPage;
+}
+
 export function PhotoViewer({
   visible,
   photos,
@@ -156,6 +201,8 @@ function ViewerSession({
   const textPrimary = useThemeColor({}, 'textPrimary');
   const muted = useThemeColor({}, 'muted');
   const [page, setPage] = useState(initialIndex);
+  const listRef = useRef<FlatList<ViewerPhoto>>(null);
+  const scrollToInitialPage = useCanonicalPage(listRef, initialIndex);
   // An enlarged photo locks horizontal paging so its pan owns both axes. The
   // lock arrives when a pinch begins and lifts when the photo is back at
   // rest, so paging can never start against a zoomed photo.
@@ -230,19 +277,25 @@ function ViewerSession({
   const handleDismissStart = useCallback(() => {
     setHandingBack(true);
   }, []);
-  const presented = laidOut && (geometryReady || overlayFailsafe);
+  // Only a photo has a clip box to wait for: a video or a voice page has no
+  // geometry to morph out of, and gating its presentation on one would hold
+  // the page behind the failsafe for no reason.
+  const openingIsPhoto = (photos[initialIndex]?.kind ?? 'photo') === 'photo';
+  const presented = laidOut && (!openingIsPhoto || geometryReady || overlayFailsafe);
 
   useLayoutEffect(() => {
     if (!presented) {
       return;
     }
-    overlay.value = 1;
     if (!origin || reduceMotion || !geometryReady) {
+      // Nothing to morph out of: the page arrives on its own fade.
       t.value = 0;
       residualX.value = 0;
       residualY.value = 0;
+      overlay.value = withTiming(1, { duration: FADE_DURATION, easing: OPEN_EASING });
       return;
     }
+    overlay.value = 1;
     // From the thumbnail to fit the screen. The delay lets the first frame
     // land before the animation starts, so nothing jumps on the way in.
     t.value = 1;
@@ -253,22 +306,26 @@ function ViewerSession({
       withTiming(0, { duration: OPEN_MORPH_DURATION, easing: OPEN_EASING }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presented, geometryReady, origin, reduceMotion]);
+  }, [presented, geometryReady, openingIsPhoto, origin, reduceMotion]);
+
+  const total = photos.length;
+  const current = photos[Math.min(page, total - 1)];
+  const currentIsPhoto = (current?.kind ?? 'photo') === 'photo';
 
   const handleClose = useCallback(() => {
     if (closing) {
       return;
     }
-    if (!origin && reduceMotion) {
+    // A clip or a voice note has no thumbnail of its own to land on, so its
+    // close is immediate rather than a morph that would have nothing to do.
+    // Photos keep the morph they had, and hand back when it lands.
+    if (!currentIsPhoto || (!origin && reduceMotion)) {
       onClose();
       return;
     }
     // Morph first, close when the photo has reached the thumbnail.
     setClosing(true);
-  }, [closing, onClose, origin, reduceMotion]);
-
-  const total = photos.length;
-  const current = photos[Math.min(page, total - 1)];
+  }, [closing, currentIsPhoto, onClose, origin, reduceMotion]);
 
   const handleOpenMemory = useCallback(() => {
     if (!current) {
@@ -293,27 +350,58 @@ function ViewerSession({
     setPagerLocked(locked);
   }, []);
 
-  const renderPhoto = useCallback(
-    ({ item, index }: ListRenderItemInfo<ViewerPhoto>) => (
+  const renderPage = useCallback(
+    ({ item, index }: ListRenderItemInfo<ViewerPhoto>) => {
       // Concrete window height: percentage heights collapse inside the
       // horizontal scroll content container, leaving a blank viewer.
-      <View style={[styles.page, { width: windowWidth, height: windowHeight }]}>
-        <ZoomablePhoto
-          active={index === page}
-          home={home}
-          label={item.label}
-          morph={morph}
-          // Only the visible photo morphs out: the pages either side stay put
-          // while the viewer closes over them.
-          morphOut={closing && index === page}
-          onDismiss={onClose}
-          onDismissStart={handleDismissStart}
-          onImageReady={index === page ? handleImageReady : undefined}
-          onPagerLockChange={handlePagerLockChange}
-          uri={item.uri}
-        />
-      </View>
-    ),
+      const frame = [styles.page, { width: windowWidth, height: windowHeight }];
+      if (item.kind === 'video') {
+        return (
+          <View style={frame}>
+            <ViewerVideoPage
+              active={index === page}
+              height={windowHeight}
+              label={item.label}
+              posterUri={item.posterUri}
+              uri={item.uri}
+              width={windowWidth}
+            />
+          </View>
+        );
+      }
+      if (item.kind === 'voice') {
+        return (
+          <View style={frame}>
+            <ViewerVoicePage
+              active={index === page}
+              height={windowHeight}
+              label={item.label}
+              seed={item.seed ?? item.uri}
+              uri={item.uri}
+              width={windowWidth}
+            />
+          </View>
+        );
+      }
+      return (
+        <View style={frame}>
+          <ZoomablePhoto
+            active={index === page}
+            home={home}
+            label={item.label}
+            morph={morph}
+            // Only the visible photo morphs out: the pages either side stay
+            // put while the viewer closes over them.
+            morphOut={closing && index === page}
+            onDismiss={onClose}
+            onDismissStart={handleDismissStart}
+            onImageReady={index === page ? handleImageReady : undefined}
+            onPagerLockChange={handlePagerLockChange}
+            uri={item.uri}
+          />
+        </View>
+      );
+    },
     [
       windowWidth,
       windowHeight,
@@ -358,6 +446,8 @@ function ViewerSession({
       <FlatList
         data={photos}
         horizontal
+        onLayout={scrollToInitialPage}
+        ref={listRef}
         pagingEnabled
         scrollEnabled={!pagerLocked}
         showsHorizontalScrollIndicator={false}
@@ -369,7 +459,7 @@ function ViewerSession({
         })}
         keyExtractor={(item, index) => `${item.uri}:${index}`}
         onMomentumScrollEnd={handleMomentumEnd}
-        renderItem={renderPhoto}
+        renderItem={renderPage}
         style={styles.list}
       />
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeStyle]}>
@@ -386,7 +476,8 @@ function ViewerSession({
         <View style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[16] }]}>
           {total > 1 ? (
             <ThemedText type="caption" style={{ color: muted }}>
-              Photo {Math.min(page, total - 1) + 1} of {total}
+              {PAGE_NOUNS[current?.kind ?? 'photo']} {Math.min(page, total - 1) + 1} of{' '}
+              {total}
             </ThemedText>
           ) : null}
           <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
@@ -395,6 +486,13 @@ function ViewerSession({
     </View>
   );
 }
+
+/** What the counter calls the page the reader is on. */
+const PAGE_NOUNS: Record<ViewerPageKind, string> = {
+  photo: 'Photo',
+  video: 'Video',
+  voice: 'Voice note',
+};
 
 const styles = StyleSheet.create({
   root: {

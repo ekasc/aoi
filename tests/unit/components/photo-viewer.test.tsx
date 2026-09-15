@@ -126,6 +126,19 @@ vi.mock('@expo/vector-icons', () => ({
   Ionicons: () => <span />,
 }));
 
+const capturedMediaPages: { video: any[]; voice: any[] } = { video: [], voice: [] };
+
+vi.mock('@/components/moments/viewer-media-page', () => ({
+  ViewerVideoPage: (props: any) => {
+    capturedMediaPages.video.push(props);
+    return createElement('div', { 'data-testid': 'video-page' });
+  },
+  ViewerVoicePage: (props: any) => {
+    capturedMediaPages.voice.push(props);
+    return createElement('div', { 'data-testid': 'voice-page' });
+  },
+}));
+
 vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: () => '#000000',
 }));
@@ -163,6 +176,75 @@ function renderViewer(props?: Partial<React.ComponentProps<typeof PhotoViewer>>)
 
 beforeEach(() => {
   capturedZoomProps.length = 0;
+  capturedMediaPages.video.length = 0;
+  capturedMediaPages.voice.length = 0;
+});
+
+/**
+ * The Gallery's album: the same viewer, but its set is the whole wall, so a
+ * swipe lands on the next piece of media whatever kind it is. The Feed never
+ * builds a set like this — it pages one memory's photos — so nothing here
+ * reaches the feed.
+ */
+const MIXED: ViewerPhoto[] = [
+  { kind: 'photo', uri: 'file:///a.jpg', label: 'Lake day', momentId: 'm-1' },
+  {
+    kind: 'video',
+    uri: 'https://cdn.test/clip.mp4',
+    posterUri: 'file:///poster.jpg',
+    label: 'Beach dog',
+    momentId: 'm-1',
+  },
+  {
+    kind: 'voice',
+    uri: 'file:///note.m4a',
+    label: 'Voice note (1 of 3)',
+    momentId: 'm-1',
+    seed: 'm-1:audio',
+  },
+];
+
+describe('PhotoViewer across media kinds', () => {
+  it('opens a clip full screen, and names it in the counter', () => {
+    renderViewer({ photos: MIXED, initialIndex: 1 });
+    expect(screen.getByTestId('video-page')).toBeTruthy();
+    expect(screen.getByText('Video 2 of 3')).toBeTruthy();
+    expect(capturedMediaPages.video[0]).toMatchObject({
+      uri: 'https://cdn.test/clip.mp4',
+      posterUri: 'file:///poster.jpg',
+      label: 'Beach dog',
+      active: true,
+    });
+  });
+
+  it('opens a voice note full screen with its own shape seed', () => {
+    renderViewer({ photos: MIXED, initialIndex: 2 });
+    expect(screen.getByTestId('voice-page')).toBeTruthy();
+    expect(screen.getByText('Voice note 3 of 3')).toBeTruthy();
+    expect(capturedMediaPages.voice[0]).toMatchObject({
+      uri: 'file:///note.m4a',
+      seed: 'm-1:audio',
+      active: true,
+    });
+  });
+
+  it('keeps a clip silent until its page is the one on screen', () => {
+    renderViewer({ photos: MIXED, initialIndex: 0 });
+    // The pager mounts its neighbours: only the visible page may play.
+    const inactive = capturedMediaPages.video.filter((props) => !props.active);
+    const active = capturedMediaPages.video.filter((props) => props.active);
+    expect(inactive.length).toBeGreaterThan(0);
+    expect(active).toHaveLength(0);
+  });
+
+  it('closes a non-photo page immediately, with no morph to wait for', () => {
+    // The Feed's close path still morphs the photo home; this page has no
+    // thumbnail of its own, so the control must not leave the viewer open.
+    const onClose = vi.fn();
+    renderViewer({ photos: MIXED, initialIndex: 1, onClose });
+    fireEvent.click(screen.getByLabelText('Close photo'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('PhotoViewer swipeable set', () => {

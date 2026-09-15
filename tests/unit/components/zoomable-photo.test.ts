@@ -343,7 +343,11 @@ describe('gesture and transition contracts (source)', () => {
     expect(viewer).toContain('animationType="none"');
     // The overlay waits for the viewer's layout AND the clip box's layout, so
     // the zoom starts against geometry React has committed.
-    expect(viewer).toContain('const presented = laidOut && (geometryReady || overlayFailsafe);');
+    // A video or voice page has no clip box to wait for, so the gate only
+    // applies when the session opens on a photo.
+    expect(viewer).toContain(
+      'const presented = laidOut && (!openingIsPhoto || geometryReady || overlayFailsafe);',
+    );
     expect(viewer).toMatch(/withDelay\(\s*OPEN_MORPH_DELAY/);
     // A timer is the failsafe: an overlay that never presents would swallow
     // every touch, so it appears and the zoom is skipped instead.
@@ -352,6 +356,8 @@ describe('gesture and transition contracts (source)', () => {
     // against geometry nobody reported.
     expect(viewer).toContain('const [overlayFailsafe, setOverlayFailsafe] = useState(false);');
     expect(viewer).toMatch(/if \(!origin \|\| reduceMotion \|\| !geometryReady\) \{/);
+    // Non-photo pages present on their own fade instead of the morph.
+    expect(viewer).toContain('overlay.value = withTiming(1, { duration: FADE_DURATION');
     // And once a dismiss starts, the photo is only finishing its landing: the
     // reader can touch the feed underneath without waiting for it to settle.
     expect(viewer).toContain('setHandingBack(true)');
