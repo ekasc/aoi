@@ -114,12 +114,12 @@ export function formatReminderBody(event: RemindableEvent, now: Date): string {
   const dayPhrase = formatReminderDayPhrase(startsAt, now);
 
   if (event.allDay) {
-    const together = event.together ? ' — together' : '';
+    const together = event.together ? ', together' : '';
     return `${dayPhrase}, all day${together}`;
   }
 
   const timePhrase = `at ${formatReminderTime(startsAt)}`;
-  const together = event.together ? ' — together' : '';
+  const together = event.together ? ', together' : '';
   return `${dayPhrase} ${timePhrase}${together}`;
 }
 

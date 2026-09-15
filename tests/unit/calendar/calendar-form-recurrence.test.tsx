@@ -41,54 +41,21 @@ vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: () => '#000000',
 }));
 
-describe('NewCalendarEventScreen recurrence toggle', () => {
+describe('NewCalendarEventScreen recurrence', () => {
   beforeEach(() => {
     addEventSpy.mockClear();
   });
 
-  it('offers a "Repeats weekly" toggle, off by default', async () => {
+  it('is a quick-add: no "Repeats weekly" toggle is offered', async () => {
     const { default: NewCalendarEventScreen } = await import(
       '@/app/(app)/calendar/new-event'
     );
     render(<NewCalendarEventScreen />);
 
-    const toggle = screen.getByLabelText('Toggle repeats weekly');
-    expect(toggle).toBeTruthy();
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-    // No series explanation while the toggle is off.
-    expect(screen.queryByText(/each week stays its own event/)).toBeNull();
+    expect(screen.queryByLabelText('Toggle repeats weekly')).toBeNull();
   });
 
-  it('toggles on and quietly explains the one-instance-at-a-time limitation', async () => {
-    const { default: NewCalendarEventScreen } = await import(
-      '@/app/(app)/calendar/new-event'
-    );
-    render(<NewCalendarEventScreen />);
-
-    fireEvent.click(screen.getByLabelText('Toggle repeats weekly'));
-
-    expect(screen.getByLabelText('Toggle repeats weekly').getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByText(/each week stays its own event/)).toBeTruthy();
-  });
-
-  it('sends recurrence: weekly only when the toggle is on', async () => {
-    const { default: NewCalendarEventScreen } = await import(
-      '@/app/(app)/calendar/new-event'
-    );
-    render(<NewCalendarEventScreen />);
-
-    // Give the form a title so it can submit.
-    fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: 'Sunday market' },
-    });
-    fireEvent.click(screen.getByLabelText('Toggle repeats weekly'));
-    fireEvent.click(screen.getByText('Save event'));
-
-    await waitFor(() => expect(addEventSpy).toHaveBeenCalledTimes(1));
-    expect(addEventSpy.mock.calls[0][0].recurrence).toBe('weekly');
-  });
-
-  it('sends recurrence: none when the toggle stays off', async () => {
+  it('always saves a one-off event (recurrence: none)', async () => {
     const { default: NewCalendarEventScreen } = await import(
       '@/app/(app)/calendar/new-event'
     );

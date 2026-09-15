@@ -70,9 +70,14 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 
 	const loadMonth = useCallback(async (monthDate: Date) => {
 		const { monthStart, nextMonthStart } = monthBounds(monthDate);
+		// Load the visible month plus one neighbor on each side so the swipe
+		// pager always has every page's event chips ready — no pop-in as the
+		// user slides between months.
+		const rangeStart = addMonths(monthStart, -1);
+		const rangeEnd = addMonths(nextMonthStart, 1);
 		const monthEvents = await listEventsInMonth(
-			monthStart.toISOString(),
-			nextMonthStart.toISOString(),
+			rangeStart.toISOString(),
+			rangeEnd.toISOString(),
 		);
 		setEvents(monthEvents);
 	}, []);

@@ -13,47 +13,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
-import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
+import { FontFamilies } from '@/constants/typography';
 import { useCalendar } from '@/features/calendar/calendar-context';
 import { addDays, startOfDay } from '@/features/calendar/calendar-date-utils';
 import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
-import type { CalendarActor, CalendarPresetLabel } from '@/features/calendar/types';
+import type { CalendarPresetLabel } from '@/features/calendar/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { useSpace } from '@/features/space/space-context';
-
-/** Quiet reminder choices: minutes before the event starts. */
-const REMINDER_OPTIONS: { label: string; value: number | null }[] = [
-  { label: 'No reminder', value: null },
-  { label: 'At start', value: 0 },
-  { label: '10 min', value: 10 },
-  { label: '30 min', value: 30 },
-  { label: '1 hour', value: 60 },
-  { label: '1 day', value: 1440 },
-];
-
-function applyDatePart(base: Date, datePart: Date) {
-  const next = new Date(base);
-  next.setFullYear(datePart.getFullYear(), datePart.getMonth(), datePart.getDate());
-  return next;
-}
-
-function applyTimePart(base: Date, timePart: Date) {
-  const next = new Date(base);
-  next.setHours(timePart.getHours(), timePart.getMinutes(), 0, 0);
-  return next;
-}
 
 function datePlusOneHour(date: Date) {
   return new Date(date.getTime() + 60 * 60 * 1000);
-}
-
-function ensureEndAfterStart(startDate: Date, currentEndDate: Date) {
-  if (currentEndDate.getTime() > startDate.getTime()) {
-    return currentEndDate;
-  }
-
-  return datePlusOneHour(startDate);
 }
 
 function getSeedDate(rawDate: string | string[] | undefined) {
@@ -77,11 +46,9 @@ export default function NewCalendarEventScreen() {
   const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
   const { addEvent } = useCalendar();
-  const { space } = useSpace();
   const border = useThemeColor({}, 'border');
   const accent = useThemeColor({}, 'accent');
   const onAccent = useThemeColor({}, 'onAccent');
-  const partnerAccent = useThemeColor({}, 'partnerAccent');
   const surface2 = useThemeColor({}, 'surface2');
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
@@ -100,22 +67,16 @@ export default function NewCalendarEventScreen() {
     currentDate.setHours(9, 0, 0, 0);
     return currentDate;
   }, [seedDate]);
-  const initialEnd = useMemo(() => datePlusOneHour(initialStart), [initialStart]);
 
   const [title, setTitle] = useState('');
-  const [actor, setActor] = useState<CalendarActor>('you');
   const [presetLabel, setPresetLabel] = useState<CalendarPresetLabel>('Work');
-  const [customLabel, setCustomLabel] = useState('');
   const [startsAt, setStartsAt] = useState(initialStart);
-  const [endsAt, setEndsAt] = useState(initialEnd);
+  const [endsAt, setEndsAt] = useState(datePlusOneHour(initialStart));
   const [allDay, setAllDay] = useState(false);
   const [together, setTogether] = useState(false);
-  const [repeatsWeekly, setRepeatsWeekly] = useState(false);
-  const [reminderOffset, setReminderOffset] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // All-day events span 00:00 → next midnight; timed events use the raw picks.
   const effectiveStart = useMemo(
     () => (allDay ? startOfDay(startsAt) : startsAt),
     [allDay, startsAt]
@@ -126,59 +87,52 @@ export default function NewCalendarEventScreen() {
   );
   const isRangeInvalid = effectiveEnd.getTime() <= effectiveStart.getTime();
 
+  // Moving the start keeps the existing duration; the Ends field can still
+  // stretch it independently.
+  const handleStartChange = useCallback(
+    (next: Date) => {
+      setStartsAt(next);
+      setEndsAt((current) => {
+        const duration = Math.max(
+          current.getTime() - startsAt.getTime(),
+          60 * 60 * 1000
+        );
+        return new Date(next.getTime() + duration);
+      });
+      setError('');
+    },
+    [startsAt]
+  );
+
+  const handleEndChange = useCallback((next: Date) => {
+    setEndsAt(next);
+    setError('');
+  }, []);
+
   const handleToggleAllDay = useCallback(() => {
-    if (allDay) {
-      const nextStart = new Date(startOfDay(startsAt));
-      nextStart.setHours(9, 0, 0, 0);
-      setStartsAt(nextStart);
-      setEndsAt(datePlusOneHour(nextStart));
-      setAllDay(false);
-    } else {
-      const dayStart = startOfDay(startsAt);
-      setStartsAt(dayStart);
-      setEndsAt(addDays(dayStart, 1));
-      setAllDay(true);
-    }
-  }, [allDay, startsAt]);
+    setAllDay((current) => {
+      if (!current) {
+        setStartsAt((value) => startOfDay(value));
+        setEndsAt((value) => startOfDay(value));
+      }
+      return !current;
+    });
+  }, []);
 
   const handleToggleTogether = useCallback(() => {
     setTogether((current) => !current);
   }, []);
 
-  const handleToggleRepeatsWeekly = useCallback(() => {
-    setRepeatsWeekly((current) => !current);
-  }, []);
-
-  const inputStyle = useMemo(
-    () => [
-      styles.input,
-      {
-        borderColor: border,
-        backgroundColor: surface2,
-        color: text,
-      },
-    ],
-    [border, surface2, text]
-  );
-  const contentContainerStyle = useMemo(
-    () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
-    [insets.bottom]
-  );
-  const footerStyle = useMemo(
-    () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
-    [insets.bottom]
-  );
-
   const handleSave = useCallback(async () => {
     const trimmedTitle = title.trim();
 
     if (!trimmedTitle) {
-      setError('Event title is required.');
+      setError('Give the event a name.');
       return;
     }
 
     if (isRangeInvalid) {
-      setError('End time must be after start time.');
+      setError('The ending needs to come after the start.');
       return;
     }
 
@@ -189,16 +143,12 @@ export default function NewCalendarEventScreen() {
         title: trimmedTitle,
         startsAt: effectiveStart.toISOString(),
         endsAt: effectiveEnd.toISOString(),
-        actor,
-        actorName: actor === 'you' ? 'You' : space?.partnerName ?? 'Partner',
-        label: {
-          preset: presetLabel,
-          customText: customLabel.trim() || undefined,
-        },
-        reminderMinutesBefore: reminderOffset === null ? undefined : [reminderOffset],
+        actor: 'you',
+        actorName: 'You',
+        label: { preset: presetLabel },
         allDay,
         together,
-        recurrence: repeatsWeekly ? 'weekly' : 'none',
+        recurrence: 'none',
       });
 
       router.back();
@@ -208,21 +158,35 @@ export default function NewCalendarEventScreen() {
       setIsSubmitting(false);
     }
   }, [
-    actor,
     addEvent,
     allDay,
-    customLabel,
     effectiveEnd,
     effectiveStart,
     presetLabel,
-    reminderOffset,
-    repeatsWeekly,
     router,
-    space?.partnerName,
     title,
     together,
     isRangeInvalid,
   ]);
+
+  const titleInputStyle = useMemo(
+    () => [
+      styles.titleInput,
+      {
+        borderColor: border,
+        color: text,
+      },
+    ],
+    [border, text]
+  );
+  const contentContainerStyle = useMemo(
+    () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
+    [insets.bottom]
+  );
+  const footerStyle = useMemo(
+    () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
+    [insets.bottom]
+  );
 
   return (
     <>
@@ -238,68 +202,27 @@ export default function NewCalendarEventScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Surface variant="raised" style={styles.section}>
-            <ThemedText type="meta">Event details</ThemedText>
+          <View style={styles.titleBlock}>
+            <ThemedText type="meta">The event</ThemedText>
             <TextInput
               accessibilityLabel="Event title"
               autoCapitalize="sentences"
+              autoFocus
               onChangeText={(value) => {
                 setTitle(value);
                 if (error) {
                   setError('');
                 }
               }}
-              placeholder="Event title"
+              placeholder="Dinner at nine"
               placeholderTextColor={muted}
-              style={inputStyle}
+              style={titleInputStyle}
               value={title}
             />
-          </Surface>
+          </View>
 
-          <Surface style={styles.section}>
-            <ThemedText type="meta">Creator</ThemedText>
-            <View accessibilityRole="radiogroup">
-              <View style={styles.choiceRow}>
-                {(['you', 'partner'] as const).map((candidate) => {
-                  const selected = actor === candidate;
-
-                  return (
-                    <Pressable
-                      accessibilityLabel={`Set creator to ${candidate}`}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: selected }}
-                      key={candidate}
-                      onPress={() => setActor(candidate)}
-                      style={[
-                        styles.choiceChip,
-                        {
-                          borderColor: selected
-                            ? candidate === 'you'
-                              ? accent
-                              : partnerAccent
-                            : border,
-                          backgroundColor: selected
-                            ? candidate === 'you'
-                              ? accent
-                              : partnerAccent
-                            : surface2,
-                        },
-                      ]}
-                    >
-                      <ThemedText
-                        type="caption"
-                        style={{ color: selected ? onAccent : text }}
-                      >
-                        {candidate === 'you' ? 'You' : 'Partner'}
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          </Surface>
-
-          <Surface style={styles.section}>
+          <View style={styles.section}>
+            <ThemedText type="meta">When</ThemedText>
             <View style={styles.choiceRow}>
               <Pressable
                 accessibilityLabel="Toggle all day"
@@ -335,127 +258,38 @@ export default function NewCalendarEventScreen() {
                   Together
                 </ThemedText>
               </Pressable>
-              <Pressable
-                accessibilityLabel="Toggle repeats weekly"
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: repeatsWeekly }}
-                onPress={handleToggleRepeatsWeekly}
-                style={[
-                  styles.choiceChip,
-                  {
-                    borderColor: repeatsWeekly ? accent : border,
-                    backgroundColor: repeatsWeekly ? accent : surface2,
-                  },
-                ]}
-              >
-                <ThemedText type="caption" style={{ color: repeatsWeekly ? onAccent : text }}>
-                  Repeats weekly
-                </ThemedText>
-              </Pressable>
             </View>
-            <ThemedText type="caption" selectable style={{ color: muted }}>
-              Together marks time you both share — it powers the countdown.
-            </ThemedText>
-            {repeatsWeekly ? (
-              <ThemedText type="caption" selectable style={{ color: muted }}>
-                Repeats weekly for a season — each week stays its own event,
-                free to move or let go on its own.
-              </ThemedText>
-            ) : null}
 
-            <NativeDateTimeField
-              accessibilityLabel="Choose start date"
-              label={allDay ? 'Start day' : 'Start date'}
-              mode="date"
-              onChange={(value) => {
-                setStartsAt((current) => {
-                  const nextStartDate = applyDatePart(current, value);
-                  setEndsAt((currentEndDate) => {
-                    if (!allDay) {
-                      return ensureEndAfterStart(nextStartDate, currentEndDate);
-                    }
-                    const minEnd = addDays(startOfDay(nextStartDate), 1);
-                    return currentEndDate.getTime() > minEnd.getTime()
-                      ? currentEndDate
-                      : minEnd;
-                  });
-                  return allDay ? startOfDay(nextStartDate) : nextStartDate;
-                });
-                setError('');
-              }}
-              value={startsAt}
-            />
-
-            {allDay ? (
-              <ThemedText type="caption" selectable style={{ color: muted }}>
-                All day
-              </ThemedText>
-            ) : (
-              <>
-                <NativeDateTimeField
-                  accessibilityLabel="Choose start time"
-                  label="Start time"
-                  mode="time"
-                  onChange={(value) => {
-                    setStartsAt((current) => {
-                      const nextStartDate = applyTimePart(current, value);
-                      setEndsAt((currentEndDate) =>
-                        ensureEndAfterStart(nextStartDate, currentEndDate)
-                      );
-                      return nextStartDate;
-                    });
-                    setError('');
-                  }}
-                  value={startsAt}
-                />
-                <ThemedText type="caption" selectable style={{ color: muted }}>
-                  {startsAt.toLocaleString('en-US')}
-                </ThemedText>
-              </>
-            )}
-
-            <NativeDateTimeField
-              accessibilityLabel="Choose end date"
-              label={allDay ? 'End day' : 'End date'}
-              mode="date"
-              minimumDate={startsAt}
-              onChange={(value) => {
-                setEndsAt((current) => {
-                  const nextEndDate = applyDatePart(current, value);
-                  return allDay ? addDays(startOfDay(nextEndDate), 1) : nextEndDate;
-                });
-                setError('');
-              }}
-              value={allDay ? addDays(effectiveEnd, -1) : endsAt}
-            />
-
-            {!allDay ? (
-              <>
-                <NativeDateTimeField
-                  accessibilityLabel="Choose end time"
-                  label="End time"
-                  mode="time"
-                  onChange={(value) => {
-                    setEndsAt((current) => applyTimePart(current, value));
-                    setError('');
-                  }}
-                  value={endsAt}
-                />
-                <ThemedText type="caption" selectable style={{ color: muted }}>
-                  {endsAt.toLocaleString('en-US')}
-                </ThemedText>
-              </>
-            ) : null}
+            <View style={[styles.rowGroup, { borderColor: border }]}>
+              <NativeDateTimeField
+                accessibilityLabel="Choose start"
+                label="Starts"
+                mode={allDay ? 'date' : 'datetime'}
+                onChange={handleStartChange}
+                value={startsAt}
+                variant="row"
+              />
+              <View style={[styles.rowDivider, { backgroundColor: border }]} />
+              <NativeDateTimeField
+                accessibilityLabel="Choose end"
+                label="Ends"
+                minimumDate={startsAt}
+                mode={allDay ? 'date' : 'datetime'}
+                onChange={handleEndChange}
+                value={endsAt}
+                variant="row"
+              />
+            </View>
 
             {isRangeInvalid ? (
-              <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
-                End time must be after start time.
+              <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
+                The ending needs to come after the start.
               </ThemedText>
             ) : null}
-          </Surface>
+          </View>
 
-          <Surface style={styles.section}>
-            <ThemedText type="meta">Availability label</ThemedText>
+          <View style={styles.section}>
+            <ThemedText type="meta">Label</ThemedText>
             <View accessibilityRole="radiogroup">
               <View style={styles.choiceRow}>
                 {CALENDAR_PRESET_LABELS.map((label) => {
@@ -487,58 +321,10 @@ export default function NewCalendarEventScreen() {
                 })}
               </View>
             </View>
-
-            <TextInput
-              accessibilityLabel="Custom label"
-              autoCapitalize="sentences"
-              onChangeText={setCustomLabel}
-              placeholder="Optional custom label"
-              placeholderTextColor={muted}
-              style={inputStyle}
-              value={customLabel}
-            />
-          </Surface>
-
-          <Surface style={styles.section}>
-            <ThemedText type="meta">Reminder</ThemedText>
-            <View accessibilityRole="radiogroup">
-              <View style={styles.choiceRow}>
-                {REMINDER_OPTIONS.map((option) => {
-                  const selected = reminderOffset === option.value;
-
-                  return (
-                    <Pressable
-                      accessibilityLabel={`Set reminder: ${option.label}`}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected }}
-                      key={option.label}
-                      onPress={() => setReminderOffset(option.value)}
-                      style={[
-                        styles.choiceChip,
-                        {
-                          borderColor: selected ? accent : border,
-                          backgroundColor: selected ? accent : surface2,
-                        },
-                      ]}
-                    >
-                      <ThemedText
-                        type="caption"
-                        style={{ color: selected ? onAccent : text }}
-                      >
-                        {option.label}
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-            <ThemedText type="caption" selectable style={{ color: muted }}>
-              A quiet banner, never a sound.
-            </ThemedText>
-          </Surface>
+          </View>
 
           {error ? (
-            <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+            <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
               {error}
             </ThemedText>
           ) : null}
@@ -562,19 +348,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    paddingHorizontal: Spacing[16],
-    paddingTop: Spacing[16],
-    gap: Spacing[12],
+    paddingHorizontal: Spacing[24],
+    paddingTop: Spacing[24],
+    gap: Spacing[24],
   },
-  section: {
+  titleBlock: {
     gap: Spacing[8],
   },
-  input: {
+  titleInput: {
+    fontFamily: FontFamilies.display,
+    fontSize: 22,
+    lineHeight: 30,
+    letterSpacing: -0.2,
     minHeight: 44,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingHorizontal: Spacing[12],
-    paddingVertical: Spacing[12],
+    paddingVertical: Spacing[8],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  section: {
+    gap: Spacing[12],
+  },
+  rowGroup: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
   },
   choiceRow: {
     flexDirection: 'row',
@@ -592,7 +390,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: Spacing[16],
+    paddingHorizontal: Spacing[24],
     paddingTop: Spacing[12],
     gap: Spacing[8],
   },

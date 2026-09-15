@@ -65,7 +65,7 @@ describe('formatReminderBody', () => {
       startsAt: new Date(2026, 7, 4, 9, 30).toISOString(),
       together: true,
     });
-    expect(formatReminderBody(event, NOW)).toBe('Tomorrow at 9:30 AM — together');
+    expect(formatReminderBody(event, NOW)).toBe('Tomorrow at 9:30 AM, together');
   });
 
   it('uses all-day phrasing without a time', () => {
@@ -80,7 +80,7 @@ describe('formatReminderBody', () => {
       allDay: true,
       together: true,
     });
-    expect(formatReminderBody(together, NOW)).toBe('Today, all day — together');
+    expect(formatReminderBody(together, NOW)).toBe('Today, all day, together');
   });
 });
 

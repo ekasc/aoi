@@ -15,6 +15,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
+import { FontFamilies } from '@/constants/typography';
 import { useCalendar } from '@/features/calendar/calendar-context';
 import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
 import type { CalendarEvent, CalendarPresetLabel } from '@/features/calendar/types';
@@ -85,6 +86,10 @@ export default function EditCalendarEventScreen() {
   const [together, setTogether] = useState(false);
   const [repeatsWeekly, setRepeatsWeekly] = useState(false);
   const [reminderOffset, setReminderOffset] = useState<number | null>(null);
+  // The UI manages a single reminder offset while the contract allows an
+  // array: only replace the stored array when the user actually touches the
+  // control, so untouched multi-reminder/custom values survive the edit.
+  const [reminderTouched, setReminderTouched] = useState(false);
   const [error, setError] = useState('');
   const [isWorking, setIsWorking] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -152,10 +157,10 @@ export default function EditCalendarEventScreen() {
         setAllDay(foundEvent.allDay ?? false);
         setTogether(foundEvent.together ?? false);
         setRepeatsWeekly(foundEvent.recurrence === 'weekly');
-        // The UI intentionally manages a single reminder offset while the
-        // contract allows arrays; save below replaces whatever was stored
-        // with a 0-or-1-element array, making this screen the source of truth.
+        // Seed the single-offset control from the stored array without
+        // claiming ownership of it yet (see reminderTouched).
         setReminderOffset(foundEvent.reminderMinutesBefore?.[0] ?? null);
+        setReminderTouched(false);
       } catch {
         if (isActive) {
           setLoadError('Unable to load this event.');
@@ -170,9 +175,9 @@ export default function EditCalendarEventScreen() {
     };
   }, [eventId, getEventById]);
 
-  const inputStyle = useMemo(
+  const customInputStyle = useMemo(
     () => [
-      styles.input,
+      styles.customInput,
       {
         borderColor: border,
         backgroundColor: surface2,
@@ -180,6 +185,16 @@ export default function EditCalendarEventScreen() {
       },
     ],
     [border, surface2, text]
+  );
+  const titleInputStyle = useMemo(
+    () => [
+      styles.titleInput,
+      {
+        borderColor: border,
+        color: text,
+      },
+    ],
+    [border, text]
   );
   const contentContainerStyle = useMemo(
     () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
@@ -218,7 +233,11 @@ export default function EditCalendarEventScreen() {
           preset: presetLabel,
           customText: customLabel.trim() || undefined,
         },
-        reminderMinutesBefore: reminderOffset === null ? [] : [reminderOffset],
+        reminderMinutesBefore: reminderTouched
+          ? reminderOffset === null
+            ? []
+            : [reminderOffset]
+          : (event.reminderMinutesBefore ?? []),
         allDay,
         together,
         // Applies to THIS instance only — never regenerates a series.
@@ -241,6 +260,7 @@ export default function EditCalendarEventScreen() {
     isOwner,
     presetLabel,
     reminderOffset,
+    reminderTouched,
     repeatsWeekly,
     router,
     title,
@@ -271,11 +291,8 @@ export default function EditCalendarEventScreen() {
       <>
         <Stack.Screen options={{ title: 'Edit event' }} />
         <View style={[styles.root, { backgroundColor: background }]}>
-          <ScrollView
-            contentContainerStyle={contentContainerStyle}
-            contentInsetAdjustmentBehavior="never"
-            keyboardDismissMode="interactive"
-            showsVerticalScrollIndicator={false}
+          <View
+            style={[contentContainerStyle, styles.stateContent]}
           >
             <Surface style={styles.section}>
               {loadError ? (
@@ -283,7 +300,7 @@ export default function EditCalendarEventScreen() {
                   <ThemedText type="title" style={{ color: danger }}>
                     {loadError}
                   </ThemedText>
-                  <ThemedText type="caption" style={{ color: muted }}>
+                  <ThemedText type="supporting" style={{ color: muted }}>
                     Check your connection and try again.
                   </ThemedText>
                 </>
@@ -291,7 +308,7 @@ export default function EditCalendarEventScreen() {
                 <ThemedText type="body">Loading event…</ThemedText>
               )}
             </Surface>
-          </ScrollView>
+          </View>
           <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
             <Button label="Close" variant="secondary" onPress={() => router.back()} />
           </View>
@@ -305,28 +322,25 @@ export default function EditCalendarEventScreen() {
       <>
         <Stack.Screen options={{ title: 'View event' }} />
         <View style={[styles.root, { backgroundColor: background }]}>
-          <ScrollView
-            contentContainerStyle={contentContainerStyle}
-            contentInsetAdjustmentBehavior="never"
-            keyboardDismissMode="interactive"
-            showsVerticalScrollIndicator={false}
+          <View
+            style={[contentContainerStyle, styles.stateContent]}
           >
             <Surface variant="raised" style={styles.section}>
               <ThemedText type="meta">Owner-only edit</ThemedText>
               <ThemedText type="title">{event.title}</ThemedText>
-              <ThemedText type="caption" selectable style={{ color: muted }}>
+              <ThemedText type="supporting" selectable style={{ color: muted }}>
                 {event.allDay
                   ? 'All day'
                   : formatTimeRange(event.startsAt, event.endsAt)}
               </ThemedText>
-              <ThemedText type="caption" style={{ color: muted }}>
+              <ThemedText type="supporting" style={{ color: muted }}>
                 {event.label.customText?.trim() || event.label.preset}
               </ThemedText>
-              <ThemedText type="caption" style={{ color: muted }}>
+              <ThemedText type="supporting" style={{ color: muted }}>
                 Only the person who created this event can edit or delete it.
               </ThemedText>
             </Surface>
-          </ScrollView>
+          </View>
           <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
             <Button label="Done" onPress={() => router.back()} />
           </View>
@@ -349,7 +363,7 @@ export default function EditCalendarEventScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Surface variant="raised" style={styles.section}>
+          <View style={styles.titleBlock}>
             <ThemedText type="meta">Event details</ThemedText>
             <TextInput
               accessibilityLabel="Event title"
@@ -362,10 +376,13 @@ export default function EditCalendarEventScreen() {
               }}
               placeholder="Event title"
               placeholderTextColor={muted}
-              style={inputStyle}
+              style={titleInputStyle}
               value={title}
             />
+          </View>
 
+          <View style={styles.section}>
+            <ThemedText type="meta">When</ThemedText>
             <View style={styles.choiceRow}>
               <Pressable
                 accessibilityLabel="Toggle all day"
@@ -420,106 +437,122 @@ export default function EditCalendarEventScreen() {
               </Pressable>
             </View>
             {repeatsWeekly ? (
-              <ThemedText type="caption" selectable style={{ color: muted }}>
-                Weekly — and this one instance stays its own event, whatever
+              <ThemedText type="supporting" selectable style={{ color: muted }}>
+                Weekly, and this one instance stays its own event, whatever
                 you change here.
               </ThemedText>
             ) : null}
 
             <ThemedText type="meta">Start</ThemedText>
-            <NativeDateTimeField
-              accessibilityLabel="Choose start date"
-              label={allDay ? 'Start day' : 'Start date'}
-              mode="date"
-              onChange={(value) => {
-                setStartsAt((current) => {
-                  const nextStartDate = applyDatePart(current, value);
-                  setEndsAt((currentEndDate) => {
-                    if (!allDay) {
-                      return ensureEndAfterStart(nextStartDate, currentEndDate);
-                    }
-                    const minEnd = addDays(startOfDay(nextStartDate), 1);
-                    return currentEndDate.getTime() > minEnd.getTime()
-                      ? currentEndDate
-                      : minEnd;
-                  });
-                  return allDay ? startOfDay(nextStartDate) : nextStartDate;
-                });
-                setError('');
-              }}
-              value={startsAt}
-            />
-
-            {allDay ? (
-              <ThemedText type="caption" selectable style={{ color: muted }}>
-                All day
-              </ThemedText>
-            ) : (
-              <>
-                <NativeDateTimeField
-                  accessibilityLabel="Choose start time"
-                  label="Start time"
-                  mode="time"
-                  onChange={(value) => {
-                    setStartsAt((current) => {
-                      const nextStartDate = applyTimePart(current, value);
-                      setEndsAt((currentEndDate) =>
-                        ensureEndAfterStart(nextStartDate, currentEndDate)
-                      );
-                      return nextStartDate;
+            <View style={[styles.rowGroup, { borderColor: border }]}>
+              <NativeDateTimeField
+                accessibilityLabel="Choose start date"
+                label={allDay ? 'Start day' : 'Start date'}
+                mode="date"
+                onChange={(value) => {
+                  setStartsAt((current) => {
+                    const nextStartDate = applyDatePart(current, value);
+                    setEndsAt((currentEndDate) => {
+                      if (!allDay) {
+                        return ensureEndAfterStart(nextStartDate, currentEndDate);
+                      }
+                      const minEnd = addDays(startOfDay(nextStartDate), 1);
+                      return currentEndDate.getTime() > minEnd.getTime()
+                        ? currentEndDate
+                        : minEnd;
                     });
-                    setError('');
-                  }}
-                  value={startsAt}
-                />
-                <ThemedText type="caption" selectable style={{ color: muted }}>
-                  {startsAt.toLocaleString('en-US')}
-                </ThemedText>
-              </>
-            )}
+                    return allDay ? startOfDay(nextStartDate) : nextStartDate;
+                  });
+                  setError('');
+                }}
+                value={startsAt}
+                variant="row"
+              />
+              {allDay ? (
+                <>
+                  <View style={[styles.rowDivider, { backgroundColor: border }]} />
+                  <ThemedText type="supporting" selectable style={[styles.rowNote, { color: muted }]}>
+                    All day
+                  </ThemedText>
+                </>
+              ) : (
+                <>
+                  <View style={[styles.rowDivider, { backgroundColor: border }]} />
+                  <NativeDateTimeField
+                    accessibilityLabel="Choose start time"
+                    label="Start time"
+                    mode="time"
+                    onChange={(value) => {
+                      setStartsAt((current) => {
+                        const nextStartDate = applyTimePart(current, value);
+                        setEndsAt((currentEndDate) =>
+                          ensureEndAfterStart(nextStartDate, currentEndDate)
+                        );
+                        return nextStartDate;
+                      });
+                      setError('');
+                    }}
+                    value={startsAt}
+                    variant="row"
+                  />
+                </>
+              )}
+            </View>
+            {!allDay ? (
+              <ThemedText type="supporting" selectable style={{ color: muted }}>
+                {startsAt.toLocaleString('en-US')}
+              </ThemedText>
+            ) : null}
 
             <ThemedText type="meta">End</ThemedText>
-            <NativeDateTimeField
-              accessibilityLabel="Choose end date"
-              label={allDay ? 'End day' : 'End date'}
-              mode="date"
-              minimumDate={startsAt}
-              onChange={(value) => {
-                setEndsAt((current) => {
-                  const nextEndDate = applyDatePart(current, value);
-                  return allDay ? addDays(startOfDay(nextEndDate), 1) : nextEndDate;
-                });
-                setError('');
-              }}
-              value={allDay ? addDays(effectiveEnd, -1) : endsAt}
-            />
+            <View style={[styles.rowGroup, { borderColor: border }]}>
+              <NativeDateTimeField
+                accessibilityLabel="Choose end date"
+                label={allDay ? 'End day' : 'End date'}
+                mode="date"
+                minimumDate={startsAt}
+                onChange={(value) => {
+                  setEndsAt((current) => {
+                    const nextEndDate = applyDatePart(current, value);
+                    return allDay ? addDays(startOfDay(nextEndDate), 1) : nextEndDate;
+                  });
+                  setError('');
+                }}
+                value={allDay ? addDays(effectiveEnd, -1) : endsAt}
+                variant="row"
+              />
 
+              {!allDay ? (
+                <>
+                  <View style={[styles.rowDivider, { backgroundColor: border }]} />
+                  <NativeDateTimeField
+                    accessibilityLabel="Choose end time"
+                    label="End time"
+                    mode="time"
+                    onChange={(value) => {
+                      setEndsAt((current) => applyTimePart(current, value));
+                      setError('');
+                    }}
+                    value={endsAt}
+                    variant="row"
+                  />
+                </>
+              ) : null}
+            </View>
             {!allDay ? (
-              <>
-                <NativeDateTimeField
-                  accessibilityLabel="Choose end time"
-                  label="End time"
-                  mode="time"
-                  onChange={(value) => {
-                    setEndsAt((current) => applyTimePart(current, value));
-                    setError('');
-                  }}
-                  value={endsAt}
-                />
-                <ThemedText type="caption" selectable style={{ color: muted }}>
-                  {endsAt.toLocaleString('en-US')}
-                </ThemedText>
-              </>
+              <ThemedText type="supporting" selectable style={{ color: muted }}>
+                {endsAt.toLocaleString('en-US')}
+              </ThemedText>
             ) : null}
 
             {isRangeInvalid ? (
-              <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+              <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
                 End time must be after start time.
               </ThemedText>
             ) : null}
-          </Surface>
+          </View>
 
-          <Surface style={styles.section}>
+          <View style={styles.section}>
             <ThemedText type="meta">Reminder</ThemedText>
             <View accessibilityRole="radiogroup">
               <View style={styles.choiceRow}>
@@ -532,7 +565,10 @@ export default function EditCalendarEventScreen() {
                       accessibilityRole="radio"
                       accessibilityState={{ selected }}
                       key={option.label}
-                      onPress={() => setReminderOffset(option.value)}
+                      onPress={() => {
+                        setReminderOffset(option.value);
+                        setReminderTouched(true);
+                      }}
                       style={[
                         styles.toggleChip,
                         {
@@ -552,27 +588,43 @@ export default function EditCalendarEventScreen() {
                 })}
               </View>
             </View>
-            <ThemedText type="caption" selectable style={{ color: muted }}>
+            <ThemedText type="supporting" selectable style={{ color: muted }}>
               A quiet banner, never a sound.
             </ThemedText>
-          </Surface>
+          </View>
 
-          <Surface style={styles.section}>
+          <View style={styles.section}>
             <ThemedText type="meta">Availability label</ThemedText>
-            <View style={styles.choiceRow}>
-              {CALENDAR_PRESET_LABELS.map((label) => {
-                const selected = presetLabel === label;
+            <View accessibilityRole="radiogroup">
+              <View style={styles.choiceRow}>
+                {CALENDAR_PRESET_LABELS.map((label) => {
+                  const selected = presetLabel === label;
 
-                return (
-                  <Button
-                    key={label}
-                    label={label}
-                    onPress={() => setPresetLabel(label)}
-                    size="sm"
-                    variant={selected ? 'primary' : 'secondary'}
-                  />
-                );
-              })}
+                  return (
+                    <Pressable
+                      accessibilityLabel={`Set label ${label}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      key={label}
+                      onPress={() => setPresetLabel(label)}
+                      style={[
+                        styles.toggleChip,
+                        {
+                          borderColor: selected ? accent : border,
+                          backgroundColor: selected ? accent : surface2,
+                        },
+                      ]}
+                    >
+                      <ThemedText
+                        type="caption"
+                        style={{ color: selected ? onAccent : text }}
+                      >
+                        {label}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
             <TextInput
               accessibilityLabel="Custom label"
@@ -580,13 +632,13 @@ export default function EditCalendarEventScreen() {
               onChangeText={setCustomLabel}
               placeholder="Optional custom label"
               placeholderTextColor={muted}
-              style={inputStyle}
+              style={customInputStyle}
               value={customLabel}
             />
-          </Surface>
+          </View>
 
           {error ? (
-            <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+            <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
               {error}
             </ThemedText>
           ) : null}
@@ -617,14 +669,41 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    paddingHorizontal: Spacing[16],
-    paddingTop: Spacing[16],
-    gap: Spacing[12],
+    paddingHorizontal: Spacing[24],
+    paddingTop: Spacing[24],
+    gap: Spacing[24],
   },
-  section: {
+  stateContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  titleBlock: {
     gap: Spacing[8],
   },
-  input: {
+  titleInput: {
+    fontFamily: FontFamilies.display,
+    fontSize: 22,
+    lineHeight: 30,
+    letterSpacing: -0.2,
+    minHeight: 44,
+    paddingVertical: Spacing[8],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  section: {
+    gap: Spacing[12],
+  },
+  rowGroup: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
+  rowNote: {
+    minHeight: 44,
+    textAlignVertical: 'center',
+  },
+  customInput: {
     minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 14,
@@ -650,7 +729,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: Spacing[16],
+    paddingHorizontal: Spacing[24],
     paddingTop: Spacing[12],
     gap: Spacing[8],
   },
