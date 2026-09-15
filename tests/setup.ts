@@ -297,7 +297,7 @@ vi.mock('react-native-gesture-handler', () => {
   const React = require('react');
   const chain: any = new Proxy(() => chain, { get: () => chain });
   return {
-    Gesture: { Pan: () => chain, Tap: () => chain, LongPress: () => chain },
+    Gesture: { Pan: () => chain, Pinch: () => chain, Tap: () => chain, LongPress: () => chain, Simultaneous: () => chain },
     GestureDetector: ({ children }: any) => React.createElement('div', {}, children),
     GestureHandlerRootView: ({ children, style }: any) =>
       React.createElement('div', { style }, children),

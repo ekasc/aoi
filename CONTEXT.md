@@ -256,7 +256,7 @@ stops, dots) — separated by full-width hairlines. Untitled memories store
 an empty title and print no placeholder (the legacy `Untitled moment`
 reads as untitled too). Nothing in the timeline opens the detail: text
 and audio are complete inline, and photos open the fullscreen viewer
-(swipeable across the set) instead. The
+(swipeable across the set, pinch to zoom, drag down to close) instead. The
 header is a pinned overlay the feed scrolls underneath: it condenses 1:1
 with the scroll (switcher fading as its row sheds), so the feed meets the
 title bar with no gap and nothing ever jumps — content only moves as much

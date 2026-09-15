@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { useCallback, useState } from 'react';
 import {
   FlatList,
@@ -11,14 +10,16 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { useReducedMotion } from 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ZoomablePhoto } from '@/components/moments/zoomable-photo';
 
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { resolveStagedUri } from '@/features/composer/staged-uri';
 import { haptics } from '@/features/haptics/haptics';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -42,16 +43,17 @@ export type PhotoViewerProps = {
 };
 
 /**
- * Full-screen photo viewer over the current screen: contain-fit expo-image
- * on a horizontally paged swipe, a Close control, a page counter for sets,
- * and an Open-memory link that returns to the parent memory of the visible
- * photo. Nothing else.
+ * Full-screen photo viewer over the current screen: a swipeable set of
+ * zoomable photos, a Close control, a page counter for sets, and an
+ * Open-memory link that returns to the parent memory of the visible photo.
+ * Nothing else.
  *
- * The surface is opaque (theme background, no `transparent`) because
- * `presentationStyle="fullScreen"` and `transparent` are an invalid pair on
- * iOS. Motion is system-gated: the modal fade and the image transition
- * collapse to none under reduced motion. Paging itself is user-driven, so
- * it stays under reduced motion too.
+ * The modal is transparent with `overFullScreen` (the one pairing iOS
+ * accepts) and draws its own scrim, so a dismiss drag fades the scrim and
+ * reveals the screen behind instead of flashing the system background.
+ * Motion is system-gated: the modal fade and the image transition collapse
+ * to none under reduced motion. Paging and gestures stay, since the finger
+ * drives them.
  */
 export function PhotoViewer({
   visible,
@@ -71,6 +73,22 @@ export function PhotoViewer({
   // empty set or an out-of-range tap clamps once, here.
   const safeInitialIndex = Math.max(0, Math.min(initialIndex, Math.max(photos.length - 1, 0)));
   const [page, setPage] = useState(safeInitialIndex);
+  // A zoomed photo locks horizontal paging so pan gestures own the photo.
+  const [pagerEnabled, setPagerEnabled] = useState(true);
+  // Dismiss-drag fade for the viewer ground, written straight from the
+  // photo gestures (UI thread, no bridge hop).
+  const dismiss = useSharedValue(0);
+  // Shared values are stable for the life of the component; the fade writer
+  // needs no dependencies (mutating one inside its own callback while also
+  // listing it is what the lint rule forbids).
+  const handleDismissProgress = useCallback(
+    (progress: number, animated: boolean) => {
+      'worklet';
+      dismiss.value = animated ? withTiming(progress) : progress;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   // This component stays mounted while the modal is closed — it returns
   // null, so the list unmounts but this state does not — and `page` can
   // therefore outlive the session that set it. Re-sync on the render that
@@ -127,17 +145,29 @@ export function PhotoViewer({
       // Concrete window height: percentage heights collapse inside the
       // horizontal scroll content container, leaving a blank viewer.
       <View style={[styles.page, { width: windowWidth, height: windowHeight }]}>
-        <Image
-          accessibilityLabel={item.label}
-          contentFit="contain"
-          source={{ uri: resolveStagedUri(item.uri) }}
-          style={styles.image}
-          transition={reduceMotion ? 0 : 200}
+        <ZoomablePhoto
+          uri={item.uri}
+          label={item.label}
+          onDismiss={onClose}
+          onDismissProgress={handleDismissProgress}
+          onZoomChange={(zoomed) => setPagerEnabled(!zoomed)}
         />
       </View>
     ),
-    [windowWidth, windowHeight, reduceMotion],
+    [windowWidth, windowHeight, handleDismissProgress, onClose],
   );
+
+  // The modal is transparent, so a dismiss drag fades this scrim to reveal
+  // the screen behind it. Fading a scrim (over the live screen) instead of
+  // the modal's own content is what keeps the gesture from flashing white:
+  // a full-screen modal's own backing is the system background.
+  const scrimStyle = useAnimatedStyle(() => ({
+    opacity: 1 - dismiss.value * 0.75,
+  }));
+  // Controls leave with the drag; they never sit over the revealed screen.
+  const chromeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - dismiss.value,
+  }));
 
   if (!visible || total === 0) {
     return null;
@@ -147,53 +177,66 @@ export function PhotoViewer({
     <Modal
       animationType={reduceMotion ? 'none' : 'fade'}
       onRequestClose={onClose}
-      presentationStyle="fullScreen"
+      presentationStyle="overFullScreen"
       statusBarTranslucent
+      transparent
       visible
     >
-      <View accessibilityViewIsModal style={[styles.root, { backgroundColor: background }]}>
-        <FlatList
-          key={sessionKey}
-          data={photos}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          initialScrollIndex={safeInitialIndex}
-          getItemLayout={(_data, index) => ({
-            length: windowWidth,
-            offset: windowWidth * index,
-            index,
-          })}
-          keyExtractor={(item, index) => `${item.uri}:${index}`}
-          onMomentumScrollEnd={handleMomentumEnd}
-          renderItem={renderPhoto}
-          style={styles.list}
-        />
-        <View style={[styles.top, { paddingTop: insets.top + Spacing[8] }]}>
-          <IconButton
-            accessibilityLabel="Close photo"
-            label="Close photo"
-            onPress={onClose}
-            variant="secondary"
-          >
-            <Ionicons color={textPrimary} name="close" size={20} />
-          </IconButton>
+      <GestureHandlerRootView style={styles.root}>
+        <View accessibilityViewIsModal style={styles.inner}>
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { backgroundColor: background }, scrimStyle]}
+          />
+          <FlatList
+            key={sessionKey}
+            data={photos}
+            horizontal
+            pagingEnabled
+            scrollEnabled={pagerEnabled}
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={safeInitialIndex}
+            getItemLayout={(_data, index) => ({
+              length: windowWidth,
+              offset: windowWidth * index,
+              index,
+            })}
+            keyExtractor={(item, index) => `${item.uri}:${index}`}
+            onMomentumScrollEnd={handleMomentumEnd}
+            renderItem={renderPhoto}
+            style={styles.list}
+          />
+          <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeStyle]}>
+            <View style={[styles.top, { paddingTop: insets.top + Spacing[8] }]}>
+              <IconButton
+                accessibilityLabel="Close photo"
+                label="Close photo"
+                onPress={onClose}
+                variant="secondary"
+              >
+                <Ionicons color={textPrimary} name="close" size={20} />
+              </IconButton>
+            </View>
+            <View style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[16] }]}>
+              {total > 1 ? (
+                <ThemedText type="caption" style={{ color: muted }}>
+                  Photo {Math.min(page, total - 1) + 1} of {total}
+                </ThemedText>
+              ) : null}
+              <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
+            </View>
+          </Animated.View>
         </View>
-        <View style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[16] }]}>
-          {total > 1 ? (
-            <ThemedText type="caption" style={{ color: muted }}>
-              Photo {Math.min(page, total - 1) + 1} of {total}
-            </ThemedText>
-          ) : null}
-          <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
-        </View>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+  },
+  inner: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -203,10 +246,6 @@ const styles = StyleSheet.create({
   },
   page: {
     justifyContent: 'center',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
   },
   top: {
     position: 'absolute',

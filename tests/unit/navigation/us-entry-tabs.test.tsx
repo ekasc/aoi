@@ -104,6 +104,10 @@ vi.mock('react-native-reanimated', () => {
     FadeInDown: chain,
     ReduceMotion: { System: 'system' },
     useReducedMotion: () => false,
+    useSharedValue: (initial: unknown) => ({ value: initial }),
+    useAnimatedStyle: () => ({}),
+    withTiming: (value: unknown) => value,
+    runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
   };
 });
 
