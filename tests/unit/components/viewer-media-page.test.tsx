@@ -47,12 +47,16 @@ vi.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 
 let waveProps: any = null;
 
-vi.mock('@/components/media/live-waveform', () => ({
-  LiveWaveform: (props: any) => {
-    waveProps = props;
-    return createElement('div', { 'data-testid': 'wave' });
-  },
-}));
+vi.mock('@/components/media/live-waveform', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    LiveWaveform: (props: any) => {
+      waveProps = props;
+      return createElement('div', { 'data-testid': 'wave' });
+    },
+  };
+});
 
 vi.mock('@/components/themed-text', () => ({
   ThemedText: ({ children }: any) => createElement('span', {}, children),
@@ -146,23 +150,24 @@ describe('ViewerVoicePage waveform', () => {
   it('sizes the wave to the width it was given, not a fixed strip', async () => {
     const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
     render(createElement(ViewerVoicePage, voiceProps));
-    // 390pt page, 16pt gutters each side, 3pt bars on 2pt gaps: 71 bars.
-    // One copy: the played portion is a prop, not a second clipped wave.
-    expect(waveProps.columns).toBe(71);
-    expect(waveProps.progress).toBe(0.5);
+    // A 390pt band of 3pt bars on 2pt gaps: 78 of them, on one canvas, sized
+    // from the measured width rather than a fixed strip.
+    expect(waveProps.columns).toBe(78);
+    expect(waveProps.width).toBe(390);
+    expect(waveProps.levels.value).toHaveLength(78);
   });
 
   it('hands the wave the levels the audio produced, not a shape of its own', async () => {
     const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
     render(createElement(ViewerVoicePage, voiceProps));
-    expect(waveProps.columns).toBe(71);
-    expect(Array.isArray(waveProps.levels.value)).toBe(true);
-    expect(waveProps.levels.value).toHaveLength(71);
+    expect(waveProps.columns).toBe(78);
+    expect(waveProps.levels.value).toHaveLength(78);
 
     await act(async () => {
       sampleListener?.({ timestamp: 0.5, channels: [{ frames: [0.9, 0.8, 0.9, 0.8] }] });
     });
-    // The same shared value the bars read is the one the samples land in.
+    // The same shared value the canvas draws from is the one the samples
+    // land in, so nothing has to be copied into React state to be seen.
     expect(Math.max(...waveProps.levels.value)).toBeCloseTo(0.9, 2);
   });
 

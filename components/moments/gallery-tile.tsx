@@ -54,6 +54,54 @@ function tileFrame(size: number) {
   return { height: size, width: size };
 }
 
+/**
+ * The two tile looks that a viewer session has to reproduce when it lands.
+ *
+ * A photo's dismiss morphs the photo itself into the tile, because the photo
+ * and the tile are the same picture. A clip or a voice note is a page of
+ * controls, so its dismissal hands off to the tile's own look instead of
+ * pretending the page was ever tile-shaped. These are that look, drawn once
+ * and used by both the wall and the viewer.
+ */
+export function VideoTileVisual({
+  posterUri,
+  recyclingKey,
+}: {
+  posterUri?: string | null;
+  /** The still's identity, so a recycled row cannot show the previous clip. */
+  recyclingKey?: string;
+}) {
+  const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
+
+  return (
+    <View style={[styles.tileFill, { backgroundColor: backgroundSubtle }]}>
+      {posterUri ? (
+        <Image
+          accessible={false}
+          contentFit="cover"
+          recyclingKey={recyclingKey}
+          source={{ uri: resolveStagedUri(posterUri) }}
+          style={styles.fill}
+        />
+      ) : null}
+      <View pointerEvents="none" style={styles.videoBadge}>
+        <Ionicons color="#FFFFFF" name="play" size={13} style={styles.videoGlyph} />
+      </View>
+    </View>
+  );
+}
+
+export function VoiceTileVisual() {
+  const textPrimary = useThemeColor({}, 'textPrimary');
+  const surface2 = useThemeColor({}, 'surface2');
+
+  return (
+    <View style={[styles.tileFill, styles.voiceFill, { backgroundColor: surface2 }]}>
+      <Ionicons color={textPrimary} name="mic-outline" size={26} />
+    </View>
+  );
+}
+
 // ── Photo ───────────────────────────────────────────────────────────────
 
 function GalleryPhotoTileComponent({
@@ -125,19 +173,7 @@ function GalleryVideoTileComponent({
         pressed ? styles.pressed : null,
       ]}
     >
-      {item.posterUri ? (
-        <Image
-          accessible={false}
-          contentFit="cover"
-          recyclingKey={item.key}
-          source={{ uri: resolveStagedUri(item.posterUri) }}
-          style={styles.fill}
-          transition={160}
-        />
-      ) : null}
-      <View pointerEvents="none" style={styles.videoBadge}>
-        <Ionicons color="#FFFFFF" name="play" size={13} style={styles.videoGlyph} />
-      </View>
+      <VideoTileVisual posterUri={item.posterUri} recyclingKey={item.key} />
     </Pressable>
   );
 }
@@ -176,13 +212,7 @@ function GalleryVoiceTileComponent({
         pressed ? styles.pressed : null,
       ]}
     >
-      <View pointerEvents="none" style={styles.voiceMark}>
-        <Ionicons
-          color={textPrimary}
-          name="mic-outline"
-          size={Math.round(size * 0.26)}
-        />
-      </View>
+      <VoiceTileVisual />
     </Pressable>
   );
 }
@@ -216,7 +246,11 @@ const styles = StyleSheet.create({
   videoGlyph: {
     marginLeft: 1.5,
   },
-  voiceMark: {
+  tileFill: {
+    height: '100%',
+    width: '100%',
+  },
+  voiceFill: {
     alignItems: 'center',
     justifyContent: 'center',
   },

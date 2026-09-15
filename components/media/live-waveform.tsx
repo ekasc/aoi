@@ -1,107 +1,102 @@
+import { Canvas, Group, Path, Rect, Skia } from '@shopify/react-native-skia';
 import { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 
+import { SkiaReady } from '@/components/landing/skia-ready';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type LiveWaveformProps = {
   /** Per-bar amplitude from the audio's own samples (see useLiveWaveform). */
   levels: SharedValue<number[]>;
-  /** How many bars the levels hold. Passed in: reading it off a shared value
-   *  during render would not re-render when it changed. */
+  /** Bars to draw. The bars divide the width, so it fills exactly. */
   columns: number;
+  width: number;
   height: number;
+  /** Bar width, in points. The page counts its columns with the same pair. */
   barWidth?: number;
-  /** 0..1 played portion. Bars behind it carry the accent colour. */
-  progress: number;
+  /** Gap between bars, in points. */
+  gap?: number;
+  /**
+   * 0..1 played fraction. One shared value drives both the clip edge of the
+   * played colour and the playhead line, so a playback poll or a scrub moves
+   * the wave without a React render.
+   */
+  progress: SharedValue<number>;
 };
 
 /** Floor, so silence still reads as a line rather than nothing. */
 const MIN_SCALE = 0.06;
+/** Resting bars are quieter than the played ones, which is the playhead cue. */
+const REST_OPACITY = 0.45;
+/** The playhead's own width. */
+const PLAYHEAD_WIDTH = 2;
+
+/** The wave's geometry, in one place: the page counts columns with these. */
+export const WAVE_BAR_WIDTH = 3;
+export const WAVE_BAR_GAP = 2;
 
 /**
- * A bar of the waveform.
+ * A voice note's waveform, drawn from its samples.
  *
- * One copy, one animated style per bar, reading the level on the UI thread:
- * the wave follows the audio without a React render per sample. The played
- * portion is a normal prop rather than a second clipped wave — a copy for
- * every bar is twice the drawing for the same picture, and animating a
- * clipping box means animating layout on every frame of a scrub.
+ * One Skia canvas and ONE path, rebuilt per frame from the levels on the UI
+ * thread. The predecessor drew 71 animated views, which meant 71 native prop
+ * updates for every sample callback — around two thousand a second, and the
+ * jank that came with it. Here the whole wave is a single node; the played
+ * portion is the same path drawn again inside a clip, and the playhead is one
+ * rectangle, so the cost of a frame does not scale with the bar count.
+ *
+ * Web gates on CanvasKit (see SkiaReady): where it cannot load, the wave is
+ * absent rather than broken.
  */
-function WaveBar({
-  index,
-  levels,
-  height,
-  barWidth,
-  color,
-  opacity,
-}: {
-  index: number;
-  levels: SharedValue<number[]>;
-  height: number;
-  barWidth: number;
-  color: string;
-  opacity: number;
-}) {
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scaleY: Math.max(MIN_SCALE, levels.value[index] ?? 0) }],
-  }));
-
-  return (
-    <Animated.View
-      style={[
-        styles.bar,
-        { backgroundColor: color, height, opacity, width: barWidth },
-        // Transform only: a static opacity here would be overwritten.
-        style,
-      ]}
-    />
-  );
-}
-
 function LiveWaveformComponent({
   levels,
   columns,
+  width,
   height,
-  barWidth = 3,
+  barWidth = WAVE_BAR_WIDTH,
+  gap = WAVE_BAR_GAP,
   progress,
 }: LiveWaveformProps) {
   const accent = useThemeColor({}, 'accent');
   const muted = useThemeColor({}, 'muted');
-  const played = Math.round(Math.min(1, Math.max(0, progress)) * columns);
+
+  const wavePath = useDerivedValue(() => {
+    const path = Skia.Path.Make();
+    const values = levels.value;
+    const step = width / Math.max(1, columns);
+    const radius = barWidth / 2;
+    for (let index = 0; index < columns; index += 1) {
+      const scale = Math.max(MIN_SCALE, values[index] ?? 0);
+      const barHeight = Math.max(3, height * scale);
+      const x = index * step + (step - barWidth) / 2;
+      const y = (height - barHeight) / 2;
+      path.addRRect(Skia.RRectXY(Skia.XYWHRect(x, y, barWidth, barHeight), radius, radius));
+    }
+    return path;
+  });
+
+  const playedClip = useDerivedValue(() =>
+    Skia.XYWHRect(0, 0, Math.max(0, Math.min(1, progress.value)) * width, height),
+  );
+  const playheadX = useDerivedValue(
+    () => Math.max(0, Math.min(1, progress.value)) * width - PLAYHEAD_WIDTH / 2,
+  );
 
   return (
-    <View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      pointerEvents="none"
-      style={[styles.wave, { height }]}
-    >
-      {Array.from({ length: columns }, (_, index) => (
-        <WaveBar
-          barWidth={barWidth}
-          color={index < played ? accent : muted}
-          height={height}
-          index={index}
-          key={index}
-          levels={levels}
-          opacity={index < played ? 1 : 0.45}
-        />
-      ))}
-    </View>
+    <SkiaReady>
+      {(ready) =>
+        ready ? (
+          <Canvas style={{ height, width }}>
+            <Path color={muted} opacity={REST_OPACITY} path={wavePath} />
+            <Group clip={playedClip}>
+              <Path color={accent} path={wavePath} />
+            </Group>
+            <Rect color={accent} height={height} width={PLAYHEAD_WIDTH} x={playheadX} y={0} />
+          </Canvas>
+        ) : null
+      }
+    </SkiaReady>
   );
 }
 
 export const LiveWaveform = memo(LiveWaveformComponent);
-
-const styles = StyleSheet.create({
-  wave: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  bar: {
-    borderRadius: 999,
-  },
-});

@@ -3,9 +3,13 @@ import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
-import { LiveWaveform } from '@/components/media/live-waveform';
+import {
+  LiveWaveform,
+  WAVE_BAR_GAP,
+  WAVE_BAR_WIDTH,
+} from '@/components/media/live-waveform';
 import { VideoSurface } from '@/components/media/video-player';
 import { ThemedText } from '@/components/themed-text';
 import { Radii, Spacing } from '@/constants/theme';
@@ -33,16 +37,6 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  */
 
 const WAVE_HEIGHT = 128;
-
-/** 0..1 of a recording, for the bars behind the playhead. */
-function playheadFraction(seconds: number, duration: number): number {
-  if (!(duration > 0)) {
-    return 0;
-  }
-  return Math.min(1, Math.max(0, seconds / duration));
-}
-const WAVE_BAR_WIDTH = 3;
-const WAVE_GUTTERS = Spacing[16] * 2;
 
 export type ViewerVideoPageProps = {
   uri: string;
@@ -154,7 +148,11 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   // fixed before the levels array is created, or the bars and the data
   // disagree about how long the note is.
   const [waveWidth, setWaveWidth] = useState(0);
-  const columns = waveformColumnCount(Math.max(waveWidth - WAVE_GUTTERS, 120), WAVE_BAR_WIDTH);
+  const columns = waveformColumnCount(
+    Math.max(waveWidth, 120),
+    WAVE_BAR_WIDTH,
+    WAVE_BAR_GAP,
+  );
   const { levels, supported } = useLiveWaveform(playback.player, columns);
   // The playhead is a shared value: it follows the finger on the UI thread,
   // and the whole note is drawn twice under it rather than recoloured per bar.
@@ -260,13 +258,9 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
     return Gesture.Race(drag, tap);
   }, [beginScrub, finishScrub, playhead, scrubTo, scrubbing, waveWidth]);
 
-  const handleWaveLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const width = event.nativeEvent.layout.width;
-      setWaveWidth(width);
-    },
-    [],
-  );
+  const handleWaveLayout = useCallback((event: LayoutChangeEvent) => {
+    setWaveWidth(event.nativeEvent.layout.width);
+  }, []);
 
   // A full-screen recording that lands silent looks broken, so it starts
   // itself once. The control below still owns play and pause.
@@ -279,13 +273,7 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const playheadStyle = useAnimatedStyle(() => ({
-    opacity: waveWidth > 0 ? 1 : 0,
-    transform: [{ translateX: playhead.value * waveWidth }],
-  }));
-
   const readout = scrubSeconds ?? currentTime;
-  const filled = scrubSeconds === null ? progress : playheadFraction(scrubSeconds, duration);
 
   return (
     <View style={styles.voiceBody}>
@@ -302,13 +290,11 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
               <LiveWaveform
                 barWidth={WAVE_BAR_WIDTH}
                 columns={columns}
+                gap={WAVE_BAR_GAP}
                 height={WAVE_HEIGHT}
                 levels={levels}
-                progress={filled}
-              />
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.playhead, { backgroundColor: accent }, playheadStyle]}
+                progress={playhead}
+                width={waveWidth}
               />
             </>
           ) : null}

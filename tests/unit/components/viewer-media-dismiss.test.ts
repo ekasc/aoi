@@ -68,13 +68,23 @@ describe('voice scrub contracts (source)', () => {
     expect(VOICE_SOURCE).toContain('runOnJS(finishScrub)(success)');
   });
 
-  it('follows the finger on the UI thread, with one wave rather than two', () => {
+  it('follows the finger on the UI thread, through one value', () => {
     expect(VOICE_SOURCE).toContain('playhead.value = scrubFractionForOffset(event.x, waveWidth)');
-    // One waveform, one animated playhead: a second clipped copy doubles the
-    // drawing, and animating the clip's width animates layout every frame.
+    // One waveform, and the playhead is the same value the wave draws with:
+    // no second copy, no clipping box whose width would animate layout.
     expect(VOICE_SOURCE.match(/<LiveWaveform/g)).toHaveLength(1);
+    expect(VOICE_SOURCE).toContain('progress={playhead}');
     expect(VOICE_SOURCE).not.toContain('playedClip');
-    expect(VOICE_SOURCE).toContain('playhead.value * waveWidth');
+  });
+
+  it('draws the wave on one canvas rather than one view per bar', () => {
+    const WAVE_SOURCE = readFileSync('components/media/live-waveform.tsx', 'utf8');
+    expect(WAVE_SOURCE).toContain("from '@shopify/react-native-skia'");
+    expect(WAVE_SOURCE).toContain('useDerivedValue');
+    // One path for the whole wave: 71 animated views meant 71 native prop
+    // updates per sample callback, which is what made it janky.
+    expect(WAVE_SOURCE.match(/addRRect/g)).toHaveLength(1);
+    expect(WAVE_SOURCE).not.toContain('Animated.View');
   });
 
   it('paces native seeks at finger speed and always lands the last one', () => {
