@@ -165,6 +165,8 @@ describe('ViewerVoicePage waveform', () => {
 
     await act(async () => {
       sampleListener?.({ timestamp: 0.5, channels: [{ frames: [0.9, 0.8, 0.9, 0.8] }] });
+      // Levels are published once a frame, not per sample callback.
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     });
     // The same shared value the canvas draws from is the one the samples
     // land in, so nothing has to be copied into React state to be seen.

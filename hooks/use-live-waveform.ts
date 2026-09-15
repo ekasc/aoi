@@ -1,5 +1,5 @@
 import { useAudioSampleListener, type AudioPlayer } from 'expo-audio';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSharedValue, type SharedValue } from 'react-native-reanimated';
 
 /**
@@ -106,12 +106,38 @@ export function useLiveWaveform(player: AudioPlayer, columns: number): LiveWavef
   // of them there are, and most of the wave draws flat.
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
+  // Sampling is not guaranteed to arrive at a steady rate — it can burst,
+  // and it can fire several times inside one frame. Writing to a shared value
+  // per callback would then invalidate the drawing more than once per frame
+  // for no visible gain, so the newest window is published at most once a
+  // frame. The value on screen is always the latest audio either way.
+  const pendingRef = useRef<number[] | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const publish = useCallback(() => {
+    frameRef.current = null;
+    const next = pendingRef.current;
+    if (!next) {
+      return;
+    }
+    pendingRef.current = null;
+    levels.value = next;
+  }, [levels]);
   const [supported, setSupported] = useState(!!player.isAudioSamplingSupported);
 
   // A shared value is created once, so a wave that measures its width after
   // layout would keep the array sized for the guess it started with — and the
   // bars, which are counted from the measured width, would read past its end
   // and draw flat. Resize (and reset) whenever the count changes.
+  useEffect(
+    () => () => {
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (levels.value.length === columns) {
       return;
@@ -161,7 +187,10 @@ export function useLiveWaveform(player: AudioPlayer, columns: number): LiveWavef
     windowRef.current = next;
     const envelope = envelopeFromFrames(next, columnsRef.current);
     smoothedRef.current = smoothLevels(smoothedRef.current, envelope);
-    levels.value = smoothedRef.current;
+    pendingRef.current = smoothedRef.current;
+    if (frameRef.current == null) {
+      frameRef.current = requestAnimationFrame(publish);
+    }
   });
 
   return { levels, supported };
