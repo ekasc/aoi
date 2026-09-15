@@ -187,7 +187,7 @@ export default function SomedayScreen() {
 			await addItem({ title: trimmedDraft, category });
 			setDraft("");
 		} catch {
-			setSaveError("Couldn't add that one — try again in a moment.");
+			setSaveError("Couldn't add that one, try again in a moment.");
 		} finally {
 			setIsSaving(false);
 		}
@@ -237,6 +237,7 @@ export default function SomedayScreen() {
 
 				<Surface style={styles.composer}>
 					<TextInput
+						accessibilityLabel="New someday idea"
 						maxLength={SOMEDAY_TITLE_MAX_LENGTH}
 						onChangeText={setDraft}
 						onSubmitEditing={() => void handleAdd()}
@@ -381,7 +382,7 @@ const styles = StyleSheet.create({
 	input: {
 		fontSize: 17,
 		lineHeight: 24,
-		minHeight: 40,
+		minHeight: 44,
 	},
 	categoryRow: {
 		gap: Spacing[8],
@@ -389,6 +390,8 @@ const styles = StyleSheet.create({
 	categoryChip: {
 		borderRadius: Radii.pill,
 		borderWidth: 1,
+		minHeight: 44,
+		justifyContent: "center",
 		paddingHorizontal: Spacing[12],
 		paddingVertical: 6,
 	},
