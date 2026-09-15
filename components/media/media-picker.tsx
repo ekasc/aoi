@@ -71,7 +71,11 @@ export function MediaPicker({
               { borderColor: border, backgroundColor: surface2 },
             ]}
           >
-            <Image source={{ uri: selectedUri }} style={styles.previewImage} />
+            <Image
+              accessibilityLabel="Selected media preview"
+              source={{ uri: selectedUri }}
+              style={styles.previewImage}
+            />
           </View>
           <Pressable
             accessibilityLabel="Remove selected media"

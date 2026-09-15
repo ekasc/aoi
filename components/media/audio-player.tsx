@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { resolveStagedUri } from '@/features/composer/staged-uri';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 import { useAudioPlayer } from 'expo-audio';
@@ -32,7 +33,9 @@ function AudioPlayerComponent({ uri }: AudioPlayerProps) {
   const onAccent = useThemeColor({}, 'onAccent');
   const surface2 = useThemeColor({}, 'surface2');
   const muted = useThemeColor({}, 'muted');
-  const player = useAudioPlayer(uri);
+  // Staged voice notes are Documents-relative paths until upload; remote
+  // URLs pass through untouched.
+  const player = useAudioPlayer(resolveStagedUri(uri));
   const [, setTick] = useState(0);
 
   // Light polling keeps progress honest without re-render storms.

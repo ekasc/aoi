@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { haptics } from '@/features/haptics/haptics';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 import {
@@ -20,6 +21,9 @@ const MAX_RECORDING_MS = 30_000;
 export type VoiceRecorderProps = {
   onRecorded: (uri: string) => void;
   disabled?: boolean;
+  compact?: boolean;
+  onError?: (message: string) => void;
+  onRecordingChange?: (recording: boolean) => void;
 };
 
 function formatElapsed(durationMillis: number): string {
@@ -34,17 +38,22 @@ function formatElapsed(durationMillis: number): string {
  * One-tap voice capture: tap to record, tap again to stop. Capped at 30s —
  * a voice trace is a breath, not a voicemail.
  */
-export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
+export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecordingChange }: VoiceRecorderProps) {
   const accent = useThemeColor({}, 'accent');
   const onAccent = useThemeColor({}, 'onAccent');
   const surface2 = useThemeColor({}, 'surface2');
   const muted = useThemeColor({}, 'muted');
   const danger = useThemeColor({}, 'danger');
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [recordFailed, setRecordFailed] = useState(false);
   const lastHandledUri = useRef<string | null>(null);
 
   const handleRecordingStatus = useCallback(
     (status: RecordingStatus) => {
+      if (status.isFinished && status.hasError) {
+        onError?.('Voice recording failed. Try again?');
+        return;
+      }
       if (
         status.isFinished &&
         !status.hasError &&
@@ -55,7 +64,7 @@ export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
         onRecorded(status.url);
       }
     },
-    [onRecorded]
+    [onRecorded, onError]
   );
 
   const recorder = useAudioRecorder(
@@ -65,13 +74,17 @@ export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
   const recorderState = useAudioRecorderState(recorder, 250);
   const isRecording = recorderState.isRecording;
 
+  useEffect(() => {
+    onRecordingChange?.(isRecording);
+  }, [isRecording, onRecordingChange]);
+
   const stopRecording = useCallback(async () => {
     try {
       await recorder.stop();
     } catch {
-      // Recording failed to stop — nothing tender about surfacing this.
+      onError?.('Voice recording failed. Try again?');
     }
-  }, [recorder]);
+  }, [recorder, onError]);
 
   // Auto-stop at the cap.
   useEffect(() => {
@@ -86,25 +99,52 @@ export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
     }
 
     if (isRecording) {
+      haptics.tap();
       await stopRecording();
       return;
     }
 
+    setRecordFailed(false);
     const permission = await requestRecordingPermissionsAsync();
 
     if (!permission.granted) {
       setPermissionDenied(true);
+      onError?.('Microphone access is needed for voice traces.');
       return;
     }
 
     try {
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
+      haptics.impact();
       recorder.record();
     } catch {
-      // Swallow: a failed recording attempt should never interrupt a thought.
+      setRecordFailed(true);
+      onError?.('Could not start voice recording. Try again?');
     }
-  }, [disabled, isRecording, recorder, stopRecording]);
+  }, [disabled, isRecording, recorder, stopRecording, onError]);
+
+  if (compact) {
+    return (
+      <Pressable
+        accessibilityLabel={isRecording ? 'Stop recording voice note' : 'Record a voice note'}
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={() => void handlePress()}
+        style={[
+          styles.recordButton,
+          { backgroundColor: isRecording ? danger : surface2 },
+          disabled ? styles.disabled : null,
+        ]}
+      >
+        <Ionicons
+          color={isRecording ? onAccent : accent}
+          name={isRecording ? 'stop' : 'mic-outline'}
+          size={20}
+        />
+      </Pressable>
+    );
+  }
 
   return (
     <View style={styles.row}>
@@ -128,9 +168,11 @@ export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
       <ThemedText type="caption" style={{ color: muted }}>
         {permissionDenied
           ? 'Microphone access is needed for voice traces.'
-          : isRecording
-            ? `${formatElapsed(recorderState.durationMillis)} · tap to stop`
-            : 'Voice trace'}
+          : recordFailed
+            ? 'Could not start voice recording. Try again?'
+            : isRecording
+              ? `${formatElapsed(recorderState.durationMillis)} · tap to stop`
+              : 'Voice trace'}
       </ThemedText>
     </View>
   );
