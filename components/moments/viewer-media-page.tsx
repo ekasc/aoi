@@ -3,13 +3,20 @@ import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import {
   LiveWaveform,
   WAVE_BAR_GAP,
   WAVE_BAR_WIDTH,
 } from '@/components/media/live-waveform';
+import { MorphShell } from '@/components/moments/morph-shell';
+import {
+  shellRadiusFor,
+  type PhotoOrigin,
+  type ViewerHome,
+  type ViewerMorph,
+} from '@/components/moments/zoomable-photo';
 import { VideoSurface } from '@/components/media/video-player';
 import { ThemedText } from '@/components/themed-text';
 import { Radii, Spacing } from '@/constants/theme';
@@ -47,6 +54,10 @@ export type ViewerVideoPageProps = {
   height: number;
   /** True for the page the reader is on. Only then does the clip exist. */
   active: boolean;
+  morph: ViewerMorph;
+  home: ViewerHome;
+  /** The tile's box, in plain numbers, for the shell's layout. */
+  origin?: PhotoOrigin;
 };
 
 export function ViewerVideoPage({
@@ -56,17 +67,29 @@ export function ViewerVideoPage({
   width,
   height,
   active,
+  morph,
+  home,
+  origin,
 }: ViewerVideoPageProps) {
   const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
   const textPrimary = useThemeColor({}, 'textPrimary');
   const [started, setStarted] = useState(false);
+  const [stillSize, setStillSize] = useState<{ width: number; height: number } | null>(null);
   const handlePlay = useCallback(() => setStarted(true), []);
+  const handleStillLoad = useCallback((event: { source?: { width?: number; height?: number } }) => {
+    const sourceWidth = event.source?.width ?? 0;
+    const sourceHeight = event.source?.height ?? 0;
+    if (sourceWidth > 0 && sourceHeight > 0) {
+      setStillSize({ height: sourceHeight, width: sourceWidth });
+    }
+  }, []);
   const playing = active && started;
 
   const still = posterUri ? (
     <Image
       accessible={false}
       contentFit="contain"
+      onLoad={handleStillLoad}
       source={{ uri: resolveStagedUri(posterUri) }}
       style={styles.still}
     />
@@ -74,36 +97,43 @@ export function ViewerVideoPage({
     <View style={[styles.still, { backgroundColor: backgroundSubtle }]} />
   );
 
-  if (playing) {
-    return (
-      <View style={[styles.page, { width, height }]}>
-        <VideoSurface contentFit="contain" label={label} uri={uri} />
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.page, { width, height }]}>
-      {active ? (
-        // Only the page the reader is on offers the clip: an off-page still
-        // is scenery, and a control on it would be a button nobody can press.
-        <Pressable
-          accessibilityHint="Plays this clip"
-          accessibilityLabel={`Play video: ${label}`}
-          accessibilityRole="button"
-          onPress={handlePlay}
-          style={styles.stillPress}
-        >
-          {still}
-          <View pointerEvents="none" style={styles.playOverlay}>
-            <View style={styles.playButton}>
-              <Ionicons color={textPrimary} name="play" size={30} style={styles.playGlyph} />
+    <View style={[styles.page, { height, width }]}>
+      <MorphShell
+        frame={{ height, width }}
+        home={home}
+        morph={morph}
+        sourceHeight={stillSize?.height ?? 0}
+        sourceWidth={stillSize?.width ?? 0}
+        tile={{
+          height: origin?.height ?? 0,
+          radius: origin?.radius ?? 0,
+          width: origin?.width ?? 0,
+        }}
+      >
+        {playing ? (
+          <VideoSurface contentFit="contain" label={label} uri={uri} />
+        ) : active ? (
+          // Only the page the reader is on offers the clip: an off-page still
+          // is scenery, and a control on it would be a button nobody can press.
+          <Pressable
+            accessibilityHint="Plays this clip"
+            accessibilityLabel={`Play video: ${label}`}
+            accessibilityRole="button"
+            onPress={handlePlay}
+            style={styles.stillPress}
+          >
+            {still}
+            <View pointerEvents="none" style={styles.playOverlay}>
+              <View style={styles.playButton}>
+                <Ionicons color={textPrimary} name="play" size={30} style={styles.playGlyph} />
+              </View>
             </View>
-          </View>
-        </Pressable>
-      ) : (
-        <View style={styles.stillPress}>{still}</View>
-      )}
+          </Pressable>
+        ) : (
+          <View style={styles.stillPress}>{still}</View>
+        )}
+      </MorphShell>
     </View>
   );
 }
@@ -319,6 +349,9 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   );
 }
 
+/** The pull at which a voice page starts dissolving into its tile. */
+const VOICE_FADE_FROM = 0.85;
+
 export type ViewerVoicePageProps = {
   uri: string;
   label: string;
@@ -327,22 +360,68 @@ export type ViewerVoicePageProps = {
   width: number;
   height: number;
   active: boolean;
+  morph: ViewerMorph;
+  home: ViewerHome;
 };
 
-export function ViewerVoicePage({ uri, label, width, height, active }: ViewerVoicePageProps) {
+/**
+ * A voice note has no picture, so nothing on it can be the tile's microphone.
+ * The page itself travels instead: it scales toward the tile with the tile's
+ * radius, keeps the waveform visible the whole way, and only dissolves in the
+ * last stretch, where the tile's own look takes over.
+ */
+export function ViewerVoicePage({
+  uri,
+  label,
+  width,
+  height,
+  active,
+  morph,
+  home,
+}: ViewerVoicePageProps) {
+  const pageStyle = useAnimatedStyle(() => {
+    const t = morph.t.value;
+    const hasHome = home.valid.value;
+    const cover = hasHome
+      ? Math.max(home.width.value / width, home.height.value / height)
+      : 1;
+    const scale = 1 + (Math.min(cover, 1) - 1) * t;
+    const centreX = width / 2;
+    const centreY = height / 2;
+    const targetCentreX = hasHome ? home.x.value + home.width.value / 2 : centreX;
+    const targetCentreY = hasHome ? home.y.value + home.height.value / 2 : centreY;
+    return {
+      opacity: 1 - Math.max(0, (t - VOICE_FADE_FROM) / (1 - VOICE_FADE_FROM)),
+      // Clipped at the radius, so the page's corners round as it lands.
+      overflow: 'hidden',
+      borderRadius: shellRadiusFor(t, home.radius.value, scale),
+      transform: [
+        { translateX: morph.residualX.value },
+        { translateY: morph.residualY.value },
+        { translateX: (targetCentreX - centreX) * t },
+        { translateY: (targetCentreY - centreY) * t },
+        { scale },
+      ],
+    };
+  });
+
   return (
-    <View style={[styles.page, { width, height }]}>
+    <Animated.View style={[styles.voicePage, { height, width }, pageStyle]}>
       {active ? (
         <PlayingVoicePage label={label} uri={uri} />
       ) : (
         <RestingVoicePage label={label} />
       )}
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   page: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voicePage: {
     alignItems: 'center',
     justifyContent: 'center',
   },

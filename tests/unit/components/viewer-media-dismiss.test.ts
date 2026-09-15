@@ -99,3 +99,37 @@ describe('voice scrub contracts (source)', () => {
     expect(VOICE_SOURCE).toContain('live.current = false;');
   });
 });
+
+describe('media pages morph into their tile (source)', () => {
+  const PAGE_SOURCE = readFileSync('components/moments/viewer-media-page.tsx', 'utf8');
+  const VIEWER_SOURCE = readFileSync('components/moments/photo-viewer.tsx', 'utf8');
+  const SHELL_SOURCE = readFileSync('components/moments/morph-shell.tsx', 'utf8');
+
+  it('gives a clip the same shell a photo uses, since its still is the tile', () => {
+    // A clip's page shows the still and the tile shows that still cropped, so
+    // the pair can be the same shape: the photo path's geometry, its crop
+    // scale, and its radius correction.
+    expect(PAGE_SOURCE).toContain('<MorphShell');
+    expect(SHELL_SOURCE).toContain('buildMorphGeometry(');
+    expect(SHELL_SOURCE).toContain('shellRadiusFor(t, home.radius.value, scale)');
+    expect(SHELL_SOURCE).toContain('coverScale');
+  });
+
+  it('keeps the page visible through the pull instead of dissolving it', () => {
+    // The old hand-off faded the page and faded a tile-shaped copy in behind
+    // it. No cross-fade is left: the content travels.
+    expect(VIEWER_SOURCE).not.toContain('previewStyle');
+    expect(VIEWER_SOURCE).not.toContain('handoff');
+    expect(PAGE_SOURCE).not.toContain('VOICE_FADE_FROM * t');
+    // A voice note has no picture, so its page scales toward the tile and
+    // only dissolves at the very end, where the microphone takes over.
+    expect(PAGE_SOURCE).toContain('const VOICE_FADE_FROM = 0.85;');
+    expect(PAGE_SOURCE).toContain('(t - VOICE_FADE_FROM) / (1 - VOICE_FADE_FROM)');
+  });
+
+  it('has the page travel, not the session wrapper', () => {
+    expect(VIEWER_SOURCE).toContain('home={home}');
+    expect(VIEWER_SOURCE).toContain('morph={morph}');
+    expect(VIEWER_SOURCE).toContain('<View style={StyleSheet.absoluteFill}>');
+  });
+});

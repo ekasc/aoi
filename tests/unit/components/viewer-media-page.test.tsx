@@ -74,10 +74,14 @@ const capturedStyleFns: (() => any)[] = [];
 // it evaluates the callback the way the UI thread would and keeps the result.
 vi.mock('react-native-reanimated', () => {
   const React = require('react');
+  const View = ({ children, style, ...rest }: any) =>
+    React.createElement('div', { style, ...rest }, children);
+  // expo-image and expo-video wrap their views through these.
+  const createAnimatedComponent = (Component: any) => Component;
   return {
     __esModule: true,
-    default: { View: ({ children, style, ...rest }: any) => React.createElement('div', { style, ...rest }, children) },
-    Animated: { View: ({ children, style, ...rest }: any) => React.createElement('div', { style, ...rest }, children) },
+    default: { View, createAnimatedComponent },
+    Animated: { View, createAnimatedComponent },
     useSharedValue: (initial: any) =>
       React.useRef({ value: typeof initial === 'function' ? initial() : initial }).current,
     useAnimatedStyle: (fn: () => any) => {
@@ -87,9 +91,9 @@ vi.mock('react-native-reanimated', () => {
       return fn();
     },
     useReducedMotion: () => false,
+    Easing: { bezier: () => ({}), cubic: {}, in: (v: any) => v, linear: {}, out: (v: any) => v },
     withTiming: (value: any) => value,
     withRepeat: (value: any) => value,
-    Easing: { linear: {} },
   };
 });
 
@@ -130,6 +134,29 @@ function barScales(): number[] {
     .filter((scale): scale is number => typeof scale === 'number');
 }
 
+/** Shared values, as plain objects: the worklets only read `.value`. */
+function shared(value: number) {
+  return { value } as any;
+}
+
+const morph = {
+  t: shared(0),
+  residualX: shared(0),
+  residualY: shared(0),
+  sourceWidth: shared(0),
+  sourceHeight: shared(0),
+  overlay: shared(1),
+} as any;
+
+const home = {
+  x: shared(0),
+  y: shared(0),
+  width: shared(0),
+  height: shared(0),
+  radius: shared(0),
+  valid: { value: false } as any,
+} as any;
+
 const voiceProps: ViewerVoicePageProps = {
   uri: 'file:///note.m4a',
   label: '3 of 5 from March 2026',
@@ -137,6 +164,8 @@ const voiceProps: ViewerVoicePageProps = {
   width: 390,
   height: 844,
   active: true,
+  morph,
+  home,
 };
 
 describe('ViewerVoicePage waveform', () => {
@@ -205,6 +234,8 @@ describe('ViewerVideoPage', () => {
         width: 390,
         height: 844,
         active: true,
+        morph,
+        home,
       }),
     );
     // The still and a play control: the reader asked to look, not to listen.
@@ -222,6 +253,8 @@ describe('ViewerVideoPage', () => {
         width: 390,
         height: 844,
         active: true,
+        morph,
+        home,
       }),
     );
     expect(videoSurfaceProps).toMatchObject({ uri: 'https://cdn.test/clip.mp4' });
@@ -237,6 +270,8 @@ describe('ViewerVideoPage', () => {
         width: 390,
         height: 844,
         active: false,
+        morph,
+        home,
       }),
     );
     expect(videoSurfaceProps).toBeNull();

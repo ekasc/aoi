@@ -31,7 +31,6 @@ import {
   type ViewerMorph,
 } from '@/components/moments/zoomable-photo';
 
-import { VideoTileVisual, VoiceTileVisual } from '@/components/moments/gallery-tile';
 import {
   useMediaCloseAnimation,
   useMediaDismiss,
@@ -326,11 +325,9 @@ function ViewerSession({
   });
   const mediaDismiss = useMediaDismiss({
     active: true,
-    home,
     morph,
     onClose,
     onDismissStart: handleDismissStart,
-    origin,
   });
 
   const handleClose = useCallback(() => {
@@ -378,17 +375,17 @@ function ViewerSession({
       // horizontal scroll content container, leaving a blank viewer.
       const frame = [styles.page, { width: windowWidth, height: windowHeight }];
       if (item.kind === 'video' || item.kind === 'voice') {
-        const handoffSize = origin
-          ? { height: origin.height, width: origin.width }
-          : null;
         const body = (
           <View style={frame}>
-            <Animated.View style={[StyleSheet.absoluteFill, mediaDismiss.style]}>
+            <View style={StyleSheet.absoluteFill}>
               {item.kind === 'video' ? (
                 <ViewerVideoPage
                   active={index === page}
                   height={windowHeight}
+                  home={home}
                   label={item.label}
+                  morph={morph}
+                  origin={origin}
                   posterUri={item.posterUri}
                   uri={item.uri}
                   width={windowWidth}
@@ -397,36 +394,15 @@ function ViewerSession({
                 <ViewerVoicePage
                   active={index === page}
                   height={windowHeight}
+                  home={home}
                   label={item.label}
+                  morph={morph}
                   seed={item.seed ?? item.uri}
                   uri={item.uri}
                   width={windowWidth}
                 />
               )}
-            </Animated.View>
-            {handoffSize ? (
-              // The tile's own look, so the pull lands on the thumbnail the
-              // reader came from and the wall's tile simply reappears.
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.handoff,
-                  {
-                    ...handoffSize,
-                    borderRadius: origin?.radius ?? 0,
-                    left: (windowWidth - handoffSize.width) / 2,
-                    top: (windowHeight - handoffSize.height) / 2,
-                  },
-                  mediaDismiss.previewStyle,
-                ]}
-              >
-                {item.kind === 'video' ? (
-                  <VideoTileVisual posterUri={item.posterUri} />
-                ) : (
-                  <VoiceTileVisual />
-                )}
-              </Animated.View>
-            ) : null}
+            </View>
           </View>
         );
         // The pull-to-close belongs to the page the reader is on: the pager
@@ -468,8 +444,6 @@ function ViewerSession({
       handleImageReady,
       handlePagerLockChange,
       mediaDismiss.gesture,
-      mediaDismiss.previewStyle,
-      mediaDismiss.style,
       onClose,
       origin,
       windowHeight,
@@ -569,10 +543,6 @@ const styles = StyleSheet.create({
   },
   page: {
     justifyContent: 'center',
-  },
-  handoff: {
-    overflow: 'hidden',
-    position: 'absolute',
   },
   top: {
     position: 'absolute',
