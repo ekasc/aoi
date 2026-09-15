@@ -16,6 +16,11 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 - Android (native build + run): `pnpm run android` (alias: `expo run:android`)
 - Web: `pnpm run web` (alias: `expo start --web`)
 
+### Simulators / native builds — ask first
+- Never boot simulators/emulators, run `expo run:*`, `xcodebuild`, `pod install`, or trigger native app builds unless the user explicitly asks. These boot devices and take minutes.
+- `npx expo prebuild` (config-plugin sync) and `pod install` alone do NOT boot anything and are fine to run when needed for setup.
+- If a command accidentally boots a simulator, shut it down (`xcrun simctl shutdown all`).
+
 ### Lint
 - Lint all: `pnpm run lint`
 - Lint a single file (forward args to eslint via expo):
@@ -29,6 +34,107 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 - Watch mode: `pnpm run test:unit:watch`
 - Run one file: `npx vitest run tests/path/to/file.test.ts`
 - Run one test name: `npx vitest run -t "renders empty state"`
+
+### Accessibility audit
+- Static contract check across `app/` and `components/`:
+  `pnpm run a11y:audit` (add `--json` for machines, `--strict` to exit 1
+  on findings). The same check runs as
+  `tests/unit/components/a11y-audit.test.ts`, so `pnpm run test:unit` fails
+  if a new element breaks the contract. See "Accessibility" below for the
+  rules it enforces and what to do when it flags something.
+
+### Seeded session (real app tree)
+- Run the REAL app (tabs, navigation, every screen) against the mock world:
+  `EXPO_PUBLIC_DEV_SEED=full pnpm run start --go`. The app boots signed in as
+  Maya with June's space and the rich media seeds — no preview route, no
+  navigation bypassed, so the tab bar and back buttons behave as in
+  production. Variants: `full` · `empty` · `pending` · `failed`.
+- How: `features/dev/dev-seed.ts` writes a real session (SecureStore) and
+  space (AsyncStorage) before the providers hydrate, so they restore through
+  their normal paths; `useDevSeed` in `app/(app)/_layout.tsx` publishes the
+  variant so the moments stub swaps its fixtures. `__DEV__`- and flag-gated;
+  unset means normal dev and production are untouched.
+
+### Visual debugging (dev preview routes)
+- Authenticated screens are unreachable on web (SecureStore has no web
+  implementation, so sessions never persist) — use the committed dev
+  preview routes on the normal dev server instead of throwaway harnesses:
+  - `/dev-story` (Story feed, full mock world) · `?variant=empty` (blank
+    slate) · `?variant=pending` (unsent memory pinned) · `?variant=failed`
+    (failed send with Retry/Edit/Remove). Single-screen preview: it renders
+    the feed directly, so it has no bottom tab bar — use the seeded session
+    above when you need real navigation.
+  - `/dev-chapter?id=month:YYYY-MM` (chapter detail over stub range data)
+  - `/dev-composer` (memory editor layout/structure; keyboard needs a device)
+  - `/dev-foundations` (design tokens gallery)
+- The mock world is Maya & June, signed in, space ready
+  (`features/dev/preview.tsx`): real screens through the real provider tree;
+  stub data layer swaps seeds. Saving a text memory runs the real composer
+  pipeline against stub storage, so keeps and failed-send retries land in the
+  feed. All seed media is remote and catalogued in
+  `features/dev/preview-media.ts` (Lorem Picsum photos, Open Speech voice
+  notes, test-videos/remotion MP4s) — images, audio, and video from both
+  members, nothing bundled. Video renders through
+  `components/media/video-player.tsx` (`expo-video`, included in Expo Go; a
+  dev build needs a rebuild after the dependency is added). `__DEV__`-gated,
+  redirect home in production. Never link to `/dev-*` from app UI.
+- Inspect with agent-browser (Chrome needs `--no-sandbox` here):
+  `agent-browser --session <name> --args "--no-sandbox" open
+  'http://127.0.0.1:8081/dev-story'`, then `snapshot`, `eval`, `screenshot`.
+  RN lists scroll their own container, not the window; long-press via
+  pointerdown (buttons:1) + delay + pointerup.
+- Debug on a real phone (Expo Go / dev client): agents attach to the running
+  app over Metro's Hermes CDP bridge — no simulator needed. With `expo start`
+  running and Expo Go in the foreground, phone unlocked:
+  - `pnpm run dev:targets` — list connected devices/apps
+    (`--target <index|substring>` to disambiguate).
+  - `pnpm run dev:logs` — stream `console.log/warn/error` + uncaught
+    exceptions as NDJSON (runs until Ctrl-C; `--timeout 5000` to sample).
+  - `pnpm run dev:eval -- "<javascript>"` — evaluate inside the app (inspect
+    state, read context, poke functions; promises are awaited).
+  - `pnpm run dev:screenshot` — capture the phone screen. The image lands in
+    `.expo/aoi-debug/screenshots/<id>.jpg` (read it directly to see the UI) with
+    a sibling `<id>.json` holding the **accessibility inventory**: every
+    labelled/actionable element with role, label, hint, state, testID, and
+    visible text, in render order. Read the image and the JSON together.
+  - `pnpm run dev:select` — puts the app in tap-to-select mode. Ask the user
+    to tap an element, then the command resolves with its component path,
+    frame, readable props, and a screenshot. Needs `DebugHarness`
+    (`components/dev/debug-harness.tsx`, `__DEV__`-gated in `app/_layout.tsx`).
+  - `pnpm run dev:reload` — reload the app.
+  - On the phone, a floating dev-only copy button (bottom-left) copies a text
+    outline of the current screen's live element tree to the clipboard
+    (`features/dev/element-tree.ts`, walked from the fiber tree). Use this
+    when the agent can't attach — the user just pastes the outline into chat.
+  If the app is backgrounded/locked the device stays registered but stops
+  answering; `dev-agent` says so instead of hanging. Implementation:
+  `scripts/dev-agent.mjs` (websocket CDP client, Origin pinned to
+  `127.0.0.1` because Metro's inspector proxy 401s other origins). The
+  capture sink is middleware in `metro.config.js` (`/__aoi_debug/*`), writing
+  to the gitignored `.expo/aoi-debug/`; screenshots use `react-native-view-shot`
+  and element picking uses RN's private element inspector, both available in
+  Expo Go. Element picking depends on the React DevTools hook, so it degrades
+  to coordinates-only if the hook is absent — worth re-checking on a device.
+- Reporting and fixing a device bug (when the user says "X is broken on my
+  phone"): the user performs the gesture on the device; the agent captures.
+  The loop:
+  1. `pnpm run dev:report --note "<short bug summary>"` — then have the user
+     reproduce the bug during the capture window. Read
+     `.expo/aoi-debug/reports/<ts>/report.md`: it contains `screenshot.jpg`,
+      the warnings/errors, and the full console window.
+  2. Read the screenshot image directly to see what the user sees.
+  3. `pnpm run dev:select` — ask the user to tap the element of interest; the
+     printed JSON gives its component path, frame, and readable props. Use
+     `pnpm run dev:logs -- --timeout 8000` for a longer live trace while the
+     user navigates, and `pnpm run dev:eval -- "<js>"` to probe live state.
+  4. Then search the codebase for the component/path from the report.
+  App must be foregrounded and the phone unlocked for any of these to answer.
+- Expected preview artifacts (not bugs): Plus-gated export shows the status
+  error (needs a backend session, unreachable headless). Seed media is remote,
+  so unit tests assert HTTPS URLs directly (no injected asset URIs).
+- Adding a screen: copy `app/dev-story.tsx` (gate + `useApplyPreviewVariant`
+  + the providers its tree needs + `DevErrorBoundary`), add seeds to
+  `getPreviewSeedMoments` if the stub moments should cover it.
 
 ### Build
 - EAS config exists (`eas.json`) with development/preview/production profiles; no EAS Update or CI-driven builds yet.
@@ -97,9 +203,45 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 - For lists, prefer virtualization; if/when lists become large, consider FlashList and memoized row components.
 
 ### Accessibility
-- Ensure tappable controls have clear labels (`accessibilityLabel`) and sensible roles.
-- Use adequate touch targets (aim for 44x44dp where feasible).
-- Respect reduced-motion where possible; avoid essential meaning conveyed only by animation.
+Every element in the app must be reachable and understandable by a screen
+reader. This is enforced statically — do not treat it as optional polish.
+
+**The contract (what `pnpm run a11y:audit` checks):**
+- Every `Pressable` / `Touchable*` has an `accessibilityRole` and an
+  accessible name (`accessibilityLabel` or visible text). An element that is
+  intentionally hidden from the tree with `accessible={false}` is exempt —
+  that is how gesture-only wrappers and decorative layers are expressed.
+- Every image (`Image`, `expo-image`) is either labelled
+  (`accessibilityLabel`) or explicitly decorative (`accessible={false}`).
+  A photo inside an already-labelled press target is decorative: mark it
+  `accessible={false}` so it is not announced twice.
+- Every `TextInput` and `Switch` / `Slider` has an `accessibilityLabel`.
+- Every `Modal` contains an element marked `accessibilityViewIsModal` so
+  VoiceOver cannot wander into the screen behind it.
+
+**Conventions the audit cannot see — follow them by hand:**
+- Headings: `ThemedText` sets `accessibilityRole="header"` automatically for
+  `type="display"`, `type="title"`, and `type="subheading"`. Use those types
+  for headings; pass an explicit `accessibilityRole` to opt out.
+- Touch targets: 44x44dp minimum. The shared `Button` / `IconButton` meet it;
+  custom chips and rows must set `minHeight: 44` (or add `hitSlop`).
+- State: give controls `accessibilityState` (`selected`, `disabled`,
+  `expanded`, `busy`) and a short `accessibilityHint` when the action is not
+  obvious from the label.
+- Live updates: announce async status and errors with
+  `accessibilityLiveRegion="polite"` or `accessibilityRole="alert"`.
+- Contrast: body text must hold ≥4.5:1 on every surface it can appear on.
+  A test enforces this for `textPrimary` / `textSecondary` / `textMuted` on
+  all surfaces, plus `primaryText`/`onAccent`/`onDanger` on their fills, for
+  every theme and mode (`tests/unit/theme/after-hours.test.ts`). Fix the
+  token in `constants/theme-presets.ts`, never the test.
+- Dynamic Type: never set `allowFontScaling={false}` or cap
+  `maxFontSizeMultiplier`; let text reflow.
+- Reduced motion: gate animation with `useReducedMotion()`.
+
+When the audit flags something, fix the element rather than the rule. If a
+finding is a genuine false positive, extend `scripts/a11y-audit.mjs` with a
+narrow exemption and a comment explaining why.
 
 ### Error handling
 - Don't leave `alert(...)` in production flows (starter templates use it in examples).
