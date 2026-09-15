@@ -59,7 +59,14 @@ async function createUniqueInviteCode() {
 
 export const localSpaceRepository: SpaceRepository = {
   async getSpaceForUser(userId) {
-    return readJson<RelationshipSpace>(spaceUserKey(userId));
+    const space = await readJson<RelationshipSpace>(spaceUserKey(userId));
+    if (!space) {
+      return space;
+    }
+    // Pre-flag saves predate the fields — absence means waiting, no expiry.
+    const { partnerJoined, inviteExpiresAt, ...rest } = space as RelationshipSpace &
+      Partial<Pick<RelationshipSpace, 'partnerJoined' | 'inviteExpiresAt'>>;
+    return { ...rest, partnerJoined: partnerJoined ?? false, inviteExpiresAt: inviteExpiresAt ?? null };
   },
 
   async createSpace(input) {
@@ -70,9 +77,11 @@ export const localSpaceRepository: SpaceRepository = {
       name: input.name.trim(),
       createdByUserId: input.createdByUserId,
       yourName: input.yourName?.trim() || 'You',
-      partnerName: input.partnerName.trim(),
-      relationshipStartDate: input.relationshipStartDate,
+      partnerName: input.partnerName?.trim() || null,
+      relationshipStartDate: input.relationshipStartDate ?? null,
       inviteCode,
+      partnerJoined: false,
+      inviteExpiresAt: null,
       photoUri: input.photoUri || undefined,
       createdAt: now,
       updatedAt: now,
@@ -94,8 +103,26 @@ export const localSpaceRepository: SpaceRepository = {
       throw new Error('Invite code not found.');
     }
 
-    await writeJson(spaceUserKey(input.userId), space);
-    return space;
+    // Stub coherence: joining marks the partnership joined on every stored
+    // copy (joiner's, creator's, invite slot) — same device, one truth.
+    const joined: RelationshipSpace = { ...space, partnerJoined: true };
+    const creatorKey = spaceUserKey(space.createdByUserId);
+    const existingCreator = await readJson<RelationshipSpace>(creatorKey);
+    await Promise.all([
+      writeJson(spaceUserKey(input.userId), joined),
+      writeJson(spaceInviteKey(inviteCode), joined),
+      ...(existingCreator ? [writeJson(creatorKey, joined)] : []),
+    ]);
+    return joined;
+  },
+
+  async regenerateInvite(userId: string): Promise<string> {
+    // Stub invites never expire — return the live code for this user.
+    const space = await readJson<RelationshipSpace>(spaceUserKey(userId));
+    if (!space) {
+      throw new Error('No active space.');
+    }
+    return space.inviteCode;
   },
 
   async updateSpaceForUser(userId: string, input: UpdateSpaceInput) {

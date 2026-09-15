@@ -21,12 +21,6 @@ const momentsMock = vi.hoisted(() => ({
   refresh: vi.fn(async () => {}),
 }));
 
-const locationMock = vi.hoisted(() => ({
-  receiveRequest: vi.fn(),
-  refreshPartnerLocation: vi.fn(async () => {}),
-  handlePartnerStopped: vi.fn(),
-}));
-
 const lettersMock = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }));
@@ -43,9 +37,6 @@ vi.mock('expo-notifications', () => notificationsMock);
 vi.mock('@/features/api-client', () => apiClientMock);
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ refresh: momentsMock.refresh }),
-}));
-vi.mock('@/features/location/location-context', () => ({
-  useLocation: () => locationMock,
 }));
 vi.mock('@/features/letters/letters-context', () => ({
   useLetters: () => ({ reload: lettersMock.reload }),
@@ -101,9 +92,6 @@ beforeEach(() => {
   apiClientMock.isStubMode.mockReturnValue(false);
   apiClientMock.apiFetch.mockClear();
   momentsMock.refresh.mockClear();
-  locationMock.receiveRequest.mockClear();
-  locationMock.refreshPartnerLocation.mockClear();
-  locationMock.handlePartnerStopped.mockClear();
   lettersMock.reload.mockClear();
   calendarMock.refresh.mockClear();
   proposalsMock.reload.mockClear();
@@ -249,7 +237,6 @@ describe('PushProvider receive handling (remote)', () => {
 
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
-    expect(locationMock.receiveRequest).not.toHaveBeenCalled();
     expect(lettersMock.reload).not.toHaveBeenCalled();
     expect(calendarMock.refresh).not.toHaveBeenCalled();
     expect(proposalsMock.reload).not.toHaveBeenCalled();
@@ -258,39 +245,35 @@ describe('PushProvider receive handling (remote)', () => {
   });
 });
 
-describe('PushProvider location routing (remote)', () => {
-  it('shows the approval prompt for location_request', async () => {
+describe('PushProvider location routing (v1: ignored)', () => {
+  it('ignores location_request (no approval prompt in v1)', async () => {
     const view = renderProvider();
     await waitFor(() => expect(receivedListener).not.toBeNull());
 
     deliver({ kind: 'location_request' });
 
-    await waitFor(() => expect(locationMock.receiveRequest).toHaveBeenCalledTimes(1));
+    await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     view.unmount();
   });
 
-  it('refreshes the partner position for location_granted', async () => {
+  it('ignores location_granted (no partner refresh in v1)', async () => {
     const view = renderProvider();
     await waitFor(() => expect(receivedListener).not.toBeNull());
 
     deliver({ kind: 'location_granted' });
 
-    await waitFor(() =>
-      expect(locationMock.refreshPartnerLocation).toHaveBeenCalledTimes(1)
-    );
+    await act(async () => {});
     view.unmount();
   });
 
-  it('clears the partner pin for location_stopped', async () => {
+  it('ignores location_stopped (no pin handling in v1)', async () => {
     const view = renderProvider();
     await waitFor(() => expect(receivedListener).not.toBeNull());
 
     deliver({ kind: 'location_stopped' });
 
-    await waitFor(() =>
-      expect(locationMock.handlePartnerStopped).toHaveBeenCalledTimes(1)
-    );
+    await act(async () => {});
     view.unmount();
   });
 });
@@ -326,12 +309,12 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     view.unmount();
   });
 
-  it('routes a tapped backgrounded location_request to the approval prompt', async () => {
+  it('ignores a tapped backgrounded location_request in v1', async () => {
     const view = renderProvider();
     await waitFor(() => expect(responseListener).not.toBeNull());
 
     deliverResponse({ kind: 'location_request' });
-    await waitFor(() => expect(locationMock.receiveRequest).toHaveBeenCalledTimes(1));
+    await act(async () => {});
     view.unmount();
   });
 
@@ -362,7 +345,6 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
 
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
-    expect(locationMock.receiveRequest).not.toHaveBeenCalled();
     expect(lettersMock.reload).not.toHaveBeenCalled();
     expect(calendarMock.refresh).not.toHaveBeenCalled();
     expect(proposalsMock.reload).not.toHaveBeenCalled();

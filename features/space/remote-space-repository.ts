@@ -26,13 +26,22 @@ export const remoteSpaceRepository: SpaceRepository = {
   },
 
   async createSpace(input: CreateSpaceInput): Promise<RelationshipSpace> {
+    // Partner name and start date are optional end to end: the Worker
+    // accepts them absent (nullable columns), so only send what the user
+    // actually provided — never fabricate (no placeholder names, no
+    // defaulted dates). yourName travels for local display; the server
+    // derives authorship from the session, not this field.
     const data = await apiFetch<CreateSpaceResponse>('/v1/spaces', {
       method: 'POST',
       body: JSON.stringify({
         name: input.name,
         yourName: input.yourName,
-        partnerName: input.partnerName,
-        relationshipStartDate: input.relationshipStartDate,
+        ...(input.partnerName?.trim()
+          ? { partnerName: input.partnerName.trim() }
+          : {}),
+        ...(input.relationshipStartDate
+          ? { relationshipStartDate: input.relationshipStartDate }
+          : {}),
         photoUri: input.photoUri || undefined,
       }),
     });
@@ -45,6 +54,13 @@ export const remoteSpaceRepository: SpaceRepository = {
       body: JSON.stringify({ inviteCode: input.inviteCode }),
     });
     return data.space;
+  },
+
+  async regenerateInvite(_userId: string): Promise<string> {
+    const data = await apiFetch<{ inviteCode: string }>('/v1/spaces/current/invite', {
+      method: 'POST',
+    });
+    return data.inviteCode;
   },
 
   async updateSpaceForUser(

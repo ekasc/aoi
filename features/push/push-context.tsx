@@ -4,7 +4,6 @@ import { useEffect, type PropsWithChildren } from 'react';
 
 import { isStubMode } from '@/features/api-client';
 import { useCalendar } from '@/features/calendar/calendar-context';
-import { useLocation } from '@/features/location/location-context';
 import { useLetters } from '@/features/letters/letters-context';
 import { useMoments } from '@/features/moments/moments-context';
 import { useProposals } from '@/features/proposals/proposals-context';
@@ -41,11 +40,6 @@ export function PushProvider({ children }: PropsWithChildren) {
   const { refresh } = useMoments();
   const { refresh: refreshCalendar } = useCalendar();
   const { reload: reloadProposals } = useProposals();
-  const {
-    receiveRequest,
-    refreshPartnerLocation,
-    handlePartnerStopped,
-  } = useLocation();
   const { reload: reloadLetters } = useLetters();
 
   useEffect(() => {
@@ -82,21 +76,14 @@ export function PushProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      if (data.kind === 'location_request') {
-        // A gentle ask — the approval prompt appears if both opted in.
-        receiveRequest();
-        return;
-      }
-
-      if (data.kind === 'location_granted') {
-        // They shared once — quietly fetch the current position.
-        void refreshPartnerLocation();
-        return;
-      }
-
-      if (data.kind === 'location_stopped') {
-        // They paused or opted out — clear the pin without ceremony.
-        handlePartnerStopped();
+      // v1: location sharing is not in the release runtime. Location push
+      // kinds are parsed (shared contracts) but intentionally ignored here —
+      // they never open location UI or touch location state.
+      if (
+        data.kind === 'location_request' ||
+        data.kind === 'location_granted' ||
+        data.kind === 'location_stopped'
+      ) {
         return;
       }
 
@@ -155,12 +142,9 @@ export function PushProvider({ children }: PropsWithChildren) {
       responseSubscription.remove();
     };
   }, [
-    handlePartnerStopped,
-    receiveRequest,
     receiveSqueeze,
     refresh,
     refreshCalendar,
-    refreshPartnerLocation,
     reloadLetters,
     reloadProposals,
   ]);

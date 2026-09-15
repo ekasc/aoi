@@ -21,7 +21,11 @@ import type {
 	UpdateSpaceInput,
 } from "@/features/space/types";
 
-const SpaceContext = createContext<SpaceContextValue | undefined>(undefined);
+/**
+ * Exported for dev-preview routes, which provide seed values directly
+ * (headless environments never complete onboarding). Never used by app UI.
+ */
+export const SpaceContext = createContext<SpaceContextValue | undefined>(undefined);
 
 function buildImportedMilestones(
 	inputs: ImportedMilestoneInput[],
@@ -168,6 +172,22 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		setStatus("none");
 	}, [repository, user]);
 
+	const regenerateInvite = useCallback(async () => {
+		if (!user) {
+			throw new Error("Not signed in.");
+		}
+
+		const inviteCode = await repository.regenerateInvite(user.id);
+		// Re-read so expiry/joined state comes from the authority, not a guess.
+		const refreshed = await repository.getSpaceForUser(user.id).catch(() => null);
+		if (refreshed) {
+			setSpace(refreshed);
+		} else {
+			setSpace((current) => (current ? { ...current, inviteCode } : current));
+		}
+		return inviteCode;
+	}, [repository, user]);
+
 	const importMilestones = useCallback(
 		async (inputs: ImportedMilestoneInput[]) => {
 			if (!user || inputs.length === 0) {
@@ -197,6 +217,7 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			updateSpace,
 			clearSpace,
 			leaveSpace,
+			regenerateInvite,
 			importMilestones,
 		}),
 		[
@@ -209,6 +230,7 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			updateSpace,
 			clearSpace,
 			leaveSpace,
+			regenerateInvite,
 			importMilestones,
 		],
 	);
