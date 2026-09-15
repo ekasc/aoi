@@ -7,7 +7,7 @@ import { useAoiTheme } from "@/features/theme/theme-context";
 export default function PublicLayout() {
 	const { status, isHydrated: isSessionHydrated } = useSession();
 	const { status: spaceStatus, isHydrated: isSpaceHydrated } = useSpace();
-	const { hasStoredSelection, isHydrated: isThemeHydrated } = useAoiTheme();
+	const { isHydrated: isThemeHydrated } = useAoiTheme();
 
 	if (!isSessionHydrated || status === "loading") {
 		return null;
@@ -22,13 +22,7 @@ export default function PublicLayout() {
 			return <Redirect href="/(auth)/space-setup" />;
 		}
 
-		return (
-			<Redirect
-				href={
-					hasStoredSelection ? "/(app)/(tabs)" : "/(auth)/theme-select"
-				}
-			/>
-		);
+		return <Redirect href="/(app)/(tabs)/(memories)" />;
 	}
 
 	return (
