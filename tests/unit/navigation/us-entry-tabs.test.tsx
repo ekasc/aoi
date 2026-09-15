@@ -254,7 +254,6 @@ vi.mock('@/features/space/space-context', () => ({
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({
     moments: [],
-    activity: [],
     removeMoment: vi.fn(),
     isLoading: false,
     hasMoreMoments: false,
@@ -284,7 +283,6 @@ vi.mock('@/components/home/memory-sky', () => ({
 }));
 
 vi.mock('@/components/moments/moment-card', () => ({ MomentCard: () => null }));
-vi.mock('@/components/moments/tombstone-marker', () => ({ TombstoneMarker: () => null }));
 vi.mock('@/components/ui/action-sheet', () => ({ ActionSheet: () => null }));
 vi.mock('@/components/moments/pending-memory-row', () => ({ PendingMemoryRow: () => null }));
 vi.mock('@/components/ui/frosted-backdrop', () => ({ FrostedBackdrop: () => null }));

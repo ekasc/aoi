@@ -114,7 +114,6 @@ const loadChapterRange = vi.fn(async () => []);
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({
     moments: detailMoments.length > 0 ? detailMoments : [],
-    activity: [],
     isLoading: false,
     hasMoreMoments: false,
     loadMoreMoments: vi.fn(async () => false),

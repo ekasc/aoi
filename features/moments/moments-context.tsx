@@ -16,7 +16,6 @@ import { getPreviewSeedMoments, usePreviewVariant } from '@/features/dev/preview
 import { mockMoments } from '@/features/moments/mock-data';
 import {
   fetchMoments,
-  fetchActivity,
   createMoment as remoteCreateMoment,
   updateMoment as remoteUpdateMoment,
   deleteMoment as remoteDeleteMoment,
@@ -26,18 +25,12 @@ import type {
   CreateMomentInput,
   Moment,
   MomentsContextValue,
-  SpaceActivityItem,
   UpdateMomentInput,
 } from '@/features/moments/types';
-import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
 import type { ImportedMilestone } from '@/features/space/types';
 
 const _useRemote = !isStubMode();
-
-// Activity is provenance, not history — mirror the API's 7-day window.
-const ACTIVITY_RETENTION_DAYS = 7;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // One bound for every feed fetch: the head load and each older page. The
 // server caps a page here too (and defaults far lower), and the feed wants a
@@ -184,41 +177,38 @@ function toImportedMoment(milestone: ImportedMilestone): Moment {
   };
 }
 
-function withinActivityRetention(occurredAt: string, now: number) {
-  const timestamp = new Date(occurredAt).getTime();
-  if (Number.isNaN(timestamp)) {
-    return false;
-  }
-  return timestamp >= now - ACTIVITY_RETENTION_DAYS * MS_PER_DAY;
-}
-
 const MomentsContext = createContext<MomentsContextValue | undefined>(undefined);
 
 // ── Remote implementation ────────────────────────────────────────────────
 
 function useRemoteMoments(): MomentsContextValue {
   const [moments, setMoments] = useState<Moment[]>([]);
-  const [activity, setActivity] = useState<SpaceActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Request-sequence guards: overlapping focus refreshes can resolve out of
   // order, and only the newest request may write state (never let a stale
   // response overwrite fresh data).
   const momentsRequestSeq = useRef(0);
-  const activityRequestSeq = useRef(0);
   const hasMomentsData = useRef(false);
   // Shared cursor pagination: undefined = unstarted, string = next page,
   // null = exhausted. Any screen may advance it via loadMoreMoments; pages
   // stay bounded and exhausted cursors never refetch.
   const momentsCursorRef = useRef<string | null | undefined>(undefined);
   const loadMoreInFlightRef = useRef(false);
-  const headLoadInFlightRef = useRef(false);
+  // Counted, not a flag: overlapping head loads (a focus refresh landing on
+  // top of another) must keep paging suppressed until the LAST one settles,
+  // and a superseded one may not clear the suppression another still owns.
+  const headLoadsInFlightRef = useRef(0);
+  // The spinner belongs to the LOADS, not to one request: a load superseded
+  // by a mutation must still be able to end the first paint's spinner.
+  const loadsInFlightRef = useRef(0);
   const [hasMoreMoments, setHasMoreMoments] = useState(false);
   const [pagingError, setPagingError] = useState<string | null>(null);
 
   const loadMoments = useCallback(async () => {
     const requestId = ++momentsRequestSeq.current;
-    headLoadInFlightRef.current = true;
+    headLoadsInFlightRef.current += 1;
+    loadsInFlightRef.current += 1;
     // Background refreshes stay silent once data exists — no spinner flicker
     // on every app focus.
     if (!hasMomentsData.current) {
@@ -239,14 +229,27 @@ function useRemoteMoments(): MomentsContextValue {
       // the deeper pages the reader already opened: rows older than this
       // page survive, rows inside it are whatever the server just said (so a
       // deleted row inside that window does disappear).
+      //
+      // Consistency model, deliberate: the head window is refreshed, deeper
+      // pages are not, and the cursor only moves forward. Consequences, in
+      // both directions:
+      //   deep -> head (a partner redates an old memory forward): the row
+      //     lands once, from the page, and the stale deep copy is replaced.
+      //   head -> deep (a partner redates a loaded head memory backward past
+      //     this page): the local copy is pruned as if deleted and the new
+      //     copy sits on a page nothing has fetched, so the row stays out of
+      //     the loaded window until a fresh archive load pages back to it.
+      // The alternative, never pruning, keeps genuinely deleted rows on
+      // screen forever, and tombstone activity is no longer fetched, so the
+      // cursor window is the only signal available.
       setMoments((prev) => {
         if (!oldestInPage) {
           return [];
         }
-        return sortMomentsOldestFirst([
-          ...prev.filter(olderThan(oldestInPage)),
-          ...page,
-        ]);
+        // mergeMomentsById also de-dupes by id: a memory whose date moved out
+        // of the deep window and into this page (a partner edit) must land
+        // once, as the server's copy, not once per date it has worn.
+        return mergeMomentsById(prev.filter(olderThan(oldestInPage)), page);
       });
       // The cursor is the deepest page boundary the reader has reached. A
       // refresh only owns it before paging has started — otherwise it would
@@ -263,36 +266,24 @@ function useRemoteMoments(): MomentsContextValue {
       // not silently end history paging.
       setError(err instanceof Error ? err.message : 'Failed to load moments');
     } finally {
-      headLoadInFlightRef.current = false;
-      if (requestId === momentsRequestSeq.current) {
+      headLoadsInFlightRef.current = Math.max(0, headLoadsInFlightRef.current - 1);
+      loadsInFlightRef.current = Math.max(0, loadsInFlightRef.current - 1);
+      if (loadsInFlightRef.current === 0) {
         setIsLoading(false);
       }
     }
   }, []);
 
-  const loadActivity = useCallback(async () => {
-    const requestId = ++activityRequestSeq.current;
-    try {
-      const response = await fetchActivity();
-      if (requestId !== activityRequestSeq.current) {
-        return; // Stale response, a newer request owns the state.
-      }
-      setActivity(response.activity);
-    } catch {
-      // Activity is provenance only — keep whatever we already have.
-    }
-  }, []);
-
   const refresh = useCallback(async () => {
-    await Promise.all([loadMoments(), loadActivity()]);
-  }, [loadActivity, loadMoments]);
+    await loadMoments();
+  }, [loadMoments]);
 
   const loadMoreMoments = useCallback(async (): Promise<boolean> => {
     // Never page against a head load that is still in flight: it may be
     // about to replace the window the cursor points past.
     if (
       loadMoreInFlightRef.current ||
-      headLoadInFlightRef.current ||
+      headLoadsInFlightRef.current > 0 ||
       momentsCursorRef.current === null
     ) {
       return momentsCursorRef.current !== null;
@@ -422,18 +413,14 @@ function useRemoteMoments(): MomentsContextValue {
       // the sequences so stale snapshots (fetched before this change) are
       // dropped on arrival and never resurrect the deleted row.
       momentsRequestSeq.current += 1;
-      activityRequestSeq.current += 1;
       setMoments((prev) => prev.filter((moment) => moment.id !== momentId));
-      // The server recorded a tombstone; pick it up quietly.
-      void loadActivity();
     },
-    [loadActivity]
+    []
   );
 
   return useMemo(
     () => ({
       moments,
-      activity,
       isLoading,
       error,
       hasMoreMoments,
@@ -447,7 +434,6 @@ function useRemoteMoments(): MomentsContextValue {
       refresh,
     }),
     [
-      activity,
       addMoment,
       error,
       hasMoreMoments,
@@ -467,12 +453,10 @@ function useRemoteMoments(): MomentsContextValue {
 // ── Stub (local) implementation ──────────────────────────────────────────
 
 function useStubMoments(): MomentsContextValue {
-  const { user } = useSession();
   const { importedMilestones } = useSpace();
   const preview = usePreviewVariant();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
-  const [localActivity, setLocalActivity] = useState<SpaceActivityItem[]>([]);
 
   const importedMoments = useMemo(
     () => importedMilestones.map(toImportedMoment),
@@ -503,13 +487,6 @@ function useStubMoments(): MomentsContextValue {
 
     return sortMomentsOldestFirst(visibleMoments);
   }, [baseMoments, hiddenMomentIds, localMoments]);
-
-  const activity = useMemo(() => {
-    const now = Date.now();
-    return localActivity.filter((item) =>
-      withinActivityRetention(item.occurredAt, now)
-    );
-  }, [localActivity]);
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const nextMoment = toLocalMoment(input);
@@ -570,19 +547,7 @@ function useStubMoments(): MomentsContextValue {
       nextIds.add(momentId);
       return nextIds;
     });
-    // Synthesize the tombstone the remote API would record. Remote mode
-    // returns the actor's display name, so match that when we know it.
-    const actorName = user?.displayName?.trim() || 'You';
-    setLocalActivity((currentActivity) => [
-      {
-        id: `activity_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-        kind: 'moment_deleted',
-        actorName,
-        occurredAt: new Date().toISOString(),
-      },
-      ...currentActivity,
-    ]);
-  }, [user?.displayName]);
+  }, []);
 
   const refresh = useCallback(async () => {
     // Local data is always current — nothing to sync in stub mode.
@@ -611,7 +576,6 @@ function useStubMoments(): MomentsContextValue {
   return useMemo(
     () => ({
       moments,
-      activity,
       isLoading: false,
       error: null,
       hasMoreMoments: false,
@@ -624,7 +588,7 @@ function useStubMoments(): MomentsContextValue {
       removeMoment,
       refresh,
     }),
-    [activity, addMoment, loadChapterRange, loadGoals, loadMoreMoments, moments, refresh, removeMoment, updateMoment]
+    [addMoment, loadChapterRange, loadGoals, loadMoreMoments, moments, refresh, removeMoment, updateMoment]
   );
 }
 

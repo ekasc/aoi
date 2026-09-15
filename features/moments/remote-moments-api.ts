@@ -2,7 +2,6 @@ import { apiFetch } from '@/features/api-client';
 import type {
   CreateMomentInput,
   Moment,
-  SpaceActivityResponse,
   UpdateMomentInput,
 } from '@/features/moments/types';
 
@@ -83,6 +82,3 @@ export async function deleteMoment(momentId: string): Promise<void> {
   });
 }
 
-export async function fetchActivity(): Promise<SpaceActivityResponse> {
-  return apiFetch<SpaceActivityResponse>('/v1/spaces/current/activity');
-}

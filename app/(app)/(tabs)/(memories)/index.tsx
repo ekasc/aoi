@@ -581,24 +581,6 @@ export default function MemoriesScreen() {
 		[router],
 	);
 
-	const handleOpenPhoto = useCallback(
-		(photo: GalleryPhoto) => {
-			const moment = momentsById.get(photo.momentId);
-			const title = moment?.title?.trim();
-			setViewerPhoto({
-				photos: [
-					{
-						uri: photo.uri,
-						momentId: photo.momentId,
-						label: title ? `Photo: ${title}` : "Memory photo",
-					},
-				],
-				index: 0,
-			});
-		},
-		[momentsById],
-	);
-
 	const handleCloseViewer = useCallback(() => {
 		setViewerPhoto(null);
 	}, []);
@@ -626,6 +608,28 @@ export default function MemoriesScreen() {
 			});
 		},
 		[momentsById],
+	);
+
+	// A grid tile opens the same way a feed photo does: the memory's whole set
+	// at the tapped photo, matched by its stable tile key (momentId:mediaId),
+	// so a gallery of one memory's photos can be swiped through instead of
+	// dead-ending on a single frame.
+	const handleOpenPhoto = useCallback(
+		(photo: GalleryPhoto) => {
+			const moment = momentsById.get(photo.momentId);
+			if (!moment) {
+				return;
+			}
+			const galleryPhotos = galleryPhotosOf(moment);
+			const tappedIndex = galleryPhotos.findIndex(
+				(candidate) => candidate.key === photo.key,
+			);
+			handleOpenFeedPhoto(
+				photo.momentId,
+				tappedIndex >= 0 ? tappedIndex : 0,
+			);
+		},
+		[momentsById, handleOpenFeedPhoto],
 	);
 
 	// The viewer keeps the parent context: opening the memory is the same

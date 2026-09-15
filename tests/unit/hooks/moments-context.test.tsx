@@ -132,36 +132,6 @@ describe('useMoments (stub)', () => {
     expect(edited?.type).toBe(target.type);
   });
 
-  it('removeMoment synthesizes a tombstone activity item in stub mode', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
-
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
-
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
-    });
-
-    expect(result.current.activity).toEqual([]);
-
-    const idToRemove = result.current.moments[0].id;
-
-    await act(async () => {
-      await result.current.removeMoment(idToRemove);
-    });
-
-    expect(result.current.activity).toHaveLength(1);
-    const tombstone = result.current.activity[0];
-    expect(tombstone.kind).toBe('moment_deleted');
-    // Parity with remote mode: the actor's display name, not a hardcoded 'You'.
-    expect(tombstone.actorName).toBe('Jordan');
-    // Privacy: the tombstone carries fact + actor only.
-    expect(Object.keys(tombstone).sort()).toEqual(
-      ['actorName', 'id', 'kind', 'occurredAt'].sort(),
-    );
-  });
-
   it('falls back to "You" in the tombstone when no session user is available', async () => {
     mockSessionUser = null;
     const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
@@ -179,8 +149,6 @@ describe('useMoments (stub)', () => {
     await act(async () => {
       await result.current.removeMoment(idToRemove);
     });
-
-    expect(result.current.activity[0].actorName).toBe('You');
   });
 
   it('derives isOwn from authorRole for stub moments', async () => {

@@ -432,7 +432,6 @@ const storyMoments = [
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({
     moments: storyMoments,
-    activity: [],
     removeMoment: vi.fn(),
     isLoading: false,
     error: null,
@@ -504,10 +503,6 @@ vi.mock('@/features/proposals/proposals-context', () => ({
 
 vi.mock('@/components/moments/moment-card', () => ({
   MomentCard: () => null,
-}));
-
-vi.mock('@/components/moments/tombstone-marker', () => ({
-  TombstoneMarker: () => null,
 }));
 
 vi.mock('@/components/theme/theme-selector', () => ({

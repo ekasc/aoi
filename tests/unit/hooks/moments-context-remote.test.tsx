@@ -25,14 +25,12 @@ vi.mock('@/features/api-client', () => ({
 }));
 
 const mockFetchMoments = vi.fn();
-const mockFetchActivity = vi.fn();
 const mockCreateMoment = vi.fn();
 const mockUpdateMoment = vi.fn();
 const mockDeleteMoment = vi.fn();
 
 vi.mock('@/features/moments/remote-moments-api', () => ({
   fetchMoments: (...args: unknown[]) => mockFetchMoments(...args),
-  fetchActivity: (...args: unknown[]) => mockFetchActivity(...args),
   createMoment: (...args: unknown[]) => mockCreateMoment(...args),
   updateMoment: (...args: unknown[]) => mockUpdateMoment(...args),
   deleteMoment: (...args: unknown[]) => mockDeleteMoment(...args),
@@ -82,8 +80,6 @@ describe('useMoments (remote refresh guards)', () => {
     vi.resetModules();
     mockAppStateListeners.length = 0;
     mockFetchMoments.mockReset();
-    mockFetchActivity.mockReset();
-    mockFetchActivity.mockResolvedValue({ activity: [] });
     mockCreateMoment.mockReset();
     mockUpdateMoment.mockReset();
     mockDeleteMoment.mockReset();
@@ -224,8 +220,6 @@ describe('useMoments cursor pagination (Wall-driven)', () => {
   beforeEach(() => {
     mockAppStateListeners.length = 0;
     mockFetchMoments.mockReset();
-    mockFetchActivity.mockReset();
-    mockFetchActivity.mockResolvedValue({ activity: [] });
   });
 
   async function renderRemoteMoments() {
@@ -324,6 +318,34 @@ describe('useMoments cursor pagination (Wall-driven)', () => {
     );
   });
 
+  it('lands a memory that moved into the refreshed window exactly once', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [
+        remoteMomentAt('m3', 'Newest', '2026-03-15T10:00:00.000Z'),
+        remoteMomentAt('m2', 'Old', '2026-01-10T10:00:00.000Z'),
+      ],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.moments).toHaveLength(2));
+
+    // The partner redates the old memory into the head window: the refresh
+    // returns it once, and the deep copy must not survive as a duplicate.
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [
+        remoteMomentAt('m3', 'Newest', '2026-03-15T10:00:00.000Z'),
+        remoteMomentAt('m2', 'Old', '2026-03-14T10:00:00.000Z'),
+      ],
+      nextCursor: 'cursor-1',
+    });
+    triggerFocus();
+    await waitFor(() =>
+      expect(result.current.moments.map((moment) => moment.title)).toEqual(['Old', 'Newest']),
+    );
+    expect(result.current.moments.filter((moment) => moment.id === 'm2')).toHaveLength(1);
+  });
+
   it('keeps paging alive when the head refresh fails', async () => {
     mockFetchMoments.mockResolvedValueOnce({
       moments: [remoteMoment('m1', 'First')],
@@ -373,6 +395,65 @@ describe('useMoments cursor pagination (Wall-driven)', () => {
     expect(mockFetchMoments).toHaveBeenLastCalledWith('cursor-1', 100);
     expect(result.current.pagingError).toBeNull();
     expect(result.current.moments).toHaveLength(2);
+  });
+
+  it('ends the first paint spinner even when a mutation supersedes the load', async () => {
+    const firstLoad = deferred<Page>();
+    mockFetchMoments.mockReturnValueOnce(firstLoad.promise);
+    mockCreateMoment.mockResolvedValue(remoteMoment('m-new', 'New'));
+
+    const { result } = await renderRemoteMoments();
+    expect(result.current.isLoading).toBe(true);
+
+    // The user saves something before the first page lands: the mutation
+    // supersedes the load, and the response is dropped as stale.
+    await act(async () => {
+      await result.current.addMoment({ type: 'note', title: 'New', body: '' });
+    });
+    await act(async () => {
+      firstLoad.resolve({ moments: [remoteMoment('m1', 'First')] });
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+  });
+
+  it('keeps paging suppressed until the last overlapping head load settles', async () => {
+    mockFetchMoments.mockResolvedValueOnce({
+      moments: [remoteMoment('m1', 'First')],
+      nextCursor: 'cursor-1',
+    });
+
+    const { result } = await renderRemoteMoments();
+    await waitFor(() => expect(result.current.hasMoreMoments).toBe(true));
+
+    // Two head loads overlap: the first settles while the second still runs,
+    // and its completion may not re-open paging.
+    const first = deferred<Page>();
+    const second = deferred<Page>();
+    mockFetchMoments.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    triggerFocus();
+    await waitFor(() => expect(mockFetchMoments).toHaveBeenCalledTimes(2));
+    triggerFocus();
+    await waitFor(() => expect(mockFetchMoments).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      first.resolve({ moments: [remoteMoment('m1', 'First')], nextCursor: 'cursor-1' });
+    });
+
+    const callsBefore = mockFetchMoments.mock.calls.length;
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(mockFetchMoments.mock.calls.length).toBe(callsBefore);
+
+    // Once the newest head load settles, paging resumes normally.
+    await act(async () => {
+      second.resolve({ moments: [remoteMoment('m1', 'First')], nextCursor: 'cursor-1' });
+    });
+    mockFetchMoments.mockResolvedValueOnce({ moments: [remoteMoment('m2', 'Older')] });
+    await act(async () => {
+      await result.current.loadMoreMoments();
+    });
+    expect(mockFetchMoments).toHaveBeenLastCalledWith('cursor-1', 100);
   });
 
   it('never pages against a head refresh that is still in flight', async () => {
@@ -487,8 +568,6 @@ describe('useMoments chapter reads (range + summary, Story-independent)', () => 
   beforeEach(() => {
     mockAppStateListeners.length = 0;
     mockFetchMoments.mockReset();
-    mockFetchActivity.mockReset();
-    mockFetchActivity.mockResolvedValue({ activity: [] });
   });
 
   async function renderRemoteMoments() {

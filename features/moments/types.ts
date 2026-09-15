@@ -112,23 +112,8 @@ export type UpdateMomentInput = {
  * Change-log entry for the space (mirrors @aoi/shared). Privacy rule:
  * fact + actor only — never moment content.
  */
-export type SpaceActivityKind = 'moment_deleted' | 'moment_edited';
-
-export type SpaceActivityItem = {
-  id: string;
-  kind: SpaceActivityKind;
-  actorName: string;
-  occurredAt: string;
-};
-
-export type SpaceActivityResponse = {
-  activity: SpaceActivityItem[];
-};
-
 export type MomentsContextValue = {
   moments: Moment[];
-  /** Recent space activity (tombstones etc.); last 7 days at most. */
-  activity: SpaceActivityItem[];
   isLoading: boolean;
   error: string | null;
   /**
@@ -166,6 +151,6 @@ export type MomentsContextValue = {
   addMoment: (input: CreateMomentInput) => Promise<Moment>;
   updateMoment: (momentId: string, patch: UpdateMomentInput) => Promise<void>;
   removeMoment: (momentId: string) => Promise<void>;
-  /** Re-fetches moments + activity (remote mode); no-op in stub mode. */
+  /** Re-fetches the head of the archive (remote mode); no-op in stub mode. */
   refresh: () => Promise<void>;
 };

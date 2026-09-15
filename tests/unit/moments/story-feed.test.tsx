@@ -167,7 +167,6 @@ const flatListUnmountSpy = vi.fn();
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({
     moments: feedMoments,
-    activity: [],
     isLoading: feedLoading,
     error: feedError,
     hasMoreMoments: feedHasMore,
@@ -485,6 +484,29 @@ describe('Memories story feed (oldest-first archive)', () => {
     // Oldest month leads; the newest memory sits at the bottom.
     const html = screen.getByTestId('story-feed').innerHTML;
     expect(html.indexOf('February 2026')).toBeLessThan(html.indexOf('March 2026'));
+  });
+
+  it('opens a gallery tile as the memory\'s whole set at that photo', async () => {
+    feedMoments = [
+      makeMoment({
+        id: 'm-photos',
+        occurredAt: '2026-03-15T10:00:00.000Z',
+        attachments: [
+          { mediaId: 'a', kind: 'image', url: 'https://cdn.test/1.jpg' },
+          { mediaId: 'b', kind: 'image', url: 'https://cdn.test/2.jpg' },
+        ],
+      }),
+    ];
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+
+    fireEvent.click(screen.getByText('Gallery'));
+    // The second tile of that memory's grid row.
+    fireEvent.click(screen.getByLabelText('Open photo 2 from March 2026'));
+
+    // The viewer holds the whole set and starts on the tapped photo, exactly
+    // like the feed path — a tile is not a dead end into one frame.
+    expect(screen.getByText('Photo 2 of 2')).toBeTruthy();
   });
 
   it('opens the month chapter from its section header', async () => {

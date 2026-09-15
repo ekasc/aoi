@@ -295,7 +295,6 @@ vi.mock('expo-router', () => ({
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({
     moments: MOMENTS,
-    activity: [],
     removeMoment: vi.fn(),
     isLoading: false,
     error: null,
