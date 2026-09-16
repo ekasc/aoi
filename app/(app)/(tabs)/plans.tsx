@@ -293,6 +293,8 @@ export default function PlansScreen() {
 		error: calendarError,
 	} = useCalendar();
 	const [centerMonth, setCenterMonth] = useState(() => visibleMonth);
+	const [screenHeight, setScreenHeight] = useState(0);
+	const [headerMeasured, setHeaderMeasured] = useState(0);
 	const pagerMonths = useMemo(
 		() =>
 			Array.from({ length: PAGER_WINDOW_SIZE }, (_, index) =>
@@ -622,15 +624,18 @@ export default function PlansScreen() {
 	// The month fills the screen under the header, the way Apple's does. Rows
 	// stretch to the space, so a month never leaves half the page unusable.
 	const WEEKDAY_HEADER_HEIGHT = 40;
-	const MONTH_PAGE_HEIGHT = Math.max(
-		PAGER_HEIGHT + 76,
-		windowHeight -
-			headerSkyHeightForWindow(windowHeight) -
-			HEADER_ROW_HEIGHT -
-			insets.bottom -
-			SYSTEM_TAB_BAR_IOS_CLEARANCE -
-			WEEKDAY_HEADER_HEIGHT,
-	);
+	// Measured where the device will tell us, computed where it will not. A
+	// month that fits its screen cannot be got right by arithmetic alone.
+	const availableHeight =
+		screenHeight > 0 && headerMeasured > 0
+			? screenHeight - headerMeasured - WEEKDAY_HEADER_HEIGHT - SYSTEM_TAB_BAR_IOS_CLEARANCE
+			: windowHeight -
+				headerSkyHeightForWindow(windowHeight) -
+				HEADER_ROW_HEIGHT -
+				insets.bottom -
+				SYSTEM_TAB_BAR_IOS_CLEARANCE -
+				WEEKDAY_HEADER_HEIGHT;
+	const MONTH_PAGE_HEIGHT = Math.max(PAGER_HEIGHT + 76, availableHeight);
 
 	// Keep the pager visually centered after every rebase (mount included);
 	// the user's swipe or tap already supplied the motion.
@@ -675,9 +680,15 @@ export default function PlansScreen() {
 	);
 
 	return (
-		<View style={rootStyle}>
+		<View
+			onLayout={(event) => setScreenHeight(Math.round(event.nativeEvent.layout.height))}
+			style={rootStyle}
+		>
       <FrostedBackdrop />
-			<View style={headerBlockStyle}>
+			<View
+				onLayout={(event) => setHeaderMeasured(Math.round(event.nativeEvent.layout.height))}
+				style={headerBlockStyle}
+			>
 				<MemorySky header moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
 				<ScreenHeader
 					title="Plans"
