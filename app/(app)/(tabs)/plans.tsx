@@ -612,7 +612,7 @@ export default function PlansScreen() {
 	// Calendar card fits a 320pt viewport: full window width minus the
 	// screen gutters (24 each side) minus the card padding (12 each side).
 	// Pager pages exactly this width so swiping stays aligned.
-	const PAGE_WIDTH = windowWidth - Spacing[24] * 2 - Spacing[12] * 2;
+	const PAGE_WIDTH = windowWidth;
 	const pagerRef = useRef<ScrollView | null>(null);
 	const pagerHeight = PAGER_HEIGHT;
 	// One month of the vertical stack: the month name, then its grid.
@@ -622,10 +622,10 @@ export default function PlansScreen() {
 	// the user's swipe or tap already supplied the motion.
 	useEffect(() => {
 		pagerRef.current?.scrollTo({
-			x: PAGE_WIDTH * PAGER_WINDOW_RADIUS,
+			y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS,
 			animated: false,
 		});
-	}, [PAGE_WIDTH, centerMonth]);
+	}, [MONTH_PAGE_HEIGHT, centerMonth]);
 
 	// Keep the context's loaded window in step with the month the user is on.
 	useEffect(() => {
@@ -634,19 +634,6 @@ export default function PlansScreen() {
 		}
 	}, [currentMonth, setVisibleMonth, visibleMonth]);
 
-	const handlePagerMomentumEnd = useCallback(
-		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
-			const page = Math.round(
-				event.nativeEvent.contentOffset.y / MONTH_PAGE_HEIGHT,
-			);
-			const month = addMonths(centerMonth, page - PAGER_WINDOW_RADIUS);
-			if (isSameMonth(month, centerMonth)) {
-				return;
-			}
-			setCenterMonth(month);
-		},
-		[MONTH_PAGE_HEIGHT, centerMonth],
-	);
 
 
 	const headerBlockHeight = useMemo(
@@ -740,7 +727,6 @@ export default function PlansScreen() {
 				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
 				decelerationRate="fast"
 				nestedScrollEnabled
-				onMomentumScrollEnd={handlePagerMomentumEnd}
 				pagingEnabled
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
@@ -772,108 +758,6 @@ export default function PlansScreen() {
 				))}
 			</ScrollView>
 			</View>
-
-			<View style={styles.section}>
-				<ThemedText type="title" selectable style={styles.agendaHeading}>
-					{formatDateTitle(selectedDate)}
-				</ThemedText>
-				{selectedDayAnniversary ? (
-					<ThemedText type="caption" style={{ color: muted }}>
-						{formatAnniversaryLabel(selectedDayAnniversary)}
-					</ThemedText>
-				) : null}
-				{agendaRows.length === 0 ? (
-					<View style={styles.emptyAgenda}>
-						{calendarError ? (
-							<ThemedText type="body" style={{ color: muted }}>
-								Couldn&apos;t load plans, check your connection.
-							</ThemedText>
-						) : (
-							<ThemedText type="body" style={{ color: muted }}>
-								Nothing planned.
-							</ThemedText>
-						)}
-						<Button
-							label="Add event"
-							variant="secondary"
-							onPress={handleAddEvent}
-						/>
-					</View>
-				) : (
-					agendaRows.map((row, index) => (
-						<View key={`${row.kind}:${row.id}`}>
-							{index > 0 ? (
-								<View
-									style={[styles.separator, { backgroundColor: border }]}
-								/>
-							) : null}
-							<Pressable
-								accessibilityLabel={
-									row.kind === "proposal" ? row.title : `Open ${row.title}`
-								}
-								accessibilityRole={row.kind === "proposal" ? undefined : "button"}
-								onPress={
-									row.kind === "proposal"
-										? undefined
-										: () => {
-												if (row.kind === "event") {
-													handleOpenEvent(row.id);
-												} else {
-													handleOpenGoal(row.id);
-												}
-											}
-								}
-								style={({ pressed }) => [
-									styles.row,
-									pressed ? styles.pressed : undefined,
-								]}
-							>
-								<ThemedText
-									type="caption"
-									style={[styles.rowWhen, { color: muted }]}
-								>
-									{row.when}
-								</ThemedText>
-								<ThemedText type="body" style={styles.rowTitle}>
-									{row.title}
-								</ThemedText>
-								{row.kind === "proposal" ? (
-									row.answerable ? (
-										<View style={styles.rowActions}>
-											<Button
-												accessibilityLabel={`Accept ${row.title}`}
-												label="Accept"
-												onPress={() => {
-													void handleResolveProposal(row.id, "accept");
-												}}
-												size="sm"
-											/>
-											<Button
-												accessibilityLabel={`Decline ${row.title}`}
-												label="Decline"
-												onPress={() => {
-													void handleResolveProposal(row.id, "decline");
-												}}
-												size="sm"
-												variant="secondary"
-											/>
-										</View>
-									) : (
-										<ThemedText type="caption" style={{ color: warning }}>
-											Waiting on them
-										</ThemedText>
-									)
-								) : (
-									<Ionicons color={muted} name="chevron-forward" size={16} />
-								)}
-							</Pressable>
-						</View>
-					))
-				)}
-			</View>
-
-			<Divider />
-
 
 		</ScrollView>
 		</View>

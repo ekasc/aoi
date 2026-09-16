@@ -248,108 +248,18 @@ async function renderPlans() {
   return render(<PlansScreen />);
 }
 
+const PLANS_SOURCE = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
+
 describe('Plans calendar', () => {
   it('shows the day events as strips in the cell, not a dot', async () => {
     mockEventsForDay = { '2026-01-15': [makeEvent()] };
     await renderPlans();
 
-    // The title appears twice now: as a strip inside the grid cell, and in
-    // the selected day's agenda. A dot said only that something was there.
-    expect(screen.getAllByText('Dinner out').length).toBeGreaterThanOrEqual(2);
+    // The title appears in the grid cell itself. The agenda that used to
+    // repeat it below is gone: the grid is the screen now.
+    expect(screen.getAllByText('Dinner out').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText('Thursday, January 15, has plans')).toBeTruthy();
   });
-
-  it('selecting a day drives the inline agenda', async () => {
-    mockEventsForDay = { '2026-01-15': [makeEvent()] };
-    mockSelectedDate = new Date(2026, 0, 20, 12, 0, 0);
-    const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
-    const first = render(<PlansScreen />);
-    expect(screen.getByText('Nothing planned.')).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText('Thursday, January 15, has plans'));
-    // Selection state lives in the mocked context setter; re-render on it.
-    first.unmount();
-    render(<PlansScreen />);
-    expect(screen.getAllByText('Dinner out').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('empty selected day is a lightweight line, not a panel', async () => {
-    await renderPlans();
-
-    expect(screen.getByText('Nothing planned.')).toBeTruthy();
-    expect(screen.getByText('Add event')).toBeTruthy();
-  });
-});
-
-describe('Plans calendar collapsed with upcoming', () => {
-  it('answers a proposal on its own day, with no Proposals section', async () => {
-    // The proposal is a date. It appears in that day's agenda and is answered
-    // there, so acceptance turns it into the event in place.
-    // Same day as the mocked selection, since that is the day on screen.
-    mockProposals = [
-      {
-        id: 'p1',
-        title: 'Brunch Saturday?',
-        status: 'pending',
-        proposerRole: 'partner',
-        proposedStart: new Date(2026, 0, 15, 10, 0, 0).toISOString(),
-      },
-      {
-        id: 'p2',
-        title: 'Museum Sunday',
-        status: 'pending',
-        proposerRole: 'you',
-        proposedStart: new Date(2026, 0, 15, 18, 0, 0).toISOString(),
-      },
-    ];
-    await renderPlans();
-
-    expect(screen.queryByText('Proposals')).toBeNull();
-    expect(screen.getByText('Brunch Saturday?')).toBeTruthy();
-    expect(screen.getByText('Museum Sunday')).toBeTruthy();
-    expect(screen.getByText(/Waiting on them/)).toBeTruthy();
-
-    fireEvent.click(screen.getByText('Accept'));
-    await waitFor(() => expect(acceptProposalSpy).toHaveBeenCalledWith('p1'));
-    await waitFor(() => expect(refreshCalendarSpy).toHaveBeenCalledTimes(1));
-  });
-
-  it('marks the state that is out of your hands in warning, not muted', async () => {
-    // Same day as the mocked selection, since that is the day on screen.
-    mockProposals = [
-      {
-        id: 'p1',
-        title: 'Brunch Saturday?',
-        status: 'pending',
-        proposerRole: 'partner',
-        proposedStart: new Date(2026, 0, 15, 10, 0, 0).toISOString(),
-      },
-      {
-        id: 'p2',
-        title: 'Museum Sunday',
-        status: 'pending',
-        proposerRole: 'you',
-        proposedStart: new Date(2026, 0, 15, 18, 0, 0).toISOString(),
-      },
-    ];
-    await renderPlans();
-
-    const waiting = screen.getByText(/Waiting on them/);
-    expect((waiting as HTMLElement).style.color).toBe('#8a5f2b');
-  });
-
-  it('surfaces goal records dated on the selected day inside the agenda', async () => {
-    loadGoals.mockResolvedValue([
-      makeGoal({ id: 'goal-1', targetAt: new Date(2026, 0, 15, 12, 0, 0).toISOString() }),
-    ]);
-    await renderPlans();
-
-    await waitFor(() => expect(screen.getAllByText('Visit Kyoto').length).toBeGreaterThanOrEqual(1));
-  });
-});
-
-describe('Plans fixed header block (pinned ScreenHeader, zero overlap)', () => {
-  const PLANS_SOURCE = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
 
   it('pins ScreenHeader+sky in a fixed block sized by the helper', () => {
     expect(PLANS_SOURCE).toContain('headerSkyHeightForWindow');
