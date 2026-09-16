@@ -658,11 +658,6 @@ export default function PlansScreen() {
 		[headerBlockHeight, insets.top],
 	);
 
-	const somedayPreview = useMemo(
-		() => somedayOpen.slice(0, 3),
-		[somedayOpen],
-	);
-
 	return (
 		<View style={rootStyle}>
       <FrostedBackdrop />
@@ -798,9 +793,17 @@ export default function PlansScreen() {
 			) : null}
 
 			<View style={styles.section}>
-				<ThemedText type="title" selectable style={styles.agendaHeading}>
-					{formatDateTitle(selectedDate)}
-				</ThemedText>
+				<View style={styles.agendaHeader}>
+					<ThemedText type="title" selectable style={styles.agendaHeading}>
+						{formatDateTitle(selectedDate)}
+					</ThemedText>
+					<Button
+						label="Suggest a time"
+						variant="ghost"
+						size="sm"
+						onPress={handleSuggestTime}
+					/>
+				</View>
 				{selectedDayAnniversary ? (
 					<ThemedText type="caption" style={{ color: muted }}>
 						{formatAnniversaryLabel(selectedDayAnniversary)}
@@ -832,17 +835,21 @@ export default function PlansScreen() {
 								/>
 							) : null}
 							<Pressable
-								accessibilityLabel={`Open ${row.title}`}
-								accessibilityRole="button"
-								onPress={() => {
-									if (row.kind === "event") {
-										handleOpenEvent(row.id);
-									} else if (row.kind === "goal") {
-										handleOpenGoal(row.id);
-									} else {
-										handleSuggestTime();
-									}
-								}}
+								accessibilityLabel={
+									row.kind === "proposal" ? row.title : `Open ${row.title}`
+								}
+								accessibilityRole={row.kind === "proposal" ? undefined : "button"}
+								onPress={
+									row.kind === "proposal"
+										? undefined
+										: () => {
+												if (row.kind === "event") {
+													handleOpenEvent(row.id);
+												} else {
+													handleOpenGoal(row.id);
+												}
+											}
+								}
 								style={({ pressed }) => [
 									styles.row,
 									pressed ? styles.pressed : undefined,
@@ -857,7 +864,35 @@ export default function PlansScreen() {
 								<ThemedText type="body" style={styles.rowTitle}>
 									{row.title}
 								</ThemedText>
-								<Ionicons color={muted} name="chevron-forward" size={16} />
+								{row.kind === "proposal" ? (
+									row.answerable ? (
+										<View style={styles.rowActions}>
+											<Button
+												accessibilityLabel={`Accept ${row.title}`}
+												label="Accept"
+												onPress={() => {
+													void handleResolveProposal(row.id, "accept");
+												}}
+												size="sm"
+											/>
+											<Button
+												accessibilityLabel={`Decline ${row.title}`}
+												label="Decline"
+												onPress={() => {
+													void handleResolveProposal(row.id, "decline");
+												}}
+												size="sm"
+												variant="secondary"
+											/>
+										</View>
+									) : (
+										<ThemedText type="caption" style={{ color: warning }}>
+											Waiting on them
+										</ThemedText>
+									)
+								) : (
+									<Ionicons color={muted} name="chevron-forward" size={16} />
+								)}
 							</Pressable>
 						</View>
 					))
@@ -866,119 +901,25 @@ export default function PlansScreen() {
 
 			<Divider />
 
-			<View style={styles.section}>
-				<View style={styles.sectionHeader}>
-					<ThemedText type="title">Proposals</ThemedText>
-					<Button
-						label="Suggest a time"
-						variant="ghost"
-						size="sm"
-						onPress={handleSuggestTime}
-					/>
-				</View>
-				{pendingProposals.length === 0 ? (
-					<ThemedText type="body" style={{ color: muted }}>
-						Nothing waiting for a yes right now.
-					</ThemedText>
-				) : (
-					<View style={[styles.groupCard, { backgroundColor: withAlpha(surface, 0.3), borderColor: border }]}>
-					{pendingProposals.map((proposal, proposalIndex) => {
-						const answerable = answerableIds.has(proposal.id);
-						return (
-							<View key={proposal.id}>
-								{proposalIndex > 0 ? (
-									<View style={[styles.groupSeparator, { backgroundColor: border }]} />
-								) : null}
-							<View style={styles.proposalRow}>
-								{answerable ? (
-									<View style={[styles.pendingDot, { backgroundColor: warning }]} />
-								) : null}
-								<View style={styles.proposalText}>
-									<ThemedText type="body" numberOfLines={2}>
-										{proposal.title}
-									</ThemedText>
-									<ThemedText
-										type="caption"
-										selectable
-										style={{ color: answerable ? muted : warning }}
-									>
-										{formatProposalWhen(proposal)}
-										{answerable ? "" : " · Waiting on them"}
-									</ThemedText>
-								</View>
-								{answerable ? (
-									<View style={styles.proposalActions}>
-										<Button
-											label="Accept"
-											size="sm"
-											disabled={resolvingProposalId !== null}
-											onPress={() =>
-												void handleResolveProposal(proposal.id, "accept")
-											}
-										/>
-										<Button
-											label="Not now"
-											variant="ghost"
-											size="sm"
-											disabled={resolvingProposalId !== null}
-											onPress={() =>
-												void handleResolveProposal(proposal.id, "decline")
-											}
-										/>
-									</View>
-								) : null}
-							</View>
-							</View>
-						);
-					})}
-					</View>
-				)}
-			</View>
-
-			<Divider />
-
-			<View style={styles.section}>
-				<View style={styles.sectionHeader}>
-					<ThemedText type="title">Someday</ThemedText>
-					<Button
-						label={somedayOpen.length > 3 ? `See all ${somedayOpen.length}` : "Open list"}
-						variant="ghost"
-						size="sm"
-						onPress={handleOpenSomeday}
-					/>
-				</View>
-				{somedayPreview.length === 0 ? (
-					<ThemedText type="body" style={{ color: muted }}>
-						No someday ideas yet. Save one when it comes to you.
-					</ThemedText>
-				) : (
-					<View style={[styles.groupCard, { backgroundColor: withAlpha(surface, 0.3), borderColor: border }]}>
-					{somedayPreview.map((item, itemIndex) => (
-						<View key={item.id}>
-							{itemIndex > 0 ? (
-								<View style={[styles.groupSeparator, { backgroundColor: border }]} />
-							) : null}
-						<Pressable
-							accessibilityLabel={`Open Someday list`}
-							accessibilityRole="button"
-							onPress={handleOpenSomeday}
-							style={({ pressed }) => [
-								styles.row,
-								pressed ? styles.pressed : undefined,
-							]}
-						>
-							<ThemedText type="body" style={styles.rowTitle}>
-								{item.title}
-							</ThemedText>
-							<Ionicons color={muted} name="chevron-forward" size={16} />
-						</Pressable>
-						</View>
-					))}
-					</View>
-				)}
-			</View>
-
-			<Divider />
+			<Pressable
+				accessibilityHint="Opens the Someday list"
+				accessibilityLabel={`Someday, ${somedayOpen.length} saved`}
+				accessibilityRole="button"
+				onPress={handleOpenSomeday}
+				style={({ pressed }) => [
+					styles.row,
+					{ borderColor: border },
+					pressed ? styles.pressed : undefined,
+				]}
+			>
+				<ThemedText type="body" style={styles.rowTitle}>
+					Someday
+				</ThemedText>
+				<ThemedText type="caption" style={{ color: muted }}>
+					{somedayOpen.length === 0 ? "Nothing saved yet" : `${somedayOpen.length} saved`}
+				</ThemedText>
+				<Ionicons color={muted} name="chevron-forward" size={16} />
+			</Pressable>
 
 			<View style={styles.section}>
 				<View style={styles.sectionHeader}>
@@ -1176,6 +1117,16 @@ const styles = StyleSheet.create({
 	rowWhen: {
 		width: 76,
 		fontVariant: ["tabular-nums"],
+	},
+	agendaHeader: {
+		alignItems: "center",
+		flexDirection: "row",
+		justifyContent: "space-between",
+	},
+	rowActions: {
+		alignItems: "center",
+		flexDirection: "row",
+		gap: Spacing[8],
 	},
 	rowTitle: {
 		flex: 1,

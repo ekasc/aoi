@@ -381,7 +381,7 @@ describe('Plans calendar collapsed with upcoming', () => {
 });
 
 describe('Plans sections', () => {
-  it('shows Someday preview with entry to the full list', async () => {
+  it('keeps one quiet way into Someday without listing it in the calendar', async () => {
     mockSomedayOpen = [
       { id: 's1', title: 'Night train ride' },
       { id: 's2', title: 'Rooftop picnic' },
@@ -390,35 +390,38 @@ describe('Plans sections', () => {
     ];
     await renderPlans();
 
+    // An undated idea is not calendar content, so the list stays on its own
+    // screen. The row is the way in, and it counts what is there.
     expect(screen.getByText('Someday')).toBeTruthy();
-    expect(screen.getByText('Night train ride')).toBeTruthy();
-    expect(screen.getByText('Rooftop picnic')).toBeTruthy();
-    expect(screen.getByText('Pottery class')).toBeTruthy();
-    expect(screen.queryByText('Lake cabin')).toBeNull();
-    fireEvent.click(screen.getByText('See all 4'));
+    expect(screen.getByText('4 saved')).toBeTruthy();
+    expect(screen.queryByText('Night train ride')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Someday, 4 saved'));
     expect(pushSpy).toHaveBeenCalledWith('/(app)/someday');
   });
 
-  it('makes pending proposals first-class with answers preserved', async () => {
+  it('answers a proposal on its own day, with no Proposals section', async () => {
+    // The proposal is a date. It appears in that day's agenda and is answered
+    // there, so acceptance turns it into the event in place.
+    // Same day as the mocked selection, since that is the day on screen.
     mockProposals = [
       {
         id: 'p1',
         title: 'Brunch Saturday?',
         status: 'pending',
         proposerRole: 'partner',
-        proposedStart: new Date(2026, 0, 17, 10, 0, 0).toISOString(),
+        proposedStart: new Date(2026, 0, 15, 10, 0, 0).toISOString(),
       },
       {
         id: 'p2',
         title: 'Museum Sunday',
         status: 'pending',
         proposerRole: 'you',
-        proposedStart: new Date(2026, 0, 18, 10, 0, 0).toISOString(),
+        proposedStart: new Date(2026, 0, 15, 18, 0, 0).toISOString(),
       },
     ];
     await renderPlans();
 
-    expect(screen.getByText('Proposals')).toBeTruthy();
+    expect(screen.queryByText('Proposals')).toBeNull();
     expect(screen.getByText('Brunch Saturday?')).toBeTruthy();
     expect(screen.getByText('Museum Sunday')).toBeTruthy();
     expect(screen.getByText(/Waiting on them/)).toBeTruthy();
@@ -428,35 +431,26 @@ describe('Plans sections', () => {
     await waitFor(() => expect(refreshCalendarSpy).toHaveBeenCalledTimes(1));
   });
 
-  it('gives waiting-for-yes one warm job: gold dot to answer, warning words while waiting', async () => {
+  it('marks the state that is out of your hands in warning, not muted', async () => {
+    // Same day as the mocked selection, since that is the day on screen.
     mockProposals = [
       {
         id: 'p1',
         title: 'Brunch Saturday?',
         status: 'pending',
         proposerRole: 'partner',
-        proposedStart: new Date(2026, 0, 17, 10, 0, 0).toISOString(),
+        proposedStart: new Date(2026, 0, 15, 10, 0, 0).toISOString(),
       },
       {
         id: 'p2',
         title: 'Museum Sunday',
         status: 'pending',
         proposerRole: 'you',
-        proposedStart: new Date(2026, 0, 18, 10, 0, 0).toISOString(),
+        proposedStart: new Date(2026, 0, 15, 18, 0, 0).toISOString(),
       },
     ];
-    const { container } = await renderPlans();
+    await renderPlans();
 
-    // Answerable-by-you row pairs a small 8px warning dot with its words.
-    const dots = Array.from(container.querySelectorAll('div')).filter(
-      (element) =>
-        (element as HTMLElement).style.backgroundColor === '#8a5f2b' &&
-        (element as HTMLElement).style.width === '8px' &&
-        (element as HTMLElement).style.height === '8px'
-    );
-    expect(dots).toHaveLength(1);
-
-    // Waiting-on-them caption renders in warning instead of muted.
     const waiting = screen.getByText(/Waiting on them/);
     expect((waiting as HTMLElement).style.color).toBe('#8a5f2b');
   });
