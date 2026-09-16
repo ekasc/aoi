@@ -393,12 +393,15 @@ describe('Us calm hierarchy', () => {
     expect(pushSpy).toHaveBeenCalledWith('/(app)/letters');
   });
 
-  it('question maps to This week in the Reflection row with a stable entrance', async () => {
+  it('leads with the question itself and keeps the Reflection entrance', async () => {
     mockQuestion = makeQuestion();
     const { container } = await renderUs();
-    expect(screen.getByText('This week')).toBeTruthy();
-    expect(screen.queryByText('Answer together')).toBeNull();
-    expect(screen.queryByText('What small thing made today good?')).toBeNull();
+    // The card carries the question, since a destination row left the reader
+    // guessing whether anything was inside. The row stays as the way to it.
+    expect(screen.getByText('What small thing made today good?')).toBeTruthy();
+    // "This week" now appears twice on purpose: as the card's eyebrow and as
+    // the row's state line.
+    expect(screen.getAllByText('This week').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText('Reflection')).toBeTruthy();
     expect(container.querySelector('button[aria-label="Reflection"]')).toBeNull();
   });

@@ -27,7 +27,9 @@ import { Radii, Spacing } from "@/constants/theme";
 import {
 	findReadyLetter,
 	isQuestionUnanswered,
+	selectUsFocal,
 } from "@/features/home/us-focal";
+import { UsWaitingCard } from "@/components/home/us-waiting-card";
 import { useLetters } from "@/features/letters/letters-context";
 import { useMoments } from "@/features/moments/moments-context";
 import { useQuestion } from "@/features/question/question-context";
@@ -145,6 +147,41 @@ export default function TogetherScreen() {
 		() => findReadyLetter(safeLetters, now),
 		[safeLetters, now],
 	);
+
+	// The one object on the screen that is happening now, in priority order:
+	// a sealed letter come due, then this week's unanswered question. The
+	// sky already carries the archive, so nothing else competes with it.
+	const focal = useMemo(
+		() =>
+			selectUsFocal({
+				letters: safeLetters,
+				question: questionState,
+				moments: safeMoments,
+				now,
+			}),
+		[now, questionState, safeLetters, safeMoments],
+	);
+
+	const partnerName = useMemo(() => {
+		const partner = safeMoments.find((moment) => moment.authorRole === "partner");
+		return partner?.authorName?.trim() || "Your partner";
+	}, [safeMoments]);
+
+	const pairNames = useMemo(() => {
+		const mine = safeMoments.find((moment) => moment.authorRole === "you");
+		const theirs = safeMoments.find((moment) => moment.authorRole === "partner");
+		if (mine?.authorName && theirs?.authorName) {
+			return `${mine.authorName} & ${theirs.authorName}`;
+		}
+		return null;
+	}, [safeMoments]);
+
+	const handleOpenReadyLetter = useCallback(
+		(letter: { id: string }) => {
+			router.push({ pathname: "/(app)/letter/[id]", params: { id: letter.id } });
+		},
+		[router],
+	);
 	const reflectionSubtitle = useMemo(() => {
 		if (!questionState) {
 			return "This week";
@@ -258,7 +295,25 @@ export default function TogetherScreen() {
 			<FrostedBackdrop />
 			<ScreenHeader title="Us" />
 
-			<MemorySky moments={safeMoments} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
+			{/* The sky is the screen's title card: the pair's names sit inside
+			    it, and the sky's own caption keeps the day count. */}
+			<View style={styles.skyBlock}>
+				<MemorySky moments={safeMoments} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
+				{pairNames ? (
+					<View pointerEvents="none" style={styles.skyTitle}>
+						<ThemedText type="display" style={styles.skyNames}>
+							{pairNames}
+						</ThemedText>
+					</View>
+				) : null}
+			</View>
+
+			<UsWaitingCard
+				focal={focal}
+				onOpenLetter={handleOpenReadyLetter}
+				onOpenQuestion={handleOpenQuestion}
+				partnerName={partnerName}
+			/>
 
 			<View style={styles.squeezeWrap}>
 				<Animated.View style={squeezeBounceStyle}>
@@ -427,6 +482,23 @@ const styles = StyleSheet.create({
 	contentContainer: {
 		gap: Spacing[16],
 		paddingHorizontal: Spacing[16],
+	},
+	skyBlock: {
+		// The sky is full-bleed: it is the screen's title card, so it escapes
+		// the content gutters and the names sit inside it.
+		marginHorizontal: -Spacing[16],
+		position: "relative",
+	},
+	skyTitle: {
+		left: Spacing[24],
+		position: "absolute",
+		right: Spacing[24],
+		top: Spacing[16],
+	},
+	skyNames: {
+		textShadowColor: "rgba(0, 0, 0, 0.28)",
+		textShadowOffset: { height: 1, width: 0 },
+		textShadowRadius: 12,
 	},
 	keepSection: {
 		gap: Spacing[8],

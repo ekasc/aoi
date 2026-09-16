@@ -462,7 +462,7 @@ describe('Keep a memory toggle then capture', () => {
 });
 
 describe('Stable ready-row signals, never sealed bodies', () => {
-  it('Letters row shows Ready to open for a ready letter without exposing body', async () => {
+  it('shows a ready letter as the letter, and never its sealed body', async () => {
     mockLetters = [
       makeLetter({
         id: 'ready-1',
@@ -473,10 +473,12 @@ describe('Stable ready-row signals, never sealed bodies', () => {
     ];
     const { container } = await renderUs();
     expect(screen.getByText('Ready to open')).toBeTruthy();
-    // No duplicate CTA, no caption leak as hero, never the sealed body.
-    expect(screen.queryByText('Open letters')).toBeNull();
-    expect(screen.queryByText('For a rainy day')).toBeNull();
+    // The envelope's own line now leads, because a letter coming due is an
+    // event between two people rather than a row about a destination. The
+    // body stays sealed until it is opened.
+    expect(screen.getByText('For a rainy day')).toBeTruthy();
     expect(container.textContent).not.toContain('SECRET SEALED WORDS');
+    expect(screen.queryByText('Open letters')).toBeNull();
     fireEvent.click(screen.getByText('Letters'));
     expect(pushSpy).toHaveBeenCalledWith('/(app)/letters');
   });
@@ -492,8 +494,9 @@ describe('Stable ready-row signals, never sealed bodies', () => {
     // Unanswered -> This week.
     mockQuestion = makeQuestion();
     const first = await renderUs();
-    expect(screen.getByText('This week')).toBeTruthy();
-    expect(screen.queryByText('What small thing made today good?')).toBeNull();
+    expect(screen.getAllByText('This week').length).toBeGreaterThanOrEqual(1);
+    // Unanswered, so it is the thing happening now and the card says it.
+    expect(screen.getByText('What small thing made today good?')).toBeTruthy();
     expect(screen.queryByText('Answer together')).toBeNull();
     first.unmount();
 

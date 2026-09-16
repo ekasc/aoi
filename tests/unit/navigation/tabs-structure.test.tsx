@@ -742,7 +742,10 @@ describe('P2A Together ownership', () => {
     const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
     const { container } = render(<TogetherScreen />);
     expect(screen.getByText('Letters')).toBeTruthy();
-    expect(screen.getByText('This week')).toBeTruthy();
+    // The card's eyebrow and the row's state line both read "This week" now,
+    // which the screen means: the question is the thing happening, and the
+    // row is still the way to it.
+    expect(screen.getAllByText('This week').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Squeeze')).toBeTruthy();
     expect(screen.queryByText('Someday')).toBeNull();
     expect(screen.queryByText('Memory wall')).toBeNull();
