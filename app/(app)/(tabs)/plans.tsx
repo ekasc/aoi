@@ -624,17 +624,6 @@ export default function PlansScreen() {
 		[PAGE_WIDTH, centerMonth],
 	);
 
-	const relationshipSubtitle = useMemo(
-		() =>
-			relationshipStartDate
-				? `Together since ${relationshipStartDate.toLocaleDateString("en-US", {
-						month: "long",
-						day: "numeric",
-						year: "numeric",
-					})}`
-				: undefined,
-		[relationshipStartDate],
-	);
 
 	const headerBlockHeight = useMemo(
 		() => compactSkyHeightForWindow(windowHeight),
@@ -665,7 +654,6 @@ export default function PlansScreen() {
 				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
 				<ScreenHeader
 					title="Plans"
-					subtitle={relationshipSubtitle}
 					primaryAction={{
 						label: 'Add an event for the selected day',
 						icon: <Ionicons color={onAccent} name="add" size={20} />,
@@ -793,17 +781,9 @@ export default function PlansScreen() {
 			) : null}
 
 			<View style={styles.section}>
-				<View style={styles.agendaHeader}>
-					<ThemedText type="title" selectable style={styles.agendaHeading}>
-						{formatDateTitle(selectedDate)}
-					</ThemedText>
-					<Button
-						label="Suggest a time"
-						variant="ghost"
-						size="sm"
-						onPress={handleSuggestTime}
-					/>
-				</View>
+				<ThemedText type="title" selectable style={styles.agendaHeading}>
+					{formatDateTitle(selectedDate)}
+				</ThemedText>
 				{selectedDayAnniversary ? (
 					<ThemedText type="caption" style={{ color: muted }}>
 						{formatAnniversaryLabel(selectedDayAnniversary)}
@@ -901,75 +881,6 @@ export default function PlansScreen() {
 
 			<Divider />
 
-			<Pressable
-				accessibilityHint="Opens the Someday list"
-				accessibilityLabel={`Someday, ${somedayOpen.length} saved`}
-				accessibilityRole="button"
-				onPress={handleOpenSomeday}
-				style={({ pressed }) => [
-					styles.row,
-					{ borderColor: border },
-					pressed ? styles.pressed : undefined,
-				]}
-			>
-				<ThemedText type="body" style={styles.rowTitle}>
-					Someday
-				</ThemedText>
-				<ThemedText type="caption" style={{ color: muted }}>
-					{somedayOpen.length === 0 ? "Nothing saved yet" : `${somedayOpen.length} saved`}
-				</ThemedText>
-				<Ionicons color={muted} name="chevron-forward" size={16} />
-			</Pressable>
-
-			<View style={styles.section}>
-				<View style={styles.sectionHeader}>
-					<ThemedText type="title">Future goals</ThemedText>
-					<Button
-						label="New goal"
-						variant="ghost"
-						size="sm"
-						onPress={handleNewGoal}
-					/>
-				</View>
-				{goals === null ? (
-					<ThemedText type="body" style={{ color: muted }}>
-						Loading goals…
-					</ThemedText>
-				) : goals.length === 0 ? (
-					<ThemedText type="body" style={{ color: muted }}>
-						Nothing you are dreaming toward yet.
-					</ThemedText>
-				) : (
-					<View style={[styles.groupCard, { backgroundColor: withAlpha(surface, 0.3), borderColor: border }]}>
-					{goals.map((goal, index) => (
-						<View key={goal.id}>
-							{index > 0 ? (
-								<View
-									style={[styles.groupSeparator, { backgroundColor: border }]}
-								/>
-							) : null}
-							<Pressable
-								accessibilityLabel={`Open goal ${goal.title}`}
-								accessibilityRole="button"
-								onPress={() => handleOpenGoal(goal.id)}
-								style={({ pressed }) => [
-									styles.row,
-									pressed ? styles.pressed : undefined,
-								]}
-							>
-								<ThemedText type="body" style={styles.rowTitle}>
-									{goal.title.trim() || "Untitled goal"}
-								</ThemedText>
-								<ThemedText type="caption" style={{ color: muted }}>
-									{getGoalHorizon(goal, now)}
-								</ThemedText>
-								<Ionicons color={muted} name="chevron-forward" size={16} />
-							</Pressable>
-						</View>
-					))}
-					</View>
-				)}
-			</View>
 
 		</ScrollView>
 		</View>
@@ -1118,10 +1029,10 @@ const styles = StyleSheet.create({
 		width: 76,
 		fontVariant: ["tabular-nums"],
 	},
-	agendaHeader: {
+	emptyActions: {
 		alignItems: "center",
 		flexDirection: "row",
-		justifyContent: "space-between",
+		gap: Spacing[8],
 	},
 	rowActions: {
 		alignItems: "center",

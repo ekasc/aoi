@@ -65,6 +65,12 @@ export const MEMORY_SKY_QUARTER = 0.3;
 // Compact top-only backdrop for Memories/Plans: half the Us viewport
 // fraction, same top safety. Affects canvas height only, never the model.
 export const MEMORY_SKY_COMPACT_QUARTER = MEMORY_SKY_QUARTER / 2;
+/**
+ * The header band on a working screen (Plans): the sky is identity, not the
+ * subject, so it takes the top of the page without eating it. About 40% less
+ * than the compact band.
+ */
+export const MEMORY_SKY_HEADER_QUARTER = MEMORY_SKY_COMPACT_QUARTER * 0.6;
 // Bottom feather blending the cloud/star layer into the page background.
 // Fraction of the strip height, same background RGB at alpha 0 -> opaque
 // (no BlurView, no literal 'transparent' which blends black and bands gray).
@@ -188,6 +194,10 @@ export const MEMORY_SKY_TOP_SAFETY = 12;
  */
 export function compactSkyHeightForWindow(windowHeight: number): number {
   return Math.round(windowHeight * MEMORY_SKY_COMPACT_QUARTER) + MEMORY_SKY_TOP_SAFETY;
+}
+
+export function headerSkyHeightForWindow(windowHeight: number): number {
+  return Math.round(windowHeight * MEMORY_SKY_HEADER_QUARTER) + MEMORY_SKY_TOP_SAFETY;
 }
 
 // Docked system tab bar clearance on iOS (single source): tab screens
@@ -501,6 +511,7 @@ export function MemorySky({
   focused = true,
   now,
   compact = false,
+  header = false,
 }: {
   moments: Moment[];
   daysTogether?: number | null;
@@ -508,6 +519,8 @@ export function MemorySky({
   focused?: boolean;
   now?: Date;
   compact?: boolean;
+  /** A working screen's header band: compact, then shorter again. */
+  header?: boolean;
 }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -523,7 +536,11 @@ export function MemorySky({
   const motionAllowed =
     !reduceMotion && !systemReduce && appActive && docVisible && focused;
 
-  const skyFraction = compact ? MEMORY_SKY_COMPACT_QUARTER : MEMORY_SKY_QUARTER;
+  const skyFraction = header
+    ? MEMORY_SKY_HEADER_QUARTER
+    : compact
+      ? MEMORY_SKY_COMPACT_QUARTER
+      : MEMORY_SKY_QUARTER;
   const skyHeight =
     Math.round(windowHeight * skyFraction) + MEMORY_SKY_TOP_SAFETY;
   // Us (non-compact): absolute strip covering the top ~30% including the

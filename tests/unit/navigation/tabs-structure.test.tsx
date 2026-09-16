@@ -889,23 +889,19 @@ describe('P2A Memories ownership', () => {
 });
 
 describe('P2A Plans ownership', () => {
-  it('exposes Someday and the avatar entry', async () => {
+  it('exposes the avatar entry', async () => {
     const { default: CalendarScreen } = await import('@/app/(app)/(tabs)/plans');
     render(<CalendarScreen />);
-    expect(screen.getByText('Someday')).toBeTruthy();
     expect(screen.getByLabelText('Open Space settings')).toBeTruthy();
   });
 
-  it('reaches Someday and Space from Plans', async () => {
+  it('reaches Space from Plans', async () => {
     const { default: CalendarScreen } = await import('@/app/(app)/(tabs)/plans');
     render(<CalendarScreen />);
-    // Someday is one quiet row now instead of a section: the list of undated
-    // ideas lives on its own screen, and the row says how many are in it.
-    fireEvent.click(screen.getByLabelText(/^Someday, /));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/someday');
     fireEvent.click(screen.getByLabelText('Open Space settings'));
     expect(pushSpy).toHaveBeenCalledWith('/(app)/space', { withAnchor: true });
   });
+
 });
 
 describe('P2A Space surface', () => {

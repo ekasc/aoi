@@ -381,24 +381,6 @@ describe('Plans calendar collapsed with upcoming', () => {
 });
 
 describe('Plans sections', () => {
-  it('keeps one quiet way into Someday without listing it in the calendar', async () => {
-    mockSomedayOpen = [
-      { id: 's1', title: 'Night train ride' },
-      { id: 's2', title: 'Rooftop picnic' },
-      { id: 's3', title: 'Pottery class' },
-      { id: 's4', title: 'Lake cabin' },
-    ];
-    await renderPlans();
-
-    // An undated idea is not calendar content, so the list stays on its own
-    // screen. The row is the way in, and it counts what is there.
-    expect(screen.getByText('Someday')).toBeTruthy();
-    expect(screen.getByText('4 saved')).toBeTruthy();
-    expect(screen.queryByText('Night train ride')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Someday, 4 saved'));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/someday');
-  });
-
   it('answers a proposal on its own day, with no Proposals section', async () => {
     // The proposal is a date. It appears in that day's agenda and is answered
     // there, so acceptance turns it into the event in place.
@@ -453,38 +435,6 @@ describe('Plans sections', () => {
 
     const waiting = screen.getByText(/Waiting on them/);
     expect((waiting as HTMLElement).style.color).toBe('#8a5f2b');
-  });
-
-  it('shows important context without fabricating a missing start date', async () => {
-    await renderPlans();
-    expect(screen.getByText(/Together since/)).toBeTruthy();
-
-    mockSpace = { relationshipStartDate: null };
-    const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
-    render(<PlansScreen />);
-    expect(screen.queryByText(/Together since/)).toBeNull();
-  });
-});
-
-describe('Plans goals', () => {
-  it('lists historical and future goals from the goal store', async () => {
-    loadGoals.mockResolvedValue([makeGoal()]);
-    await renderPlans();
-
-    await waitFor(() => expect(screen.getByText('Visit Kyoto')).toBeTruthy());
-    expect(screen.getByText('Future goals')).toBeTruthy();
-    fireEvent.click(screen.getByText('Visit Kyoto'));
-    expect(pushSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/moment/[id]',
-      params: { id: 'goal-1', at: makeGoal().occurredAt },
-    });
-  });
-
-  it('creates new goals from Plans, never Story', async () => {
-    await renderPlans();
-
-    fireEvent.click(screen.getByText('New goal'));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/goal-new');
   });
 
   it('surfaces goal records dated on the selected day inside the agenda', async () => {
