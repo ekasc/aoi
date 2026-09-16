@@ -174,8 +174,8 @@ describe('Plans calendar pager sizing', () => {
 
     // The calendar is the screen now: no show/hide, and each page is a month
     // with its own name above the grid.
-    // 6 rows x 48pt + 5 x 4pt gaps = 308pt of grid, plus the month name.
-    const expectedHeight = 6 * 48 + 5 * 4 + 76;
+    // 6 rows x 64pt + 5 x 4pt gaps = 404pt of grid, plus the month name.
+    const expectedHeight = 6 * 64 + 5 * 4 + 76;
     const pages = screen.getAllByLabelText(/Month page /);
     expect(pages).toHaveLength(7);
     for (const page of pages) {

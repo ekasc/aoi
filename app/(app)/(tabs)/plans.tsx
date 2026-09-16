@@ -80,7 +80,7 @@ const PAGER_WINDOW_SIZE = PAGER_WINDOW_RADIUS * 2 + 1;
 // dot row + today underline + padding/gaps, >= styles.dayCell.minHeight)
 // so the pager height is deterministic and never measured from itself.
 const CALENDAR_ROW_COUNT = 6;
-const CALENDAR_ROW_HEIGHT = 48;
+const CALENDAR_ROW_HEIGHT = 64;
 const CALENDAR_GRID_GAP = Spacing[4];
 const PAGER_HEIGHT =
 	CALENDAR_ROW_COUNT * CALENDAR_ROW_HEIGHT +
@@ -170,19 +170,22 @@ const MonthGrid = memo(function MonthGrid({
 									<View
 										style={[
 											styles.dayNumber,
-											isSelected
+											isSelected || (isToday && isCurrentMonth)
 												? { backgroundColor: colors.accent }
 												: undefined,
 										]}
 									>
 										<ThemedText
-											type="caption"
 											style={{
-												color: dayTextColor,
+												color:
+													isSelected || (isToday && isCurrentMonth)
+														? colors.onAccent
+														: dayTextColor,
+												fontSize: 19,
 												fontWeight:
 													isSelected || (isToday && isCurrentMonth)
-														? "700"
-														: undefined,
+														? "600"
+														: "400",
 											}}
 										>
 											{day.getDate()}
@@ -224,14 +227,6 @@ const MonthGrid = memo(function MonthGrid({
 											/>
 										) : null}
 									</View>
-									{isToday && isCurrentMonth ? (
-										<View
-											style={[
-												styles.todayUnderline,
-												{ backgroundColor: colors.accent },
-											]}
-										/>
-									) : null}
 								</Pressable>
 							);
 						})}
@@ -730,7 +725,7 @@ export default function PlansScreen() {
 
 			<View style={styles.calendarCard}>
 			{/* Weekday header stays put; the month grid slides beneath it. */}
-			<View style={styles.weekdayRow}>
+			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
 				{weekdayLabels.map((label) => (
 					<View key={label} style={styles.weekdayCell}>
 						<ThemedText type="meta" style={{ color: muted }}>
@@ -937,6 +932,7 @@ const styles = StyleSheet.create({
 		lineHeight: 28,
 	},
 	weekdayRow: {
+		borderBottomWidth: StyleSheet.hairlineWidth,
 		flexDirection: "row",
 		gap: Spacing[4],
 		paddingBottom: Spacing[8],
@@ -951,6 +947,7 @@ const styles = StyleSheet.create({
 		gap: Spacing[4],
 	},
 	weekRow: {
+		borderTopWidth: StyleSheet.hairlineWidth,
 		flex: 1,
 		flexDirection: "row",
 		gap: Spacing[4],
@@ -961,12 +958,13 @@ const styles = StyleSheet.create({
 	dayCell: {
 		flex: 1,
 		minHeight: 44,
-		borderRadius: Radii.sm,
-		paddingVertical: 4,
+		paddingVertical: 6,
 		alignItems: "center",
-		justifyContent: "center",
-		gap: 2,
-		overflow: "hidden",
+		justifyContent: "flex-start",
+		gap: 3,
+		// Strips may pass the cell edge, the way Apple's do: a title that fits
+		// says more than one clipped to a column.
+		overflow: "visible",
 	},
 	dayNumber: {
 		minWidth: 28,
@@ -1010,11 +1008,6 @@ const styles = StyleSheet.create({
 		width: 5,
 		height: 5,
 		borderRadius: Radii.pill,
-	},
-	todayUnderline: {
-		width: 16,
-		height: 2,
-		borderRadius: 1,
 	},
 	pressed: {
 		opacity: 0.9,
