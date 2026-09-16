@@ -74,7 +74,10 @@ function buildMonthWeeks(days: Date[]) {
 }
 
 /** Bounded lazy pager: months materialize on demand, never precomputed. */
-const PAGER_WINDOW_RADIUS = 3;
+const PAGER_WINDOW_RADIUS = 1;
+
+/** The title row inside the header block, above the calendar. */
+const HEADER_ROW_HEIGHT = 56;
 const PAGER_WINDOW_SIZE = PAGER_WINDOW_RADIUS * 2 + 1;
 // Fixed six rows per page; each row fits the tallest cell (day number +
 // dot row + today underline + padding/gaps, >= styles.dayCell.minHeight)
@@ -623,6 +626,7 @@ export default function PlansScreen() {
 		PAGER_HEIGHT + 76,
 		windowHeight -
 			headerSkyHeightForWindow(windowHeight) -
+			HEADER_ROW_HEIGHT -
 			insets.bottom -
 			SYSTEM_TAB_BAR_IOS_CLEARANCE -
 			WEEKDAY_HEADER_HEIGHT,
@@ -646,8 +650,10 @@ export default function PlansScreen() {
 
 
 
+	// The band plus the title row. The block clips what it holds, so a height
+	// that only counted the sky pushed the header out of view.
 	const headerBlockHeight = useMemo(
-		() => headerSkyHeightForWindow(windowHeight),
+		() => headerSkyHeightForWindow(windowHeight) + HEADER_ROW_HEIGHT,
 		[windowHeight],
 	);
 	const rootStyle = useMemo(
