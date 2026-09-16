@@ -249,12 +249,13 @@ async function renderPlans() {
 }
 
 describe('Plans calendar', () => {
-  it('marks dates with dots instead of event-title chips', async () => {
+  it('shows the day events as strips in the cell, not a dot', async () => {
     mockEventsForDay = { '2026-01-15': [makeEvent()] };
     await renderPlans();
 
-    // The event title appears once — in the agenda — never inside the grid.
-    expect(screen.getAllByText('Dinner out')).toHaveLength(1);
+    // The title appears twice now: as a strip inside the grid cell, and in
+    // the selected day's agenda. A dot said only that something was there.
+    expect(screen.getAllByText('Dinner out').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByLabelText('Thursday, January 15, has plans')).toBeTruthy();
   });
 
@@ -263,13 +264,13 @@ describe('Plans calendar', () => {
     mockSelectedDate = new Date(2026, 0, 20, 12, 0, 0);
     const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
     const first = render(<PlansScreen />);
-    expect(screen.getByText('An open day. Add something small if you like.')).toBeTruthy();
+    expect(screen.getByText('Nothing planned.')).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText('Thursday, January 15, has plans'));
     // Selection state lives in the mocked context setter; re-render on it.
     first.unmount();
     render(<PlansScreen />);
-    expect(screen.getByText('Dinner out')).toBeTruthy();
+    expect(screen.getAllByText('Dinner out').length).toBeGreaterThanOrEqual(1);
   });
 
   it('navigates repeatedly backward and forward without dead-ending', async () => {
@@ -335,7 +336,7 @@ describe('Plans calendar', () => {
   it('empty selected day is a lightweight line, not a panel', async () => {
     await renderPlans();
 
-    expect(screen.getByText('An open day. Add something small if you like.')).toBeTruthy();
+    expect(screen.getByText('Nothing planned.')).toBeTruthy();
     expect(screen.getByText('Add event')).toBeTruthy();
   });
 });

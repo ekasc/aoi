@@ -103,6 +103,8 @@ type MonthGridProps = {
 	selectedDate: Date;
 	now: Date;
 	marks: Record<string, DayMark>;
+	/** Event titles per day, in the order they happen. */
+	stripsByDay?: Record<string, string[]>;
 	colors: MonthGridColors;
 	onSelectDate: (date: Date) => void;
 };
@@ -117,6 +119,7 @@ const MonthGrid = memo(function MonthGrid({
 	selectedDate,
 	now,
 	marks,
+	stripsByDay,
 	colors,
 	onSelectDate,
 }: MonthGridProps) {
@@ -185,15 +188,32 @@ const MonthGrid = memo(function MonthGrid({
 											{day.getDate()}
 										</ThemedText>
 									</View>
-									<View style={styles.dotRow}>
-										{mark?.hasItems ? (
+									{/* Apple's month view puts the event titles in the
+									    cell, not a dot: two lines of tiny text say what
+									    the day holds, a dot only says something is there. */}
+									<View style={styles.stripRow}>
+										{(stripsByDay?.[dayKey] ?? []).slice(0, 2).map((title, index) => (
 											<View
+												key={`${dayKey}:${index}`}
 												style={[
-													styles.dot,
-													{ backgroundColor: colors.muted },
+													styles.strip,
+													{
+														backgroundColor: withAlpha(colors.accent, 0.16),
+													},
 												]}
-											/>
-										) : null}
+											>
+												<View
+													style={[styles.stripDot, { backgroundColor: colors.accent }]}
+												/>
+												<ThemedText
+													numberOfLines={1}
+													type="caption"
+													style={[styles.stripText, { color: colors.text }]}
+												>
+													{title}
+												</ThemedText>
+											</View>
+										))}
 										{mark?.anniversary ? (
 											<View
 												accessibilityLabel="Anniversary"
@@ -441,6 +461,21 @@ export default function PlansScreen() {
 	// Dots for every date carrying plans: events, pending proposals, and
 	// dated future goals, plus the anniversary mark. Titles stay out of
 	// the cells; the agenda below owns the details.
+	// What each day holds, for the strips inside the month grid.
+	const stripsByDay = useMemo(() => {
+		const strips: Record<string, string[]> = {};
+		for (const key of Object.keys(eventsForDay)) {
+			const titles = eventsForDay[key]
+				.slice()
+				.sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+				.map((event) => event.title);
+			if (titles.length > 0) {
+				strips[key] = titles;
+			}
+		}
+		return strips;
+	}, [eventsForDay]);
+
 	const marksByDay = useMemo(() => {
 		const marks: Record<string, DayMark> = {};
 		const touch = (key: string) => {
@@ -769,6 +804,7 @@ export default function PlansScreen() {
 						<MonthGrid
 							colors={gridColors}
 							marks={marksByDay}
+							stripsByDay={stripsByDay}
 							month={month}
 							now={now}
 							onSelectDate={handleSelectDate}
@@ -797,7 +833,7 @@ export default function PlansScreen() {
 							</ThemedText>
 						) : (
 							<ThemedText type="body" style={{ color: muted }}>
-								An open day. Add something small if you like.
+								Nothing planned.
 							</ThemedText>
 						)}
 						<Button
@@ -973,6 +1009,29 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		justifyContent: "center",
 		paddingHorizontal: 4,
+	},
+	stripRow: {
+		alignItems: "stretch",
+		alignSelf: "stretch",
+		gap: 2,
+	},
+	strip: {
+		alignItems: "center",
+		borderRadius: 4,
+		flexDirection: "row",
+		gap: 3,
+		paddingHorizontal: 3,
+		paddingVertical: 1,
+	},
+	stripDot: {
+		borderRadius: Radii.pill,
+		height: 5,
+		width: 5,
+	},
+	stripText: {
+		flexShrink: 1,
+		fontSize: 9,
+		lineHeight: 12,
 	},
 	dotRow: {
 		flexDirection: "row",
