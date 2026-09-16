@@ -49,7 +49,7 @@ import {
 import type { EventProposal } from "@/features/proposals/types";
 import { useProposals } from "@/features/proposals/proposals-context";
 import { useSomeday } from "@/features/someday/someday-context";
-import { MemorySky, compactSkyHeightForWindow, SYSTEM_TAB_BAR_IOS_CLEARANCE } from "@/components/home/memory-sky";
+import { MemorySky, headerSkyHeightForWindow, SYSTEM_TAB_BAR_IOS_CLEARANCE } from "@/components/home/memory-sky";
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
 import { ThemedText } from "@/components/themed-text";
@@ -626,7 +626,7 @@ export default function PlansScreen() {
 
 
 	const headerBlockHeight = useMemo(
-		() => compactSkyHeightForWindow(windowHeight),
+		() => headerSkyHeightForWindow(windowHeight),
 		[windowHeight],
 	);
 	const rootStyle = useMemo(
@@ -651,7 +651,7 @@ export default function PlansScreen() {
 		<View style={rootStyle}>
       <FrostedBackdrop />
 			<View style={headerBlockStyle}>
-				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
+				<MemorySky header moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
 				<ScreenHeader
 					title="Plans"
 					primaryAction={{

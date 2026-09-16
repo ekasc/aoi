@@ -109,7 +109,7 @@ vi.mock('expo-router', () => ({
 
 vi.mock('@/components/home/memory-sky', () => ({
   MemorySky: () => null,
-  compactSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.15) + 12,
+  headerSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.15) + 12,
   SYSTEM_TAB_BAR_IOS_CLEARANCE: 50,
   SYSTEM_TAB_BAR_CONTENT_HEIGHT: 50,
   SYSTEM_TAB_BAR_BOTTOM_GAP: 8,
@@ -451,7 +451,7 @@ describe('Plans fixed header block (pinned ScreenHeader, zero overlap)', () => {
   const PLANS_SOURCE = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
 
   it('pins ScreenHeader+sky in a fixed block sized by the helper', () => {
-    expect(PLANS_SOURCE).toContain('compactSkyHeightForWindow');
+    expect(PLANS_SOURCE).toContain('headerSkyHeightForWindow');
     expect(PLANS_SOURCE).toContain('headerBlockStyle');
     expect(PLANS_SOURCE).toContain('height: headerBlockHeight');
     expect(PLANS_SOURCE).toContain('paddingTop: insets.top + Spacing[8]');
@@ -459,9 +459,9 @@ describe('Plans fixed header block (pinned ScreenHeader, zero overlap)', () => {
 
   it('renders MemorySky first inside the block with ScreenHeader above content', () => {
     expect(PLANS_SOURCE.indexOf('<View style={headerBlockStyle}>')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<MemorySky compact'),
+      PLANS_SOURCE.indexOf('<MemorySky header'),
     );
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
+    expect(PLANS_SOURCE.indexOf('<MemorySky header')).toBeLessThan(
       PLANS_SOURCE.indexOf('<ScreenHeader'),
     );
   });

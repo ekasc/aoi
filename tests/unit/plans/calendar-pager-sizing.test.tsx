@@ -108,7 +108,9 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('@/components/home/memory-sky', () => ({
   MemorySky: () => null,
-  compactSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.15) + 12,
+  // The header band on a working screen is shorter than the compact one, so
+  // the mock follows the helper the screen actually calls.
+  headerSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.09) + 12,
   SYSTEM_TAB_BAR_IOS_CLEARANCE: 50,
   SYSTEM_TAB_BAR_CONTENT_HEIGHT: 50,
   SYSTEM_TAB_BAR_BOTTOM_GAP: 8,

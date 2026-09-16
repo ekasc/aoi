@@ -20,7 +20,9 @@ import {
   MemorySky,
   backgroundAtAlpha,
   compactSkyGradientColors,
+  MEMORY_SKY_HEADER_QUARTER,
   compactSkyHeightForWindow,
+  headerSkyHeightForWindow,
   fadeCompactStarOpacity,
   featherVeilColors,
   isCompactTwinkleEligible,
@@ -455,7 +457,7 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
 
   it('Plans renders the same sky compact behind its header (existing providers, no new fetch)', () => {
     expect(PLANS_SOURCE).toContain('MemorySky');
-    expect(PLANS_SOURCE).toContain('compact');
+    expect(PLANS_SOURCE).toContain('<MemorySky header');
     expect(PLANS_SOURCE).toContain('useIsFocused');
     expect(PLANS_SOURCE).toContain('getDaysTogether');
     expect(PLANS_SOURCE).toContain('focused={isFocused}');
@@ -466,12 +468,12 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     // Same root anchoring as Memories: after FrostedBackdrop, before the
     // ScrollView/ScreenHeader so scroll offset can never shift the sky.
     expect(PLANS_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<MemorySky compact'),
+      PLANS_SOURCE.indexOf('<MemorySky header'),
     );
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
+    expect(PLANS_SOURCE.indexOf('<MemorySky header')).toBeLessThan(
       PLANS_SOURCE.indexOf('<ScrollView\n'),
     );
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
+    expect(PLANS_SOURCE.indexOf('<MemorySky header')).toBeLessThan(
       PLANS_SOURCE.indexOf('<ScreenHeader'),
     );
   });
@@ -487,6 +489,18 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
 });
 
 describe('Fixed header block (pinned sky, zero overlap)', () => {
+  it('gives Plans the shorter header band, about 40% under the compact one', () => {
+    // GPT's review: on a working screen the sky establishes mood and gets out
+    // of the way, so Plans takes the header band rather than the compact one.
+    expect(MEMORY_SKY_HEADER_QUARTER).toBeCloseTo(MEMORY_SKY_COMPACT_QUARTER * 0.6, 5);
+    expect(headerSkyHeightForWindow(844)).toBe(
+      Math.round(844 * MEMORY_SKY_HEADER_QUARTER) + MEMORY_SKY_TOP_SAFETY,
+    );
+    const compact = compactSkyHeightForWindow(844);
+    const header = headerSkyHeightForWindow(844);
+    expect(header / compact).toBeLessThan(0.7);
+  });
+
   it('helper math matches the renderer skyHeight exactly', () => {
     expect(MEMORY_SKY_COMPACT_QUARTER).toBe(MEMORY_SKY_QUARTER / 2);
     expect(MEMORY_SKY_TOP_SAFETY).toBe(12);
@@ -564,15 +578,15 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
   });
 
   it('Plans pins ScreenHeader+sky in a fixed block; ScrollView starts below', () => {
-    expect(PLANS_SOURCE).toContain('compactSkyHeightForWindow');
+    expect(PLANS_SOURCE).toContain('headerSkyHeightForWindow');
     expect(PLANS_SOURCE).toContain('headerBlockStyle');
     expect(PLANS_SOURCE).toContain('height: headerBlockHeight');
     expect(PLANS_SOURCE).toContain('paddingTop: insets.top + Spacing[8]');
     // Sky FIRST inside the block, ScreenHeader above it with existing chrome.
     expect(PLANS_SOURCE.indexOf('<View style={headerBlockStyle}>')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<MemorySky compact'),
+      PLANS_SOURCE.indexOf('<MemorySky header'),
     );
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
+    expect(PLANS_SOURCE.indexOf('<MemorySky header')).toBeLessThan(
       PLANS_SOURCE.indexOf('<ScreenHeader'),
     );
     // ScreenHeader is OUTSIDE (before) the outer ScrollView so it can never
