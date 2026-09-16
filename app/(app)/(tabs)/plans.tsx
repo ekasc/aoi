@@ -620,6 +620,8 @@ export default function PlansScreen() {
 	const PAGE_WIDTH = windowWidth - Spacing[24] * 2 - Spacing[12] * 2;
 	const pagerRef = useRef<ScrollView | null>(null);
 	const pagerHeight = PAGER_HEIGHT;
+	// One month of the vertical stack: the month name, then its grid.
+	const MONTH_PAGE_HEIGHT = PAGER_HEIGHT + 76;
 
 	// Keep the pager visually centered after every rebase (mount included);
 	// the user's swipe or tap already supplied the motion.
@@ -637,18 +639,10 @@ export default function PlansScreen() {
 		}
 	}, [currentMonth, setVisibleMonth, visibleMonth]);
 
-	const handleGoToPreviousMonth = useCallback(() => {
-		setCenterMonth((month) => addMonths(month, -1));
-	}, []);
-
-	const handleGoToNextMonth = useCallback(() => {
-		setCenterMonth((month) => addMonths(month, 1));
-	}, []);
-
 	const handlePagerMomentumEnd = useCallback(
 		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
 			const page = Math.round(
-				event.nativeEvent.contentOffset.x / PAGE_WIDTH,
+				event.nativeEvent.contentOffset.y / MONTH_PAGE_HEIGHT,
 			);
 			const month = addMonths(centerMonth, page - PAGER_WINDOW_RADIUS);
 			if (isSameMonth(month, centerMonth)) {
@@ -656,7 +650,7 @@ export default function PlansScreen() {
 			}
 			setCenterMonth(month);
 		},
-		[PAGE_WIDTH, centerMonth],
+		[MONTH_PAGE_HEIGHT, centerMonth],
 	);
 
 
@@ -734,42 +728,7 @@ export default function PlansScreen() {
 				</Pressable>
 			) : null}
 
-			<Button
-				label={calendarExpanded ? "Hide calendar" : "Show calendar"}
-				variant="secondary"
-				onPress={handleToggleCalendar}
-				accessibilityState={{ expanded: calendarExpanded }}
-			/>
-
-			{calendarExpanded ? (
-			<View style={[styles.calendarCard, { backgroundColor: withAlpha(surface, 0.3), borderColor: border }]}>
-			<View style={styles.monthNav}>
-				<IconButton
-					accessibilityLabel="Previous month"
-					variant="ghost"
-					label="Previous month"
-					onPress={handleGoToPreviousMonth}
-				>
-					{"‹"}
-				</IconButton>
-				<ThemedText
-					type="title"
-					selectable
-					numberOfLines={2}
-					style={styles.monthTitle}
-				>
-					{monthTitle}
-				</ThemedText>
-				<IconButton
-					accessibilityLabel="Next month"
-					variant="ghost"
-					label="Next month"
-					onPress={handleGoToNextMonth}
-				>
-					{"›"}
-				</IconButton>
-			</View>
-
+			<View style={styles.calendarCard}>
 			{/* Weekday header stays put; the month grid slides beneath it. */}
 			<View style={styles.weekdayRow}>
 				{weekdayLabels.map((label) => (
@@ -783,14 +742,13 @@ export default function PlansScreen() {
 
 			<ScrollView
 				ref={pagerRef}
-				contentOffset={{ x: PAGE_WIDTH * PAGER_WINDOW_RADIUS, y: 0 }}
+				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
 				decelerationRate="fast"
-				horizontal
 				nestedScrollEnabled
 				onMomentumScrollEnd={handlePagerMomentumEnd}
 				pagingEnabled
-				showsHorizontalScrollIndicator={false}
-				style={[styles.pager, { height: pagerHeight }]}
+				showsVerticalScrollIndicator={false}
+				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
 			>
 				{pagerMonths.map((month) => (
 					<View
@@ -798,9 +756,14 @@ export default function PlansScreen() {
 						key={toDayKey(month)}
 						style={{
 							width: PAGE_WIDTH,
-							height: pagerHeight,
+							height: MONTH_PAGE_HEIGHT,
 						}}
 					>
+						{/* The month name belongs to the month, so it scrolls with
+						    it, the way Apple's month view reads. */}
+						<ThemedText type="display" style={styles.monthHeading}>
+							{formatMonthTitle(month)}
+						</ThemedText>
 						<MonthGrid
 							colors={gridColors}
 							marks={marksByDay}
@@ -814,7 +777,6 @@ export default function PlansScreen() {
 				))}
 			</ScrollView>
 			</View>
-			) : null}
 
 			<View style={styles.section}>
 				<ThemedText type="title" selectable style={styles.agendaHeading}>
@@ -953,11 +915,15 @@ const styles = StyleSheet.create({
 		letterSpacing: -0.2,
 	},
 	calendarCard: {
-		borderWidth: StyleSheet.hairlineWidth,
-		borderRadius: Radii.lg,
-		paddingHorizontal: Spacing[12],
-		paddingVertical: Spacing[12],
-		gap: Spacing[8],
+		// Apple's month grid is the page, not a card on it: full bleed, no
+		// border, no radius, and only a hairline of breathing room.
+		marginHorizontal: -Spacing[24],
+		paddingHorizontal: Spacing[4],
+		paddingVertical: Spacing[8],
+		gap: Spacing[4],
+	},
+	monthHeading: {
+		letterSpacing: -1,
 	},
 	monthNav: {
 		flexDirection: "row",

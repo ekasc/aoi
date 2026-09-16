@@ -172,16 +172,10 @@ describe('Plans calendar pager sizing', () => {
     const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
     render(<PlansScreen />);
 
-    // Calendar defaults collapsed when upcoming events exist; explicitly
-    // expand so this sizing assertion never conditionally skips coverage.
-    const showButton = screen.queryByText('Show calendar');
-    if (showButton) {
-      fireEvent.click(showButton);
-    }
-    expect(screen.getByText('Hide calendar')).toBeTruthy();
-
-    // 6 rows x 48pt + 5 x 4pt gaps = 308pt deterministic pager height.
-    const expectedHeight = 6 * 48 + 5 * 4;
+    // The calendar is the screen now: no show/hide, and each page is a month
+    // with its own name above the grid.
+    // 6 rows x 48pt + 5 x 4pt gaps = 308pt of grid, plus the month name.
+    const expectedHeight = 6 * 48 + 5 * 4 + 76;
     const pages = screen.getAllByLabelText(/Month page /);
     expect(pages).toHaveLength(7);
     for (const page of pages) {

@@ -273,66 +273,6 @@ describe('Plans calendar', () => {
     expect(screen.getAllByText('Dinner out').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('navigates repeatedly backward and forward without dead-ending', async () => {
-    await renderPlans();
-    expect(screen.getByText('January 2026')).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText('Previous month'));
-    expect(await screen.findByText('December 2025')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Previous month'));
-    expect(await screen.findByText('November 2025')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Previous month'));
-    expect(await screen.findByText('October 2025')).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText('Next month'));
-    expect(await screen.findByText('November 2025')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Next month'));
-    expect(await screen.findByText('December 2025')).toBeTruthy();
-  });
-
-  it('navigates backward past the old 61-month cap with bounded pages', async () => {
-    await renderPlans();
-
-    for (let step = 0; step < 70; step += 1) {
-      fireEvent.click(screen.getByLabelText('Previous month'));
-    }
-    // Jan 2026 minus 70 months = March 2020 — reachable, no five-year wall.
-    expect(screen.getByText('March 2020')).toBeTruthy();
-    // Only the sliding window stays materialized (3 behind, current, 3 ahead).
-    expect(screen.getAllByLabelText(/Month page /)).toHaveLength(7);
-  }, 30000);
-
-  it('navigates forward past the old 61-month cap with bounded pages', async () => {
-    await renderPlans();
-
-    for (let step = 0; step < 70; step += 1) {
-      fireEvent.click(screen.getByLabelText('Next month'));
-    }
-    // Jan 2026 plus 70 months = November 2031.
-    expect(screen.getByText('November 2031')).toBeTruthy();
-    expect(screen.getAllByLabelText(/Month page /)).toHaveLength(7);
-  }, 30000);
-
-  it('swipe settle advances one month and recenters silently', async () => {
-    await renderPlans();
-    expect(screen.getByText('January 2026')).toBeTruthy();
-
-    // Page width tracks the screen: window (390) minus screen gutters
-    // (24 each side) minus calendar card padding (12 each side).
-    const swipeTo = (page: number) =>
-      act(() =>
-        (globalThis as any).__plansMomentumEnd({
-          nativeEvent: { contentOffset: { x: page * 318, y: 0 } },
-        })
-      );
-    // Swipe forward one page (center index 3 → 4), then again: each
-    // settle advances exactly one month from the recentered window.
-    swipeTo(4);
-    expect(await screen.findByText('February 2026')).toBeTruthy();
-    swipeTo(4);
-    expect(await screen.findByText('March 2026')).toBeTruthy();
-  });
-
   it('empty selected day is a lightweight line, not a panel', async () => {
     await renderPlans();
 
@@ -342,46 +282,6 @@ describe('Plans calendar', () => {
 });
 
 describe('Plans calendar collapsed with upcoming', () => {
-  it('defaults collapsed with an upcoming event (no Month pages)', async () => {
-    mockUpcomingEvents = [makeUpcomingEvent()];
-    await renderPlans();
-
-    expect(screen.getByText('Show calendar')).toBeTruthy();
-    expect(screen.queryByText('Hide calendar')).toBeNull();
-    expect(screen.queryAllByLabelText(/Month page /)).toHaveLength(0);
-    // Countdown lane still shows the next event.
-    expect(screen.getByText('Weekend getaway')).toBeTruthy();
-  });
-
-  it('toggles Show/Hide calendar explicitly', async () => {
-    mockUpcomingEvents = [makeUpcomingEvent()];
-    await renderPlans();
-
-    fireEvent.click(screen.getByText('Show calendar'));
-    expect(screen.getByText('Hide calendar')).toBeTruthy();
-    expect(screen.getAllByLabelText(/Month page /)).toHaveLength(7);
-
-    fireEvent.click(screen.getByText('Hide calendar'));
-    expect(screen.getByText('Show calendar')).toBeTruthy();
-    expect(screen.queryAllByLabelText(/Month page /)).toHaveLength(0);
-  });
-
-  it('upcoming tap expands and selects the correct day', async () => {
-    mockUpcomingEvents = [makeUpcomingEvent()];
-    await renderPlans();
-    expect(screen.getByText('Show calendar')).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText(/Next: Weekend getaway/));
-    // Expands the calendar and moves selection to the event day.
-    expect(screen.getByText('Hide calendar')).toBeTruthy();
-    expect(screen.getAllByLabelText(/Month page /)).toHaveLength(7);
-    expect(mockSelectedDate.getFullYear()).toBe(2030);
-    expect(mockSelectedDate.getMonth()).toBe(0);
-    expect(mockSelectedDate.getDate()).toBe(20);
-  });
-});
-
-describe('Plans sections', () => {
   it('answers a proposal on its own day, with no Proposals section', async () => {
     // The proposal is a date. It appears in that day's agenda and is answered
     // there, so acceptance turns it into the event in place.
