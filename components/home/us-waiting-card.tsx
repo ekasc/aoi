@@ -41,8 +41,10 @@ export function UsWaitingCard({
     const isLetter = focal.kind === 'letter';
     const letter: Letter | null = isLetter ? focal.letter : null;
     const question: WeeklyQuestionState | null = isLetter ? null : focal.question;
+    // The letter carries its author's name, which in the seed data reads
+    // "Them". The partner's own name is the one the couple uses.
     const eyebrow = isLetter
-      ? `A letter from ${letter?.authorName ?? partnerName}`
+      ? `A letter from ${letter?.authorRole === 'partner' ? partnerName : 'you'}`
       : 'This week';
     const title = isLetter
       ? letter?.caption?.trim() || 'Sealed and waiting'

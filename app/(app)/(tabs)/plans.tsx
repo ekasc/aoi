@@ -616,7 +616,17 @@ export default function PlansScreen() {
 	const pagerRef = useRef<ScrollView | null>(null);
 	const pagerHeight = PAGER_HEIGHT;
 	// One month of the vertical stack: the month name, then its grid.
-	const MONTH_PAGE_HEIGHT = PAGER_HEIGHT + 76;
+	// The month fills the screen under the header, the way Apple's does. Rows
+	// stretch to the space, so a month never leaves half the page unusable.
+	const WEEKDAY_HEADER_HEIGHT = 40;
+	const MONTH_PAGE_HEIGHT = Math.max(
+		PAGER_HEIGHT + 76,
+		windowHeight -
+			headerSkyHeightForWindow(windowHeight) -
+			insets.bottom -
+			SYSTEM_TAB_BAR_IOS_CLEARANCE -
+			WEEKDAY_HEADER_HEIGHT,
+	);
 
 	// Keep the pager visually centered after every rebase (mount included);
 	// the user's swipe or tap already supplied the motion.

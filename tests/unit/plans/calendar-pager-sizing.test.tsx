@@ -174,15 +174,19 @@ describe('Plans calendar pager sizing', () => {
 
     // The calendar is the screen now: no show/hide, and each page is a month
     // with its own name above the grid.
-    // 6 rows x 64pt + 5 x 4pt gaps = 404pt of grid, plus the month name.
-    const expectedHeight = 6 * 64 + 5 * 4 + 76;
+    // A month fills the space under the header, and never falls below the
+    // grid's own height: 6 rows x 64pt + 5 x 4pt gaps of grid, plus the name.
+    const minimumHeight = 6 * 64 + 5 * 4 + 76;
     const pages = screen.getAllByLabelText(/Month page /);
     expect(pages).toHaveLength(7);
     for (const page of pages) {
-      expect((page as HTMLElement).style.height).toBe(`${expectedHeight}px`);
+      const height = Number.parseFloat((page as HTMLElement).style.height);
+      expect(height).toBeGreaterThanOrEqual(minimumHeight);
     }
-    // The pager container itself carries the same fixed height.
+    // The pager container itself carries the same height as its pages.
     const pager = (pages[0] as HTMLElement).parentElement as HTMLElement;
-    expect(pager.style.height).toBe(`${expectedHeight}px`);
+    const pagerHeightPx = Number.parseFloat(pager.style.height);
+    const pageHeightPx = Number.parseFloat((pages[0] as HTMLElement).style.height);
+    expect(pagerHeightPx).toBe(pageHeightPx);
   });
 });
