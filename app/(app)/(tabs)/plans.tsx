@@ -631,7 +631,7 @@ export default function PlansScreen() {
 	// month that fits its screen cannot be got right by arithmetic alone.
 	const availableHeight =
 		screenHeight > 0 && headerMeasured > 0
-			? screenHeight - headerMeasured - SYSTEM_TAB_BAR_IOS_CLEARANCE
+			? screenHeight - SYSTEM_TAB_BAR_IOS_CLEARANCE
 			: windowHeight -
 				compactSkyHeightForWindow(windowHeight) -
 				HEADER_ROW_HEIGHT -
@@ -763,7 +763,10 @@ export default function PlansScreen() {
 			{/* Weekday header stays put; the month grid slides beneath it. */}
 			<ScrollView
 				ref={pagerRef}
-				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
+				contentOffset={{
+					x: 0,
+					y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS + headerMeasured,
+				}}
 				contentContainerStyle={{ paddingTop: headerMeasured }}
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
@@ -801,7 +804,7 @@ export default function PlansScreen() {
 				accessibilityRole="button"
 				onPress={handleAddEvent}
 				style={({ pressed }) => [
-					styles.fab,
+						styles.fab,
 					{
 						bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'),
 						opacity: pressed ? 0.85 : 1,
