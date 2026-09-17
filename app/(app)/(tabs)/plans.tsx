@@ -62,7 +62,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Divider } from "@/components/ui/divider";
 import { IconButton } from "@/components/ui/icon-button";
-import { NativeSheet } from "@/components/ui/native-sheet";
+import { DayTimeline } from "@/components/calendar/day-timeline";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { Radii, Spacing } from "@/constants/theme";
 import { FontFamilies } from "@/constants/typography";
@@ -599,10 +599,15 @@ export default function PlansScreen() {
 	}, [router, selectedDateIso]);
 
 	/** Adds to the day the sheet is showing. */
-	const handleAddFromSheet = useCallback(() => {
-		setDaySheetOpen(false);
-		handleAddEvent();
-	}, [handleAddEvent]);
+	const handleCreateAtHour = useCallback(
+		(hour: number) => {
+			router.push({
+				pathname: "/(app)/calendar/new-event",
+				params: { date: selectedDateIso, hour: String(hour) },
+			});
+		},
+		[router, selectedDateIso],
+	);
 
 	const handleCreateOnDate = useCallback(
 		(date: Date) => {
@@ -804,6 +809,33 @@ export default function PlansScreen() {
 				</Pressable>
 			) : null}
 
+			{daySheetOpen ? (
+				<View style={styles.calendarCard}>
+					<View style={styles.dayHeader}>
+						<Pressable
+							accessibilityHint="Shows the months again"
+							accessibilityLabel="Back to the month"
+							accessibilityRole="button"
+							onPress={handleCloseDaySheet}
+							style={styles.dayBack}
+						>
+							<Ionicons color={textColor} name="chevron-back" size={18} />
+							<ThemedText type="title">{monthTitle}</ThemedText>
+						</Pressable>
+						<ThemedText type="meta" style={{ color: muted }}>
+							{formatDateTitle(selectedDate)}
+						</ThemedText>
+					</View>
+					<DayTimeline
+						date={selectedDate}
+						events={selectedDayEvents}
+						onCreateAtHour={handleCreateAtHour}
+						onOpenEvent={handleOpenEvent}
+						ownColor={accent}
+						partnerColor={partnerAccent}
+					/>
+				</View>
+			) : (
 			<View
 				onLayout={(event) => setListHeight(Math.round(event.nativeEvent.layout.height))}
 				style={styles.calendarCard}
@@ -843,6 +875,7 @@ export default function PlansScreen() {
 				))}
 			</ScrollView>
 			</View>
+			)}
 			<Pressable
 				accessibilityHint="Scrolls the calendar back to this month"
 				accessibilityLabel="Today"
@@ -857,53 +890,6 @@ export default function PlansScreen() {
 				<ThemedText type="bodyEmphasis">Today</ThemedText>
 			</Pressable>
 
-			<NativeSheet onClose={handleCloseDaySheet} visible={daySheetOpen}>
-				<View style={styles.sheetBody}>
-					<ThemedText type="title">{formatDateTitle(selectedDate)}</ThemedText>
-					{selectedDayEvents.length === 0 ? (
-						<ThemedText type="body" style={{ color: muted }}>
-							Nothing planned.
-						</ThemedText>
-					) : (
-						selectedDayEvents.map((event) => (
-							<Pressable
-								accessibilityLabel={`Open ${event.title}`}
-								accessibilityRole="button"
-								key={event.id}
-								onPress={() => {
-									setDaySheetOpen(false);
-									handleOpenEvent(event.id);
-								}}
-								style={({ pressed }) => [
-									styles.sheetRow,
-									{ borderBottomColor: border },
-									pressed ? styles.pressed : undefined,
-								]}
-							>
-								<View
-									style={[
-										styles.authorDot,
-										{
-											backgroundColor:
-												event.isOwn && !event.together ? accent : partnerAccent,
-										},
-									]}
-								/>
-								<ThemedText
-									type="caption"
-									style={[styles.sheetWhen, { color: muted }]}
-								>
-									{event.allDay ? 'All day' : formatEventTimeLabel(event)}
-								</ThemedText>
-								<ThemedText numberOfLines={2} type="body" style={styles.sheetTitle}>
-									{event.title}
-								</ThemedText>
-							</Pressable>
-						))
-					)}
-					<Button label="Add event" onPress={handleAddFromSheet} />
-				</View>
-			</NativeSheet>
 		</View>
 	);
 }
@@ -919,6 +905,17 @@ const styles = StyleSheet.create({
 		minHeight: 44,
 		paddingHorizontal: Spacing[16],
 		position: 'absolute',
+	},
+	dayBack: {
+		alignItems: 'center',
+		flexDirection: 'row',
+		gap: Spacing[4],
+		minHeight: 44,
+	},
+	dayHeader: {
+		gap: Spacing[4],
+		paddingBottom: Spacing[8],
+		paddingHorizontal: Spacing[24],
 	},
 	sheetBody: {
 		gap: Spacing[12],
