@@ -49,7 +49,12 @@ import {
 import type { EventProposal } from "@/features/proposals/types";
 import { useProposals } from "@/features/proposals/proposals-context";
 import { useSomeday } from "@/features/someday/someday-context";
-import { MemorySky, compactSkyHeightForWindow, SYSTEM_TAB_BAR_IOS_CLEARANCE } from "@/components/home/memory-sky";
+import {
+	MemorySky,
+	compactSkyHeightForWindow,
+	fabBottomOffset,
+	SYSTEM_TAB_BAR_IOS_CLEARANCE,
+} from "@/components/home/memory-sky";
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
 import { ThemedText } from "@/components/themed-text";
@@ -74,7 +79,9 @@ function buildMonthWeeks(days: Date[]) {
 }
 
 /** Bounded lazy pager: months materialize on demand, never precomputed. */
-const PAGER_WINDOW_RADIUS = 1;
+// Two years either way: far past any real scroll, and light enough that the
+// whole list can render without the screen choking on it.
+const PAGER_WINDOW_RADIUS = 24;
 
 /** The title row inside the header block, above the calendar. */
 const HEADER_ROW_HEIGHT = 56;
@@ -637,14 +644,6 @@ export default function PlansScreen() {
 				WEEKDAY_HEADER_HEIGHT;
 	const MONTH_PAGE_HEIGHT = Math.max(PAGER_HEIGHT + 76, availableHeight);
 
-	// Keep the pager visually centered after every rebase (mount included);
-	// the user's swipe or tap already supplied the motion.
-	useEffect(() => {
-		pagerRef.current?.scrollTo({
-			y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS,
-			animated: false,
-		});
-	}, [MONTH_PAGE_HEIGHT, centerMonth]);
 
 	// Keep the context's loaded window in step with the month the user is on.
 	useEffect(() => {
@@ -657,6 +656,21 @@ export default function PlansScreen() {
 
 	// The band plus the title row. The block clips what it holds, so a height
 	// that only counted the sky pushed the header out of view.
+	// The chrome is written for text over the sky, but the sky's lower edge is
+	// pale in light mode: pick the tone from the background so the title reads.
+	const backgroundIsLight = useMemo(() => {
+		const hex = background.replace('#', '');
+		if (hex.length < 6) {
+			return false;
+		}
+		const value =
+			(0.299 * parseInt(hex.slice(0, 2), 16) +
+				0.587 * parseInt(hex.slice(2, 4), 16) +
+				0.114 * parseInt(hex.slice(4, 6), 16)) /
+			255;
+		return value > 0.6;
+	}, [background]);
+
 	const headerBlockHeight = useMemo(
 		() => compactSkyHeightForWindow(windowHeight) + HEADER_ROW_HEIGHT,
 		[windowHeight],
@@ -691,6 +705,7 @@ export default function PlansScreen() {
 			>
 				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
 				<ScreenHeader
+					tone={backgroundIsLight ? 'onLight' : 'onDark'}
 					title="Plans"
 					primaryAction={{
 						label: 'Add an event for the selected day',
@@ -698,22 +713,18 @@ export default function PlansScreen() {
 						onPress: handleAddEvent,
 					}}
 				/>
+				{/* Part of the header, so it never moves and never leaves a gap. */}
+			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
+				{weekdayLabels.map((label) => (
+					<View key={label} style={styles.weekdayCell}>
+						<ThemedText type="meta" style={{ color: muted }}>
+							{label}
+						</ThemedText>
+					</View>
+				))}
 			</View>
-			<ScrollView
-				contentContainerStyle={[
-					styles.content,
-					{
-						paddingBottom:
-							insets.bottom +
-							Spacing[32] +
-							(process.env.EXPO_OS === 'ios'
-								? SYSTEM_TAB_BAR_IOS_CLEARANCE
-								: 0),
-					},
-				]}
-				showsVerticalScrollIndicator={false}
-				style={styles.scroll}
-			>
+
+			</View>
 			{countdownInfo && countdownLabel && nextEventDate ? (
 				<Pressable
 					accessibilityLabel={`Next: ${countdownInfo.event.title}, ${countdownLabel}`}
@@ -739,22 +750,11 @@ export default function PlansScreen() {
 
 			<View style={styles.calendarCard}>
 			{/* Weekday header stays put; the month grid slides beneath it. */}
-			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
-				{weekdayLabels.map((label) => (
-					<View key={label} style={styles.weekdayCell}>
-						<ThemedText type="meta" style={{ color: muted }}>
-							{label}
-						</ThemedText>
-					</View>
-				))}
-			</View>
-
 			<ScrollView
 				ref={pagerRef}
 				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
 				decelerationRate="fast"
 				nestedScrollEnabled
-				pagingEnabled
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
 			>
@@ -785,8 +785,22 @@ export default function PlansScreen() {
 				))}
 			</ScrollView>
 			</View>
-
-		</ScrollView>
+			<Pressable
+				accessibilityHint="Creates an event on the selected day"
+				accessibilityLabel="Add event"
+				accessibilityRole="button"
+				onPress={handleAddEvent}
+				style={({ pressed }) => [
+					styles.fab,
+					{
+						backgroundColor: accent,
+						bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'),
+					},
+					pressed ? styles.pressed : undefined,
+				]}
+			>
+				<Ionicons color={onAccent} name="add" size={26} />
+			</Pressable>
 		</View>
 	);
 }
@@ -820,12 +834,21 @@ const styles = StyleSheet.create({
 		lineHeight: 34,
 		letterSpacing: -0.2,
 	},
+	fab: {
+		alignItems: "center",
+		borderRadius: 28,
+		height: 56,
+		justifyContent: "center",
+		position: "absolute",
+		right: Spacing[24],
+		width: 56,
+	},
 	calendarCard: {
 		// Apple's month grid is the page, not a card on it: full bleed, no
-		// border, no radius, and only a hairline of breathing room.
+		// border, no radius, and it starts flush under the weekday row.
+		flex: 1,
 		marginHorizontal: -Spacing[24],
 		paddingHorizontal: Spacing[4],
-		paddingVertical: Spacing[8],
 		gap: Spacing[4],
 	},
 	monthHeading: {

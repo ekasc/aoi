@@ -662,7 +662,9 @@ describe('Tab header normalization (one shared anatomy)', () => {
     expect(INDEX_SOURCE).not.toContain('tone=');
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
     expect(TOGETHER_SOURCE).not.toContain('tone=');
-    expect(PLANS_SOURCE).not.toContain('tone=');
+    // Plans picks its header tone from the background: the band's lower edge
+    // is pale in light mode, and the light chrome disappeared on it.
+    expect(PLANS_SOURCE).toContain("backgroundIsLight ? 'onLight' : 'onDark'");
     expect(PLANS_SOURCE).toContain('Add an event for the selected day');
     expect(PLANS_SOURCE).toContain('handleAddEvent');
   });

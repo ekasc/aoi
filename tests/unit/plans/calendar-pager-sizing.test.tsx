@@ -178,7 +178,8 @@ describe('Plans calendar pager sizing', () => {
     // grid's own height: 6 rows x 64pt + 5 x 4pt gaps of grid, plus the name.
     const minimumHeight = 6 * 64 + 5 * 4 + 76;
     const pages = screen.getAllByLabelText(/Month page /);
-    expect(pages).toHaveLength(3);
+    // The month list runs 120 months either way, so scrolling never ends.
+    expect(pages.length).toBeGreaterThan(20);
     for (const page of pages) {
       const height = Number.parseFloat((page as HTMLElement).style.height);
       expect(height).toBeGreaterThanOrEqual(minimumHeight);
