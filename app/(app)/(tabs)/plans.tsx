@@ -707,14 +707,14 @@ export default function PlansScreen() {
 					style={StyleSheet.absoluteFill}
 				>
 					<BlurView
-						intensity={60}
+						intensity={90}
 						tint={backgroundIsLight ? 'light' : 'dark'}
 						style={StyleSheet.absoluteFill}
 					/>
 					<View
 						style={[
 							StyleSheet.absoluteFill,
-							{ backgroundColor: withAlpha(background, 0.45) },
+							{ backgroundColor: withAlpha(background, 0.22) },
 						]}
 					/>
 				</View>
@@ -795,7 +795,6 @@ export default function PlansScreen() {
 				onPress={handleAddEvent}
 				style={({ pressed }) => [
 					styles.fab,
-					styles.fabGlass,
 					{
 						bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'),
 						opacity: pressed ? 0.85 : 1,
@@ -864,6 +863,7 @@ const styles = StyleSheet.create({
 	},
 	monthHeading: {
 		letterSpacing: -1,
+		paddingHorizontal: Spacing[24],
 	},
 	weekdayRow: {
 		borderBottomWidth: StyleSheet.hairlineWidth,
