@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Spacing } from '@/constants/theme';
 import { FontFamilies } from '@/constants/typography';
 import { useCalendar } from '@/features/calendar/calendar-context';
-import { addDays, startOfDay } from '@/features/calendar/calendar-date-utils';
+import { addDays, initialEventStart, startOfDay } from '@/features/calendar/calendar-date-utils';
 import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
 import type { CalendarPresetLabel } from '@/features/calendar/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -42,7 +42,10 @@ function getSeedDate(rawDate: string | string[] | undefined) {
 
 export default function NewCalendarEventScreen() {
   const router = useRouter();
-  const { date } = useLocalSearchParams<{ date?: string | string[] }>();
+  const { date, hour } = useLocalSearchParams<{
+    date?: string | string[];
+    hour?: string | string[];
+  }>();
   const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
   const { addEvent } = useCalendar();
@@ -56,17 +59,11 @@ export default function NewCalendarEventScreen() {
   const background = useThemeColor({}, 'background');
 
   const seedDate = useMemo(() => getSeedDate(date), [date]);
-  const initialStart = useMemo(() => {
-    const currentDate = new Date();
-
-    if (!seedDate) {
-      return currentDate;
-    }
-
-    currentDate.setFullYear(seedDate.getFullYear(), seedDate.getMonth(), seedDate.getDate());
-    currentDate.setHours(9, 0, 0, 0);
-    return currentDate;
-  }, [seedDate]);
+  // Opened from an hour row, this starts at that hour rather than at nine.
+  const initialStart = useMemo(
+    () => initialEventStart(seedDate, hour),
+    [hour, seedDate]
+  );
 
   const [title, setTitle] = useState('');
   const [presetLabel, setPresetLabel] = useState<CalendarPresetLabel>('Work');

@@ -12,8 +12,10 @@ import {
   getAnniversaryForDate,
   getAnniversaryMarkers,
   groupAgendaEvents,
+  initialEventStart,
   isUpcomingEvent,
   parseRelationshipStart,
+  parseSeedHour,
 } from '@/features/calendar/calendar-date-utils';
 import type { CalendarEvent } from '@/features/calendar/types';
 
@@ -396,5 +398,59 @@ describe('formatEventTimeLabel', () => {
       startsAt: new Date(2026, 7, 4, 19, 0).toISOString(),
     });
     expect(formatEventTimeLabel(timed)).toBe('7:00 PM');
+  });
+});
+
+describe('initial event start', () => {
+  const now = new Date(2026, 8, 16, 14, 37, 0);
+
+  it('falls back to now when there is no day', () => {
+    const start = initialEventStart(null, undefined, now);
+    expect(start.getFullYear()).toBe(2026);
+    expect(start.getMonth()).toBe(8);
+    expect(start.getDate()).toBe(16);
+    expect(start.getHours()).toBe(9);
+    expect(start.getMinutes()).toBe(0);
+  });
+
+  it('uses the given day at the usual morning hour', () => {
+    const start = initialEventStart(new Date(2026, 11, 3), undefined, now);
+    expect(start.getMonth()).toBe(11);
+    expect(start.getDate()).toBe(3);
+    expect(start.getHours()).toBe(9);
+  });
+
+  it('uses the hour it was opened on', () => {
+    const start = initialEventStart(new Date(2026, 8, 16), '19', now);
+    expect(start.getHours()).toBe(19);
+    expect(start.getMinutes()).toBe(0);
+  });
+
+  it('treats midnight as an hour, not as an absent value', () => {
+    expect(initialEventStart(new Date(2026, 8, 16), '0', now).getHours()).toBe(0);
+  });
+
+  it('ignores an hour it cannot use', () => {
+    expect(initialEventStart(new Date(2026, 8, 16), 'nonsense', now).getHours()).toBe(9);
+    expect(initialEventStart(new Date(2026, 8, 16), '24', now).getHours()).toBe(9);
+    expect(initialEventStart(new Date(2026, 8, 16), '-3', now).getHours()).toBe(9);
+    expect(initialEventStart(new Date(2026, 8, 16), '', now).getHours()).toBe(9);
+  });
+
+  it('reads the first value when the router hands over an array', () => {
+    expect(initialEventStart(new Date(2026, 8, 16), ['7', '9'], now).getHours()).toBe(7);
+  });
+});
+
+describe('seed hour parsing', () => {
+  it('accepts a real hour, including midnight, and refuses the rest', () => {
+    expect(parseSeedHour('0')).toBe(0);
+    expect(parseSeedHour('23')).toBe(23);
+    expect(parseSeedHour('7')).toBe(7);
+    expect(parseSeedHour(undefined)).toBeNull();
+    expect(parseSeedHour('')).toBeNull();
+    expect(parseSeedHour('24')).toBeNull();
+    expect(parseSeedHour('-1')).toBeNull();
+    expect(parseSeedHour('lunchtime')).toBeNull();
   });
 });

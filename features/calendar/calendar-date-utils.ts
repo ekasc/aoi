@@ -91,6 +91,42 @@ export function buildMonthGrid(date: Date) {
   return Array.from({ length: totalDays }, (_, index) => addDays(gridStart, index));
 }
 
+/**
+ * The hour a new event starts at when the app is opened onto a day view hour.
+ * Absent, empty or out of range means the usual morning default.
+ */
+export function parseSeedHour(rawHour: string | string[] | undefined): number | null {
+  const value = Array.isArray(rawHour) ? rawHour[0] : rawHour;
+  if (value === undefined || value === '') {
+    return null;
+  }
+  const hour = Number.parseInt(value, 10);
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
+    return null;
+  }
+  return hour;
+}
+
+/**
+ * Where a new event starts: the given day if there is one, at the given hour
+ * if there is one, otherwise right now at nine in the morning on that day.
+ * Hour zero is a real hour, not an absent one.
+ */
+export function initialEventStart(
+  seedDate: Date | null,
+  rawHour: string | string[] | undefined,
+  now: Date = new Date(),
+): Date {
+  const start = new Date(now);
+  if (seedDate) {
+    start.setFullYear(seedDate.getFullYear(), seedDate.getMonth(), seedDate.getDate());
+  }
+  start.setHours(parseSeedHour(rawHour) ?? DEFAULT_EVENT_HOUR, 0, 0, 0);
+  return start;
+}
+
+export const DEFAULT_EVENT_HOUR = 9;
+
 export function isEventOnDate(event: CalendarEvent, date: Date) {
   return toDayKey(new Date(event.startsAt)) === toDayKey(date);
 }
