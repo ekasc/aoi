@@ -71,6 +71,7 @@ function eventRow(overrides: Record<string, unknown> = {}) {
     endsAt: new Date('2026-03-15T11:00:00Z'),
     labelPreset: 'Date' as const,
     labelCustomText: null,
+    location: null,
     createdAt: new Date('2026-03-15T09:00:00Z'),
     updatedAt: new Date('2026-03-15T09:00:00Z'),
     ...overrides,
@@ -134,6 +135,24 @@ describe('GET /v1/spaces/current/calendar/events', () => {
       allDay: true,
       together: true,
     });
+  });
+
+  it('serializes location when present and omits it when null', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push(
+      [spaceMemberRow()],
+      [
+        eventRow({ location: 'Tokyo, Japan' }),
+        eventRow({ id: '00000000-0000-0000-0000-000000000031', location: null }),
+      ]
+    );
+    const res = await app.fetch(
+      req('GET', '/v1/spaces/current/calendar/events?from=2026-03-01T00:00:00Z&to=2026-03-31T23:59:59Z', { jwt })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].location).toBe('Tokyo, Japan');
+    expect(body[1].location).toBeUndefined();
   });
 
   it('defaults allDay/together to false and omits empty reminders', async () => {
@@ -298,6 +317,25 @@ describe('POST /v1/spaces/current/calendar/events', () => {
       reminderMinutesBefore: [10, 60],
       allDay: true,
       together: true,
+    });
+  });
+
+  it('returns location in the response when created with one', async () => {
+    const jwt = await getTestJwt();
+    mockSelectQueue.push([spaceMemberRow()]);
+    mockReturningResult = [eventRow({ location: 'Paris, France' })];
+    const res = await app.fetch(req('POST', '/v1/spaces/current/calendar/events', {
+      jwt, body: {
+        title: 'Paris trip', startsAt: '2026-04-01T10:00:00Z', endsAt: '2026-04-01T18:00:00Z',
+        actor: 'you', actorName: 'You', label: { preset: 'Travel' },
+        location: 'Paris, France',
+      },
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      id: TEST_EVENT_ID,
+      location: 'Paris, France',
     });
   });
 
@@ -479,6 +517,29 @@ describe('PATCH /v1/calendar/events/:id', () => {
       allDay: false,
       together: true,
     });
+  });
+
+  it('can set and clear location via update', async () => {
+    const jwt = await getTestJwt();
+    // Set location on an event that had none
+    mockSelectQueue.push([eventRow()], [spaceMemberRow()]);
+    mockReturningResult = [eventRow({ location: 'Berlin, Germany' })];
+    const setRes = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { location: 'Berlin, Germany' },
+    }));
+    expect(setRes.status).toBe(200);
+    const setBody = await setRes.json();
+    expect(setBody).toMatchObject({ location: 'Berlin, Germany' });
+
+    // Clear it by setting to null
+    mockSelectQueue.push([eventRow({ location: 'Berlin, Germany' })], [spaceMemberRow()]);
+    mockReturningResult = [eventRow({ location: null })];
+    const clearRes = await app.fetch(req('PATCH', `/v1/calendar/events/${TEST_EVENT_ID}`, {
+      jwt, body: { location: null },
+    }));
+    expect(clearRes.status).toBe(200);
+    const clearBody = await clearRes.json();
+    expect(clearBody.location).toBeUndefined();
   });
 
   it('clears reminders when reminderMinutesBefore is an empty array', async () => {

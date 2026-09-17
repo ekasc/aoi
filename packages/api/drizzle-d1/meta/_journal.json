@@ -64,6 +64,13 @@
       "when": 1789000000000,
       "tag": "0008_moment_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789614200930,
+      "tag": "0009_bumpy_skrulls",
+      "breakpoints": true
     }
   ]
 }

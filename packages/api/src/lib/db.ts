@@ -90,6 +90,7 @@ export function calendarEventRowToApi(
     actorName: string;
     labelPreset: string;
     labelCustomText: string | null;
+    location?: string | null;
     reminderMinutesBefore?: number[] | null;
     allDay?: boolean;
     together?: boolean;
@@ -119,6 +120,7 @@ export function calendarEventRowToApi(
     actor: row.actor as any,
     actorName: row.actorName,
     label,
+    location: row.location ?? undefined,
     reminderMinutesBefore,
     allDay: row.allDay ?? false,
     together: row.together ?? false,

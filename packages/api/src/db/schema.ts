@@ -245,6 +245,7 @@ export const calendarEvents = pgTable(
       enum: ['Work', 'Gym', 'Travel', 'Date', 'Family', 'Other'],
     }).notNull(),
     labelCustomText: text('label_custom_text'),
+    location: text('location'),
     reminderMinutesBefore: jsonb('reminder_minutes_before').$type<number[]>(),
     allDay: boolean('all_day').notNull().default(false),
     together: boolean('together').notNull().default(false),

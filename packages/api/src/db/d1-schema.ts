@@ -389,6 +389,7 @@ export const calendarEvents = sqliteTable(
     endsAt: integer('ends_at', { mode: 'timestamp_ms' }).notNull(),
     labelPreset: text('label_preset').notNull(),
     labelCustomText: text('label_custom_text'),
+    location: text('location'),
     reminderMinutesBefore: text('reminder_minutes_before', { mode: 'json' }).$type<number[]>(),
     allDay: integer('all_day', { mode: 'boolean' }).notNull().default(false),
     together: integer('together', { mode: 'boolean' }).notNull().default(false),

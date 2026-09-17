@@ -72,6 +72,7 @@ export const calendarEventSchema = z.object({
   actor: calendarActorSchema,
   actorName: z.string(),
   label: calendarLabelSchema,
+  location: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /** Minutes before start when a quiet local reminder should fire. */
@@ -104,6 +105,7 @@ export const calendarEventRowSchema = z.object({
   actorName: z.string(),
   labelPreset: calendarPresetLabelSchema,
   labelCustomText: z.string().nullable(),
+  location: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   reminderMinutesBefore: z.array(z.number()).nullable(),
@@ -121,6 +123,7 @@ export const createCalendarEventRequestSchema = z.object({
   actor: calendarActorSchema,
   actorName: z.string(),
   label: calendarLabelSchema,
+  location: z.string().optional(),
   reminderMinutesBefore: z.array(z.number()).optional(),
   allDay: z.boolean().optional(),
   together: z.boolean().optional(),
@@ -137,6 +140,8 @@ export const updateCalendarEventRequestSchema = z.object({
   startsAt: z.string().optional(),
   endsAt: z.string().optional(),
   label: calendarLabelSchema.optional(),
+  /** Null clears the location, undefined leaves it alone. */
+  location: z.string().nullable().optional(),
   reminderMinutesBefore: z.array(z.number()).optional(),
   allDay: z.boolean().optional(),
   together: z.boolean().optional(),

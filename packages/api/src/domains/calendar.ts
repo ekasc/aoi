@@ -53,6 +53,7 @@ export interface CalendarEventRow {
   ends_at: number;
   label_preset: string;
   label_custom_text: string | null;
+  location: string | null;
   reminder_minutes_before: string | null;
   all_day: number;
   together: number;
@@ -64,7 +65,7 @@ export interface CalendarEventRow {
 
 const EVENT_SELECT = `
   select id, space_id, created_by_user_id, actor, actor_name, title,
-         starts_at, ends_at, label_preset, label_custom_text,
+         starts_at, ends_at, label_preset, label_custom_text, location,
          reminder_minutes_before, all_day, together, recurrence,
          recurrence_group_id, created_at, updated_at
   from calendar_events
@@ -90,6 +91,7 @@ export function calendarEventToApi(row: CalendarEventRow, viewerUserId: string):
     actor: row.actor as CalendarEvent['actor'],
     actorName: row.actor_name,
     label,
+    location: row.location ?? undefined,
     reminderMinutesBefore:
       reminderMinutesBefore && reminderMinutesBefore.length > 0
         ? reminderMinutesBefore
@@ -272,6 +274,7 @@ export const createEventProgram = (
       endMs,
       labelPreset,
       labelCustomText,
+      input.location ?? null,
       reminderJson,
       allDay ? 1 : 0,
       together ? 1 : 0,
@@ -297,10 +300,10 @@ export const createEventProgram = (
             .prepare(
               `insert into calendar_events
                  (id, space_id, created_by_user_id, actor, actor_name, title,
-                  starts_at, ends_at, label_preset, label_custom_text,
+                  starts_at, ends_at, label_preset, label_custom_text, location,
                   reminder_minutes_before, all_day, together, recurrence,
                   recurrence_group_id, created_at, updated_at)
-               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .bind(
               instanceId,
@@ -313,6 +316,7 @@ export const createEventProgram = (
               instanceEnd,
               labelPreset,
               labelCustomText,
+              input.location ?? null,
               reminderJson,
               allDay ? 1 : 0,
               together ? 1 : 0,
@@ -347,10 +351,10 @@ export const createEventProgram = (
           .prepare(
             `insert into calendar_events
                (id, space_id, created_by_user_id, actor, actor_name, title,
-                starts_at, ends_at, label_preset, label_custom_text,
+                starts_at, ends_at, label_preset, label_custom_text, location,
                 reminder_minutes_before, all_day, together, recurrence,
                 recurrence_group_id, created_at, updated_at)
-             values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(...values)
           .run(),
@@ -414,6 +418,10 @@ export const updateEventProgram = (
       sets.push('label_custom_text = ?');
       params.push(input.label.preset === 'Other' ? 'Other' : input.label.preset);
       params.push(input.label.preset === 'Other' ? (input.label.customText ?? null) : null);
+    }
+    if (input.location !== undefined) {
+      sets.push('location = ?');
+      params.push(input.location ?? null);
     }
     if (input.reminderMinutesBefore !== undefined) {
       sets.push('reminder_minutes_before = ?');

@@ -139,6 +139,7 @@ const createEventSchema = z
       preset: z.enum(['Work', 'Gym', 'Travel', 'Date', 'Family', 'Other']),
       customText: z.string().max(200).optional(),
     }),
+    location: z.string().max(500).optional(),
     reminderMinutesBefore: reminderMinutesSchema.optional(),
     allDay: z.boolean().optional(),
     together: z.boolean().optional(),
@@ -181,6 +182,7 @@ calendarRouter.post('/v1/spaces/current/calendar/events', zValidator('json', cre
     title: input.title,
     labelPreset,
     labelCustomText,
+    location: input.location ?? null,
     reminderMinutesBefore,
     allDay,
     together,
@@ -239,6 +241,7 @@ const updateEventSchema = z.object({
     preset: z.enum(['Work', 'Gym', 'Travel', 'Date', 'Family', 'Other']),
     customText: z.string().max(200).optional(),
   }).optional(),
+  location: z.string().max(500).optional().nullable(),
   reminderMinutesBefore: reminderMinutesSchema.optional(),
   allDay: z.boolean().optional(),
   together: z.boolean().optional(),
@@ -300,6 +303,9 @@ calendarRouter.patch('/v1/calendar/events/:id', zValidator('param', z.object({ i
   if (input.label !== undefined) {
     updateData.labelPreset = input.label.preset;
     updateData.labelCustomText = input.label.preset === 'Other' ? (input.label.customText ?? null) : null;
+  }
+  if (input.location !== undefined) {
+    updateData.location = input.location;
   }
   if (input.reminderMinutesBefore !== undefined) {
     // An empty array explicitly clears any previously scheduled reminders.
