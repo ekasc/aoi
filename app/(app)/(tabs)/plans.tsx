@@ -81,6 +81,9 @@ function buildMonthWeeks(days: Date[]) {
 	return weeks;
 }
 
+/** How close to either edge of the window the list is recentred. */
+const RECENTER_MARGIN = 8;
+
 /** Bounded lazy pager: months materialize on demand, never precomputed. */
 // Two years either way: far past any real scroll, and light enough that the
 // whole list can render without the screen choking on it.
@@ -720,14 +723,40 @@ export default function PlansScreen() {
 	// next month's heading. One number, measured, for both.
 	const MONTH_PAGE_HEIGHT = listHeight;
 
-	// A deliberate month change puts the list back on its centre page. This
-	// runs on the month changing, never on a scroll, so it cannot loop.
+	// A month change puts the list back on its centre page. This runs on the
+	// month changing, never on a scroll, so it cannot loop.
 	useEffect(() => {
 		pagerRef.current?.scrollTo({
 			animated: false,
 			y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS,
 		});
 	}, [MONTH_PAGE_HEIGHT, centerMonth]);
+
+	/**
+	 * The month list has no end. The delivered window is bounded, so when the
+	 * reader nears either edge the window moves to make that month the anchor
+	 * again: same month on screen, more months either side of it, and the
+	 * scroll offset is corrected to the anchor so nothing shifts.
+	 */
+	const handlePagerSettled = useCallback(
+		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+			if (MONTH_PAGE_HEIGHT <= 0) {
+				return;
+			}
+			const index = Math.round(event.nativeEvent.contentOffset.y / MONTH_PAGE_HEIGHT);
+			if (
+				index >= PAGER_WINDOW_RADIUS - RECENTER_MARGIN &&
+				index <= PAGER_WINDOW_RADIUS + RECENTER_MARGIN
+			) {
+				return;
+			}
+			const month = pagerMonths[Math.max(0, Math.min(pagerMonths.length - 1, index))];
+			if (month) {
+				setCenterMonth(month);
+			}
+		},
+		[MONTH_PAGE_HEIGHT, pagerMonths],
+	);
 
 
 	// The pill carries the month now, so the header no longer reads the
@@ -748,14 +777,9 @@ export default function PlansScreen() {
 	const rootStyle = useMemo(
 		() => [
 			styles.root,
-			{
-				backgroundColor: background,
-				// Without this the month grid runs to the bottom of the screen and
-				// parks its last row behind the tab bar.
-				paddingBottom: systemTabBarTopOffset(insets.bottom),
-			},
+			{ backgroundColor: background },
 		],
-		[background, insets.bottom],
+		[background],
 	);
 	// A sky band, not a sliver: the band is as tall as the sky draws, and the
 	// calendar chrome sits along its lower edge with the sky visible above it.
@@ -909,8 +933,9 @@ export default function PlansScreen() {
 			{MONTH_PAGE_HEIGHT > 0 ? (
 			<ScrollView
 				ref={pagerRef}
+				contentContainerStyle={{ paddingBottom: systemTabBarTopOffset(insets.bottom) }}
 				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
-				pagingEnabled
+				onMomentumScrollEnd={handlePagerSettled}
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
 			>

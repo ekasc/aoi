@@ -212,8 +212,19 @@ describe('Plans calendar pager sizing', () => {
     // Nothing renders before the space is known, so the opening frame is not a
     // guess that gets corrected a frame later.
     expect(PLANS_SOURCE).toContain('{MONTH_PAGE_HEIGHT > 0 ? (');
-    // Snapping, so a flick frames a month instead of resting between two.
-    expect(PLANS_SOURCE).toContain('pagingEnabled');
+    // Continuous and endless: no snapping, and the window recentres when the
+    // reader nears either edge, so the list never runs out of months.
+    expect(PLANS_SOURCE).not.toContain('pagingEnabled');
+    expect(PLANS_SOURCE).toContain('onMomentumScrollEnd={handlePagerSettled}');
+    expect(PLANS_SOURCE).toContain('RECENTER_MARGIN');
+    // Room at the end for the last row, and no inset cutting the grid off
+    // above the tab bar: the grid fills the screen and passes behind it.
+    expect(PLANS_SOURCE).toContain(
+      'paddingBottom: systemTabBarTopOffset(insets.bottom)',
+    );
+    expect(PLANS_SOURCE).not.toContain('paddingBottom: systemTabBarTopOffset(insets.bottom),\n\t\t\t},');
+    expect(PLANS_SOURCE).toContain('const rootStyle = useMemo(');
+    expect(PLANS_SOURCE).toContain('{ backgroundColor: background },\n\t\t],\n\t\t[background],');
   });
 });
 
