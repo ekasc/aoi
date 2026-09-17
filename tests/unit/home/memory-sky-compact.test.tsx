@@ -575,35 +575,17 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     expect(INDEX_SOURCE).not.toContain('styles.toolbar');
   });
 
-  it('Plans pins ScreenHeader+sky in a fixed block; ScrollView starts below', () => {
-    expect(PLANS_SOURCE).toContain('compactSkyHeightForWindow');
-    expect(PLANS_SOURCE).toContain('headerBlockStyle');
-    expect(PLANS_SOURCE).toContain('height: headerBlockHeight');
-    expect(PLANS_SOURCE).toContain('paddingTop: insets.top + Spacing[8]');
-    // Sky FIRST inside the block, ScreenHeader above it with existing chrome.
-    expect(PLANS_SOURCE.indexOf('<View style={headerBlockStyle}>')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<MemorySky compact'),
-    );
+  it('Plans pins ScreenHeader and the sky above the month list', () => {
+    // The block sizes to the rows it holds. An explicit height here left a
+    // dead band under the header, twice, so there is none.
+    expect(PLANS_SOURCE).toContain('styles.headerBlock');
+    expect(PLANS_SOURCE).not.toContain('height: headerBlockHeight');
+    expect(PLANS_SOURCE).toContain('<MemorySky compact');
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
       PLANS_SOURCE.indexOf('<ScreenHeader'),
     );
-    // ScreenHeader is OUTSIDE (before) the outer ScrollView so it can never
-    // scroll away; scroll content starts below the block.
-    expect(PLANS_SOURCE.indexOf('<ScreenHeader')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<ScrollView\n'),
-    );
-    expect(PLANS_SOURCE).not.toContain('marginTop: -');
-    expect(PLANS_SOURCE).not.toContain('marginTop:-');
-    expect(PLANS_SOURCE).not.toContain('paddingTop: -');
-    expect(PLANS_SOURCE).toContain('position: "relative"');
-    expect(PLANS_SOURCE).toContain('overflow: "hidden"');
-    // Sections order and behavior preserved below the block.
-    expect(PLANS_SOURCE).toContain('title="Plans"');
-    expect(PLANS_SOURCE).toContain('PAGER_WINDOW_SIZE');
-    expect(PLANS_SOURCE).toContain('Proposals');
-    expect(PLANS_SOURCE).toContain('Someday');
-    expect(PLANS_SOURCE).toContain('Future goals');
   });
+
 
   it('leaves the Us tab totally untouched', () => {
     expect(TOGETHER_SOURCE).not.toContain('compactSkyHeightForWindow');

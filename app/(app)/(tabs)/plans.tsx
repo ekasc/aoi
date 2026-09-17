@@ -666,10 +666,6 @@ export default function PlansScreen() {
 		return value > 0.6;
 	}, [background]);
 
-	const headerBlockHeight = useMemo(
-		() => compactSkyHeightForWindow(windowHeight) + HEADER_ROW_HEIGHT,
-		[windowHeight],
-	);
 	const rootStyle = useMemo(
 		() => [
 			styles.root,
@@ -681,14 +677,10 @@ export default function PlansScreen() {
 		() => [
 			styles.headerBlock,
 			{
-				// TEMPORARY: bright fill so the block's bounds show up in a
-				// screenshot while the gap is being chased. Remove once fixed.
-				backgroundColor: '#FFD400',
-				height: headerBlockHeight,
 				paddingTop: insets.top + Spacing[8],
 			},
 		],
-		[headerBlockHeight, insets.top],
+		[insets.top],
 	);
 
 	return (

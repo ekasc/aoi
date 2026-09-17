@@ -261,12 +261,15 @@ describe('Plans calendar', () => {
     expect(screen.getByLabelText('Thursday, January 15, has plans')).toBeTruthy();
   });
 
-  it('pins ScreenHeader+sky in a fixed block sized by the helper', () => {
-    expect(PLANS_SOURCE).toContain('compactSkyHeightForWindow');
-    expect(PLANS_SOURCE).toContain('headerBlockStyle');
-    expect(PLANS_SOURCE).toContain('height: headerBlockHeight');
-    expect(PLANS_SOURCE).toContain('paddingTop: insets.top + Spacing[8]');
+  it('pins ScreenHeader and the sky, with the block sizing to its rows', () => {
+    // The sky is an absolute backdrop and the block holds a title row plus the
+    // weekday row. Giving the block an explicit height is what left a dead
+    // band below the header twice, so it has none.
+    expect(PLANS_SOURCE).toContain('styles.headerBlock');
+    expect(PLANS_SOURCE).not.toContain('height: headerBlockHeight');
+    expect(PLANS_SOURCE).toContain('<MemorySky compact');
   });
+
 
   it('renders MemorySky first inside the block with ScreenHeader above content', () => {
     expect(PLANS_SOURCE.indexOf('<View style={headerBlockStyle}>')).toBeLessThan(
