@@ -199,6 +199,18 @@ describe('Plans calendar pager sizing', () => {
     expect(Number.parseFloat(pager.style.height)).toBe(600);
   });
 
+  it('creates from a floating control, not from a Today pill', () => {
+    const PLANS_SOURCE = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
+    // The floating Today pill is gone. Creation is the floating control now,
+    // and it is the same tinted glass FAB the Memories tab uses.
+    expect(PLANS_SOURCE).not.toContain('handleJumpToToday');
+    expect(PLANS_SOURCE).not.toContain('accessibilityLabel="Today"');
+    expect(PLANS_SOURCE).toContain('accessibilityLabel="Add an event"');
+    expect(PLANS_SOURCE).toContain('styles.fabGlass');
+    expect(PLANS_SOURCE).toContain('fabBottomOffset(insets.bottom');
+    expect(PLANS_SOURCE).toContain('onPress={handleAddEvent}');
+  });
+
   it('measures a wrapper rather than the pager, so the page cannot feed itself', async () => {
     const PLANS_SOURCE = readFileSync(
       path.join(process.cwd(), 'app/(app)/(tabs)/plans.tsx'),
@@ -217,13 +229,9 @@ describe('Plans calendar pager sizing', () => {
     expect(PLANS_SOURCE).not.toContain('pagingEnabled');
     expect(PLANS_SOURCE).toContain('onMomentumScrollEnd={handlePagerSettled}');
     expect(PLANS_SOURCE).toContain('RECENTER_MARGIN');
-    // Room at the end for the last row, and no inset cutting the grid off
-    // above the tab bar: the grid fills the screen and passes behind it.
-    expect(PLANS_SOURCE).toContain(
-      'paddingBottom: systemTabBarTopOffset(insets.bottom)',
-    );
-    expect(PLANS_SOURCE).not.toContain('paddingBottom: systemTabBarTopOffset(insets.bottom),\n\t\t\t},');
-    expect(PLANS_SOURCE).toContain('const rootStyle = useMemo(');
+    // Room at the end for the FAB, and no inset cutting the grid off above the
+    // tab bar: the grid fills the screen and passes behind it.
+    expect(PLANS_SOURCE).toContain('paddingBottom: fabBottom + Spacing[8]');
     expect(PLANS_SOURCE).toContain('{ backgroundColor: background },\n\t\t],\n\t\t[background],');
   });
 });

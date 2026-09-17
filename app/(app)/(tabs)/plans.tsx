@@ -53,8 +53,6 @@ import {
 	MemorySky,
 	compactSkyHeightForWindow,
 	fabBottomOffset,
-	SYSTEM_TAB_BAR_IOS_CLEARANCE,
-	systemTabBarTopOffset,
 } from "@/components/home/memory-sky";
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
@@ -80,6 +78,9 @@ function buildMonthWeeks(days: Date[]) {
 
 	return weeks;
 }
+
+/** The add control, the same size the Memories tab uses. */
+const FAB_SIZE = 56;
 
 /** How close to either edge of the window the list is recentred. */
 const RECENTER_MARGIN = 8;
@@ -320,6 +321,10 @@ export default function PlansScreen() {
 	const isFocused = useIsFocused();
 	const insets = useSafeAreaInsets();
 	const reduceMotion = useReducedMotion();
+	const fabBottom = useMemo(
+		() => fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios"),
+		[insets.bottom],
+	);
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const {
 		selectedDate,
@@ -605,15 +610,6 @@ export default function PlansScreen() {
 		},
 		[setCenterMonth, setSelectedDate],
 	);
-	const handleJumpToToday = useCallback(() => {
-		const today = new Date();
-		setCenterMonth(today);
-		setSelectedDate(today);
-		if (viewMode === 'day') {
-			setViewMode('day');
-		}
-	}, [setSelectedDate, viewMode]);
-
 	const handleShowMonths = useCallback(() => {
 		setViewMode('month');
 	}, []);
@@ -933,7 +929,9 @@ export default function PlansScreen() {
 			{MONTH_PAGE_HEIGHT > 0 ? (
 			<ScrollView
 				ref={pagerRef}
-				contentContainerStyle={{ paddingBottom: systemTabBarTopOffset(insets.bottom) }}
+				contentContainerStyle={{
+					paddingBottom: fabBottom + Spacing[8],
+				}}
 				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
 				onMomentumScrollEnd={handlePagerSettled}
 				showsVerticalScrollIndicator={false}
@@ -970,22 +968,36 @@ export default function PlansScreen() {
 			</View>
 			</MotiView>
 			)}
+			{/* Creation sits where a thumb lands, the same FAB the Memories tab
+			    uses: tinted glass over a shaped container, since the material
+			    itself cannot be shaped from here. */}
 			<Pressable
-				accessibilityHint="Scrolls the calendar back to this month"
-				accessibilityLabel="Today"
+				accessibilityHint="Creates an event on the selected day"
+				accessibilityLabel="Add an event"
 				accessibilityRole="button"
-				onPress={handleJumpToToday}
+				onPress={handleAddEvent}
 				style={({ pressed }) => [
-					styles.todayPill,
+					styles.fab,
 					{
-						backgroundColor: surface,
-						borderColor: border,
-						bottom: systemTabBarTopOffset(insets.bottom) + Spacing[16],
+						bottom: fabBottom,
+						opacity: pressed ? 0.85 : 1,
 					},
-					pressed ? styles.pressed : undefined,
 				]}
 			>
-				<ThemedText type="bodyEmphasis">Today</ThemedText>
+				<GlassSurface
+					effect="clear"
+					style={[
+						styles.fabGlass,
+						{
+							backgroundColor: withAlpha(
+								accent,
+								process.env.EXPO_OS === "ios" ? 0.25 : 0.6,
+							),
+						},
+					]}
+				>
+					<Ionicons color={accent} name="add" size={26} />
+				</GlassSurface>
 			</Pressable>
 
 		</View>
@@ -993,15 +1005,21 @@ export default function PlansScreen() {
 }
 
 const styles = StyleSheet.create({
-	todayPill: {
+	fab: {
 		alignItems: 'center',
-		borderRadius: Radii.pill,
-		borderWidth: StyleSheet.hairlineWidth,
+		borderRadius: FAB_SIZE / 2,
+		boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+		height: FAB_SIZE,
 		justifyContent: 'center',
-		left: Spacing[24],
-		minHeight: 44,
-		paddingHorizontal: Spacing[16],
 		position: 'absolute',
+		right: Spacing[24],
+		width: FAB_SIZE,
+	},
+	fabGlass: {
+		alignItems: 'center',
+		alignSelf: 'stretch',
+		flex: 1,
+		justifyContent: 'center',
 	},
 	pill: {
 		borderRadius: Radii.pill,
