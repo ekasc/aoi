@@ -59,6 +59,8 @@ import {
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
 import { ThemedText } from "@/components/themed-text";
+import { MotiView } from "moti";
+import { useReducedMotion } from "react-native-reanimated";
 import { DayTimeline } from "@/components/calendar/day-timeline";
 import { WeekStrip } from "@/components/calendar/week-strip";
 import { GlassSurface } from "@/components/ui/glass-surface";
@@ -314,6 +316,7 @@ export default function PlansScreen() {
 	const router = useRouter();
 	const isFocused = useIsFocused();
 	const insets = useSafeAreaInsets();
+	const reduceMotion = useReducedMotion();
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const {
 		selectedDate,
@@ -594,9 +597,10 @@ export default function PlansScreen() {
 	const handleSelectDate = useCallback(
 		(date: Date) => {
 			setSelectedDate(date);
+			setCenterMonth(date);
 			setViewMode('day');
 		},
-		[setSelectedDate],
+		[setCenterMonth, setSelectedDate],
 	);
 	const handleJumpToToday = useCallback(() => {
 		const today = new Date();
@@ -854,7 +858,13 @@ export default function PlansScreen() {
 			) : null}
 
 			{viewMode === 'day' ? (
-				<View style={styles.daySurface}>
+				<MotiView
+					animate={{ opacity: 1, translateY: 0 }}
+					from={{ opacity: 0, translateY: reduceMotion ? 0 : 16 }}
+					key="day"
+					style={styles.daySurface}
+					transition={{ duration: reduceMotion ? 0 : 260, type: 'timing' }}
+				>
 					<View style={[styles.dayHeading, { borderBottomColor: border }]}>
 						<ThemedText type="meta" style={[styles.dayWeek, { color: muted }]}>
 							{`W${isoWeekNumber(selectedDate)}`}
@@ -870,9 +880,15 @@ export default function PlansScreen() {
 						ownColor={accent}
 						partnerColor={partnerAccent}
 					/>
-				</View>
+				</MotiView>
 			) : (
-			<View style={styles.calendarCard}>
+			<MotiView
+				animate={{ opacity: 1, translateY: 0 }}
+				from={{ opacity: 0, translateY: reduceMotion ? 0 : -12 }}
+				key="month"
+				style={styles.calendarCard}
+				transition={{ duration: reduceMotion ? 0 : 260, type: 'timing' }}
+			>
 			{/* The weekday row belongs to the grid, not to the padded header, so its
 			    columns line up with the date columns instead of being inset. */}
 			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
@@ -927,7 +943,7 @@ export default function PlansScreen() {
 			</ScrollView>
 			) : null}
 			</View>
-			</View>
+			</MotiView>
 			)}
 			<Pressable
 				accessibilityHint="Scrolls the calendar back to this month"

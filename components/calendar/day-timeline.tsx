@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { MotiView } from 'moti';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
@@ -56,6 +58,7 @@ export function DayTimeline({
   ownColor,
   partnerColor,
 }: DayTimelineProps) {
+  const reduceMotion = useReducedMotion();
   const border = useThemeColor({}, 'border');
   const muted = useThemeColor({}, 'muted');
   const [bodyWidth, setBodyWidth] = useState(0);
@@ -79,17 +82,27 @@ export function DayTimeline({
             {allDay.map((event) => {
               const tint = event.isOwn && !event.together ? ownColor : partnerColor;
               return (
-                <Pressable
-                  accessibilityLabel={`Open ${event.title}`}
-                  accessibilityRole="button"
+                <MotiView
+                  animate={{ opacity: 1, translateY: 0 }}
+                  from={{ opacity: 0, translateY: reduceMotion ? 0 : 8 }}
                   key={event.id}
-                  onPress={() => onOpenEvent(event.id)}
-                  style={[styles.allDayChip, { backgroundColor: withAlpha(tint, 0.18) }]}
+                  transition={{
+                    delay: reduceMotion ? 0 : 60,
+                    duration: reduceMotion ? 0 : 220,
+                    type: 'timing',
+                  }}
                 >
-                  <ThemedText numberOfLines={1} type="bodyEmphasis">
-                    {event.title}
-                  </ThemedText>
-                </Pressable>
+                  <Pressable
+                    accessibilityLabel={`Open ${event.title}`}
+                    accessibilityRole="button"
+                    onPress={() => onOpenEvent(event.id)}
+                    style={[styles.allDayChip, { backgroundColor: withAlpha(tint, 0.18) }]}
+                  >
+                    <ThemedText numberOfLines={1} type="bodyEmphasis">
+                      {event.title}
+                    </ThemedText>
+                  </Pressable>
+                </MotiView>
               );
             })}
           </View>
@@ -129,16 +142,15 @@ export function DayTimeline({
             </View>
           ))}
 
-          {laidOut.map((item) => {
+          {laidOut.map((item, index) => {
             const tint = item.event.isOwn && !item.event.together ? ownColor : partnerColor;
             const width = columnWidth(item.columnCount);
             return (
-              <Pressable
-                accessibilityLabel={`Open ${item.event.title}`}
-                accessibilityRole="button"
+              <MotiView
+                animate={{ opacity: 1, translateY: 0 }}
+                from={{ opacity: 0, translateY: reduceMotion ? 0 : 10 }}
                 key={item.event.id}
-                onPress={() => onOpenEvent(item.event.id)}
-                style={({ pressed }) => [
+                style={[
                   styles.event,
                   {
                     backgroundColor: withAlpha(tint, 0.16),
@@ -152,16 +164,27 @@ export function DayTimeline({
                     top: (item.startMinutes / 60) * DAY_HOUR_HEIGHT + DAY_EVENT_GAP / 2,
                     width,
                   },
-                  pressed ? styles.pressed : null,
                 ]}
+                transition={{
+                  delay: reduceMotion ? 0 : Math.min(index, 8) * 34,
+                  duration: reduceMotion ? 0 : 220,
+                  type: 'timing',
+                }}
               >
-                <ThemedText numberOfLines={2} type="bodyEmphasis">
-                  {item.event.title}
-                </ThemedText>
-                <ThemedText type="caption" style={{ color: muted }}>
-                  {timeLabel(item.event.startsAt)} to {timeLabel(item.event.endsAt)}
-                </ThemedText>
-              </Pressable>
+                <Pressable
+                  accessibilityLabel={`Open ${item.event.title}`}
+                  accessibilityRole="button"
+                  onPress={() => onOpenEvent(item.event.id)}
+                  style={styles.eventTap}
+                >
+                  <ThemedText numberOfLines={2} type="bodyEmphasis">
+                    {item.event.title}
+                  </ThemedText>
+                  <ThemedText type="caption" style={{ color: muted }}>
+                    {timeLabel(item.event.startsAt)} to {timeLabel(item.event.endsAt)}
+                  </ThemedText>
+                </Pressable>
+              </MotiView>
             );
           })}
         </View>
@@ -219,6 +242,9 @@ const styles = StyleSheet.create({
     left: 0,
     position: 'absolute',
     right: 0,
+  },
+  eventTap: {
+    flex: 1,
   },
   pressed: {
     opacity: 0.88,

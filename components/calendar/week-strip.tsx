@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MotiView } from 'moti';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -56,6 +58,7 @@ export function WeekStrip({
   accent,
   onAccent,
 }: WeekStripProps) {
+  const reduceMotion = useReducedMotion();
   const muted = useThemeColor({}, 'muted');
   const textColor = useThemeColor({}, 'text');
   const border = useThemeColor({}, 'border');
@@ -154,11 +157,21 @@ export function WeekStrip({
                       onPress={() => onSelectDate(day)}
                       style={styles.dateCell}
                     >
-                      <View
+                      {/* The chosen day pops, the way a tapped key does, so the
+                          selection reads as an event and not just a repaint. */}
+                      <MotiView
+                        animate={{ opacity: 1, scale: 1 }}
+                        from={{ opacity: selected ? 0.4 : 1, scale: selected ? 0.78 : 1 }}
+                        key={`${key}:${selected ? 'on' : 'off'}`}
                         style={[
                           styles.dateCircle,
                           selected ? { backgroundColor: accent } : null,
                         ]}
+                        transition={
+                          reduceMotion
+                            ? { duration: 0, type: 'timing' }
+                            : { damping: 14, stiffness: 240, type: 'spring' }
+                        }
                       >
                         <ThemedText
                           type="bodyEmphasis"
@@ -175,7 +188,7 @@ export function WeekStrip({
                         >
                           {day.getDate()}
                         </ThemedText>
-                      </View>
+                      </MotiView>
                       <View
                         style={[
                           styles.mark,

@@ -216,3 +216,17 @@ describe('Plans calendar pager sizing', () => {
     expect(PLANS_SOURCE).toContain('pagingEnabled');
   });
 });
+
+// Motion is not what these tests are about: render the element and drop the
+// animation props, so the tree is the same with or without a transition.
+vi.mock('moti', () => ({
+  AnimatePresence: ({ children }: { children?: unknown }) => children,
+  MotiView: ({ children, ...rest }: Record<string, unknown>) => {
+    const { animate, exit, from, transition, ...props } = rest;
+    const style = (props as { style?: unknown }).style;
+    const flat = Array.isArray(style)
+      ? Object.assign({}, ...style.filter(Boolean))
+      : style;
+    return createElement('div', { ...props, style: flat }, children as never);
+  },
+}));

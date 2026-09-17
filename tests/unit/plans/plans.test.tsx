@@ -298,3 +298,35 @@ describe('Plans calendar', () => {
     expect(PLANS_SOURCE).not.toContain('paddingTop: -');
   });
 });
+
+// Motion is not what these tests are about: render the element and drop the
+// animation props, so the tree is the same with or without a transition.
+vi.mock('moti', () => ({
+  AnimatePresence: ({ children }: { children?: unknown }) => children,
+  MotiView: ({ children, ...rest }: Record<string, unknown>) => {
+    const { animate, exit, from, transition, ...props } = rest;
+    const style = (props as { style?: unknown }).style;
+    const flat = Array.isArray(style)
+      ? Object.assign({}, ...style.filter(Boolean))
+      : style;
+    return createElement('div', { ...props, style: flat }, children as never);
+  },
+}));
+
+describe('Plans motion', () => {
+  it('honours reduced motion in the screen and the day timeline', () => {
+    // Motion is decoration here. A reader who asked for less of it gets the
+    // same screens with the transitions cut to zero, not a different layout.
+    expect(PLANS_SOURCE).toContain('useReducedMotion');
+    expect(PLANS_SOURCE).toContain('reduceMotion ? 0 :');
+
+    const timelineSource = readFileSync(
+      'components/calendar/day-timeline.tsx',
+      'utf8',
+    );
+    expect(timelineSource).toContain('useReducedMotion');
+    expect(timelineSource).toContain('reduceMotion ? 0 :');
+    // Events arrive in order rather than all at once.
+    expect(timelineSource).toContain('Math.min(index, 8) * 34');
+  });
+});
