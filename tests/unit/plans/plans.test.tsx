@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { createElement } from 'react';
+import { createElement, useEffect } from 'react';
 
 // Resolve press-state styles as unpressed so the real Plans screen renders
 // (rows/cells compute `style={({ pressed }) => ...}`).
@@ -38,7 +38,17 @@ vi.mock('react-native', () => {
   }
 
   const View = (props: Record<string, unknown>) => {
-    const { children, style, ...rest } = props;
+    const { children, style, onLayout, ...rest } = props;
+    // The platform fires onLayout after mount. Screens that size a page from
+    // the space they are given depend on it, so the mock does the same instead
+    // of leaving the measured path untested.
+    useEffect(() => {
+      if (typeof onLayout === 'function') {
+        onLayout({
+          nativeEvent: { layout: { height: 600, width: 390, x: 0, y: 0 } },
+        });
+      }
+    }, [onLayout]);
     return createDiv(children, style, rest);
   };
   const Text = (props: Record<string, unknown>) => {

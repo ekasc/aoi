@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { createElement } from 'react';
+import { createElement, useEffect } from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 // Same RN boundary as plans.test.tsx: resolve press-state styles unpressed,
 // flatten styles, map accessibilityLabel -> aria-label and onPress -> onClick.
@@ -37,7 +39,17 @@ vi.mock('react-native', () => {
   }
 
   const View = (props: Record<string, unknown>) => {
-    const { children, style, ...rest } = props;
+    const { children, style, onLayout, ...rest } = props;
+    // The platform fires onLayout after mount. Screens that size a page from
+    // the space they are given depend on it, so the mock does the same instead
+    // of leaving the measured path untested.
+    useEffect(() => {
+      if (typeof onLayout === 'function') {
+        onLayout({
+          nativeEvent: { layout: { height: 600, width: 390, x: 0, y: 0 } },
+        });
+      }
+    }, [onLayout]);
     return createDiv(children, style, rest);
   };
   const Text = (props: Record<string, unknown>) => {
@@ -168,26 +180,39 @@ beforeEach(() => {
 });
 
 describe('Plans calendar pager sizing', () => {
-  it('derives a fixed non-zero pager height from row dimensions (no self-measurement cycle)', async () => {
+  it('sizes every page from the space the grid is given, so a month frames', async () => {
     const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
     render(<PlansScreen />);
 
-    // The calendar is the screen now: no show/hide, and each page is a month
-    // with its own name above the grid.
-    // A month fills the space under the header, and never falls below the
-    // grid's own height: 6 rows x 64pt + 5 x 4pt gaps of grid, plus the name.
-    const minimumHeight = 6 * 64 + 5 * 4 + 76;
+    // The mock reports a 600pt box for the measured wrapper. Every page takes
+    // that number, so a page and a screenful are the same thing: the pager
+    // cannot land mid month, which is what left the tail of one month above the
+    // next month's heading.
     const pages = screen.getAllByLabelText(/Month page /);
-    // The month list runs 120 months either way, so scrolling never ends.
     expect(pages.length).toBeGreaterThan(20);
     for (const page of pages) {
-      const height = Number.parseFloat((page as HTMLElement).style.height);
-      expect(height).toBeGreaterThanOrEqual(minimumHeight);
+      expect(Number.parseFloat((page as HTMLElement).style.height)).toBe(600);
     }
-    // The pager container itself carries the same height as its pages.
+
+    // The scroll step is the page height, not a second estimate of it.
     const pager = (pages[0] as HTMLElement).parentElement as HTMLElement;
-    const pagerHeightPx = Number.parseFloat(pager.style.height);
-    const pageHeightPx = Number.parseFloat((pages[0] as HTMLElement).style.height);
-    expect(pagerHeightPx).toBe(pageHeightPx);
+    expect(Number.parseFloat(pager.style.height)).toBe(600);
+  });
+
+  it('measures a wrapper rather than the pager, so the page cannot feed itself', async () => {
+    const PLANS_SOURCE = readFileSync(
+      path.join(process.cwd(), 'app/(app)/(tabs)/plans.tsx'),
+      'utf8',
+    );
+    // The measuring view is the box, which is flex: 1 and knows nothing about
+    // the pager's own height. The pager then takes that number.
+    expect(PLANS_SOURCE).toContain('style={styles.pagerBox}');
+    expect(PLANS_SOURCE).toContain('style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}');
+    expect(PLANS_SOURCE).toContain('const MONTH_PAGE_HEIGHT = listHeight;');
+    // Nothing renders before the space is known, so the opening frame is not a
+    // guess that gets corrected a frame later.
+    expect(PLANS_SOURCE).toContain('{MONTH_PAGE_HEIGHT > 0 ? (');
+    // Snapping, so a flick frames a month instead of resting between two.
+    expect(PLANS_SOURCE).toContain('pagingEnabled');
   });
 });

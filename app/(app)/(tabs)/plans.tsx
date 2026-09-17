@@ -54,6 +54,7 @@ import {
 	compactSkyHeightForWindow,
 	fabBottomOffset,
 	SYSTEM_TAB_BAR_IOS_CLEARANCE,
+	systemTabBarTopOffset,
 } from "@/components/home/memory-sky";
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
@@ -83,21 +84,10 @@ function buildMonthWeeks(days: Date[]) {
 // whole list can render without the screen choking on it.
 const PAGER_WINDOW_RADIUS = 24;
 
-/** The title row inside the header block, above the calendar. */
-const HEADER_ROW_HEIGHT = 56;
-
-/** The weekday row, which belongs to the header rather than to the grid. */
-const WEEKDAY_ROW_HEIGHT = 40;
 const PAGER_WINDOW_SIZE = PAGER_WINDOW_RADIUS * 2 + 1;
 // Fixed six rows per page; each row fits the tallest cell (day number +
 // dot row + today underline + padding/gaps, >= styles.dayCell.minHeight)
 // so the pager height is deterministic and never measured from itself.
-const CALENDAR_ROW_COUNT = 6;
-const CALENDAR_ROW_HEIGHT = 64;
-const CALENDAR_GRID_GAP = Spacing[4];
-const PAGER_HEIGHT =
-	CALENDAR_ROW_COUNT * CALENDAR_ROW_HEIGHT +
-	(CALENDAR_ROW_COUNT - 1) * CALENDAR_GRID_GAP;
 
 export type Strip = {
 	title: string;
@@ -399,7 +389,7 @@ export default function PlansScreen() {
 		() =>
 			buildMonthGrid(currentMonth)
 				.slice(0, 7)
-				.map((day) => formatWeekdayShort(day).toUpperCase()),
+				.map((day) => formatWeekdayShort(day).toUpperCase().slice(0, 1)),
 		[currentMonth],
 	);
 	const selectedDayEvents = useMemo(
@@ -720,10 +710,11 @@ export default function PlansScreen() {
 	// One month of the vertical stack: the month name, then its grid, filling
 	// the space the list actually has. The list reports that space, so there
 	// is no safe area, no tab bar clearance and no row heights to add up.
-	const MONTH_PAGE_HEIGHT = Math.max(
-		PAGER_HEIGHT + 76,
-		listHeight > 0 ? listHeight : Math.round(windowHeight * 0.62),
-	);
+	// The page IS the viewport. A page taller or shorter than the step makes the
+	// pager land mid month, and the error compounds over the pages between the
+	// anchor and today: that is what left the tail of one month sitting above the
+	// next month's heading. One number, measured, for both.
+	const MONTH_PAGE_HEIGHT = listHeight;
 
 	// A deliberate month change puts the list back on its centre page. This
 	// runs on the month changing, never on a scroll, so it cannot loop.
@@ -753,18 +744,26 @@ export default function PlansScreen() {
 	const rootStyle = useMemo(
 		() => [
 			styles.root,
-			{ backgroundColor: background },
+			{
+				backgroundColor: background,
+				// Without this the month grid runs to the bottom of the screen and
+				// parks its last row behind the tab bar.
+				paddingBottom: systemTabBarTopOffset(insets.bottom),
+			},
 		],
-		[background],
+		[background, insets.bottom],
 	);
+	// A sky band, not a sliver: the band is as tall as the sky draws, and the
+	// calendar chrome sits along its lower edge with the sky visible above it.
 	const headerBlockStyle = useMemo(
 		() => [
 			styles.headerBlock,
 			{
+				minHeight: compactSkyHeightForWindow(windowHeight) + Spacing[8],
 				paddingTop: insets.top + Spacing[8],
 			},
 		],
-		[insets.top],
+		[insets.top, windowHeight],
 	);
 
 	return (
@@ -829,17 +828,7 @@ export default function PlansScreen() {
 						onWeekChange={setStripWeek}
 						selectedDate={selectedDate}
 					/>
-				) : (
-					<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
-						{weekdayLabels.map((label) => (
-							<View key={label} style={styles.weekdayCell}>
-								<ThemedText type="meta" style={{ color: textColor }}>
-									{label}
-								</ThemedText>
-							</View>
-						))}
-					</View>
-				)}
+				) : null}
 			</View>
 			{countdownInfo && countdownLabel && nextEventDate ? (
 				<Pressable
@@ -883,14 +872,29 @@ export default function PlansScreen() {
 					/>
 				</View>
 			) : (
+			<View style={styles.calendarCard}>
+			{/* The weekday row belongs to the grid, not to the padded header, so its
+			    columns line up with the date columns instead of being inset. */}
+			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
+				{weekdayLabels.map((label, index) => (
+					<View key={`${label}:${index}`} style={styles.weekdayCell}>
+						<ThemedText type="meta" style={{ color: textColor }}>
+							{label}
+						</ThemedText>
+					</View>
+				))}
+			</View>
+			{/* The pager box measures the space the grid actually gets, so the page
+			    height accounts for the weekday row without arithmetic. */}
 			<View
 				onLayout={(event) => setListHeight(Math.round(event.nativeEvent.layout.height))}
-				style={styles.calendarCard}
+				style={styles.pagerBox}
 			>
-			{/* Weekday header stays put; the month grid slides beneath it. */}
+			{MONTH_PAGE_HEIGHT > 0 ? (
 			<ScrollView
 				ref={pagerRef}
 				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
+				pagingEnabled
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
 			>
@@ -905,7 +909,7 @@ export default function PlansScreen() {
 					>
 						{/* The month name belongs to the month, so it scrolls with
 						    it, the way Apple's month view reads. */}
-						<ThemedText type="display" style={styles.monthHeading}>
+						<ThemedText type="subheading" style={styles.monthHeading}>
 							{formatMonthTitle(month)}
 						</ThemedText>
 						<MonthGrid
@@ -921,6 +925,8 @@ export default function PlansScreen() {
 					</View>
 				))}
 			</ScrollView>
+			) : null}
+			</View>
 			</View>
 			)}
 			<Pressable
@@ -930,7 +936,11 @@ export default function PlansScreen() {
 				onPress={handleJumpToToday}
 				style={({ pressed }) => [
 					styles.todayPill,
-					{ backgroundColor: surface, borderColor: border },
+					{
+						backgroundColor: surface,
+						borderColor: border,
+						bottom: systemTabBarTopOffset(insets.bottom) + Spacing[16],
+					},
 					pressed ? styles.pressed : undefined,
 				]}
 			>
@@ -946,7 +956,6 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		borderRadius: Radii.pill,
 		borderWidth: StyleSheet.hairlineWidth,
-		bottom: Spacing[24],
 		justifyContent: 'center',
 		left: Spacing[24],
 		minHeight: 44,
@@ -955,6 +964,7 @@ const styles = StyleSheet.create({
 	},
 	pill: {
 		borderRadius: Radii.pill,
+		flexDirection: 'row',
 		overflow: 'hidden',
 	},
 	pillIcon: {
@@ -1033,9 +1043,10 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	headerBlock: {
-		position: "relative",
-		paddingHorizontal: Spacing[24],
+		justifyContent: "flex-end",
 		overflow: "hidden",
+		paddingHorizontal: Spacing[24],
+		position: "relative",
 	},
 	nextBlock: {
 		gap: Spacing[4],
@@ -1057,8 +1068,9 @@ const styles = StyleSheet.create({
 		gap: Spacing[4],
 	},
 	monthHeading: {
-		letterSpacing: -1,
-		paddingHorizontal: Spacing[24],
+		paddingBottom: Spacing[4],
+		paddingHorizontal: Spacing[16],
+		paddingTop: Spacing[12],
 	},
 	weekdayRow: {
 		borderBottomWidth: StyleSheet.hairlineWidth,
@@ -1071,6 +1083,9 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 	},
 	pager: {},
+	pagerBox: {
+		flex: 1,
+	},
 	grid: {
 		flex: 1,
 		gap: Spacing[4],
