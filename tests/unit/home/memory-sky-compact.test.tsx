@@ -462,10 +462,11 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     expect(PLANS_SOURCE).toContain('moments, loadGoals');
     expect(PLANS_SOURCE).toContain('useSpace');
     expect(PLANS_SOURCE).not.toContain('fetchMoments');
-    // Plans frosts the band the way Memories does, so the sky reads through
-    // it blurred and the chrome sits on top.
-    expect(PLANS_SOURCE).toContain('BlurView');
-    expect(PLANS_SOURCE).toContain('withAlpha(background, 0.14)');
+    // The chrome over the sky is a row of glass pills, the way Calendar
+    // carries its month and view controls, so there is no full width frost.
+    expect(PLANS_SOURCE).toContain('GlassSurface');
+    expect(PLANS_SOURCE).toContain('styles.pillRow');
+    expect(PLANS_SOURCE).not.toContain('BlurView');
     // Same root anchoring as Memories: after FrostedBackdrop, before the
     // ScrollView/ScreenHeader so scroll offset can never shift the sky.
     expect(PLANS_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(
@@ -475,7 +476,7 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
       PLANS_SOURCE.indexOf('<ScrollView\n'),
     );
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<ScreenHeader'),
+      PLANS_SOURCE.indexOf('styles.pillRow'),
     );
   });
 
@@ -575,15 +576,17 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     expect(INDEX_SOURCE).not.toContain('styles.toolbar');
   });
 
-  it('Plans pins ScreenHeader and the sky above the month list', () => {
+  it('Plans pins the sky above its pill header, which sits above the list', () => {
     // The block sizes to the rows it holds. An explicit height here left a
     // dead band under the header, twice, so there is none.
     expect(PLANS_SOURCE).toContain('styles.headerBlock');
     expect(PLANS_SOURCE).not.toContain('height: headerBlockHeight');
     expect(PLANS_SOURCE).toContain('<MemorySky compact');
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<ScreenHeader'),
+      PLANS_SOURCE.indexOf('styles.pillRow'),
     );
+    // The strip and the weekday row are chrome, not list content.
+    expect(PLANS_SOURCE).toContain('<WeekStrip');
   });
 
 
@@ -596,11 +599,13 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
 });
 
 describe('Tab header normalization (one shared anatomy)', () => {
-  it('renders Us and Plans titles through the shared ScreenHeader; Memories owns its in-screen header', () => {
+  it('keeps Us on the shared ScreenHeader while Plans heads its days with Calendar pills', () => {
     expect(TOGETHER_SOURCE).toContain('<ScreenHeader');
     expect(TOGETHER_SOURCE).toContain('title="Us"');
-    expect(PLANS_SOURCE).toContain('<ScreenHeader');
-    expect(PLANS_SOURCE).toContain('title="Plans"');
+    // Not an oversight: Calendar has no title row. The month pill names the
+    // month and the view pill switches between the grid and the day.
+    expect(PLANS_SOURCE).not.toContain('<ScreenHeader');
+    expect(PLANS_SOURCE).toContain('<WeekStrip');
     expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
     // The native stack header is off; the screen renders the title itself.
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
@@ -647,13 +652,13 @@ describe('Tab header normalization (one shared anatomy)', () => {
     expect(INDEX_SOURCE).not.toContain('tone=');
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
     expect(TOGETHER_SOURCE).not.toContain('tone=');
-    // Plans picks its header tone from the background: the band's lower edge
-    // is pale in light mode, and the light chrome disappeared on it.
-    expect(PLANS_SOURCE).toContain("backgroundIsLight ? 'onLight' : 'onDark'");
+    // The full width frost and its tone pick are gone. The pills carry their
+    // own glass, so the chrome reads over the sky without a band.
+    expect(PLANS_SOURCE).not.toContain('backgroundIsLight');
+    expect(PLANS_SOURCE).toContain('<GlassSurface');
     // Creation lives in the header row, like Calendar. A native glass button
     // cannot be shaped from RN, so there is no floating glass action.
     expect(PLANS_SOURCE).toContain('Add an event for the selected day');
-    expect(PLANS_SOURCE).not.toContain('GlassSurface');
     expect(PLANS_SOURCE).toContain('handleAddEvent');
   });
 });

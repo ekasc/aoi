@@ -271,17 +271,17 @@ describe('Plans calendar', () => {
   });
 
 
-  it('renders MemorySky first inside the block with ScreenHeader above content', () => {
+  it('renders MemorySky first inside the block with the pill header above content', () => {
     expect(PLANS_SOURCE.indexOf('<View style={headerBlockStyle}>')).toBeLessThan(
       PLANS_SOURCE.indexOf('<MemorySky compact'),
     );
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<ScreenHeader'),
+      PLANS_SOURCE.indexOf('styles.pillRow'),
     );
   });
 
-  it('keeps ScreenHeader outside the ScrollView so it never scrolls away', () => {
-    expect(PLANS_SOURCE.indexOf('<ScreenHeader')).toBeLessThan(
+  it('keeps the month and view pills outside the ScrollView so they never scroll away', () => {
+    expect(PLANS_SOURCE.indexOf('styles.pillRow')).toBeLessThan(
       PLANS_SOURCE.indexOf('<ScrollView\n'),
     );
     expect(PLANS_SOURCE).not.toContain('marginTop: -');

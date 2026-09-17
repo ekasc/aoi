@@ -1,6 +1,5 @@
 import { FrostedBackdrop } from '@/components/ui/frosted-backdrop';
 import { withAlpha } from '@/constants/theme';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused, useRouter } from "expo-router";
 import {
@@ -59,11 +58,10 @@ import {
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
 import { ThemedText } from "@/components/themed-text";
-import { Button } from "@/components/ui/button";
-import { Divider } from "@/components/ui/divider";
-import { IconButton } from "@/components/ui/icon-button";
 import { DayTimeline } from "@/components/calendar/day-timeline";
-import { ScreenHeader } from "@/components/ui/screen-header";
+import { WeekStrip } from "@/components/calendar/week-strip";
+import { GlassSurface } from "@/components/ui/glass-surface";
+import { SpaceAvatarButton } from "@/components/space/space-avatar-button";
 import { Radii, Spacing } from "@/constants/theme";
 import { FontFamilies } from "@/constants/typography";
 import { getDaysTogether } from "@/features/time-together/time-together";
@@ -268,6 +266,24 @@ const MonthGrid = memo(function MonthGrid({
 });
 
 /** 'YYYY-MM-DD' parsed as a local calendar date (never UTC midnight). */
+/** ISO week number, the W38 style stamp a day header carries. */
+function isoWeekNumber(date: Date): number {
+	const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+	const weekday = (target.getDay() + 6) % 7;
+	target.setDate(target.getDate() - weekday + 3);
+	const firstThursday = new Date(target.getFullYear(), 0, 4);
+	const firstWeekday = (firstThursday.getDay() + 6) % 7;
+	firstThursday.setDate(firstThursday.getDate() - firstWeekday + 3);
+	return 1 + Math.round((target.getTime() - firstThursday.getTime()) / 604800000);
+}
+
+/** "Wednesday \u2013 Sep 16, 2026", the way a day header reads. */
+function formatDayHeading(date: Date): string {
+	const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
+	const rest = date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+	return `${weekday} \u2013 ${rest}`;
+}
+
 function parseLocalDate(value: string): Date | null {
 	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
 	if (!match) {
@@ -321,8 +337,8 @@ export default function PlansScreen() {
 	} = useCalendar();
 	const [centerMonth, setCenterMonth] = useState(() => visibleMonth);
 	const [listHeight, setListHeight] = useState(0);
-	// The day the reader tapped, shown in a native sheet.
-	const [daySheetOpen, setDaySheetOpen] = useState(false);
+	// Month grid, or one day hour by hour. Tapping a date opens the day.
+	const [viewMode, setViewMode] = useState<'month' | 'day'>('month');
 	const pagerMonths = useMemo(
 		() =>
 			Array.from({ length: PAGER_WINDOW_SIZE }, (_, index) =>
@@ -356,9 +372,28 @@ export default function PlansScreen() {
 		[textColor, muted, accent, onAccent, partnerAccent],
 	);
 
+	const dayCounts = useMemo(() => {
+		const counts: Record<string, number> = {};
+		for (const key of Object.keys(eventsForDay)) {
+			counts[key] = eventsForDay[key].length;
+		}
+		return counts;
+	}, [eventsForDay]);
+
 	const monthTitle = useMemo(
 		() => formatMonthTitle(currentMonth),
 		[currentMonth],
+	);
+
+	// The month named by the header pill: the day's month in day view, the
+	// week on screen once the strip is swiped, the list's month in month view.
+	const [stripWeek, setStripWeek] = useState<Date | null>(null);
+	const pillTitle = useMemo(
+		() =>
+			viewMode === 'day'
+				? formatMonthTitle(stripWeek ?? selectedDate)
+				: monthTitle,
+		[monthTitle, selectedDate, stripWeek, viewMode],
 	);
 	const weekdayLabels = useMemo(
 		() =>
@@ -569,7 +604,7 @@ export default function PlansScreen() {
 	const handleSelectDate = useCallback(
 		(date: Date) => {
 			setSelectedDate(date);
-			setDaySheetOpen(true);
+			setViewMode('day');
 		},
 		[setSelectedDate],
 	);
@@ -577,10 +612,13 @@ export default function PlansScreen() {
 		const today = new Date();
 		setCenterMonth(today);
 		setSelectedDate(today);
-	}, [setSelectedDate]);
+		if (viewMode === 'day') {
+			setViewMode('day');
+		}
+	}, [setSelectedDate, viewMode]);
 
-	const handleCloseDaySheet = useCallback(() => {
-		setDaySheetOpen(false);
+	const handleShowMonths = useCallback(() => {
+		setViewMode('month');
 	}, []);
 
 
@@ -697,6 +735,8 @@ export default function PlansScreen() {
 	}, [MONTH_PAGE_HEIGHT, centerMonth]);
 
 
+	// The pill carries the month now, so the header no longer reads the
+	// background luminance to pick a title tone.
 	// Keep the context's loaded window in step with the month the user is on.
 	useEffect(() => {
 		if (!isSameMonth(currentMonth, visibleMonth)) {
@@ -710,19 +750,6 @@ export default function PlansScreen() {
 	// that only counted the sky pushed the header out of view.
 	// The chrome is written for text over the sky, but the sky's lower edge is
 	// pale in light mode: pick the tone from the background so the title reads.
-	const backgroundIsLight = useMemo(() => {
-		const hex = background.replace('#', '');
-		if (hex.length < 6) {
-			return false;
-		}
-		const value =
-			(0.299 * parseInt(hex.slice(0, 2), 16) +
-				0.587 * parseInt(hex.slice(2, 4), 16) +
-				0.114 * parseInt(hex.slice(4, 6), 16)) /
-			255;
-		return value > 0.6;
-	}, [background]);
-
 	const rootStyle = useMemo(
 		() => [
 			styles.root,
@@ -745,46 +772,74 @@ export default function PlansScreen() {
       <FrostedBackdrop />
 			<View style={headerBlockStyle}>
 				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
-				<ScreenHeader
-					primaryAction={{
-						label: 'Add an event for the selected day',
-						icon: <Ionicons color={onAccent} name="add" size={20} />,
-						onPress: handleAddEvent,
-					}}
-					tone={backgroundIsLight ? 'onLight' : 'onDark'}
-					title="Plans"
-				/>
-				{/* Frosted band, the same recipe the Memories header uses: the sky
-				    reads through, blurred, and the chrome sits on top of it. */}
-				<View
-					accessible={false}
-					importantForAccessibility="no-hide-descendants"
-					pointerEvents="none"
-					style={StyleSheet.absoluteFill}
-				>
-					<BlurView
-						intensity={45}
-						tint={backgroundIsLight ? 'light' : 'dark'}
-						style={StyleSheet.absoluteFill}
-					/>
-					<View
-						style={[
-							StyleSheet.absoluteFill,
-							{ backgroundColor: withAlpha(background, 0.14) },
-						]}
-					/>
+				<View style={styles.pillRow}>
+					<SpaceAvatarButton />
+					<GlassSurface style={styles.pill}>
+						{viewMode === 'day' ? (
+							<Pressable
+								accessibilityHint="Shows the months again"
+								accessibilityLabel="Back to the month"
+								accessibilityRole="button"
+								onPress={handleShowMonths}
+								style={styles.pillTap}
+							>
+								<Ionicons color={textColor} name="chevron-back" size={18} />
+								<ThemedText type="bodyEmphasis">{pillTitle}</ThemedText>
+							</Pressable>
+						) : (
+							<View style={styles.pillTap}>
+								<ThemedText type="bodyEmphasis">{pillTitle}</ThemedText>
+							</View>
+						)}
+					</GlassSurface>
+					<GlassSurface style={styles.pill}>
+						<Pressable
+							accessibilityHint={
+								viewMode === 'day' ? 'Shows the month grid' : 'Shows the selected day'
+							}
+							accessibilityLabel={viewMode === 'day' ? 'Month view' : 'Day view'}
+							accessibilityRole="button"
+							onPress={() =>
+								setViewMode((mode) => (mode === 'day' ? 'month' : 'day'))
+							}
+							style={styles.pillIcon}
+						>
+							<Ionicons
+								color={textColor}
+								name={viewMode === 'day' ? 'grid-outline' : 'time-outline'}
+								size={20}
+							/>
+						</Pressable>
+						<Pressable
+							accessibilityLabel="Add an event for the selected day"
+							accessibilityRole="button"
+							onPress={handleAddEvent}
+							style={styles.pillIcon}
+						>
+							<Ionicons color={accent} name="add" size={22} />
+						</Pressable>
+					</GlassSurface>
 				</View>
-				{/* Part of the header, so it never moves and never leaves a gap. */}
-			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
-				{weekdayLabels.map((label) => (
-					<View key={label} style={styles.weekdayCell}>
-						<ThemedText type="meta" style={{ color: textColor }}>
-							{label}
-						</ThemedText>
+				{viewMode === 'day' ? (
+					<WeekStrip
+						accent={accent}
+						markedDays={dayCounts}
+						onAccent={onAccent}
+						onSelectDate={handleSelectDate}
+						onWeekChange={setStripWeek}
+						selectedDate={selectedDate}
+					/>
+				) : (
+					<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
+						{weekdayLabels.map((label) => (
+							<View key={label} style={styles.weekdayCell}>
+								<ThemedText type="meta" style={{ color: textColor }}>
+									{label}
+								</ThemedText>
+							</View>
+						))}
 					</View>
-				))}
-			</View>
-
+				)}
 			</View>
 			{countdownInfo && countdownLabel && nextEventDate ? (
 				<Pressable
@@ -809,25 +864,17 @@ export default function PlansScreen() {
 				</Pressable>
 			) : null}
 
-			{daySheetOpen ? (
-				<View style={styles.calendarCard}>
-					<View style={styles.dayHeader}>
-						<Pressable
-							accessibilityHint="Shows the months again"
-							accessibilityLabel="Back to the month"
-							accessibilityRole="button"
-							onPress={handleCloseDaySheet}
-							style={styles.dayBack}
-						>
-							<Ionicons color={textColor} name="chevron-back" size={18} />
-							<ThemedText type="title">{monthTitle}</ThemedText>
-						</Pressable>
-						<ThemedText type="meta" style={{ color: muted }}>
-							{formatDateTitle(selectedDate)}
+			{viewMode === 'day' ? (
+				<View style={styles.daySurface}>
+					<View style={[styles.dayHeading, { borderBottomColor: border }]}>
+						<ThemedText type="meta" style={[styles.dayWeek, { color: muted }]}>
+							{`W${isoWeekNumber(selectedDate)}`}
+						</ThemedText>
+						<ThemedText numberOfLines={1} type="subheading" style={styles.dayHeadingText}>
+							{formatDayHeading(selectedDate)}
 						</ThemedText>
 					</View>
 					<DayTimeline
-						date={selectedDate}
 						events={selectedDayEvents}
 						onCreateAtHour={handleCreateAtHour}
 						onOpenEvent={handleOpenEvent}
@@ -905,6 +952,48 @@ const styles = StyleSheet.create({
 		minHeight: 44,
 		paddingHorizontal: Spacing[16],
 		position: 'absolute',
+	},
+	pill: {
+		borderRadius: Radii.pill,
+		overflow: 'hidden',
+	},
+	pillIcon: {
+		alignItems: 'center',
+		height: 44,
+		justifyContent: 'center',
+		width: 44,
+	},
+	pillRow: {
+		alignItems: 'center',
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		paddingHorizontal: Spacing[16],
+		paddingVertical: Spacing[8],
+	},
+	pillTap: {
+		alignItems: 'center',
+		flexDirection: 'row',
+		gap: Spacing[4],
+		minHeight: 44,
+		paddingHorizontal: Spacing[12],
+	},
+	daySurface: {
+		flex: 1,
+	},
+	dayHeading: {
+		alignItems: 'center',
+		borderBottomWidth: StyleSheet.hairlineWidth,
+		flexDirection: 'row',
+		gap: Spacing[8],
+		minHeight: 40,
+		paddingHorizontal: Spacing[16],
+	},
+	dayHeadingText: {
+		flex: 1,
+		textAlign: 'center',
+	},
+	dayWeek: {
+		width: 40,
 	},
 	dayBack: {
 		alignItems: 'center',
