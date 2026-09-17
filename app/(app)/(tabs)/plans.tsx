@@ -810,9 +810,16 @@ export default function PlansScreen() {
 								<ThemedText type="bodyEmphasis">{pillTitle}</ThemedText>
 							</Pressable>
 						) : (
-							<View style={styles.pillTap}>
+							<Pressable
+								accessibilityHint="Shows every month of the year"
+								accessibilityLabel="Open the year view"
+								accessibilityRole="button"
+								onPress={() => router.push('/(app)/calendar/year')}
+								style={styles.pillTap}
+							>
 								<ThemedText type="bodyEmphasis">{pillTitle}</ThemedText>
-							</View>
+								<Ionicons color={textColor} name="chevron-down" size={16} />
+							</Pressable>
 						)}
 					</GlassSurface>
 					<GlassSurface style={styles.pill}>
@@ -833,14 +840,7 @@ export default function PlansScreen() {
 								size={20}
 							/>
 						</Pressable>
-						<Pressable
-							accessibilityLabel="Add an event for the selected day"
-							accessibilityRole="button"
-							onPress={handleAddEvent}
-							style={styles.pillIcon}
-						>
-							<Ionicons color={accent} name="add" size={22} />
-						</Pressable>
+
 					</GlassSurface>
 				</View>
 				{viewMode === 'day' ? (

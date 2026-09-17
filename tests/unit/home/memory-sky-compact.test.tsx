@@ -658,7 +658,11 @@ describe('Tab header normalization (one shared anatomy)', () => {
     expect(PLANS_SOURCE).toContain('<GlassSurface');
     // Creation lives in the header row, like Calendar. A native glass button
     // cannot be shaped from RN, so there is no floating glass action.
-    expect(PLANS_SOURCE).toContain('Add an event for the selected day');
+    // Creation is the floating control, not a control in the header, and the
+    // header's month pill opens the year instead.
+    expect(PLANS_SOURCE).not.toContain('Add an event for the selected day');
+    expect(PLANS_SOURCE).toContain('accessibilityLabel="Add an event"');
+    expect(PLANS_SOURCE).toContain('Open the year view');
     expect(PLANS_SOURCE).toContain('handleAddEvent');
   });
 });

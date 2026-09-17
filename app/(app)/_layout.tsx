@@ -158,6 +158,10 @@ export default function AuthenticatedAppLayout() {
 										}}
 									/>
 									<Stack.Screen
+										name="calendar/year"
+										options={{ title: "Year" }}
+									/>
+									<Stack.Screen
 										name="profile/edit-relationship"
 										options={{
 											title: "Edit relationship",
