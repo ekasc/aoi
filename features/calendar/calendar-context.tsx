@@ -288,6 +288,17 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		await reloadAfterMutation();
 	}, [reloadAfterMutation]);
 
+	/**
+	 * A range read for views outside the month window, the year view above all.
+	 * It deliberately does not setEvents, so asking about a year cannot change
+	 * what the calendar is showing.
+	 */
+	const eventsInRange = useCallback(
+		async (from: Date, to: Date) =>
+			listEventsInRange(from.toISOString(), to.toISOString()),
+		[],
+	);
+
 	const value = useMemo<CalendarContextValue>(
 		() => ({
 			events,
@@ -305,6 +316,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			refresh,
 			eventsForDay,
 			getEventById,
+			eventsInRange,
 		}),
 		[
 			addEvent,
@@ -312,6 +324,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			error,
 			events,
 			eventsForDay,
+			eventsInRange,
 			getEventById,
 			isLoading,
 			monthSummary,

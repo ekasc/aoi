@@ -31,6 +31,9 @@ vi.mock('react-native', () => {
     if (typeof props.onPress === 'function') {
       next.onClick = props.onPress;
     }
+    if (typeof props.testID === 'string') {
+      next['data-testid'] = props.testID;
+    }
     return next;
   }
 
@@ -60,6 +63,21 @@ vi.mock('react-native', () => {
     },
     ScrollView: ({ children, style, ...rest }: Record<string, unknown>) =>
       createElement('div', { ...withAria(rest), style: flattenStyle(style) }, children as never),
+    FlatList: ({
+      data,
+      renderItem,
+      style,
+      ...rest
+    }: {
+      data?: unknown[];
+      renderItem?: (info: { item: unknown; index: number }) => unknown;
+      style?: unknown;
+    }) =>
+      createElement(
+        'div',
+        { ...withAria(rest as Record<string, unknown>), style: flattenStyle(style) },
+        (data ?? []).map((item, index) => renderItem?.({ index, item })) as never,
+      ),
     Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
     useWindowDimensions: () => ({ fontScale: 1, height: 844, scale: 3, width: 390 }),
   };
@@ -102,6 +120,16 @@ vi.mock('@/features/calendar/calendar-context', () => ({
     setSelectedDate: setSelectedDateSpy,
     setVisibleMonth: setVisibleMonthSpy,
     visibleMonth: new Date(2026, 8, 1),
+    // The density read: one plan on 16 September 2026, which is the day the
+    // screen is told is selected, so the dot and the accent agree.
+    eventsInRange: async () => [
+      {
+        endsAt: '2026-09-16T11:00:00.000Z',
+        id: 'fair',
+        startsAt: '2026-09-16T10:00:00.000Z',
+        title: 'Career fair',
+      },
+    ],
   }),
 }));
 
@@ -134,5 +162,17 @@ describe('Calendar year view', () => {
     expect(handedBack.getDate()).toBe(1);
     expect(handedBack.getMonth()).toBe(8);
     expect(handedBack.getFullYear()).toBe(thisYear);
+  });
+
+  it('marks the days a year holds plans, from a real range read', async () => {
+    const { default: YearScreen } = await import('@/app/(app)/calendar/year');
+    render(<YearScreen />);
+
+    // The read resolves a tick later, which is what the await is for.
+    const dot = await screen.findByTestId('plans:2026-09-16');
+    expect(dot).toBeTruthy();
+    // One day, one dot, no matter how many years are on screen.
+    expect(screen.getAllByTestId('plans:2026-09-16')).toHaveLength(1);
+    expect(screen.queryByTestId('plans:2026-09-17')).toBeNull();
   });
 });

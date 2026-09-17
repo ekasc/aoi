@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { MotiView } from 'moti';
 import {
+	FlatList,
 	Pressable,
-	ScrollView,
 	StyleSheet,
 	useWindowDimensions,
 	View,
@@ -19,6 +19,7 @@ import {
 	isSameDay,
 	isSameMonth,
 	startOfMonth,
+	toDayKey,
 } from '@/features/calendar/calendar-date-utils';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -58,10 +59,19 @@ type MiniMonthProps = {
 	width: number;
 	now: Date;
 	selectedDate: Date;
+	/** Day keys that hold plans, or null while they are being read. */
+	daysWithPlans: Set<string> | null;
 	onOpen: (month: Date) => void;
 };
 
-function MiniMonth({ month, width, now, selectedDate, onOpen }: MiniMonthProps) {
+function MiniMonth({
+	month,
+	width,
+	now,
+	selectedDate,
+	daysWithPlans,
+	onOpen,
+}: MiniMonthProps) {
 	const accent = useThemeColor({}, 'accent');
 	const muted = useThemeColor({}, 'muted');
 	const textColor = useThemeColor({}, 'text');
@@ -98,6 +108,17 @@ function MiniMonth({ month, width, now, selectedDate, onOpen }: MiniMonthProps) 
 								>
 									{day.getDate()}
 								</ThemedText>
+								{/* A day that holds plans carries a dot, the same signal
+								    the month grid gives. */}
+								{daysWithPlans?.has(toDayKey(day)) ? (
+									<View
+										accessible={false}
+										style={[styles.miniDot, { backgroundColor: accent }]}
+										testID={`plans:${toDayKey(day)}`}
+									/>
+								) : (
+									<View accessible={false} style={styles.miniDot} />
+								)}
 							</View>
 						);
 					})}
@@ -108,9 +129,100 @@ function MiniMonth({ month, width, now, selectedDate, onOpen }: MiniMonthProps) 
 	);
 }
 
+type YearSectionProps = {
+	year: number;
+	width: number;
+	now: Date;
+	selectedDate: Date;
+	onOpen: (month: Date) => void;
+	/** Stagger, so seventeen years do not all animate at once. */
+	index: number;
+	reduceMotion: boolean;
+};
+
+function YearSection({
+	year,
+	width,
+	now,
+	selectedDate,
+	onOpen,
+	index,
+	reduceMotion,
+}: YearSectionProps) {
+	const { eventsInRange } = useCalendar();
+	const muted = useThemeColor({}, 'muted');
+	const [daysWithPlans, setDaysWithPlans] = useState<Set<string> | null>(null);
+	const [failed, setFailed] = useState(false);
+
+	// Each year reads its own density as it mounts, so scrolling costs nothing
+	// for years nobody is looking at.
+	useEffect(() => {
+		let live = true;
+		setFailed(false);
+		setDaysWithPlans(null);
+		eventsInRange(new Date(year, 0, 1), new Date(year + 1, 0, 1))
+			.then((events) => {
+				if (!live) {
+					return;
+				}
+				setDaysWithPlans(
+					new Set(events.map((event) => toDayKey(new Date(event.startsAt)))),
+				);
+			})
+			.catch(() => {
+				if (live) {
+					setFailed(true);
+				}
+			});
+		return () => {
+			live = false;
+		};
+	}, [eventsInRange, year]);
+
+	return (
+		<MotiView
+			animate={{ opacity: 1, translateY: 0 }}
+			from={{ opacity: 0, translateY: reduceMotion ? 0 : 12 }}
+			style={[styles.yearSection, { height: YEAR_SECTION_HEIGHT }]}
+			transition={{
+				delay: reduceMotion ? 0 : Math.min(index, 4) * 40,
+				duration: reduceMotion ? 0 : 240,
+				type: 'timing',
+			}}
+		>
+			<View style={styles.yearHeader}>
+				<ThemedText type="subheading">{year}</ThemedText>
+				{failed ? (
+					<ThemedText
+						accessibilityLiveRegion="polite"
+						type="caption"
+						style={{ color: muted }}
+					>
+						Could not load plans
+					</ThemedText>
+				) : null}
+			</View>
+			<View style={styles.yearGrid}>
+				{Array.from({ length: 12 }, (_, monthIndex) => (
+					<MiniMonth
+						key={monthIndex}
+						daysWithPlans={daysWithPlans}
+						month={new Date(year, monthIndex, 1)}
+						now={now}
+						onOpen={onOpen}
+						selectedDate={selectedDate}
+						width={width}
+					/>
+				))}
+			</View>
+		</MotiView>
+	);
+}
+
 /**
  * The year at a glance: twelve months as small calendars, the current year
- * opened first, and a tap on any month returns to it in the calendar.
+ * opened first, days holding plans dotted, and a tap on any month returns to
+ * it in the calendar.
  */
 export default function CalendarYearScreen() {
 	const router = useRouter();
@@ -128,56 +240,54 @@ export default function CalendarYearScreen() {
 	const years = useMemo(
 		() =>
 			Array.from({ length: YEARS_EITHER_SIDE * 2 + 1 }, (_, index) =>
-				new Date(thisYear + index - YEARS_EITHER_SIDE, 0, 1),
+				thisYear + index - YEARS_EITHER_SIDE,
 			),
 		[thisYear],
 	);
 
-	const openMonth = (month: Date) => {
-		setVisibleMonth(startOfMonth(month));
-		setSelectedDate(startOfMonth(month));
-		router.back();
-	};
+	const openMonth = useCallback(
+		(month: Date) => {
+			setVisibleMonth(startOfMonth(month));
+			setSelectedDate(startOfMonth(month));
+			router.back();
+		},
+		[router, setSelectedDate, setVisibleMonth],
+	);
+
+	const renderYear = useCallback(
+		({ item, index }: { item: number; index: number }) => (
+			<YearSection
+				index={index}
+				now={now}
+				onOpen={openMonth}
+				reduceMotion={reduceMotion}
+				selectedDate={selectedDate}
+				width={miniWidth}
+				year={item}
+			/>
+		),
+		[miniWidth, now, reduceMotion, openMonth, selectedDate],
+	);
 
 	return (
 		<View style={[styles.root, { backgroundColor: background }]}>
-			<ScrollView
-				contentOffset={{ x: 0, y: YEARS_EITHER_SIDE * YEAR_SECTION_HEIGHT }}
+			{/* A fixed row height, so the opening offset is arithmetic on that
+			    height and the list lands on this year without measuring. */}
+			<FlatList
+				data={years}
+				getItemLayout={(_, index) => ({
+					index,
+					length: YEAR_SECTION_HEIGHT,
+					offset: YEAR_SECTION_HEIGHT * index,
+				})}
+				initialNumToRender={1}
+				initialScrollIndex={YEARS_EITHER_SIDE}
+				keyExtractor={(year) => String(year)}
+				removeClippedSubviews
+				renderItem={renderYear}
 				showsVerticalScrollIndicator={false}
-			>
-				{years.map((year, yearIndex) => (
-					<MotiView
-						animate={{ opacity: 1, translateY: 0 }}
-						from={{
-							opacity: 0,
-							translateY: reduceMotion ? 0 : 12,
-						}}
-						key={year.getFullYear()}
-						style={[styles.yearSection, { height: YEAR_SECTION_HEIGHT }]}
-						transition={{
-							delay: reduceMotion ? 0 : Math.min(yearIndex, 4) * 40,
-							duration: reduceMotion ? 0 : 240,
-							type: 'timing',
-						}}
-					>
-						<ThemedText type="subheading" style={styles.yearTitle}>
-							{year.getFullYear()}
-						</ThemedText>
-						<View style={styles.yearGrid}>
-							{Array.from({ length: 12 }, (_, monthIndex) => (
-								<MiniMonth
-									key={monthIndex}
-									month={new Date(year.getFullYear(), monthIndex, 1)}
-									width={miniWidth}
-									now={now}
-									onOpen={openMonth}
-									selectedDate={selectedDate}
-								/>
-							))}
-						</View>
-					</MotiView>
-				))}
-			</ScrollView>
+				windowSize={5}
+			/>
 		</View>
 	);
 }
@@ -188,6 +298,12 @@ const styles = StyleSheet.create({
 		flex: 1,
 		height: MINI_ROW_HEIGHT,
 		justifyContent: 'center',
+	},
+	miniDot: {
+		borderRadius: 999,
+		height: 3,
+		marginTop: 1,
+		width: 3,
 	},
 	miniDayText: {
 		fontSize: 10,
@@ -214,6 +330,12 @@ const styles = StyleSheet.create({
 		flexWrap: 'wrap',
 		gap: MINI_GAP,
 		rowGap: MINI_GAP,
+	},
+	yearHeader: {
+		alignItems: 'baseline',
+		flexDirection: 'row',
+		gap: Spacing[8],
+		height: YEAR_TITLE_HEIGHT,
 	},
 	yearSection: {
 		paddingHorizontal: YEAR_SECTION_PADDING,

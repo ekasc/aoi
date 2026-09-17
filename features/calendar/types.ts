@@ -113,4 +113,10 @@ export type CalendarContextValue = {
   refresh: () => Promise<void>;
   eventsForDay: Record<string, CalendarEvent[]>;
   getEventById: (eventId: string) => Promise<CalendarEvent | null>;
+  /**
+   * Events in any range, for views that are not the visible month. The year
+   * view needs a whole year of density, and reading it here means that view
+   * never disturbs the month window the calendar is showing.
+   */
+  eventsInRange: (from: Date, to: Date) => Promise<CalendarEvent[]>;
 };
