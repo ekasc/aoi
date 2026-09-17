@@ -62,6 +62,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Divider } from "@/components/ui/divider";
 import { IconButton } from "@/components/ui/icon-button";
+import { NativeSheet } from "@/components/ui/native-sheet";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { Radii, Spacing } from "@/constants/theme";
 import { FontFamilies } from "@/constants/typography";
@@ -100,12 +101,20 @@ const PAGER_HEIGHT =
 	CALENDAR_ROW_COUNT * CALENDAR_ROW_HEIGHT +
 	(CALENDAR_ROW_COUNT - 1) * CALENDAR_GRID_GAP;
 
+export type Strip = {
+	title: string;
+	/** Whose event it is. Both means shared. */
+	tone: 'you' | 'partner' | 'both';
+};
+
 type DayMark = {
 	hasItems: boolean;
 	anniversary: boolean;
 };
 
 type MonthGridColors = {
+	/** The partner's accent, so a day shows whose event is whose. */
+	partner: string;
 	text: string;
 	muted: string;
 	accent: string;
@@ -117,8 +126,8 @@ type MonthGridProps = {
 	selectedDate: Date;
 	now: Date;
 	marks: Record<string, DayMark>;
-	/** Event titles per day, in the order they happen. */
-	stripsByDay?: Record<string, string[]>;
+	/** The day's events, in order, with the person they belong to. */
+	stripsByDay?: Record<string, Strip[]>;
 	colors: MonthGridColors;
 	onSelectDate: (date: Date) => void;
 };
@@ -209,28 +218,31 @@ const MonthGrid = memo(function MonthGrid({
 									    cell, not a dot: two lines of tiny text say what
 									    the day holds, a dot only says something is there. */}
 									<View style={styles.stripRow}>
-										{(stripsByDay?.[dayKey] ?? []).slice(0, 2).map((title, index) => (
-											<View
-												key={`${dayKey}:${index}`}
-												style={[
-													styles.strip,
-													{
-														backgroundColor: withAlpha(colors.accent, 0.16),
-													},
-												]}
-											>
+										{(stripsByDay?.[dayKey] ?? []).slice(0, 2).map((strip, index) => {
+											const tint =
+												strip.tone === 'partner' ? colors.partner : colors.accent;
+											return (
 												<View
-													style={[styles.stripDot, { backgroundColor: colors.accent }]}
-												/>
-												<ThemedText
-													numberOfLines={1}
-													type="caption"
-													style={[styles.stripText, { color: colors.text }]}
+													key={`${dayKey}:${index}`}
+													style={[
+														styles.strip,
+														{ backgroundColor: withAlpha(tint, 0.16) },
+													]}
 												>
-													{title}
-												</ThemedText>
-											</View>
-										))}
+													<View style={[styles.stripDot, { backgroundColor: tint }]} />
+													{strip.tone === 'both' ? (
+														<View style={[styles.stripDot, { backgroundColor: tint }]} />
+													) : null}
+													<ThemedText
+														numberOfLines={1}
+														type="caption"
+														style={[styles.stripText, { color: colors.text }]}
+													>
+														{strip.title}
+													</ThemedText>
+												</View>
+											);
+										})}
 										{mark?.anniversary ? (
 											<View
 												accessibilityLabel="Anniversary"
@@ -305,6 +317,8 @@ export default function PlansScreen() {
 	} = useCalendar();
 	const [centerMonth, setCenterMonth] = useState(() => visibleMonth);
 	const [listHeight, setListHeight] = useState(0);
+	// The day the reader tapped, shown in a native sheet.
+	const [daySheetOpen, setDaySheetOpen] = useState(false);
 	const pagerMonths = useMemo(
 		() =>
 			Array.from({ length: PAGER_WINDOW_SIZE }, (_, index) =>
@@ -332,9 +346,10 @@ export default function PlansScreen() {
 	const warning = useThemeColor({}, "warning");
 	const background = useThemeColor({}, "background");
 	const surface = useThemeColor({}, "surface");
+	const partnerAccent = useThemeColor({}, "partnerAccent");
 	const gridColors = useMemo(
-		() => ({ text: textColor, muted, accent, onAccent }),
-		[textColor, muted, accent, onAccent],
+		() => ({ text: textColor, muted, accent, onAccent, partner: partnerAccent }),
+		[textColor, muted, accent, onAccent, partnerAccent],
 	);
 
 	const monthTitle = useMemo(
@@ -470,14 +485,17 @@ export default function PlansScreen() {
 	// the cells; the agenda below owns the details.
 	// What each day holds, for the strips inside the month grid.
 	const stripsByDay = useMemo(() => {
-		const strips: Record<string, string[]> = {};
+		const strips: Record<string, Strip[]> = {};
 		for (const key of Object.keys(eventsForDay)) {
-			const titles = eventsForDay[key]
+			const day = eventsForDay[key]
 				.slice()
 				.sort((a, b) => a.startsAt.localeCompare(b.startsAt))
-				.map((event) => event.title);
-			if (titles.length > 0) {
-				strips[key] = titles;
+				.map((event) => ({
+					title: event.title,
+					tone: (event.together ? 'both' : event.isOwn ? 'you' : 'partner') as Strip['tone'],
+				}));
+			if (day.length > 0) {
+				strips[key] = day;
 			}
 		}
 		return strips;
@@ -547,9 +565,15 @@ export default function PlansScreen() {
 	const handleSelectDate = useCallback(
 		(date: Date) => {
 			setSelectedDate(date);
+			setDaySheetOpen(true);
 		},
 		[setSelectedDate],
 	);
+	const handleCloseDaySheet = useCallback(() => {
+		setDaySheetOpen(false);
+	}, []);
+
+
 	const handleOpenNextEvent = useCallback(() => {
 		if (!nextEventDate) {
 			return;
@@ -563,6 +587,13 @@ export default function PlansScreen() {
 			params: { date: selectedDateIso },
 		});
 	}, [router, selectedDateIso]);
+
+	/** Adds to the day the sheet is showing. */
+	const handleAddFromSheet = useCallback(() => {
+		setDaySheetOpen(false);
+		handleAddEvent();
+	}, [handleAddEvent]);
+
 	const handleOpenEvent = useCallback(
 		(eventId: string) => {
 			router.push(`/(app)/calendar/edit/${eventId}`);
@@ -781,11 +812,81 @@ export default function PlansScreen() {
 				))}
 			</ScrollView>
 			</View>
+			<NativeSheet onClose={handleCloseDaySheet} visible={daySheetOpen}>
+				<View style={styles.sheetBody}>
+					<ThemedText type="title">{formatDateTitle(selectedDate)}</ThemedText>
+					{selectedDayEvents.length === 0 ? (
+						<ThemedText type="body" style={{ color: muted }}>
+							Nothing planned.
+						</ThemedText>
+					) : (
+						selectedDayEvents.map((event) => (
+							<Pressable
+								accessibilityLabel={`Open ${event.title}`}
+								accessibilityRole="button"
+								key={event.id}
+								onPress={() => {
+									setDaySheetOpen(false);
+									handleOpenEvent(event.id);
+								}}
+								style={({ pressed }) => [
+									styles.sheetRow,
+									{ borderBottomColor: border },
+									pressed ? styles.pressed : undefined,
+								]}
+							>
+								<View
+									style={[
+										styles.authorDot,
+										{
+											backgroundColor:
+												event.isOwn && !event.together ? accent : partnerAccent,
+										},
+									]}
+								/>
+								<ThemedText
+									type="caption"
+									style={[styles.sheetWhen, { color: muted }]}
+								>
+									{event.allDay ? 'All day' : formatEventTimeLabel(event)}
+								</ThemedText>
+								<ThemedText numberOfLines={2} type="body" style={styles.sheetTitle}>
+									{event.title}
+								</ThemedText>
+							</Pressable>
+						))
+					)}
+					<Button label="Add event" onPress={handleAddFromSheet} />
+				</View>
+			</NativeSheet>
 		</View>
 	);
 }
 
 const styles = StyleSheet.create({
+	sheetBody: {
+		gap: Spacing[12],
+		paddingHorizontal: Spacing[24],
+		paddingVertical: Spacing[16],
+	},
+	sheetRow: {
+		alignItems: 'center',
+		borderBottomWidth: StyleSheet.hairlineWidth,
+		flexDirection: 'row',
+		gap: Spacing[8],
+		minHeight: 44,
+	},
+	sheetWhen: {
+		minWidth: 72,
+	},
+	sheetTitle: {
+		flex: 1,
+	},
+	authorDot: {
+		borderRadius: 4,
+		height: 8,
+		width: 8,
+	},
 	root: {
 		flex: 1,
 	},
@@ -869,7 +970,7 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		borderRadius: 4,
 		flexDirection: "row",
-		gap: 3,
+		gap: 2,
 		paddingHorizontal: 3,
 		paddingVertical: 1,
 	},
