@@ -66,6 +66,7 @@ export default function NewCalendarEventScreen() {
   );
 
   const [title, setTitle] = useState('');
+  const [location, setLocation] = useState('');
   const [presetLabel, setPresetLabel] = useState<CalendarPresetLabel>('Work');
   const [startsAt, setStartsAt] = useState(initialStart);
   const [endsAt, setEndsAt] = useState(datePlusOneHour(initialStart));
@@ -143,6 +144,8 @@ export default function NewCalendarEventScreen() {
         actor: 'you',
         actorName: 'You',
         label: { preset: presetLabel },
+        // An empty location means no location: the repository stores null.
+        location: location.trim() || undefined,
         allDay,
         together,
         recurrence: 'none',
@@ -159,6 +162,7 @@ export default function NewCalendarEventScreen() {
     allDay,
     effectiveEnd,
     effectiveStart,
+    location,
     presetLabel,
     router,
     title,
@@ -215,6 +219,20 @@ export default function NewCalendarEventScreen() {
               placeholderTextColor={muted}
               style={titleInputStyle}
               value={title}
+            />
+          </View>
+
+          <View style={styles.section}>
+            <ThemedText type="meta">Where</ThemedText>
+            <TextInput
+              accessibilityHint="Optional"
+              accessibilityLabel="Event location"
+              autoCapitalize="words"
+              onChangeText={setLocation}
+              placeholder="Crystal Pavilion"
+              placeholderTextColor={muted}
+              style={titleInputStyle}
+              value={location}
             />
           </View>
 

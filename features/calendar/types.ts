@@ -38,6 +38,8 @@ export type CalendarEvent = {
   reminderMinutesBefore?: number[];
   /** All-day event: no time-of-day; UI shows "All day" instead of times. */
   allDay?: boolean;
+  /** Where it happens, free text. Shown on the day view, searchable. */
+  location?: string;
   /** The couple is jointly involved — counts toward the countdown lane. */
   together?: boolean;
   /**
@@ -60,6 +62,8 @@ export type CreateCalendarEventInput = {
   actor: CalendarActor;
   actorName: string;
   label: CalendarLabel;
+  /** Where it happens. Cleared by sending an empty string. */
+  location?: string;
   reminderMinutesBefore?: number[];
   allDay?: boolean;
   together?: boolean;
@@ -73,6 +77,8 @@ export type UpdateCalendarEventInput = {
   startsAt: string;
   endsAt: string;
   label: CalendarLabel;
+  /** Null clears it, undefined leaves it alone. */
+  location?: string | null;
   reminderMinutesBefore?: number[];
   allDay?: boolean;
   together?: boolean;

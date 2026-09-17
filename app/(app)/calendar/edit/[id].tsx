@@ -78,6 +78,7 @@ export default function EditCalendarEventScreen() {
 
   const [event, setEvent] = useState<CalendarEvent | null>(null);
   const [title, setTitle] = useState('');
+  const [location, setLocation] = useState('');
   const [presetLabel, setPresetLabel] = useState<CalendarPresetLabel>('Work');
   const [customLabel, setCustomLabel] = useState('');
   const [startsAt, setStartsAt] = useState(new Date());
@@ -152,6 +153,7 @@ export default function EditCalendarEventScreen() {
         setTitle(foundEvent.title);
         setPresetLabel(foundEvent.label.preset);
         setCustomLabel(foundEvent.label.customText ?? '');
+        setLocation(foundEvent.location ?? '');
         setStartsAt(new Date(foundEvent.startsAt));
         setEndsAt(new Date(foundEvent.endsAt));
         setAllDay(foundEvent.allDay ?? false);
@@ -233,6 +235,8 @@ export default function EditCalendarEventScreen() {
           preset: presetLabel,
           customText: customLabel.trim() || undefined,
         },
+        // Null clears it, so emptying the field removes the location.
+        location: location.trim() || null,
         reminderMinutesBefore: reminderTouched
           ? reminderOffset === null
             ? []
@@ -258,6 +262,7 @@ export default function EditCalendarEventScreen() {
     event,
     eventId,
     isOwner,
+    location,
     presetLabel,
     reminderOffset,
     reminderTouched,
@@ -378,6 +383,20 @@ export default function EditCalendarEventScreen() {
               placeholderTextColor={muted}
               style={titleInputStyle}
               value={title}
+            />
+          </View>
+
+          <View style={styles.section}>
+            <ThemedText type="meta">Where</ThemedText>
+            <TextInput
+              accessibilityHint="Optional"
+              accessibilityLabel="Event location"
+              autoCapitalize="words"
+              onChangeText={setLocation}
+              placeholder="Crystal Pavilion"
+              placeholderTextColor={muted}
+              style={titleInputStyle}
+              value={location}
             />
           </View>
 

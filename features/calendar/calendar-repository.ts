@@ -17,6 +17,7 @@ type CalendarEventRow = {
   actor_name: string;
   label_preset: CalendarPresetLabel;
   label_custom_text: string | null;
+  location: string | null;
   reminder_minutes: string | null;
   all_day: number | null;
   together: number | null;
@@ -49,6 +50,7 @@ function toCalendarEvent(row: CalendarEventRow): CalendarEvent {
       preset: row.label_preset,
       customText: row.label_custom_text ?? undefined,
     },
+    location: row.location ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     reminderMinutesBefore: row.reminder_minutes
@@ -86,10 +88,10 @@ async function insertSingleEvent(
   await db.runAsync(
     `INSERT INTO calendar_events (
       id, title, starts_at, ends_at, actor, actor_name,
-      label_preset, label_custom_text, reminder_minutes,
+      label_preset, label_custom_text, location, reminder_minutes,
       all_day, together, recurrence, recurrence_group_id,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     input.title.trim(),
     input.startsAt,
@@ -98,6 +100,7 @@ async function insertSingleEvent(
     input.actorName.trim(),
     input.label.preset,
     input.label.customText?.trim() || null,
+    input.location?.trim() || null,
     reminderJson,
     input.allDay ? 1 : 0,
     input.together ? 1 : 0,
@@ -123,6 +126,7 @@ export async function initCalendarDb() {
       actor_name TEXT NOT NULL,
       label_preset TEXT NOT NULL,
       label_custom_text TEXT,
+      location TEXT,
       reminder_minutes TEXT,
       all_day INTEGER NOT NULL DEFAULT 0,
       together INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +173,9 @@ export async function initCalendarDb() {
     await db.execAsync(
       `ALTER TABLE calendar_events ADD COLUMN recurrence_group_id TEXT`
     );
+  }
+  if (!columnNames.has('location')) {
+    await db.execAsync(`ALTER TABLE calendar_events ADD COLUMN location TEXT`);
   }
 }
 
@@ -265,7 +272,7 @@ export async function updateEvent(input: UpdateCalendarEventInput) {
   await db.runAsync(
     `UPDATE calendar_events
      SET title = ?, starts_at = ?, ends_at = ?,
-         label_preset = ?, label_custom_text = ?,
+         label_preset = ?, label_custom_text = ?, location = ?,
          reminder_minutes = ?, all_day = ?, together = ?,
          recurrence = ?, updated_at = ?
      WHERE id = ?`,
@@ -274,6 +281,7 @@ export async function updateEvent(input: UpdateCalendarEventInput) {
     input.endsAt,
     input.label.preset,
     input.label.customText?.trim() || null,
+    input.location?.trim() || null,
     reminderJson,
     input.allDay ? 1 : 0,
     input.together ? 1 : 0,

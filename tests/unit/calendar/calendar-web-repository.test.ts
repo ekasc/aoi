@@ -21,6 +21,7 @@ function makeInput(
     actor: 'you',
     actorName: '  Alex  ',
     label: { preset: 'Date', customText: '  farmers market  ' },
+    location: '  123 Main St  ',
     reminderMinutesBefore: [30, 1440],
     allDay: false,
     together: true,
@@ -57,6 +58,7 @@ describe('calendar-repository.web (AsyncStorage backend)', () => {
       actor: 'you',
       actorName: 'Alex',
       label: { preset: 'Date', customText: 'farmers market' },
+      location: '123 Main St',
       reminderMinutesBefore: [30, 1440],
       allDay: false,
       together: true,
@@ -65,6 +67,27 @@ describe('calendar-repository.web (AsyncStorage backend)', () => {
     });
     expect(event?.createdAt).toBeTruthy();
     expect(event?.updatedAt).toBeTruthy();
+  });
+
+  it('sets a location, then clears it', async () => {
+    const repo = await loadRepository();
+    await repo.initCalendarDb();
+
+    const id = await repo.insertEvent(makeInput({ location: 'Crystal Pavilion' }));
+    expect((await repo.getEventById(id))?.location).toBe('Crystal Pavilion');
+
+    const before = await repo.getEventById(id);
+    await repo.updateEvent({
+      id,
+      title: 'Renamed',
+      startsAt: before?.startsAt ?? '',
+      endsAt: before?.endsAt ?? '',
+      label: { preset: 'Work' },
+      location: '',
+      recurrence: 'none',
+    });
+    // Empty means no location, not an empty string.
+    expect((await repo.getEventById(id))?.location).toBeUndefined();
   });
 
   it('normalizes blank custom text to undefined and partner ownership', async () => {

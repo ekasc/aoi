@@ -69,4 +69,37 @@ describe('NewCalendarEventScreen recurrence', () => {
     await waitFor(() => expect(addEventSpy).toHaveBeenCalledTimes(1));
     expect(addEventSpy.mock.calls[0][0].recurrence).toBe('none');
   });
+
+  it('saves where the event happens, and saves none when there is no where', async () => {
+    const { default: NewCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/new-event'
+    );
+    render(<NewCalendarEventScreen />);
+
+    fireEvent.change(screen.getByLabelText('Event title'), {
+      target: { value: 'Standup' },
+    });
+    fireEvent.change(screen.getByLabelText('Event location'), {
+      target: { value: '  Crystal Pavilion  ' },
+    });
+    fireEvent.click(screen.getByText('Save event'));
+
+    await waitFor(() => expect(addEventSpy).toHaveBeenCalledTimes(1));
+    expect(addEventSpy.mock.calls[0][0].location).toBe('Crystal Pavilion');
+  });
+
+  it('omits the location entirely when it is left empty', async () => {
+    const { default: NewCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/new-event'
+    );
+    render(<NewCalendarEventScreen />);
+
+    fireEvent.change(screen.getByLabelText('Event title'), {
+      target: { value: 'Deep work' },
+    });
+    fireEvent.click(screen.getByText('Save event'));
+
+    await waitFor(() => expect(addEventSpy).toHaveBeenCalledTimes(1));
+    expect(addEventSpy.mock.calls[0][0].location).toBeUndefined();
+  });
 });

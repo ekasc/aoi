@@ -77,6 +77,7 @@ export async function insertEvent(input: CreateCalendarEventInput): Promise<stri
       actor: input.actor,
       actorName: input.actorName,
       label: input.label,
+      location: input.location,
       reminderMinutesBefore: input.reminderMinutesBefore,
       allDay: input.allDay,
       together: input.together,
@@ -95,6 +96,8 @@ export async function updateEvent(input: UpdateCalendarEventInput): Promise<void
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       label: input.label,
+      // Sent as null when cleared, which is what the API reads as "remove it".
+      location: input.location ?? null,
       // Send reminderMinutesBefore even when empty so edits can clear reminders.
       reminderMinutesBefore: input.reminderMinutesBefore ?? [],
       allDay: input.allDay,

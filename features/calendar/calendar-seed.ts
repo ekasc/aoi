@@ -41,6 +41,7 @@ export function createCalendarSeed(now = new Date()): CreateCalendarEventInput[]
       label: {
         preset: 'Date',
       },
+      location: 'Bao Bei, Chinatown',
     },
     {
       title: 'Gym',
@@ -51,6 +52,7 @@ export function createCalendarSeed(now = new Date()): CreateCalendarEventInput[]
       label: {
         preset: 'Gym',
       },
+      location: 'Community centre',
     },
   ];
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { MotiView } from 'moti';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
@@ -183,6 +184,18 @@ export function DayTimeline({
                   <ThemedText type="caption" style={{ color: muted }}>
                     {timeLabel(item.event.startsAt)} to {timeLabel(item.event.endsAt)}
                   </ThemedText>
+                  {item.event.location ? (
+                    <View style={styles.locationRow}>
+                      <Ionicons color={muted} name="location-outline" size={12} />
+                      <ThemedText
+                        numberOfLines={1}
+                        type="caption"
+                        style={[styles.locationText, { color: muted }]}
+                      >
+                        {item.event.location}
+                      </ThemedText>
+                    </View>
+                  ) : null}
                 </Pressable>
               </MotiView>
             );
@@ -244,6 +257,14 @@ const styles = StyleSheet.create({
     right: 0,
   },
   eventTap: {
+    flex: 1,
+  },
+  locationRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
+  },
+  locationText: {
     flex: 1,
   },
   pressed: {

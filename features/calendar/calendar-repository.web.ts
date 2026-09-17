@@ -33,6 +33,8 @@ type CalendarEventRow = {
   actor_name: string;
   label_preset: CalendarPresetLabel;
   label_custom_text: string | null;
+  /** Absent on rows written before locations existed. */
+  location?: string | null;
   reminder_minutes: string | null;
   all_day: number | null;
   together: number | null;
@@ -149,6 +151,7 @@ function toCalendarEvent(row: CalendarEventRow): CalendarEvent {
       preset: row.label_preset,
       customText: row.label_custom_text ?? undefined,
     },
+    location: row.location ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     reminderMinutesBefore: row.reminder_minutes
@@ -192,6 +195,7 @@ function insertSingleEvent(
     actor_name: input.actorName.trim(),
     label_preset: input.label.preset,
     label_custom_text: input.label.customText?.trim() || null,
+    location: input.location?.trim() || null,
     reminder_minutes: reminderJson,
     all_day: input.allDay ? 1 : 0,
     together: input.together ? 1 : 0,
@@ -303,6 +307,7 @@ export async function updateEvent(input: UpdateCalendarEventInput) {
     row.ends_at = input.endsAt;
     row.label_preset = input.label.preset;
     row.label_custom_text = input.label.customText?.trim() || null;
+    row.location = input.location?.trim() || null;
     row.reminder_minutes = reminderJson;
     row.all_day = input.allDay ? 1 : 0;
     row.together = input.together ? 1 : 0;
