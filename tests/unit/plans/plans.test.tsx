@@ -109,7 +109,7 @@ vi.mock('expo-router', () => ({
 
 vi.mock('@/components/home/memory-sky', () => ({
   MemorySky: () => null,
-  headerSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.15) + 12,
+  compactSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.15) + 12,
   SYSTEM_TAB_BAR_IOS_CLEARANCE: 50,
   SYSTEM_TAB_BAR_CONTENT_HEIGHT: 50,
   SYSTEM_TAB_BAR_BOTTOM_GAP: 8,
@@ -262,7 +262,7 @@ describe('Plans calendar', () => {
   });
 
   it('pins ScreenHeader+sky in a fixed block sized by the helper', () => {
-    expect(PLANS_SOURCE).toContain('headerSkyHeightForWindow');
+    expect(PLANS_SOURCE).toContain('compactSkyHeightForWindow');
     expect(PLANS_SOURCE).toContain('headerBlockStyle');
     expect(PLANS_SOURCE).toContain('height: headerBlockHeight');
     expect(PLANS_SOURCE).toContain('paddingTop: insets.top + Spacing[8]');
@@ -270,9 +270,9 @@ describe('Plans calendar', () => {
 
   it('renders MemorySky first inside the block with ScreenHeader above content', () => {
     expect(PLANS_SOURCE.indexOf('<View style={headerBlockStyle}>')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<MemorySky header'),
+      PLANS_SOURCE.indexOf('<MemorySky compact'),
     );
-    expect(PLANS_SOURCE.indexOf('<MemorySky header')).toBeLessThan(
+    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
       PLANS_SOURCE.indexOf('<ScreenHeader'),
     );
   });

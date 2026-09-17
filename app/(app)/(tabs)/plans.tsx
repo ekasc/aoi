@@ -49,7 +49,7 @@ import {
 import type { EventProposal } from "@/features/proposals/types";
 import { useProposals } from "@/features/proposals/proposals-context";
 import { useSomeday } from "@/features/someday/someday-context";
-import { MemorySky, headerSkyHeightForWindow, SYSTEM_TAB_BAR_IOS_CLEARANCE } from "@/components/home/memory-sky";
+import { MemorySky, compactSkyHeightForWindow, SYSTEM_TAB_BAR_IOS_CLEARANCE } from "@/components/home/memory-sky";
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
 import { ThemedText } from "@/components/themed-text";
@@ -630,7 +630,7 @@ export default function PlansScreen() {
 		screenHeight > 0 && headerMeasured > 0
 			? screenHeight - headerMeasured - WEEKDAY_HEADER_HEIGHT - SYSTEM_TAB_BAR_IOS_CLEARANCE
 			: windowHeight -
-				headerSkyHeightForWindow(windowHeight) -
+				compactSkyHeightForWindow(windowHeight) -
 				HEADER_ROW_HEIGHT -
 				insets.bottom -
 				SYSTEM_TAB_BAR_IOS_CLEARANCE -
@@ -658,7 +658,7 @@ export default function PlansScreen() {
 	// The band plus the title row. The block clips what it holds, so a height
 	// that only counted the sky pushed the header out of view.
 	const headerBlockHeight = useMemo(
-		() => headerSkyHeightForWindow(windowHeight) + HEADER_ROW_HEIGHT,
+		() => compactSkyHeightForWindow(windowHeight) + HEADER_ROW_HEIGHT,
 		[windowHeight],
 	);
 	const rootStyle = useMemo(
@@ -689,7 +689,7 @@ export default function PlansScreen() {
 				onLayout={(event) => setHeaderMeasured(Math.round(event.nativeEvent.layout.height))}
 				style={headerBlockStyle}
 			>
-				<MemorySky header moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
+				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
 				<ScreenHeader
 					title="Plans"
 					primaryAction={{
