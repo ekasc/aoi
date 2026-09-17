@@ -87,6 +87,9 @@ const PAGER_WINDOW_RADIUS = 24;
 
 /** The title row inside the header block, above the calendar. */
 const HEADER_ROW_HEIGHT = 56;
+
+/** The weekday row, which belongs to the header rather than to the grid. */
+const WEEKDAY_ROW_HEIGHT = 40;
 const PAGER_WINDOW_SIZE = PAGER_WINDOW_RADIUS * 2 + 1;
 // Fixed six rows per page; each row fits the tallest cell (day number +
 // dot row + today underline + padding/gaps, >= styles.dayCell.minHeight)
@@ -323,7 +326,6 @@ export default function PlansScreen() {
 	const { space } = useSpace();
 	const [resolvingProposalId, setResolvingProposalId] = useState<string | null>(null);
 	const [goals, setGoals] = useState<Moment[] | null>(null);
-	const [calendarExpandedOverride, setCalendarExpandedOverride] = useState<boolean | null>(null);
 	const textColor = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
 	const border = useThemeColor({}, "border");
@@ -392,8 +394,6 @@ export default function PlansScreen() {
 		const date = new Date(countdownInfo.event.startsAt);
 		return Number.isNaN(date.getTime()) ? null : date;
 	}, [countdownInfo]);
-	const hasUpcoming = upcomingEvents.length > 0;
-	const calendarExpanded = calendarExpandedOverride ?? !hasUpcoming;
 	const selectedDayAnniversary = useMemo(
 		() => getAnniversaryForDate(space?.relationshipStartDate, selectedDate),
 		[selectedDate, space?.relationshipStartDate],
@@ -558,11 +558,7 @@ export default function PlansScreen() {
 		}
 		setCenterMonth(nextEventDate);
 		setSelectedDate(nextEventDate);
-		setCalendarExpandedOverride(true);
 	}, [nextEventDate, setSelectedDate]);
-	const handleToggleCalendar = useCallback(() => {
-		setCalendarExpandedOverride((expanded) => !(expanded ?? !hasUpcoming));
-	}, [hasUpcoming]);
 	const handleAddEvent = useCallback(() => {
 		router.push({
 			pathname: "/(app)/calendar/new-event",
@@ -628,22 +624,19 @@ export default function PlansScreen() {
 	// Pager pages exactly this width so swiping stays aligned.
 	const PAGE_WIDTH = windowWidth;
 	const pagerRef = useRef<ScrollView | null>(null);
-	const pagerHeight = PAGER_HEIGHT;
 	// One month of the vertical stack: the month name, then its grid.
 	// The month fills the screen under the header, the way Apple's does. Rows
 	// stretch to the space, so a month never leaves half the page unusable.
-	const WEEKDAY_HEADER_HEIGHT = 40;
 	// Measured where the device will tell us, computed where it will not. A
 	// month that fits its screen cannot be got right by arithmetic alone.
 	const availableHeight =
 		screenHeight > 0 && headerMeasured > 0
-			? screenHeight - headerMeasured - WEEKDAY_HEADER_HEIGHT - SYSTEM_TAB_BAR_IOS_CLEARANCE
+			? screenHeight - headerMeasured - SYSTEM_TAB_BAR_IOS_CLEARANCE
 			: windowHeight -
 				compactSkyHeightForWindow(windowHeight) -
 				HEADER_ROW_HEIGHT -
 				insets.bottom -
-				SYSTEM_TAB_BAR_IOS_CLEARANCE -
-				WEEKDAY_HEADER_HEIGHT;
+				SYSTEM_TAB_BAR_IOS_CLEARANCE - WEEKDAY_ROW_HEIGHT;
 	const MONTH_PAGE_HEIGHT = Math.max(PAGER_HEIGHT + 76, availableHeight);
 
 
@@ -842,13 +835,6 @@ const styles = StyleSheet.create({
 		paddingHorizontal: Spacing[24],
 		overflow: "hidden",
 	},
-	scroll: {
-		flex: 1,
-	},
-	content: {
-		paddingHorizontal: Spacing[24],
-		gap: Spacing[32],
-	},
 	nextBlock: {
 		gap: Spacing[4],
 		paddingVertical: Spacing[24],
@@ -879,22 +865,10 @@ const styles = StyleSheet.create({
 		// Apple's month grid is the page, not a card on it: full bleed, no
 		// border, no radius, and it starts flush under the weekday row.
 		flex: 1,
-		marginHorizontal: -Spacing[24],
 		gap: Spacing[4],
 	},
 	monthHeading: {
 		letterSpacing: -1,
-	},
-	monthNav: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: Spacing[4],
-	},
-	monthTitle: {
-		flex: 1,
-		textAlign: "center",
-		fontSize: 22,
-		lineHeight: 28,
 	},
 	weekdayRow: {
 		borderBottomWidth: StyleSheet.hairlineWidth,
