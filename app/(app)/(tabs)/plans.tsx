@@ -241,6 +241,14 @@ const MonthGrid = memo(function MonthGrid({
 												</View>
 											);
 										})}
+										{(stripsByDay?.[dayKey]?.length ?? 0) > 2 ? (
+											<ThemedText
+												type="caption"
+												style={[styles.stripMore, { color: colors.muted }]}
+											>
+												{`+${(stripsByDay?.[dayKey]?.length ?? 0) - 2} more`}
+											</ThemedText>
+										) : null}
 										{mark?.anniversary ? (
 											<View
 												accessibilityLabel="Anniversary"
@@ -1190,6 +1198,9 @@ const styles = StyleSheet.create({
 		alignItems: "stretch",
 		alignSelf: "stretch",
 		gap: 2,
+	},
+	stripMore: {
+		paddingLeft: 2,
 	},
 	strip: {
 		alignItems: "center",

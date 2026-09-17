@@ -271,6 +271,24 @@ describe('Plans calendar', () => {
     expect(screen.getByLabelText('Thursday, January 15, has plans')).toBeTruthy();
   });
 
+  it('says how many plans are not shown when a day holds more than two', async () => {
+    mockEventsForDay = {
+      '2026-01-15': [
+        makeEvent({ id: 'a', title: 'Standup', startsAt: '2026-01-15T09:00:00.000Z' }),
+        makeEvent({ id: 'b', title: 'Gym', startsAt: '2026-01-15T18:00:00.000Z' }),
+        makeEvent({ id: 'c', title: 'Dinner', startsAt: '2026-01-15T20:00:00.000Z' }),
+      ],
+    };
+    await renderPlans();
+
+    // Two strips fit the cell; the rest is counted rather than dropped
+    // silently, the way Calendar does it.
+    expect(screen.getByText('Standup')).toBeTruthy();
+    expect(screen.getByText('Gym')).toBeTruthy();
+    expect(screen.queryByText('Dinner')).toBeNull();
+    expect(screen.getByText('+1 more')).toBeTruthy();
+  });
+
   it('pins ScreenHeader and the sky, with the block sizing to its rows', () => {
     // The sky is an absolute backdrop and the block holds a title row plus the
     // weekday row. Giving the block an explicit height is what left a dead
