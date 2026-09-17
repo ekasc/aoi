@@ -462,7 +462,10 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     expect(PLANS_SOURCE).toContain('moments, loadGoals');
     expect(PLANS_SOURCE).toContain('useSpace');
     expect(PLANS_SOURCE).not.toContain('fetchMoments');
-    expect(PLANS_SOURCE).not.toContain('BlurView');
+    // Plans frosts the band the way Memories does, so the sky reads through
+    // it blurred and the chrome sits on top.
+    expect(PLANS_SOURCE).toContain('BlurView');
+    expect(PLANS_SOURCE).toContain('withAlpha(background, 0.45)');
     // Same root anchoring as Memories: after FrostedBackdrop, before the
     // ScrollView/ScreenHeader so scroll offset can never shift the sky.
     expect(PLANS_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(
@@ -665,7 +668,9 @@ describe('Tab header normalization (one shared anatomy)', () => {
     // Plans picks its header tone from the background: the band's lower edge
     // is pale in light mode, and the light chrome disappeared on it.
     expect(PLANS_SOURCE).toContain("backgroundIsLight ? 'onLight' : 'onDark'");
-    expect(PLANS_SOURCE).toContain('Add an event for the selected day');
+    // Creation moved from the header to the glass fab, like Memories.
+    expect(PLANS_SOURCE).toContain('GlassSurface');
+    expect(PLANS_SOURCE).toContain('fabBottomOffset(insets.bottom');
     expect(PLANS_SOURCE).toContain('handleAddEvent');
   });
 });

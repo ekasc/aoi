@@ -1,5 +1,6 @@
 import { FrostedBackdrop } from '@/components/ui/frosted-backdrop';
 import { withAlpha } from '@/constants/theme';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused, useRouter } from "expo-router";
 import {
@@ -61,6 +62,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Divider } from "@/components/ui/divider";
 import { IconButton } from "@/components/ui/icon-button";
+import { GlassSurface } from "@/components/ui/glass-surface";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { Radii, Spacing } from "@/constants/theme";
 import { FontFamilies } from "@/constants/typography";
@@ -707,12 +709,27 @@ export default function PlansScreen() {
 				<ScreenHeader
 					tone={backgroundIsLight ? 'onLight' : 'onDark'}
 					title="Plans"
-					primaryAction={{
-						label: 'Add an event for the selected day',
-						icon: <Ionicons color={onAccent} name="add" size={20} />,
-						onPress: handleAddEvent,
-					}}
 				/>
+				{/* Frosted band, the same recipe the Memories header uses: the sky
+				    reads through, blurred, and the chrome sits on top of it. */}
+				<View
+					accessible={false}
+					importantForAccessibility="no-hide-descendants"
+					pointerEvents="none"
+					style={StyleSheet.absoluteFill}
+				>
+					<BlurView
+						intensity={60}
+						tint={backgroundIsLight ? 'light' : 'dark'}
+						style={StyleSheet.absoluteFill}
+					/>
+					<View
+						style={[
+							StyleSheet.absoluteFill,
+							{ backgroundColor: withAlpha(background, 0.45) },
+						]}
+					/>
+				</View>
 				{/* Part of the header, so it never moves and never leaves a gap. */}
 			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
 				{weekdayLabels.map((label) => (
@@ -753,8 +770,6 @@ export default function PlansScreen() {
 			<ScrollView
 				ref={pagerRef}
 				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
-				decelerationRate="fast"
-				nestedScrollEnabled
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
 			>
@@ -792,14 +807,27 @@ export default function PlansScreen() {
 				onPress={handleAddEvent}
 				style={({ pressed }) => [
 					styles.fab,
+					styles.fabGlass,
 					{
-						backgroundColor: accent,
 						bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'),
+						opacity: pressed ? 0.85 : 1,
 					},
-					pressed ? styles.pressed : undefined,
 				]}
 			>
-				<Ionicons color={onAccent} name="add" size={26} />
+				<GlassSurface
+					effect="clear"
+					style={[
+						styles.fabGlass,
+						{
+							backgroundColor: withAlpha(
+								accent,
+								process.env.EXPO_OS === 'ios' ? 0.25 : 0.6,
+							),
+						},
+					]}
+				>
+					<Ionicons color={onAccent} name="add" size={26} />
+				</GlassSurface>
 			</Pressable>
 		</View>
 	);
@@ -835,20 +863,23 @@ const styles = StyleSheet.create({
 		letterSpacing: -0.2,
 	},
 	fab: {
-		alignItems: "center",
 		borderRadius: 28,
 		height: 56,
-		justifyContent: "center",
+		overflow: "hidden",
 		position: "absolute",
 		right: Spacing[24],
 		width: 56,
+	},
+	fabGlass: {
+		alignItems: "center",
+		flex: 1,
+		justifyContent: "center",
 	},
 	calendarCard: {
 		// Apple's month grid is the page, not a card on it: full bleed, no
 		// border, no radius, and it starts flush under the weekday row.
 		flex: 1,
 		marginHorizontal: -Spacing[24],
-		paddingHorizontal: Spacing[4],
 		gap: Spacing[4],
 	},
 	monthHeading: {
@@ -869,7 +900,7 @@ const styles = StyleSheet.create({
 		borderBottomWidth: StyleSheet.hairlineWidth,
 		flexDirection: "row",
 		gap: Spacing[4],
-		paddingBottom: Spacing[8],
+		paddingBottom: Spacing[4],
 	},
 	weekdayCell: {
 		flex: 1,
