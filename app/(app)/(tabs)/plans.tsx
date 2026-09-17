@@ -130,6 +130,8 @@ type MonthGridProps = {
 	stripsByDay?: Record<string, Strip[]>;
 	colors: MonthGridColors;
 	onSelectDate: (date: Date) => void;
+	/** Long press creates on the day under the finger. */
+	onCreateOnDate: (date: Date) => void;
 };
 
 /**
@@ -145,6 +147,7 @@ const MonthGrid = memo(function MonthGrid({
 	stripsByDay,
 	colors,
 	onSelectDate,
+	onCreateOnDate,
 }: MonthGridProps) {
 	const monthGrid = useMemo(() => buildMonthGrid(month), [month]);
 	const monthWeeks = useMemo(() => {
@@ -183,6 +186,7 @@ const MonthGrid = memo(function MonthGrid({
 									}`}
 									accessibilityRole="button"
 									key={dayKey}
+									onLongPress={() => onCreateOnDate(day)}
 									onPress={() => onSelectDate(day)}
 									style={({ pressed }) => [
 										styles.dayCell,
@@ -569,6 +573,12 @@ export default function PlansScreen() {
 		},
 		[setSelectedDate],
 	);
+	const handleJumpToToday = useCallback(() => {
+		const today = new Date();
+		setCenterMonth(today);
+		setSelectedDate(today);
+	}, [setSelectedDate]);
+
 	const handleCloseDaySheet = useCallback(() => {
 		setDaySheetOpen(false);
 	}, []);
@@ -593,6 +603,16 @@ export default function PlansScreen() {
 		setDaySheetOpen(false);
 		handleAddEvent();
 	}, [handleAddEvent]);
+
+	const handleCreateOnDate = useCallback(
+		(date: Date) => {
+			router.push({
+				pathname: "/(app)/calendar/new-event",
+				params: { date: toDayKey(date) },
+			});
+		},
+		[router],
+	);
 
 	const handleOpenEvent = useCallback(
 		(eventId: string) => {
@@ -653,6 +673,7 @@ export default function PlansScreen() {
 	// Pager pages exactly this width so swiping stays aligned.
 	const PAGE_WIDTH = windowWidth;
 	const pagerRef = useRef<ScrollView | null>(null);
+
 	// One month of the vertical stack: the month name, then its grid, filling
 	// the space the list actually has. The list reports that space, so there
 	// is no safe area, no tab bar clearance and no row heights to add up.
@@ -660,6 +681,15 @@ export default function PlansScreen() {
 		PAGER_HEIGHT + 76,
 		listHeight > 0 ? listHeight : Math.round(windowHeight * 0.62),
 	);
+
+	// A deliberate month change puts the list back on its centre page. This
+	// runs on the month changing, never on a scroll, so it cannot loop.
+	useEffect(() => {
+		pagerRef.current?.scrollTo({
+			animated: false,
+			y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS,
+		});
+	}, [MONTH_PAGE_HEIGHT, centerMonth]);
 
 
 	// Keep the context's loaded window in step with the month the user is on.
@@ -805,6 +835,7 @@ export default function PlansScreen() {
 							stripsByDay={stripsByDay}
 							month={month}
 							now={now}
+							onCreateOnDate={handleCreateOnDate}
 							onSelectDate={handleSelectDate}
 							selectedDate={selectedDate}
 						/>
@@ -812,6 +843,20 @@ export default function PlansScreen() {
 				))}
 			</ScrollView>
 			</View>
+			<Pressable
+				accessibilityHint="Scrolls the calendar back to this month"
+				accessibilityLabel="Today"
+				accessibilityRole="button"
+				onPress={handleJumpToToday}
+				style={({ pressed }) => [
+					styles.todayPill,
+					{ backgroundColor: surface, borderColor: border },
+					pressed ? styles.pressed : undefined,
+				]}
+			>
+				<ThemedText type="bodyEmphasis">Today</ThemedText>
+			</Pressable>
+
 			<NativeSheet onClose={handleCloseDaySheet} visible={daySheetOpen}>
 				<View style={styles.sheetBody}>
 					<ThemedText type="title">{formatDateTitle(selectedDate)}</ThemedText>
@@ -864,6 +909,17 @@ export default function PlansScreen() {
 }
 
 const styles = StyleSheet.create({
+	todayPill: {
+		alignItems: 'center',
+		borderRadius: Radii.pill,
+		borderWidth: StyleSheet.hairlineWidth,
+		bottom: Spacing[24],
+		justifyContent: 'center',
+		left: Spacing[24],
+		minHeight: 44,
+		paddingHorizontal: Spacing[16],
+		position: 'absolute',
+	},
 	sheetBody: {
 		gap: Spacing[12],
 		paddingHorizontal: Spacing[24],
