@@ -162,6 +162,10 @@ export default function AuthenticatedAppLayout() {
 										options={{ title: "Year" }}
 									/>
 									<Stack.Screen
+										name="calendar/search"
+										options={{ title: "Search" }}
+									/>
+									<Stack.Screen
 										name="profile/edit-relationship"
 										options={{
 											title: "Edit relationship",

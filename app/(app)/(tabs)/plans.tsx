@@ -824,6 +824,15 @@ export default function PlansScreen() {
 					</GlassSurface>
 					<GlassSurface style={styles.pill}>
 						<Pressable
+							accessibilityHint="Searches every event"
+							accessibilityLabel="Search events"
+							accessibilityRole="button"
+							onPress={() => router.push('/(app)/calendar/search')}
+							style={styles.pillIcon}
+						>
+							<Ionicons color={textColor} name="search" size={20} />
+						</Pressable>
+						<Pressable
 							accessibilityHint={
 								viewMode === 'day' ? 'Shows the month grid' : 'Shows the selected day'
 							}
