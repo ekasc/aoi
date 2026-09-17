@@ -681,6 +681,9 @@ export default function PlansScreen() {
 		() => [
 			styles.headerBlock,
 			{
+				// TEMPORARY: bright fill so the block's bounds show up in a
+				// screenshot while the gap is being chased. Remove once fixed.
+				backgroundColor: '#FFD400',
 				height: headerBlockHeight,
 				paddingTop: insets.top + Spacing[8],
 			},
