@@ -465,7 +465,7 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     // Plans frosts the band the way Memories does, so the sky reads through
     // it blurred and the chrome sits on top.
     expect(PLANS_SOURCE).toContain('BlurView');
-    expect(PLANS_SOURCE).toContain('withAlpha(background, 0.22)');
+    expect(PLANS_SOURCE).toContain('withAlpha(background, 0.14)');
     // Same root anchoring as Memories: after FrostedBackdrop, before the
     // ScrollView/ScreenHeader so scroll offset can never shift the sky.
     expect(PLANS_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(

@@ -678,6 +678,12 @@ export default function PlansScreen() {
 			styles.headerBlock,
 			{
 				paddingTop: insets.top + Spacing[8],
+				// Sticky, and translucent underneath: the grid passes behind it.
+				left: 0,
+				position: 'absolute' as const,
+				right: 0,
+				top: 0,
+				zIndex: 2,
 			},
 		],
 		[insets.top],
@@ -707,14 +713,14 @@ export default function PlansScreen() {
 					style={StyleSheet.absoluteFill}
 				>
 					<BlurView
-						intensity={90}
+						intensity={45}
 						tint={backgroundIsLight ? 'light' : 'dark'}
 						style={StyleSheet.absoluteFill}
 					/>
 					<View
 						style={[
 							StyleSheet.absoluteFill,
-							{ backgroundColor: withAlpha(background, 0.22) },
+							{ backgroundColor: withAlpha(background, 0.14) },
 						]}
 					/>
 				</View>
@@ -722,7 +728,7 @@ export default function PlansScreen() {
 			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
 				{weekdayLabels.map((label) => (
 					<View key={label} style={styles.weekdayCell}>
-						<ThemedText type="meta" style={{ color: muted }}>
+						<ThemedText type="meta" style={{ color: textColor }}>
 							{label}
 						</ThemedText>
 					</View>
@@ -758,6 +764,7 @@ export default function PlansScreen() {
 			<ScrollView
 				ref={pagerRef}
 				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
+				contentContainerStyle={{ paddingTop: headerMeasured }}
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
 			>
@@ -856,8 +863,8 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 	},
 	calendarCard: {
-		// Apple's month grid is the page, not a card on it: full bleed, no
-		// border, no radius, and it starts flush under the weekday row.
+		// The month grid is the page, and the header floats over it, so this
+		// owns the whole screen rather than the space below the band.
 		flex: 1,
 		gap: Spacing[4],
 	},
