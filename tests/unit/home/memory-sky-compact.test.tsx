@@ -650,9 +650,10 @@ describe('Tab header normalization (one shared anatomy)', () => {
     // Plans picks its header tone from the background: the band's lower edge
     // is pale in light mode, and the light chrome disappeared on it.
     expect(PLANS_SOURCE).toContain("backgroundIsLight ? 'onLight' : 'onDark'");
-    // Creation moved from the header to the glass fab, like Memories.
-    expect(PLANS_SOURCE).toContain('GlassSurface');
-    expect(PLANS_SOURCE).toContain('fabBottomOffset(insets.bottom');
+    // Creation lives in the header row, like Calendar. A native glass button
+    // cannot be shaped from RN, so there is no floating glass action.
+    expect(PLANS_SOURCE).toContain('Add an event for the selected day');
+    expect(PLANS_SOURCE).not.toContain('GlassSurface');
     expect(PLANS_SOURCE).toContain('handleAddEvent');
   });
 });

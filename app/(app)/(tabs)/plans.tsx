@@ -62,7 +62,6 @@ import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Divider } from "@/components/ui/divider";
 import { IconButton } from "@/components/ui/icon-button";
-import { GlassSurface } from "@/components/ui/glass-surface";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { Radii, Spacing } from "@/constants/theme";
 import { FontFamilies } from "@/constants/typography";
@@ -305,8 +304,7 @@ export default function PlansScreen() {
 		error: calendarError,
 	} = useCalendar();
 	const [centerMonth, setCenterMonth] = useState(() => visibleMonth);
-	const [screenHeight, setScreenHeight] = useState(0);
-	const [headerMeasured, setHeaderMeasured] = useState(0);
+	const [listHeight, setListHeight] = useState(0);
 	const pagerMonths = useMemo(
 		() =>
 			Array.from({ length: PAGER_WINDOW_SIZE }, (_, index) =>
@@ -624,20 +622,13 @@ export default function PlansScreen() {
 	// Pager pages exactly this width so swiping stays aligned.
 	const PAGE_WIDTH = windowWidth;
 	const pagerRef = useRef<ScrollView | null>(null);
-	// One month of the vertical stack: the month name, then its grid.
-	// The month fills the screen under the header, the way Apple's does. Rows
-	// stretch to the space, so a month never leaves half the page unusable.
-	// Measured where the device will tell us, computed where it will not. A
-	// month that fits its screen cannot be got right by arithmetic alone.
-	const availableHeight =
-		screenHeight > 0 && headerMeasured > 0
-			? screenHeight - SYSTEM_TAB_BAR_IOS_CLEARANCE
-			: windowHeight -
-				compactSkyHeightForWindow(windowHeight) -
-				HEADER_ROW_HEIGHT -
-				insets.bottom -
-				SYSTEM_TAB_BAR_IOS_CLEARANCE - WEEKDAY_ROW_HEIGHT;
-	const MONTH_PAGE_HEIGHT = Math.max(PAGER_HEIGHT + 76, availableHeight);
+	// One month of the vertical stack: the month name, then its grid, filling
+	// the space the list actually has. The list reports that space, so there
+	// is no safe area, no tab bar clearance and no row heights to add up.
+	const MONTH_PAGE_HEIGHT = Math.max(
+		PAGER_HEIGHT + 76,
+		listHeight > 0 ? listHeight : Math.round(windowHeight * 0.62),
+	);
 
 
 	// Keep the context's loaded window in step with the month the user is on.
@@ -678,29 +669,22 @@ export default function PlansScreen() {
 			styles.headerBlock,
 			{
 				paddingTop: insets.top + Spacing[8],
-				// Sticky, and translucent underneath: the grid passes behind it.
-				left: 0,
-				position: 'absolute' as const,
-				right: 0,
-				top: 0,
-				zIndex: 2,
 			},
 		],
 		[insets.top],
 	);
 
 	return (
-		<View
-			onLayout={(event) => setScreenHeight(Math.round(event.nativeEvent.layout.height))}
-			style={rootStyle}
-		>
+		<View style={rootStyle}>
       <FrostedBackdrop />
-			<View
-				onLayout={(event) => setHeaderMeasured(Math.round(event.nativeEvent.layout.height))}
-				style={headerBlockStyle}
-			>
+			<View style={headerBlockStyle}>
 				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
 				<ScreenHeader
+					primaryAction={{
+						label: 'Add an event for the selected day',
+						icon: <Ionicons color={onAccent} name="add" size={20} />,
+						onPress: handleAddEvent,
+					}}
 					tone={backgroundIsLight ? 'onLight' : 'onDark'}
 					title="Plans"
 				/>
@@ -759,15 +743,14 @@ export default function PlansScreen() {
 				</Pressable>
 			) : null}
 
-			<View style={styles.calendarCard}>
+			<View
+				onLayout={(event) => setListHeight(Math.round(event.nativeEvent.layout.height))}
+				style={styles.calendarCard}
+			>
 			{/* Weekday header stays put; the month grid slides beneath it. */}
 			<ScrollView
 				ref={pagerRef}
-				contentOffset={{
-					x: 0,
-					y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS + headerMeasured,
-				}}
-				contentContainerStyle={{ paddingTop: headerMeasured }}
+				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
 			>
@@ -798,34 +781,6 @@ export default function PlansScreen() {
 				))}
 			</ScrollView>
 			</View>
-			<Pressable
-				accessibilityHint="Creates an event on the selected day"
-				accessibilityLabel="Add event"
-				accessibilityRole="button"
-				onPress={handleAddEvent}
-				style={({ pressed }) => [
-						styles.fab,
-					{
-						bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'),
-						opacity: pressed ? 0.85 : 1,
-					},
-				]}
-			>
-				<GlassSurface
-					effect="clear"
-					style={[
-						styles.fabGlass,
-						{
-							backgroundColor: withAlpha(
-								accent,
-								process.env.EXPO_OS === 'ios' ? 0.25 : 0.6,
-							),
-						},
-					]}
-				>
-					<Ionicons color={onAccent} name="add" size={26} />
-				</GlassSurface>
-			</Pressable>
 		</View>
 	);
 }
@@ -851,19 +806,6 @@ const styles = StyleSheet.create({
 		fontSize: 26,
 		lineHeight: 34,
 		letterSpacing: -0.2,
-	},
-	fab: {
-		borderRadius: 28,
-		height: 56,
-		overflow: "hidden",
-		position: "absolute",
-		right: Spacing[24],
-		width: 56,
-	},
-	fabGlass: {
-		alignItems: "center",
-		flex: 1,
-		justifyContent: "center",
 	},
 	calendarCard: {
 		// The month grid is the page, and the header floats over it, so this
