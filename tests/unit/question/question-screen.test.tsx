@@ -117,12 +117,14 @@ vi.mock('react-native', () => {
     ScrollView,
     KeyboardAvoidingView,
     ActivityIndicator,
+    AppState: { addEventListener: () => ({ remove: () => {} }) },
     Platform: { OS: 'ios', select: (options: any) => options.ios },
   };
 });
 
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
+  useIsFocused: () => true,
 }));
 
 vi.mock('react-native-safe-area-context', () => ({

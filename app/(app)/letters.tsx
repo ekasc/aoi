@@ -4,7 +4,6 @@ import { Stack, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	AppState,
-	ActivityIndicator,
 	Pressable,
 	ScrollView,
 	StyleSheet,
@@ -16,7 +15,7 @@ import { LetterCard } from "@/components/letters/letter-card";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
-import { Radii, Spacing } from "@/constants/theme";
+import { Radii, Spacing, withAlpha } from "@/constants/theme";
 import { useLetters } from "@/features/letters/letters-context";
 import {
 	formatOpensInLabel,
@@ -24,6 +23,9 @@ import {
 } from "@/features/letters/letter-time";
 import type { Letter } from "@/features/letters/types";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { relationshipCopy } from "@/features/relationship/relationship-age";
+import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
+import { useSpace } from "@/features/space/space-context";
 
 // How often the shelf re-derives "Opens in…" labels while letters wait.
 const SHELF_TICK_MS = 20_000;
@@ -39,7 +41,11 @@ export default function LettersScreen() {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
 	const { letters, isLoading, error, openLetter, reload } = useLetters();
+	const { space } = useSpace();
+	const copy = relationshipCopy(useRelationshipAge(space?.relationshipStartDate).tone);
 	const accent = useThemeColor({}, "accent");
+	const accentInk = useThemeColor({}, "accentInk");
+	const surface = useThemeColor({}, "surface");
 	const background = useThemeColor({}, "background");
 	const muted = useThemeColor({}, "muted");
 	const [now, setNow] = useState(() => new Date());
@@ -138,7 +144,7 @@ export default function LettersScreen() {
 			<Stack.Screen options={{ title: "Letters" }} />
 			<View style={styles.headerRow}>
 				<ThemedText style={styles.intro} type="caption">
-					Letters open on a future day.
+					{copy.letterIntro}
 				</ThemedText>
 				<Pressable
 					accessibilityLabel="Write a letter"
@@ -147,8 +153,8 @@ export default function LettersScreen() {
 					onPress={handleWrite}
 					style={[styles.writeButton, { borderColor: accent }]}
 				>
-					<Ionicons color={accent} name="create-outline" size={18} />
-					<ThemedText style={{ color: accent }} type="meta">
+					<Ionicons color={accentInk} name="create-outline" size={18} />
+					<ThemedText style={{ color: accentInk }} type="meta">
 						Write
 					</ThemedText>
 				</Pressable>
@@ -161,8 +167,18 @@ export default function LettersScreen() {
 			) : null}
 
 			{isLoading && letters.length === 0 ? (
-				<View style={styles.center}>
-					<ActivityIndicator color={accent} />
+				<View accessibilityLabel="Loading your letters" style={styles.skeletons}>
+					{[0, 1, 2].map((row) => (
+						<View
+							accessibilityElementsHidden
+							importantForAccessibility="no-hide-descendants"
+							key={row}
+							style={[
+								styles.skeleton,
+								{ backgroundColor: withAlpha(surface, 0.4), opacity: 1 - row * 0.22 },
+							]}
+						/>
+					))}
 				</View>
 			) : error && letters.length === 0 ? (
 				<Surface style={styles.emptyCard}>
@@ -179,8 +195,7 @@ export default function LettersScreen() {
 			) : letters.length === 0 ? (
 				<Surface style={styles.emptyCard}>
 					<ThemedText style={{ color: muted }} type="caption">
-						No letters yet. Write one for a future day, for the two of
-						you.
+							No letters yet. Write one for a future day, for the two of you.
 					</ThemedText>
 				</Surface>
 			) : (
@@ -225,10 +240,14 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		paddingHorizontal: Spacing[12],
 	},
-	center: {
-		alignItems: "center",
-		justifyContent: "center",
-		paddingVertical: Spacing[40],
+	skeletons: {
+		gap: Spacing[12],
+		paddingVertical: Spacing[8],
+	},
+	skeleton: {
+		height: 72,
+		borderRadius: Radii.card,
+		borderCurve: "continuous",
 	},
 	emptyCard: {
 		gap: Spacing[4],

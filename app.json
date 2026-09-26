@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ekasc.aoi",
+      "deploymentTarget": "16.4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
@@ -35,6 +36,7 @@
     "plugins": [
       "expo-router",
       "./plugins/expo-dev-menu-fab",
+      "./plugins/with-ios-scene-delegate",
       [
         "expo-splash-screen",
         {

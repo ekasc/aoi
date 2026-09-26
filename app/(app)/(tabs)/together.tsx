@@ -1,579 +1,443 @@
-import { FrostedBackdrop } from '@/components/ui/frosted-backdrop';
-import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-	ActivityIndicator,
-	AppState,
-	Pressable,
-	ScrollView,
-	StyleSheet,
-	View,
-} from "react-native";
-import Animated, {
-	useAnimatedStyle,
-	useReducedMotion,
-	useSharedValue,
-	withSpring,
-} from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useIsFocused, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { MemorySky, SYSTEM_TAB_BAR_IOS_CLEARANCE } from "@/components/home/memory-sky";
-import { ThemedText } from "@/components/themed-text";
-import { Button } from "@/components/ui/button";
-import { ScreenHeader } from "@/components/ui/screen-header";
-import { Radii, Spacing } from "@/constants/theme";
-import {
-	findReadyLetter,
-	isQuestionUnanswered,
-	selectUsFocal,
-} from "@/features/home/us-focal";
-import { UsWaitingCard } from "@/components/home/us-waiting-card";
-import { useLetters } from "@/features/letters/letters-context";
-import { useMoments } from "@/features/moments/moments-context";
-import { useQuestion } from "@/features/question/question-context";
-import { useSqueeze } from "@/features/squeeze/squeeze-context";
-import { useSpace } from "@/features/space/space-context";
-import { getDaysTogether } from "@/features/time-together/time-together";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { MemorySky, SYSTEM_TAB_BAR_IOS_CLEARANCE } from '@/components/home/memory-sky';
+import { UsExchange } from '@/components/home/us-exchange';
+import { AudioPlayer } from '@/components/media/audio-player';
+import { VideoPlayer } from '@/components/media/video-player';
+import { ThemedText } from '@/components/themed-text';
+import { Pressed } from '@/components/ui/pressed';
+import { haptics } from '@/features/haptics/haptics';
+import { formatMomentShortDate, formatMomentTime } from '@/features/moments/labels';
+import { useMoments } from '@/features/moments/moments-context';
+import type { Moment } from '@/features/moments/types';
+import { findReadyLetter } from '@/features/home/us-focal';
+import { useLetters } from '@/features/letters/letters-context';
+import { useResponses } from '@/features/responses/responses-context';
+import { useSpace } from '@/features/space/space-context';
+import { useSqueeze } from '@/features/squeeze/squeeze-context';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { Image } from 'expo-image';
+import { Radii, Spacing } from '@/constants/theme';
 
-type CaptureKind = "photo" | "note" | "voice";
-
-const KEEP_TARGETS: ReadonlyArray<{
-	kind: CaptureKind;
-	label: string;
-	icon: keyof typeof Ionicons.glyphMap;
-	a11y: string;
-}> = [
-	{ kind: "photo", label: "Photo", icon: "camera", a11y: "Keep a photo memory" },
-	{ kind: "note", label: "Note", icon: "pencil", a11y: "Keep a note memory" },
-	{ kind: "voice", label: "Voice", icon: "mic", a11y: "Keep a voice memory" },
-];
-
+/** How many days back the sky reaches. */
+const REMEMBERED = 40;
+/** How long the quiet confirmation stays up before the control resets. */
 const SQUEEZE_SENT_VISIBLE_MS = 3000;
-const SQUEEZE_THUMP_GAP_MS = 120;
-const SQUEEZE_BOUNCE_FROM = 0.94;
-const SQUEEZE_BOUNCE_MS = 400;
-
 
 /**
- * Calm Us home: sky + caption stay untouched, then a centered Squeeze pill
- * as the main connection action, a single secondary Keep a memory toggle
- * with inline Photo/Note/Voice shortcuts to Memories on request (progressive disclosure), and a
- * quiet stacked Letters/Reflection pair with body typography and chevrons.
- * No focal hero, no duplicate question text, no capture trio until asked.
- * Press feedback stays instant (opacity + scale); squeeze send adds a
- * heartbeat double-thump plus a 0.94 to 1 bounce that sets instantly under
- * reduced motion. The clock refreshes on focus/app activation only; no
- * repeating timers.
+ * Us: the sky. You tap it, a day opens.
+ *
+ * The stars were always the archive, one per day you both had. They were
+ * also decoration pinned above a screen about something else, which is why
+ * this tab had no job: three tabs covered the archive, the future and the
+ * settings, and nothing covered the present.
+ *
+ * So the sky stops being the wallpaper and becomes the interface. There is
+ * no list here, no feed and no queue to drain. You tap, and the archive
+ * brings one out, with whatever the two of you have said about it
+ * underneath.
+ *
+ * It is a random memory, not the day under your finger, and that is
+ * deliberate. The star field is a calendar camera: it needs a year of
+ * history before it means anything. With thirteen memories it is mostly
+ * empty, so a tap on a particular star would open nothing and the screen
+ * would only work for couples who have been here long enough. Drawing from
+ * what actually exists works on the first day and on the thousandth.
+ *
+ * Stars are 0.35-0.9pt across, which is unmissable as a field and impossible
+ * to aim at, so the whole sky is one control rather than a grid of targets.
+ *
+ * The archive is still reachable as a list, and it has to be: a spatial
+ * field of sub-pixel dots is not a thing a screen reader or a hand with a
+ * tremor can use, and this screen is not allowed to be the only way in.
  */
-export default function TogetherScreen() {
-	const router = useRouter();
-	const isFocused = useIsFocused();
-	const insets = useSafeAreaInsets();
-	const muted = useThemeColor({}, "muted");
-	const background = useThemeColor({}, "background");
-	const primary = useThemeColor({}, "primary");
-	const primaryPressed = useThemeColor({}, "primaryPressed");
-	const primaryText = useThemeColor({}, "primaryText");
-	const surface = useThemeColor({}, "surface");
-	const borderStrong = useThemeColor({}, "borderStrong");
-	const textPrimary = useThemeColor({}, "textPrimary");
+export default function UsScreen() {
+  const router = useRouter();
+  const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const { moments, isLoading } = useMoments();
+  const { letters } = useLetters();
+  const { sendSqueeze, isSending, lastSentAt } = useSqueeze();
+  const { space } = useSpace();
+  const { loadFor } = useResponses();
 
-	const {
-		letters,
-		isLoading: lettersLoading,
-		error: lettersError,
-		reload: reloadLetters,
-	} = useLetters();
-	const {
-		state: questionState,
-		isLoading: questionLoading,
-		error: questionError,
-		reload: reloadQuestion,
-	} = useQuestion();
-	const { moments } = useMoments();
-	const { sendSqueeze, isSending: isSqueezeSending } = useSqueeze();
-	const { space } = useSpace();
-	const reduceMotion = useReducedMotion();
-	const squeezeScale = useSharedValue(1);
-	const squeezeBounceStyle = useAnimatedStyle(() => ({
-		transform: [{ scale: squeezeScale.value }],
-	}));
+  const background = useThemeColor({}, 'background');
+  const border = useThemeColor({}, 'border');
+  const muted = useThemeColor({}, 'textSecondary');
 
-	const [now, setNow] = useState(() => new Date());
-	const [squeezeMessage, setSqueezeMessage] = useState<string | null>(null);
-	const [squeezeSent, setSqueezeSent] = useState(false);
-	const [keepExpanded, setKeepExpanded] = useState(false);
-	const sentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const squeezeThumpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [now, setNow] = useState(() => new Date());
+  const [opened, setOpened] = useState<Moment | null>(null);
+  const [hasTapped, setHasTapped] = useState(false);
+  const [ackSentAt, setAckSentAt] = useState<string | null>(null);
+  const squeezeSent = Boolean(lastSentAt) && ackSentAt !== lastSentAt;
 
-	useFocusEffect(
-		useCallback(() => {
-			setNow(new Date());
-		}, []),
-	);
+  useFocusEffect(
+    useCallback(() => {
+      setNow(new Date());
+    }, [])
+  );
 
-	useEffect(() => {
-		const subscription = AppState.addEventListener("change", (state) => {
-			if (state === "active") {
-				setNow(new Date());
-			}
-		});
-		return () => subscription.remove();
-	}, []);
+  useEffect(() => {
+    if (!squeezeSent || !lastSentAt) {
+      return;
+    }
+    const timer = setTimeout(() => setAckSentAt(lastSentAt), SQUEEZE_SENT_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [lastSentAt, squeezeSent]);
 
-	useEffect(() => {
-		return () => {
-			if (sentTimer.current) {
-				clearTimeout(sentTimer.current);
-			}
-			if (squeezeThumpTimer.current) {
-				clearTimeout(squeezeThumpTimer.current);
-				squeezeThumpTimer.current = null;
-			}
-		};
-	}, []);
+  const remembered = useMemo(() => {
+    const safe = Array.isArray(moments) ? moments : [];
+    return safe.slice(0, REMEMBERED);
+  }, [moments]);
 
-	const safeLetters = useMemo(() => (Array.isArray(letters) ? letters : []), [letters]);
-	const safeMoments = useMemo(() => (Array.isArray(moments) ? moments : []), [moments]);
-	const daysTogether = useMemo(
-		() => getDaysTogether(space?.relationshipStartDate, now),
-		[space?.relationshipStartDate, now],
-	);
+  /**
+   * A tap reaches into the archive and brings one out.
+   *
+   * Not the day under the finger. The day field is a calendar camera that
+   * needs a year of history to mean anything: with thirteen memories it is
+   * mostly empty space, so a tap on "that Tuesday" opens nothing, and the
+   * screen would only work for couples who have been using the app long
+   * enough. Drawing from what actually exists works at three memories or
+   * three thousand, which is the only version of this that works on day one.
+   *
+   * The one guard worth having: never the memory you are already looking at.
+   * Tapping twice and getting the same thing twice reads as a broken screen.
+   */
+  const pullMemory = useCallback(() => {
+    if (remembered.length === 0) {
+      return;
+    }
+    const pool =
+      remembered.length > 1 ? remembered.filter((moment) => moment.id !== opened?.id) : remembered;
+    const next = pool[Math.floor(Math.random() * pool.length)];
+    if (!next) {
+      return;
+    }
+    haptics.select();
+    setHasTapped(true);
+    setOpened(next);
+  }, [opened?.id, remembered]);
 
-	const readyLetter = useMemo(
-		() => findReadyLetter(safeLetters, now),
-		[safeLetters, now],
-	);
+  useEffect(() => {
+    loadFor(opened?.id ?? null);
+  }, [opened?.id, loadFor]);
 
-	// The one object on the screen that is happening now, in priority order:
-	// a sealed letter come due, then this week's unanswered question. The
-	// sky already carries the archive, so nothing else competes with it.
-	const focal = useMemo(
-		() =>
-			selectUsFocal({
-				letters: safeLetters,
-				question: questionState,
-				moments: safeMoments,
-				now,
-			}),
-		[now, questionState, safeLetters, safeMoments],
-	);
+  const readyLetter = useMemo(() => {
+    const safe = Array.isArray(letters) ? letters : [];
+    return findReadyLetter(safe, now);
+  }, [letters, now]);
 
-	const partnerName = useMemo(() => {
-		const partner = safeMoments.find((moment) => moment.authorRole === "partner");
-		return partner?.authorName?.trim() || "Your partner";
-	}, [safeMoments]);
+  const handleOpenLetter = useCallback(() => {
+    if (readyLetter) {
+      router.push({ pathname: '/(app)/letter/[id]', params: { id: readyLetter.id } });
+    }
+  }, [readyLetter, router]);
 
-	const pairNames = useMemo(() => {
-		const mine = safeMoments.find((moment) => moment.authorRole === "you");
-		const theirs = safeMoments.find((moment) => moment.authorRole === "partner");
-		if (mine?.authorName && theirs?.authorName) {
-			return `${mine.authorName} & ${theirs.authorName}`;
-		}
-		return null;
-	}, [safeMoments]);
+  const handleSqueeze = useCallback(() => {
+    if (isSending) {
+      return;
+    }
+    void sendSqueeze();
+  }, [isSending, sendSqueeze]);
 
-	const handleOpenReadyLetter = useCallback(
-		(letter: { id: string }) => {
-			router.push({ pathname: "/(app)/letter/[id]", params: { id: letter.id } });
-		},
-		[router],
-	);
-	const reflectionSubtitle = useMemo(() => {
-		if (!questionState) {
-			return "This week";
-		}
-		if (questionState.revealed) {
-			return "Answers are ready";
-		}
-		if (!isQuestionUnanswered(questionState)) {
-			return "Waiting for your partner";
-		}
-		return "This week";
-	}, [questionState]);
+  const handleClose = useCallback(() => {
+    setOpened(null);
+    loadFor(null);
+  }, [loadFor]);
 
-	const handleOpenLetters = useCallback(() => {
-		router.push("/(app)/letters");
-	}, [router]);
-	const handleOpenQuestion = useCallback(() => {
-		router.push("/(app)/question");
-	}, [router]);
-	const handleToggleKeep = useCallback(() => {
-		setKeepExpanded((value) => !value);
-	}, []);
-	// Unified capture: Us never records or saves directly. Each Keep target
-	// routes to Memories with a contextual composer intent (photo library,
-	// note focus, voice option). Recording starts only from deliberate hold
-	// inside Memories — never from a param.
-	const handleCapture = useCallback(
-		(capture: CaptureKind) => {
-			const compose = capture === "photo" ? "photos" : capture;
-			router.push({
-				pathname: "/(app)/(tabs)/(memories)" as const,
-				params: { compose },
-			});
-		},
-		[router],
-	);
-	const handleSqueeze = useCallback(() => {
-		if (isSqueezeSending) {
-			return;
-		}
-		setSqueezeMessage(null);
-		setSqueezeSent(false);
-		if (sentTimer.current) {
-			clearTimeout(sentTimer.current);
-			sentTimer.current = null;
-		}
-		if (squeezeThumpTimer.current) {
-			clearTimeout(squeezeThumpTimer.current);
-			squeezeThumpTimer.current = null;
-		}
-		// Heartbeat double-thump: two Medium haptics ~120ms apart. Press
-		// feedback stays instant (opacity + scale); the send bounce below
-		// is the only spring, gated for reduced motion.
-		void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-		squeezeThumpTimer.current = setTimeout(() => {
-			squeezeThumpTimer.current = null;
-			void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-		}, SQUEEZE_THUMP_GAP_MS);
-		void Promise.resolve()
-			.then(() => sendSqueeze())
-			.then(() => {
-				setSqueezeSent(true);
-				if (reduceMotion) {
-					squeezeScale.value = 1;
-				} else {
-					squeezeScale.value = SQUEEZE_BOUNCE_FROM;
-					squeezeScale.value = withSpring(1, { duration: SQUEEZE_BOUNCE_MS });
-				}
-				if (sentTimer.current) {
-					clearTimeout(sentTimer.current);
-				}
-				sentTimer.current = setTimeout(() => {
-					setSqueezeSent(false);
-					sentTimer.current = null;
-				}, SQUEEZE_SENT_VISIBLE_MS);
-			})
-			.catch(() => {
-				setSqueezeSent(false);
-				setSqueezeMessage("Couldn't send the squeeze. Try again.");
-			});
-	}, [isSqueezeSending, reduceMotion, sendSqueeze, squeezeScale]);
+  const skyHeight = Math.max(320, height - insets.top - insets.bottom - 80);
 
-	const contentContainerStyle = useMemo(
-		() => [
-			styles.contentContainer,
-			{
-				paddingTop: insets.top + Spacing[8],
-				paddingBottom:
-					insets.bottom +
-					Spacing[24] +
-					(process.env.EXPO_OS === 'ios'
-						? SYSTEM_TAB_BAR_IOS_CLEARANCE
-						: 0),
-			},
-		],
-		[insets.bottom, insets.top],
-	);
+  return (
+    <View style={[styles.root, { backgroundColor: background }]}>
+      {/* The sky is the whole screen and the primary surface, so it takes
+          touches and stops hiding itself from a screen reader. */}
+      <MemorySky
+        immersive
+        focused={isFocused}
+        moments={remembered}
+        now={now}
+        onPress={pullMemory}
+        presentationHeight={skyHeight}
+        startDate={space?.relationshipStartDate ?? null}
+      />
 
-	const lettersLoadingEmpty = lettersLoading && safeLetters.length === 0;
-	const lettersErrorEmpty = Boolean(lettersError) && safeLetters.length === 0;
-	const questionLoadingEmpty = questionLoading && !questionState;
-	const questionErrorEmpty = Boolean(questionError) && !questionState;
+      <View pointerEvents="box-none" style={styles.overlay}>
+        <View pointerEvents="box-none" style={[styles.topRow, { paddingTop: insets.top + Spacing[4] }]}>
+          <ThemedText type="title" style={styles.title}>
+            Us
+          </ThemedText>
+          <View pointerEvents="box-none" style={styles.topActions}>
+            {readyLetter ? (
+              <Pressable
+                accessibilityHint="Opens the letter you wrote to each other"
+                accessibilityLabel="A letter is ready to open"
+                accessibilityRole="button"
+                onPress={handleOpenLetter}
+                style={({ pressed }) => [
+                  styles.letterPill,
+                  { borderColor: border },
+                  pressed ? Pressed.at : undefined,
+                ]}
+              >
+                <Ionicons color={muted} name="mail-open-outline" size={16} />
+                <ThemedText type="label" style={{ color: muted }}>
+                  Ready
+                </ThemedText>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
 
-	return (
-		<ScrollView
-			style={[styles.pageShell, { backgroundColor: background }]}
-			contentContainerStyle={contentContainerStyle}
-			contentInsetAdjustmentBehavior="never"
-			showsVerticalScrollIndicator={false}
-		>
-			<FrostedBackdrop />
-			<ScreenHeader title="Us" />
+        {/* The one hint this screen has ever needed, and it leaves for good
+            after the first tap. Not a scroll cue: there is nothing below. */}
+        {!hasTapped && !opened ? (
+          <View
+            accessibilityLiveRegion="polite"
+            pointerEvents="none"
+            style={styles.hintWrap}
+          >
+            <ThemedText type="caption" style={[styles.hint, { color: muted }]}>
+              {isLoading
+                ? 'Opening your sky…'
+                : remembered.length > 0
+                  ? 'Tap the sky for something of yours.'
+                  : 'Keep a memory and it lights up here.'}
+            </ThemedText>
+          </View>
+        ) : null}
 
-			{/* The sky is the screen's title card: the pair's names sit inside
-			    it, and the sky's own caption keeps the day count. */}
-			<View style={styles.skyBlock}>
-				<MemorySky moments={safeMoments} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
-				{pairNames ? (
-					<View pointerEvents="none" style={styles.skyTitle}>
-						<ThemedText type="display" style={styles.skyNames}>
-							{pairNames}
-						</ThemedText>
-					</View>
-				) : null}
-			</View>
+        {/* The way in that does not require hitting a dot. */}
+        {!opened ? (
+          <View
+            pointerEvents="box-none"
+            style={[styles.bottomRow, { paddingBottom: insets.bottom + Spacing[24] + SYSTEM_TAB_BAR_IOS_CLEARANCE }]}
+          >
+            <Pressable
+              accessibilityHint="Opens the full archive as a list"
+              accessibilityLabel="See all memories as a list"
+              accessibilityRole="button"
+              onPress={() => router.push('/(app)/(tabs)/(memories)')}
+              style={({ pressed }) => [styles.ghostLink, pressed ? Pressed.at : undefined]}
+            >
+              <ThemedText type="caption" style={{ color: muted }}>
+                All memories
+              </ThemedText>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Squeeze"
+              accessibilityRole="button"
+              accessibilityState={{ busy: isSending, disabled: isSending }}
+              disabled={isSending}
+              onPress={handleSqueeze}
+              style={({ pressed }) => [pressed ? Pressed.at : undefined]}
+            >
+              <ThemedText type="label" style={{ color: muted }}>
+                {squeezeSent ? 'Sent.' : isSending ? 'Sending…' : 'Squeeze'}
+              </ThemedText>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
 
-			<UsWaitingCard
-				focal={focal}
-				onOpenLetter={handleOpenReadyLetter}
-				onOpenQuestion={handleOpenQuestion}
-				partnerName={partnerName}
-			/>
+      {opened ? (
+        <View style={[styles.sheet, { backgroundColor: background, paddingTop: insets.top + Spacing[8] }]}>
+          <View style={styles.sheetBar}>
+            <ThemedText type="meta" style={{ color: muted }}>
+              {formatMomentShortDate(opened.occurredAt)}
+            </ThemedText>
+            <Pressable
+              accessibilityLabel="Close this memory"
+              accessibilityRole="button"
+              onPress={handleClose}
+              style={({ pressed }) => [
+                styles.close,
+                { borderColor: border },
+                pressed ? Pressed.at : undefined,
+              ]}
+            >
+              <Ionicons color={muted} name="close" size={18} />
+            </Pressable>
+          </View>
 
-			<View style={styles.squeezeWrap}>
-				<Animated.View style={squeezeBounceStyle}>
-				<Pressable
-					accessibilityLabel="Send a squeeze to your partner"
-					accessibilityRole="button"
-					accessibilityState={{ disabled: isSqueezeSending }}
-					disabled={isSqueezeSending}
-					onPress={handleSqueeze}
-					style={({ pressed }) => [
-						styles.squeezePill,
-						{
-							backgroundColor:
-								pressed && !isSqueezeSending ? primaryPressed : primary,
-							borderColor: primary,
-						},
-						pressed && !isSqueezeSending ? styles.squeezePillPressed : undefined,
-						isSqueezeSending ? styles.squeezePillDisabled : undefined,
-					]}
-				>
-					<Ionicons color={primaryText} name="heart" size={16} />
-					<ThemedText type="bodyEmphasis" style={{ color: primaryText }}>
-						{isSqueezeSending
-							? "Sending…"
-							: squeezeSent
-								? "Squeeze sent"
-								: "Squeeze"}
-					</ThemedText>
-				</Pressable>
-				</Animated.View>
-			</View>
-			{squeezeMessage ? (
-				<ThemedText type="caption" style={{ color: muted }}>
-					{squeezeMessage}
-				</ThemedText>
-			) : null}
+          <ScrollView
+            contentContainerStyle={[
+              styles.sheetContent,
+              { paddingBottom: insets.bottom + Spacing[32] + SYSTEM_TAB_BAR_IOS_CLEARANCE },
+            ]}
+            contentInsetAdjustmentBehavior="never"
+            showsVerticalScrollIndicator={false}
+          >
+            <RememberedMoment
+              moment={opened}
+              onOpenMemory={() =>
+                router.push({
+                  pathname: '/(app)/moment/[id]' as const,
+                  params: { id: opened.id, at: opened.occurredAt, returnTo: 'us' },
+                })
+              }
+            />
+            <UsExchange moment={opened} />
+          </ScrollView>
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
-			<View style={styles.keepSection}>
-				<Button
-					label="Keep a memory"
-					variant="secondary"
-					onPress={handleToggleKeep}
-					accessibilityState={{ expanded: keepExpanded }}
-					accessibilityHint={
-						keepExpanded
-							? "Hides photo, note, and voice options"
-							: "Shows photo, note, and voice options"
-					}
-				/>
-				{keepExpanded ? (
-					<>
-						<View style={styles.keepRow}>
-							{KEEP_TARGETS.map((target) => {
-								return (
-									<Pressable
-										key={target.kind}
-										accessibilityLabel={target.a11y}
-										accessibilityRole="button"
-										onPress={() => handleCapture(target.kind)}
-										style={({ pressed }) => [
-											styles.keepTarget,
-											{ backgroundColor: surface, borderColor: borderStrong },
-											pressed ? styles.keepTargetPressed : undefined,
-										]}
-									>
-										<Ionicons color={primary} name={target.icon} size={22} />
-										<ThemedText type="label" style={{ color: textPrimary }}>
-											{target.label}
-										</ThemedText>
-									</Pressable>
-								);
-							})}
-						</View>
-						<ThemedText type="caption" style={{ color: muted }}>
-							Kept in Memories — voice records there
-						</ThemedText>
-					</>
-				) : null}
-			</View>
+/** The artifact: whatever the memory actually is, at a size worth seeing. */
+function RememberedMoment({
+  moment,
+  onOpenMemory,
+}: {
+  moment: Moment;
+  onOpenMemory: () => void;
+}) {
+  const border = useThemeColor({}, 'border');
+  const muted = useThemeColor({}, 'textSecondary');
+  const body = moment.body?.trim() ?? '';
+  const title = moment.title?.trim() ?? '';
+  const who = moment.authorRole === 'you' ? 'You' : moment.authorName?.trim() || 'They';
 
-			<View style={styles.rows}>
-				<View style={styles.rowBlock}>
-					<Pressable
-						accessibilityLabel="Letters"
-						accessibilityRole="button"
-						onPress={handleOpenLetters}
-						style={({ pressed }) => [
-							styles.row,
-							{ backgroundColor: surface, borderColor: borderStrong },
-							pressed ? styles.rowPressed : undefined,
-						]}
-					>
-						<View style={styles.rowText}>
-							<ThemedText type="body">Letters</ThemedText>
-							{lettersLoadingEmpty ? (
-								<ActivityIndicator accessibilityLabel="Loading" size="small" />
-							) : lettersErrorEmpty || !readyLetter ? null : (
-								<ThemedText type="caption" style={{ color: muted }}>
-									Ready to open
-								</ThemedText>
-							)}
-						</View>
-						<Ionicons color={muted} name="chevron-forward" size={16} />
-					</Pressable>
-					{lettersErrorEmpty ? (
-						<View style={styles.inlineError}>
-							<ThemedText type="caption" style={{ color: muted }}>
-								Letters aren&apos;t loading
-							</ThemedText>
-							<Button
-								label="Try again"
-								variant="secondary"
-								size="sm"
-								onPress={() => void reloadLetters?.()}
-							/>
-						</View>
-					) : null}
-				</View>
+  return (
+    <View style={styles.remembered}>
+      {moment.videoUri ? (
+        <VideoPlayer
+          aspectRatio={4 / 3}
+          label={title || 'Video memory'}
+          posterUri={moment.mediaPreview}
+          uri={moment.videoUri}
+        />
+      ) : moment.mediaPreview ? (
+        <Pressable
+          accessibilityHint="Opens this memory on its own"
+          accessibilityLabel={title ? `Open ${title}` : 'Open this memory'}
+          accessibilityRole="button"
+          onPress={onOpenMemory}
+          style={({ pressed }) => [
+            styles.frame,
+            { borderColor: border },
+            pressed ? Pressed.onMedia : undefined,
+          ]}
+        >
+          <Image
+            accessible={false}
+            contentFit="cover"
+            source={{ uri: moment.mediaPreview }}
+            style={styles.image}
+          />
+        </Pressable>
+      ) : moment.audioUri ? (
+        <View style={[styles.frame, { borderColor: border }]}>
+          <AudioPlayer uri={moment.audioUri} />
+        </View>
+      ) : null}
 
-				<View style={styles.rowBlock}>
-					<Pressable
-						accessibilityLabel="Reflection"
-						accessibilityRole="button"
-						onPress={handleOpenQuestion}
-						style={({ pressed }) => [
-							styles.row,
-							{ backgroundColor: surface, borderColor: borderStrong },
-							pressed ? styles.rowPressed : undefined,
-						]}
-					>
-						<View style={styles.rowText}>
-							<ThemedText type="body">Reflection</ThemedText>
-							{questionLoadingEmpty ? (
-								<ActivityIndicator accessibilityLabel="Loading" size="small" />
-							) : questionErrorEmpty ? null : (
-								<ThemedText type="caption" style={{ color: muted }}>
-									{reflectionSubtitle}
-								</ThemedText>
-							)}
-						</View>
-						<Ionicons color={muted} name="chevron-forward" size={16} />
-					</Pressable>
-					{questionErrorEmpty ? (
-						<View style={styles.inlineError}>
-							<ThemedText type="caption" style={{ color: muted }}>
-								This week isn&apos;t loading
-							</ThemedText>
-							<Button
-								label="Try again"
-								variant="secondary"
-								size="sm"
-								onPress={() => void reloadQuestion?.()}
-							/>
-						</View>
-					) : null}
-				</View>
-			</View>
-		</ScrollView>
-	);
+      <View style={styles.rememberedText}>
+        <ThemedText type="meta" style={{ color: muted }}>
+          {who} · {formatMomentTime(moment.occurredAt)}
+        </ThemedText>
+        {title ? <ThemedText type="title">{title}</ThemedText> : null}
+        {body ? <ThemedText type="body">{body}</ThemedText> : null}
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-	pageShell: {
-		flex: 1,
-	},
-	contentContainer: {
-		gap: Spacing[16],
-		paddingHorizontal: Spacing[16],
-	},
-	skyBlock: {
-		// The sky is full-bleed: it is the screen's title card, so it escapes
-		// the content gutters and the names sit inside it.
-		marginHorizontal: -Spacing[16],
-		position: "relative",
-	},
-	skyTitle: {
-		left: Spacing[24],
-		position: "absolute",
-		right: Spacing[24],
-		top: Spacing[16],
-	},
-	skyNames: {
-		textShadowColor: "rgba(0, 0, 0, 0.28)",
-		textShadowOffset: { height: 1, width: 0 },
-		textShadowRadius: 12,
-	},
-	keepSection: {
-		gap: Spacing[8],
-	},
-	keepRow: {
-		flexDirection: "row",
-		gap: Spacing[8],
-	},
-	keepTarget: {
-		flex: 1,
-		minWidth: 44,
-		minHeight: 64,
-		borderWidth: StyleSheet.hairlineWidth,
-		borderRadius: Radii.lg,
-		alignItems: "center",
-		justifyContent: "center",
-		gap: Spacing[4],
-		paddingVertical: Spacing[12],
-		paddingHorizontal: Spacing[8],
-	},
-	keepTargetPressed: {
-		opacity: 0.9,
-		transform: [{ scale: 0.96 }],
-	},
-	rows: {
-		gap: Spacing[8],
-	},
-	rowBlock: {
-		gap: Spacing[4],
-	},
-	row: {
-		minWidth: 44,
-		minHeight: 48,
-		flexDirection: "row",
-		alignItems: "center",
-		gap: Spacing[12],
-		borderWidth: StyleSheet.hairlineWidth,
-		borderRadius: Radii.lg,
-		paddingVertical: Spacing[12],
-		paddingHorizontal: Spacing[12],
-	},
-	rowText: {
-		flex: 1,
-		gap: 2,
-	},
-	rowPressed: {
-		opacity: 0.9,
-		transform: [{ scale: 0.98 }],
-	},
-	inlineError: {
-		gap: Spacing[4],
-		paddingTop: Spacing[4],
-	},
-	squeezeWrap: {
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	squeezePill: {
-		minHeight: 44,
-		minWidth: 44,
-		alignSelf: "center",
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: Spacing[8],
-		borderWidth: StyleSheet.hairlineWidth,
-		borderRadius: Radii.pill,
-		paddingVertical: Spacing[8],
-		paddingHorizontal: Spacing[16],
-	},
-	squeezePillPressed: {
-		opacity: 0.95,
-		transform: [{ scale: 0.98 }],
-	},
-	squeezePillDisabled: {
-		opacity: 0.75,
-	},
+  root: { flex: 1 },
+  overlay: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  topRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing[24],
+  },
+  title: {
+    // Light chrome: the sky behind it is always dark, whatever the theme.
+    color: '#FFF8FA',
+    textShadowColor: 'rgba(0, 0, 0, 0.35)',
+    textShadowOffset: { height: 1, width: 0 },
+    textShadowRadius: 8,
+  },
+  topActions: { flexDirection: 'row' },
+  letterPill: {
+    alignItems: 'center',
+    borderRadius: Radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: Spacing[8],
+    minHeight: 44,
+    paddingHorizontal: Spacing[12],
+  },
+  hintWrap: {
+    alignItems: 'center',
+    bottom: 140,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
+  hint: {
+    textAlign: 'center',
+  },
+  bottomRow: {
+    alignItems: 'center',
+    bottom: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    left: 0,
+    paddingHorizontal: Spacing[24],
+    position: 'absolute',
+    right: 0,
+  },
+  ghostLink: {
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingRight: Spacing[12],
+  },
+  sheet: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  sheetBar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing[24],
+    paddingBottom: Spacing[8],
+  },
+  close: {
+    alignItems: 'center',
+    borderRadius: Radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  sheetContent: {
+    gap: Spacing[16],
+    paddingHorizontal: Spacing[24],
+    paddingTop: Spacing[8],
+  },
+  remembered: { gap: Spacing[12] },
+  frame: {
+    borderRadius: Radii.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  image: { aspectRatio: 4 / 3, width: '100%' },
+  rememberedText: { gap: Spacing[4] },
 });

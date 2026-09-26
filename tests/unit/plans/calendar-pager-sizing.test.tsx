@@ -27,6 +27,9 @@ vi.mock('react-native', () => {
     if (typeof props.onPress === 'function') {
       next.onClick = props.onPress;
     }
+    if (typeof props.testID === 'string') {
+      next['data-testid'] = props.testID;
+    }
     return next;
   }
 
@@ -77,7 +80,17 @@ vi.mock('react-native', () => {
     Text,
     Pressable,
     ScrollView: (props: Record<string, unknown>) => {
-      const { children, style, ...rest } = props;
+      const { children, style, onLayout, ...rest } = props;
+      // The platform fires onLayout after mount, and the week strip sizes its
+      // pages from it. Without this the strip renders nothing and its render
+      // budget would look green while measuring zero cells.
+      useEffect(() => {
+        if (typeof onLayout === 'function') {
+          onLayout({
+            nativeEvent: { layout: { height: 600, width: 390, x: 0, y: 0 } },
+          });
+        }
+      }, [onLayout]);
       return createDiv(children, style, rest);
     },
     Modal: View,
@@ -103,9 +116,16 @@ vi.mock('react-native-reanimated', () => {
         createElement('div', {}, children),
     },
     FadeIn: chain,
+    FadeOut: chain,
     FadeInDown: chain,
     ReduceMotion: { System: 'system' },
     useReducedMotion: () => false,
+    Easing: {
+      linear: {},
+      in: (easing: unknown) => easing,
+      out: (easing: unknown) => easing,
+      inOut: (easing: unknown) => easing,
+    },
   };
 });
 
@@ -122,7 +142,7 @@ vi.mock('@/components/home/memory-sky', () => ({
   MemorySky: () => null,
   // The header band on a working screen is shorter than the compact one, so
   // the mock follows the helper the screen actually calls.
-  compactSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.09) + 12,
+  headerSkyHeightForWindow: (windowHeight: number) => Math.round(windowHeight * 0.09) + 12,
   SYSTEM_TAB_BAR_IOS_CLEARANCE: 50,
   SYSTEM_TAB_BAR_CONTENT_HEIGHT: 50,
   SYSTEM_TAB_BAR_BOTTOM_GAP: 8,
@@ -189,7 +209,10 @@ describe('Plans calendar pager sizing', () => {
     // cannot land mid month, which is what left the tail of one month above the
     // next month's heading.
     const pages = screen.getAllByLabelText(/Month page /);
-    expect(pages.length).toBeGreaterThan(20);
+    // Enough pages to swipe a month either way, and no more than the window
+    // the pager is allowed to mount.
+    expect(pages.length).toBeGreaterThanOrEqual(3);
+    expect(pages.length).toBeLessThanOrEqual(9);
     for (const page of pages) {
       expect(Number.parseFloat((page as HTMLElement).style.height)).toBe(600);
     }
@@ -197,6 +220,34 @@ describe('Plans calendar pager sizing', () => {
     // The scroll step is the page height, not a second estimate of it.
     const pager = (pages[0] as HTMLElement).parentElement as HTMLElement;
     expect(Number.parseFloat(pager.style.height)).toBe(600);
+  });
+
+  it('mounts a window of dates, not the whole reachable horizon', async () => {
+    const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
+    render(<PlansScreen />);
+
+    // Counts the live date cells, which is the cost that scales with the
+    // window. A whole-horizon window mounted 1,463 cells in the day view and
+    // 1,785 in the month view; the budgets below fail if that comes back.
+    const dateCellCount = (within?: Element | null) =>
+      Array.from((within ?? document).querySelectorAll('[aria-label]')).filter((el) =>
+        /^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday), /.test(
+          el.getAttribute('aria-label') ?? '',
+        ),
+      ).length;
+
+    // A grid cell lifts its day into the sheet: yesterday through tomorrow,
+    // three pages, counted inside the sheet only.
+    fireEvent.click(screen.getAllByLabelText(/Thursday, January 15/)[0]);
+    expect(
+      dateCellCount(document.querySelector('[data-testid="day-sheet"]')),
+    ).toBeLessThanOrEqual(49);
+
+    // Month view: a bounded stack of grids, counted inside the month surface
+    // only.
+    expect(
+      dateCellCount(document.querySelector('[data-testid="month-surface"]')),
+    ).toBeLessThanOrEqual(9 * 42);
   });
 
   it('creates from a floating control, not from a Today pill', () => {
@@ -224,11 +275,14 @@ describe('Plans calendar pager sizing', () => {
     // Nothing renders before the space is known, so the opening frame is not a
     // guess that gets corrected a frame later.
     expect(PLANS_SOURCE).toContain('{MONTH_PAGE_HEIGHT > 0 ? (');
-    // Continuous and endless: no snapping, and the window recentres when the
-    // reader nears either edge, so the list never runs out of months.
-    expect(PLANS_SOURCE).not.toContain('pagingEnabled');
+    // Continuous and endless: the month list is a free scroll, and the page
+    // that settles becomes the month on screen, so the window always has
+    // months either side. The behaviour itself (header and loaded month
+    // following the settle) is exercised with real state in plans.test.tsx.
+    // Only the day pager snaps: days are discrete pages, one per swipe.
+    expect(PLANS_SOURCE.match(/pagingEnabled/g)).toHaveLength(1);
     expect(PLANS_SOURCE).toContain('onMomentumScrollEnd={handlePagerSettled}');
-    expect(PLANS_SOURCE).toContain('RECENTER_MARGIN');
+    expect(PLANS_SOURCE).toContain('onMomentumScrollEnd={handleDayPagerSettled}');
     // Room at the end for the FAB, and no inset cutting the grid off above the
     // tab bar: the grid fills the screen and passes behind it.
     expect(PLANS_SOURCE).toContain('paddingBottom: fabBottom + Spacing[8]');
@@ -241,11 +295,19 @@ describe('Plans calendar pager sizing', () => {
 vi.mock('moti', () => ({
   AnimatePresence: ({ children }: { children?: unknown }) => children,
   MotiView: ({ children, ...rest }: Record<string, unknown>) => {
-    const { animate, exit, from, transition, ...props } = rest;
+    const { animate, exit, from, transition, testID, ...props } = rest;
     const style = (props as { style?: unknown }).style;
     const flat = Array.isArray(style)
       ? Object.assign({}, ...style.filter(Boolean))
       : style;
-    return createElement('div', { ...props, style: flat }, children as never);
+    return createElement(
+      'div',
+      {
+        ...props,
+        ...(typeof testID === 'string' ? { 'data-testid': testID } : null),
+        style: flat,
+      },
+      children as never,
+    );
   },
 }));

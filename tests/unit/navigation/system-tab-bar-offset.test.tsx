@@ -79,8 +79,13 @@ describe('timeline clears the docked system bar', () => {
   it('pads the FAB and the list clear of the docked system bar', () => {
     // Insets are owned by the screen, so the list pad and the FAB both use
     // the shared helper to clear the bar rather than trusting the OS.
+    //
+    // The list pad has to clear the FAB as well as the bar, so it adds the
+    // button's own size plus a gap on top of the helper. This assertion used
+    // to name `+ Spacing[8]`, which stopped matching when the list started
+    // reserving room for the 56pt button and was already red before this.
     expect(INDEX_SOURCE).toContain(
-      'fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + Spacing[8]'
+      'fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + FAB_SIZE + Spacing[24]'
     );
     expect(INDEX_SOURCE).toContain(
       'fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios")'

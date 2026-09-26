@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, isValidElement } from 'react';
 
@@ -382,10 +382,6 @@ vi.mock('@/components/home/memory-sky', () => ({
   fabBottomOffset: (inset: number) => inset + 8,
 }));
 
-vi.mock('@/components/space/space-avatar-button', () => ({
-  SpaceAvatarButton: () => null,
-}));
-
 vi.mock('@/components/ui/frosted-backdrop', () => ({ FrostedBackdrop: () => null }));
 
 vi.mock('@/components/ui/glass-surface', () => ({
@@ -481,14 +477,24 @@ function scroll(y: number, options: { range?: number } = {}): void {
 
 async function renderMemories() {
   const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
-  return render(<MemoriesScreen />);
+  const rendered = render(<MemoriesScreen />);
+  // The seen cursor loads async: flush it so rows render before tests drive them.
+  await act(async () => {});
+  return rendered;
+}
+
+// Both presentations stay mounted, so header controls exist twice: these
+// tests drive the feed list and scope to the feed layer.
+function feedLayer() {
+  return within(screen.getByTestId('feed-layer'));
 }
 
 /** Older history pages one bounded chunk at a time; hold it open on demand. */
 let releasePage: (() => void) | null = null;
 
-beforeEach(() => {
+beforeEach(async () => {
   for (const key of Object.keys(capturedLists)) delete capturedLists[key];
+  await globalThis.__mockAsyncStorage.clear();
   loadMoreMoments.mockReset();
   loadMoreMoments.mockImplementation(
     () =>
@@ -516,11 +522,74 @@ describe('Memories feed paging edge', () => {
     expect(list.onEndReachedThreshold).toBeUndefined();
     // The row the reader is on is held while older rows prepend above.
     expect(list.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 0 });
-    // Nothing measures the list to decide whether to show the fetch control:
-    // the control's own height is part of the content it would be measuring,
-    // so a fit test on content size can flap between shown and hidden.
-    expect(list.onContentSizeChange).toBeUndefined();
-    expect(list.onLayout).toBeUndefined();
+    // The list reads its layout for one job only: knowing whether its
+    // content fits the viewport, so a short archive reveals without waiting
+    // for a landing jump that will never come. That measurement never
+    // reaches the fetch control's visibility — the control's own height is
+    // part of the content it would be measuring, so a fit test there can
+    // flap between shown and hidden. Visibility stays hasMore plus row
+    // count, and the content size below still serves only the landing.
+    expect(typeof list.onLayout).toBe('function');
+    expect(typeof list.onContentSizeChange).toBe('function');
+  });
+
+  it('lands on the newest memory until the reader takes over', async () => {
+    await renderMemories();
+    const list = feedList();
+    const scrollToEnd = vi.fn();
+    // React 19 hands a function component its ref as a plain prop, and the
+    // harness keeps every prop, so the list's own handle is reachable here.
+    expect(list.ref).toBeTruthy();
+    list.ref.current = { scrollToEnd };
+
+    // Content arriving is what makes the newest reachable, so that is when
+    // the landing runs. The feed reads oldest-first with older history
+    // prepending above, so the present is the end of the list.
+    act(() => {
+      list.onContentSizeChange?.();
+    });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+
+    // Once the reader drags, the position is theirs: later content changes
+    // (an older page prepending) must not drag them back to the end.
+    scrollToEnd.mockClear();
+    act(() => {
+      list.onScrollBeginDrag?.();
+      list.onContentSizeChange?.();
+    });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('holds each list invisible until it has landed', async () => {
+    await renderMemories();
+    const feedOpacity = () =>
+      (screen.getByTestId('feed-layer') as HTMLElement).style.opacity;
+    const galleryOpacity = () =>
+      (screen.getByTestId('gallery-layer') as HTMLElement).style.opacity;
+
+    // Before any content, both layers are transparent: the top-of-archive
+    // frame must never paint.
+    expect(feedOpacity()).toBe('0');
+    expect(galleryOpacity()).toBe('0');
+
+    // A short archive cannot jump anywhere, so content alone reveals it.
+    act(() => {
+      feedList().onLayout?.({ nativeEvent: { layout: { height: 844 } } });
+      feedList().onContentSizeChange?.(390, 400);
+    });
+    expect(feedOpacity()).not.toBe('0');
+
+    // A long archive reveals on the landing scroll, not before it — even
+    // once it is the visible tab, where a premature reveal would flash.
+    act(() => {
+      galleryList().onLayout?.({ nativeEvent: { layout: { height: 844 } } });
+      galleryList().onContentSizeChange?.(390, 4000);
+    });
+    expect(galleryOpacity()).toBe('0');
+    fireEvent.click(screen.getByText('Gallery'));
+    expect(galleryOpacity()).toBe('0');
+    scrollList(galleryList(), 3000);
+    expect(galleryOpacity()).not.toBe('0');
   });
 
   it('gives the gallery, which shares the same archive, the same wiring', async () => {
@@ -531,6 +600,39 @@ describe('Memories feed paging edge', () => {
     expect(list.onEndReached).toBeUndefined();
     expect(list.onEndReachedThreshold).toBeUndefined();
     expect(list.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 0 });
+  });
+
+  it('switches presentations without re-landing either list', async () => {
+    await renderMemories();
+    const feedScrollToEnd = vi.fn();
+    const galleryScrollToEnd = vi.fn();
+    feedList().ref.current = { scrollToEnd: feedScrollToEnd };
+    galleryList().ref.current = { scrollToEnd: galleryScrollToEnd };
+
+    // Both lists land once, on mount, before the reader has touched anything.
+    act(() => {
+      feedList().onContentSizeChange?.();
+    });
+    act(() => {
+      galleryList().onContentSizeChange?.();
+    });
+    expect(feedScrollToEnd).toHaveBeenCalledTimes(1);
+    expect(galleryScrollToEnd).toHaveBeenCalledTimes(1);
+
+    // Switching reveals the already-landed list: no mount, no jump to
+    // newest, no flash — and no second landing afterwards either.
+    fireEvent.click(screen.getByText('Gallery'));
+    fireEvent.click(screen.getByText('Feed'));
+    expect(feedScrollToEnd).toHaveBeenCalledTimes(1);
+    expect(galleryScrollToEnd).toHaveBeenCalledTimes(1);
+
+    // Both layers stay mounted, exactly one of them visible and audible.
+    expect(screen.getByTestId('feed-layer')).toBeTruthy();
+    expect(screen.getByTestId('gallery-layer')).toBeTruthy();
+    expect(
+      screen.getByTestId('gallery-layer').getAttribute('aria-hidden'),
+    ).toBe('true');
+    expect(screen.getByTestId('feed-layer').getAttribute('aria-hidden')).toBe('false');
   });
 
   it('does not page when the reader reaches the bottom', async () => {
@@ -572,14 +674,14 @@ describe('Memories feed paging edge', () => {
     await renderMemories();
     scroll(320);
     scroll(0);
-    const header = screen.getByTestId('list-header');
+    const header = feedLayer().getByTestId('list-header');
     expect(header.textContent).toContain('Loading earlier');
     expect(screen.queryByTestId('list-footer')).toBeNull();
 
     // The caption gives way to the resting control, never to nothing.
     await settlePage();
-    expect(screen.queryByText('Loading earlier…')).toBeNull();
-    expect(screen.getByLabelText('Load earlier memories')).toBeTruthy();
+    expect(feedLayer().queryByText('Loading earlier…')).toBeNull();
+    expect(feedLayer().getByLabelText('Load earlier memories')).toBeTruthy();
   });
 
   it('arms a short feed at the range it actually has', async () => {
@@ -610,19 +712,19 @@ describe('Memories feed paging edge', () => {
     scroll(0, { range: 0 });
     expect(loadMoreMoments).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText('Load earlier memories'));
+    fireEvent.click(feedLayer().getByLabelText('Load earlier memories'));
     expect(loadMoreMoments).toHaveBeenCalledTimes(1);
 
     // While the page is in flight the control gives way to the caption, so
     // it cannot be pressed twice.
-    expect(screen.queryByLabelText('Load earlier memories')).toBeNull();
-    expect(screen.getByTestId('list-header').textContent).toContain('Loading earlier');
+    expect(feedLayer().queryByLabelText('Load earlier memories')).toBeNull();
+    expect(feedLayer().getByTestId('list-header').textContent).toContain('Loading earlier');
 
     await settlePage();
 
     // The archive still has more, so the control is back and asking again is
     // one more page — never a cascade on its own.
-    fireEvent.click(screen.getByLabelText('Load earlier memories'));
+    fireEvent.click(feedLayer().getByLabelText('Load earlier memories'));
     expect(loadMoreMoments).toHaveBeenCalledTimes(2);
     await settlePage();
     expect(loadMoreMoments).toHaveBeenCalledTimes(2);
@@ -630,7 +732,7 @@ describe('Memories feed paging edge', () => {
 
   it('keeps the top edge paging while the control is offered', async () => {
     await renderMemories();
-    expect(screen.getByLabelText('Load earlier memories')).toBeTruthy();
+    expect(feedLayer().getByLabelText('Load earlier memories')).toBeTruthy();
     // The control is an addition to the top edge, not a replacement for it:
     // a scrollable feed still pages by leaving and returning to the top.
     scroll(320);
@@ -652,24 +754,13 @@ describe('Memories feed paging edge', () => {
     expect(loadMoreMoments).not.toHaveBeenCalled();
   });
 
-  it('disarms the top edge when the query narrows the archive', async () => {
-    await renderMemories();
-    scroll(320);
-    fireEvent.click(screen.getByLabelText('Search memories'));
-    const field = screen.getByPlaceholderText('Search memories');
-    fireEvent.change(field, { target: { value: 'lake' } });
-    // A filter can clamp the list back to the top; the stale arm may not fire.
-    scroll(0);
-    expect(loadMoreMoments).not.toHaveBeenCalled();
-  });
-
   it('offers a retry when a page fails, and re-asks for the same page', async () => {
     // A page that failed keeps its cursor and says so, instead of looking
     // like a page that simply has not arrived.
     pagingError = 'offline';
     await renderMemories();
-    const retry = screen.getByLabelText("Couldn't load earlier memories. Try again");
-    expect(screen.queryByLabelText('Load earlier memories')).toBeNull();
+    const retry = feedLayer().getByLabelText("Couldn't load earlier memories. Try again");
+    expect(feedLayer().queryByLabelText('Load earlier memories')).toBeNull();
 
     fireEvent.click(retry);
     expect(loadMoreMoments).toHaveBeenCalledTimes(1);
@@ -682,5 +773,85 @@ describe('Memories feed paging edge', () => {
     scroll(0);
     expect(loadMoreMoments).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Load earlier memories')).toBeNull();
+  });
+});
+
+describe('Memories unread landing', () => {
+  const SEEN_KEY = 'aoi.feed.seen.v1.space-1';
+
+  async function seedCursor(iso: string) {
+    await globalThis.__mockAsyncStorage.setItem(SEEN_KEY, iso);
+  }
+
+  function withPartnerPost() {
+    MOMENTS.push(
+      moment('p-1', '2026-02-10T10:00:00.000Z', {
+        authorRole: 'partner',
+        authorId: 'user_partner',
+        authorName: 'Alex',
+        isOwn: false,
+      }),
+    );
+  }
+
+  it('lands on the first unread partner post instead of the newest', async () => {
+    withPartnerPost();
+    try {
+      await seedCursor('2026-02-01T10:00:00.000Z');
+      await renderMemories();
+      const scrollToEnd = vi.fn();
+      const scrollToIndex = vi.fn();
+      feedList().ref.current = { scrollToEnd, scrollToIndex };
+      act(() => {
+        feedList().onContentSizeChange?.(390, 4000);
+      });
+      // Rows: month, m-1, m-2, month, m-3, p-1 — the unread post is last.
+      expect(scrollToIndex).toHaveBeenCalledWith({
+        animated: false,
+        index: 5,
+        viewPosition: 0.2,
+      });
+      expect(scrollToEnd).not.toHaveBeenCalled();
+    } finally {
+      MOMENTS.pop();
+    }
+  });
+
+  it('lands on the newest post when caught up', async () => {
+    await seedCursor('2026-02-02T10:00:00.000Z');
+    await renderMemories();
+    const scrollToEnd = vi.fn();
+    feedList().ref.current = { scrollToEnd };
+    act(() => {
+      feedList().onContentSizeChange?.(390, 4000);
+    });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  it('seeds a first run as caught up instead of calling everything unread', async () => {
+    await renderMemories();
+    const scrollToEnd = vi.fn();
+    feedList().ref.current = { scrollToEnd };
+    act(() => {
+      feedList().onContentSizeChange?.(390, 4000);
+    });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(await globalThis.__mockAsyncStorage.getItem(SEEN_KEY)).toBe(
+      '2026-02-02T10:00:00.000Z',
+    );
+  });
+
+  it('marks the archive seen on reading through the bottom', async () => {
+    await seedCursor('2026-01-01T10:00:00.000Z');
+    await renderMemories();
+    feedList().ref.current = { scrollToEnd: vi.fn() };
+    act(() => {
+      feedList().onContentSizeChange?.(390, 4000);
+    });
+    // Resting at the bottom after reading through: the newest is seen.
+    scroll(3900, { range: 4000 });
+    expect(await globalThis.__mockAsyncStorage.getItem(SEEN_KEY)).toBe(
+      '2026-02-02T10:00:00.000Z',
+    );
   });
 });

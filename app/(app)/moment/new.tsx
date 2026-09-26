@@ -1,5 +1,10 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback } from "react";
+import {
+	useLocalSearchParams,
+	useNavigation,
+	useRouter,
+	type NativeStackNavigationProp,
+} from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet } from "react-native";
 import Animated, {
 	useAnimatedKeyboard,
@@ -11,17 +16,28 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 
 export default function NewMemoryScreen() {
 	const router = useRouter();
+	const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
 	const background = useThemeColor({}, "background");
 	const isIos = process.env.EXPO_OS === "ios";
 	const { compose } = useLocalSearchParams<{ compose?: string | string[] }>();
+	const [presentationReady, setPresentationReady] = useState(process.env.EXPO_OS !== "ios");
+
+	useEffect(() => {
+		if (process.env.EXPO_OS !== "ios") return;
+		const unsubscribe = navigation.addListener("transitionEnd", (event) => {
+			if (event.data.closing) return;
+			setPresentationReady(true);
+		});
+		return unsubscribe;
+	}, [navigation]);
 
 	const handleIntentConsumed = useCallback(() => {
 		router.setParams({ compose: undefined });
 	}, [router]);
 
-	// The sheet owns its chrome (Cancel/title/Save live in the composer),
-	// so the navigator renders no header — see the static headerShown in
-	// (app)/_layout. Keyboard avoidance tracks the reported keyboard
+	// The composer owns the editor body; iOS native sheet chrome supplies its
+	// title and Cancel/Save actions, while Android/web keep the custom bar.
+	// Keyboard avoidance tracks the reported keyboard
 	// height directly: KeyboardAvoidingView derives its offset from layout
 	// measurements that go stale during the sheet's detent animation
 	// (controls end up under the keyboard and stick there), while the
@@ -36,7 +52,11 @@ export default function NewMemoryScreen() {
 		<Animated.View
 			style={[styles.root, { backgroundColor: background }, keyboardStyle]}
 		>
-			<InlineMemoryComposer intent={compose} onIntentConsumed={handleIntentConsumed} />
+			<InlineMemoryComposer
+				intent={compose}
+				onIntentConsumed={handleIntentConsumed}
+				presentationReady={presentationReady}
+			/>
 		</Animated.View>
 	);
 }

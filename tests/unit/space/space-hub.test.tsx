@@ -238,7 +238,7 @@ beforeEach(() => {
 });
 
 async function renderSpace() {
-  const { default: SpaceScreen } = await import('@/app/(app)/space');
+  const { default: SpaceScreen } = await import('@/app/(app)/(tabs)/space');
   return render(<SpaceScreen />);
 }
 
@@ -346,13 +346,17 @@ describe('Space account segment (same screen, no nested settings route)', () => 
     expect(replaceSpy).toHaveBeenCalledWith('/(public)');
   });
 
+  // Both confirmations render in the app's own sheet rather than a system
+  // alert. What matters is unchanged and still asserted: the reader is asked
+  // first, and the retention guarantee is spelled out before they decide.
   it('confirms leaving with the retention contract', async () => {
     await openAccount();
     fireEvent.click(screen.getByText('Leave space'));
-    expect(lastAlert?.title).toBe('Leave this space?');
-    expect(lastAlert?.message ?? '').toMatch(/partner keeps the shared memories/);
+    expect(await screen.findByText('Leave this space?')).toBeTruthy();
+    expect(screen.getByText(/partner keeps the shared memories/)).toBeTruthy();
+    expect(leaveSpaceSpy).not.toHaveBeenCalled();
     await act(async () => {
-      lastAlert?.buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+      fireEvent.click(screen.getByText('Leave this space'));
     });
     expect(leaveSpaceSpy).toHaveBeenCalledTimes(1);
     expect(replaceSpy).toHaveBeenCalledWith('/(auth)/space-setup');
@@ -361,11 +365,12 @@ describe('Space account segment (same screen, no nested settings route)', () => 
   it('confirms deletion with the retention contract', async () => {
     await openAccount();
     fireEvent.click(screen.getByText('Delete account'));
-    expect(lastAlert?.title).toBe('Delete your account?');
-    expect(lastAlert?.message ?? '').toMatch(/stay with your partner/);
-    expect(lastAlert?.message ?? '').toMatch(/cannot be undone/);
+    expect(await screen.findByText('Delete your account?')).toBeTruthy();
+    expect(screen.getByText(/stay with your partner/)).toBeTruthy();
+    expect(screen.getByText(/cannot be undone/)).toBeTruthy();
+    expect(deleteAccountSpy).not.toHaveBeenCalled();
     await act(async () => {
-      lastAlert?.buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+      fireEvent.click(screen.getByText('Delete my account'));
     });
     expect(deleteAccountSpy).toHaveBeenCalledTimes(1);
     expect(replaceSpy).toHaveBeenCalledWith('/(public)');

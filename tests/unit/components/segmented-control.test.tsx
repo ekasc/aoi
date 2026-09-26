@@ -194,13 +194,14 @@ describe('Feed/Gallery tab accessibility', () => {
     },
   ];
 
-  function renderTabs(props?: { hidden?: boolean }) {
+  function renderTabs(props?: { hidden?: boolean; size?: 'regular' | 'compact' }) {
     return render(
       <SegmentedControl
         accessibilityLabel="Memories view"
         hidden={props?.hidden}
         onChange={() => {}}
         options={options}
+        size={props?.size}
         value="feed"
       />
     );
@@ -227,6 +228,15 @@ describe('Feed/Gallery tab accessibility', () => {
     for (const name of ['Feed', 'Gallery']) {
       const style = window.getComputedStyle(screen.getByRole('tab', { name }));
       expect(Number.parseFloat(style.minHeight)).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  it('compact size shrinks segments for tight chrome', () => {
+    renderTabs({ size: 'compact' });
+
+    for (const name of ['Feed', 'Gallery']) {
+      const style = window.getComputedStyle(screen.getByRole('tab', { name }));
+      expect(Number.parseFloat(style.minHeight)).toBe(36);
     }
   });
 

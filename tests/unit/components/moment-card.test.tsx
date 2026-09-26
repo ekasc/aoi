@@ -596,39 +596,35 @@ describe('MomentCard presentation="timeline" (Memories compact row)', () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
-  it('opens the native popover from the ellipsis instead of the sheet fallback', () => {
+  it('opens the action sheet from the ellipsis, and never navigates', () => {
+    // One menu path on every platform. This used to be a native MenuView
+    // wrapping a plain View that announced as a button but only the native
+    // touch reached, so the trigger existed and the long-press did the work.
+    // The long-press still opens the platform menu where there is one; the
+    // ellipsis is an honest button everywhere.
     const onPress = vi.fn();
     const onActions = vi.fn();
-    const onAction = vi.fn();
-    const { container } = render(
+    render(
       <MomentCard
         moment={makeMoment()}
         presentation="timeline"
         onPress={onPress}
         onActions={onActions}
-        nativeActionsMenu={{
-          actions: [
-            { id: 'edit', title: 'Edit' },
-            { id: 'delete', title: 'Delete', attributes: { destructive: true } },
-          ],
-          title: 'Test moment',
-          onAction,
-        }}
       />
     );
-    // The trigger rides the native menu...
-    const menu = screen.getByTestId('native-actions-menu');
-    expect(menu.querySelector('[aria-label="More actions"]')).toBeTruthy();
-    expect(container.contains(menu)).toBe(true);
-    // ...tapping it never fires the sheet fallback, and never navigates.
-    fireEvent.click(screen.getByLabelText('More actions'));
-    expect(onActions).not.toHaveBeenCalled();
+
+    // A real, activatable control rather than a view dressed up as one. The
+    // RN mock surfaces this as a name plus a click handler, which is the part
+    // that was missing: the old native trigger had a role and a label but
+    // nothing a screen reader could actually fire.
+    const trigger = screen.getByLabelText('More actions');
+    expect(trigger.getAttribute('aria-label')).toBe('More actions');
+    expect(trigger.getAttribute('onclick') ?? trigger.onclick).toBeTruthy();
+
+    fireEvent.click(trigger);
+    expect(onActions).toHaveBeenCalledWith('moment-1');
+    // Actions never navigate: that is the whole point of a separate control.
     expect(onPress).not.toHaveBeenCalled();
-    // Menu actions route through onAction with the native event id.
-    fireEvent.click(menu.querySelector('[data-menu-action="edit"]') as HTMLElement);
-    expect(onAction).toHaveBeenCalledWith('edit');
-    fireEvent.click(menu.querySelector('[data-menu-action="delete"]') as HTMLElement);
-    expect(onAction).toHaveBeenCalledWith('delete');
   });
 
   it('opens a captionless photo fullscreen from its print, never from its byline', () => {

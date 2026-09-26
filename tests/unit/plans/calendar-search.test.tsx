@@ -83,6 +83,7 @@ vi.mock('react-native-reanimated', () => ({
     createAnimatedComponent: (component: unknown) => component,
     View: ({ children }: { children?: unknown }) => createElement('div', {}, children),
   },
+  FadeOut: {},
   FadeIn: {},
   FadeInDown: {},
   ReduceMotion: { System: 'system' },

@@ -116,6 +116,7 @@ import {
   ChapterPhotoStack,
   getChapterPhotoMoments,
 } from '@/components/moments/chapter-photo-stack';
+import { Springs } from '@/constants/theme';
 
 const STACK_SOURCE = readFileSync('components/moments/chapter-photo-stack.tsx', 'utf8');
 const CHAPTER_SOURCE = readFileSync('app/(app)/chapter/[id].tsx', 'utf8');
@@ -311,9 +312,16 @@ describe('ChapterPhotoStack motion and dependency constraints', () => {
     expect(STACK_SOURCE).toContain('useSharedValue');
     expect(STACK_SOURCE).toContain('useAnimatedStyle');
     expect(STACK_SOURCE).toContain('withSpring');
-    expect(STACK_SOURCE).toContain('damping: 32');
-    expect(STACK_SOURCE).toContain('stiffness: 240');
-    expect(STACK_SOURCE).not.toContain('damping: 9');
+    // The settle values moved to the shared token, so this asserts the
+    // physics rather than pinning a number that used to be a local copy.
+    expect(STACK_SOURCE).toContain('Springs.rest');
+    // Critically damped: the damping ratio is c / (2 * sqrt(k * m)), and at
+    // or above 1 the value stops at centre instead of overshooting it.
+    const ratio = Springs.rest.damping / (2 * Math.sqrt(Springs.rest.stiffness * Springs.rest.mass));
+    expect(ratio).toBeGreaterThanOrEqual(1);
+    expect(Springs.rest.overshootClamping).toBe(true);
+    // A ratio well under 1 is the bouncy release this used to guard against.
+    expect(ratio).toBeLessThan(1.2);
   });
 
   it('honours reduced motion with static rotation-free steps', () => {
@@ -340,7 +348,9 @@ describe('chapter detail photo-stack wiring', () => {
     expect(CHAPTER_SOURCE).toContain('ChapterPhotoStack');
     expect(CHAPTER_SOURCE).toContain('onOpenMoment');
     expect(CHAPTER_SOURCE).toContain("pathname: '/(app)/moment/[id]'");
-    expect(CHAPTER_SOURCE).toContain('at: moment.occurredAt');
+    // The stack adapter still hands the whole moment's date to the shared
+    // navigator, so the destination screen gets its `at` hint.
+    expect(CHAPTER_SOURCE).toContain('navigateToMember(moment.id, moment.occurredAt)');
     expect(CHAPTER_SOURCE).toContain('MomentCard');
     expect(CHAPTER_SOURCE).toContain('ChapterCover');
   });

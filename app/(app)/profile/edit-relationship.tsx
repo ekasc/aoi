@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Divider } from '@/components/ui/divider';
 import { Spacing } from '@/constants/theme';
 import { useSpace } from '@/features/space/space-context';
+import { parseRelationshipStart } from '@/features/calendar/calendar-date-utils';
+import { buildRelationshipUpdateInput } from '@/features/space/update-input';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function EditRelationshipScreen() {
@@ -30,9 +32,10 @@ export default function EditRelationshipScreen() {
   const background = useThemeColor({}, 'background');
   const [name, setName] = useState(space?.name ?? '');
   const [partnerName, setPartnerName] = useState(space?.partnerName ?? '');
-  const [relationshipStartDate, setRelationshipStartDate] = useState(() =>
-    space?.relationshipStartDate ? new Date(space.relationshipStartDate) : new Date()
+  const [relationshipStartDate, setRelationshipStartDate] = useState<Date | null>(() =>
+    space?.relationshipStartDate ? parseRelationshipStart(space.relationshipStartDate) : null
   );
+  const [relationshipDateChanged, setRelationshipDateChanged] = useState(false);
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -70,18 +73,20 @@ export default function EditRelationshipScreen() {
 
     try {
       setIsSaving(true);
-      await updateSpace({
-        name: trimmedSpaceName,
-        partnerName: trimmedPartnerName,
-        relationshipStartDate: relationshipStartDate.toISOString(),
-      });
+      await updateSpace(
+        buildRelationshipUpdateInput(
+          trimmedSpaceName,
+          trimmedPartnerName,
+          relationshipDateChanged ? relationshipStartDate : null,
+        ),
+      );
       router.back();
     } catch {
       setError('Unable to save. Please try again.');
     } finally {
       setIsSaving(false);
     }
-  }, [name, partnerName, relationshipStartDate, router, updateSpace]);
+  }, [name, partnerName, relationshipDateChanged, relationshipStartDate, router, updateSpace]);
 
   if (!space) {
     return (
@@ -163,24 +168,39 @@ export default function EditRelationshipScreen() {
 
           <View style={styles.section}>
             <ThemedText type="meta" style={{ color: muted }}>
-              Start date
+              Relationship start date (optional)
             </ThemedText>
-            <NativeDateTimeField
-              accessibilityLabel="Choose relationship start date"
-              label="Start date"
-              mode="date"
-              onChange={(nextDate) => {
-                setRelationshipStartDate(nextDate);
-                setError('');
-              }}
-              value={relationshipStartDate}
-            />
+            {relationshipStartDate ? (
+              <NativeDateTimeField
+                accessibilityLabel="Choose relationship start date"
+                label="Start date"
+                mode="date"
+                onChange={(nextDate) => {
+                  setRelationshipStartDate(nextDate);
+                  setRelationshipDateChanged(true);
+                  setError('');
+                }}
+                value={relationshipStartDate}
+              />
+            ) : (
+              <Button
+                label="Add relationship start date"
+                onPress={() => {
+                  setRelationshipStartDate(new Date());
+                  setRelationshipDateChanged(true);
+                  setError('');
+                }}
+                variant="secondary"
+              />
+            )}
             <ThemedText type="caption" style={{ color: muted }} selectable>
-              {relationshipStartDate.toLocaleDateString('en-US', {
+              {relationshipStartDate
+                ? relationshipStartDate.toLocaleDateString('en-US', {
                 month: 'long',
                 day: 'numeric',
                 year: 'numeric',
-              })}
+                })
+                : 'Add the date you started your relationship when you want Aoi to tailor suggestions.'}
             </ThemedText>
 
             {error ? (
@@ -225,8 +245,7 @@ const styles = StyleSheet.create({
     gap: Spacing[32],
   },
   hero: {
-    fontSize: 34,
-    lineHeight: 40,
+    letterSpacing: -0.6,
     fontWeight: '400',
     marginBottom: Spacing[4],
     flexWrap: 'wrap',
@@ -240,7 +259,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: Spacing[12],
     paddingVertical: Spacing[12],
-    fontSize: 16,
   },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,

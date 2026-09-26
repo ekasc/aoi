@@ -11,7 +11,9 @@ const pushApiMock = vi.hoisted(() => ({
   registerPushToken: vi.fn(async () => {}),
 }));
 
-vi.mock('expo-notifications', () => notificationsMock);
+vi.mock('@/features/notifications/notifications-module', () => ({
+  notificationsModule: () => notificationsMock,
+}));
 vi.mock('@/features/push/push-api', () => pushApiMock);
 
 const VALID_TOKEN = 'ExpoPushToken[test-device-token-123]';

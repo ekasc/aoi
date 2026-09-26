@@ -77,6 +77,44 @@ export default function TabsLayout() {
           }}
         />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="space">
+        <NativeTabs.Trigger.Label>Space</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'person', selected: 'person.fill' }}
+          src={{
+            default: (
+              <NativeTabs.Trigger.VectorIcon
+                family={Ionicons}
+                name="person-outline"
+              />
+            ),
+            selected: (
+              <NativeTabs.Trigger.VectorIcon family={Ionicons} name="person" />
+            ),
+          }}
+        />
+      </NativeTabs.Trigger>
+      {/* THROWAWAY. A probe for the "photos of us" idea, on its own tab so
+          it can be judged on a real phone. Dev builds only. */}
+      {__DEV__ ? (
+        <NativeTabs.Trigger name="dev-us-album">
+          <NativeTabs.Trigger.Label>Album</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            sf={{ default: 'person.2', selected: 'person.2.fill' }}
+            src={{
+              default: (
+                <NativeTabs.Trigger.VectorIcon
+                  family={Ionicons}
+                  name="people-outline"
+                />
+              ),
+              selected: (
+                <NativeTabs.Trigger.VectorIcon family={Ionicons} name="people" />
+              ),
+            }}
+          />
+        </NativeTabs.Trigger>
+      ) : null}
     </NativeTabs>
   );
 }

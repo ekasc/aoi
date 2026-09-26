@@ -80,6 +80,7 @@ vi.mock('react-native-reanimated', () => {
       },
     },
     FadeIn: chain,
+    FadeOut: chain,
     ReduceMotion: { System: 'system' },
     useReducedMotion: () => false,
   };
@@ -120,8 +121,8 @@ vi.mock('@/components/ui/surface', () => ({
 vi.mock('@/hooks/use-theme-color', () => ({
   // Distinct tokens so authorship (the dot) and readiness (warning) stay observable.
   useThemeColor: (_overrides: unknown, name: string) => {
-    if (name === 'accent') return '#aa1111';
-    if (name === 'partnerAccent') return '#11aa11';
+    if (name === 'accentInk') return '#aa1111';
+    if (name === 'partnerAccentInk') return '#11aa11';
     if (name === 'warning') return '#c19a11';
     return '#000000';
   },

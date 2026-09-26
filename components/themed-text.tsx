@@ -6,7 +6,7 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 export type ThemedTextProps = TextProps & {
 	lightColor?: string;
 	darkColor?: string;
-	type?: "display" | "title" | "subheading" | "body" | "bodyEmphasis" | "supporting" | "caption" | "label" | "meta" | "link";
+	type?: "hero" | "display" | "title" | "subheading" | "body" | "bodyEmphasis" | "supporting" | "caption" | "label" | "meta" | "link";
 };
 
 export function ThemedText({
@@ -32,7 +32,7 @@ export function ThemedText({
 	// as headers so screen readers can navigate by heading; callers can still
 	// override with an explicit accessibilityRole.
 	const headingRole =
-		type === "display" || type === "title" || type === "subheading"
+		type === "hero" || type === "display" || type === "title" || type === "subheading"
 			? "header"
 			: undefined;
 
@@ -41,6 +41,7 @@ export function ThemedText({
 			accessibilityRole={accessibilityRole ?? headingRole}
 			style={[
 				styles.base,
+				type === "hero" ? styles.hero : undefined,
 				type === "display" ? styles.display : undefined,
 				type === "title" ? styles.title : undefined,
 				type === "subheading" ? styles.subheading : undefined,
@@ -63,6 +64,7 @@ const styles = StyleSheet.create({
 	base: {
 		includeFontPadding: false,
 	},
+	hero: Typography.hero,
 	display: Typography.display,
 	title: Typography.title,
 	subheading: {

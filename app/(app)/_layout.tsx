@@ -9,6 +9,7 @@ import { PartnerDetailsProvider } from "@/features/partner-details/partner-detai
 import { ProposalsProvider } from "@/features/proposals/proposals-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
+import { ResponsesProvider } from "@/features/responses/responses-context";
 import { useSession } from "@/features/session/session-context";
 import { SomedayProvider } from "@/features/someday/someday-context";
 import { useSpace } from "@/features/space/space-context";
@@ -19,9 +20,9 @@ import { ComposerProvider } from "@/features/composer/composer-context";
 import { useDevSeed } from "@/features/dev/preview";
 import { FontFamilies } from "@/constants/typography";
 
-// Space (the profile) is a detail hoisted above the tabs. Anchoring the stack
-// to (tabs) guarantees the anchor is seeded beneath any direct entry (deep
-// link, redirect, dev preview), so its native header always has a back button.
+// Anchoring the stack to (tabs) guarantees the tab bar is seeded beneath
+// any direct entry (deep link, redirect, dev preview), so pushed screens
+// always have somewhere to go back to.
 export const unstable_settings = { anchor: "(tabs)" };
 
 export default function AuthenticatedAppLayout() {
@@ -49,7 +50,7 @@ export default function AuthenticatedAppLayout() {
 	if (!isSessionHydrated || status === "loading") {
 		return (
 			<View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
-				<ActivityIndicator color={colors.accent} />
+				<ActivityIndicator color={colors.accentInk} />
 			</View>
 		);
 	}
@@ -61,7 +62,7 @@ export default function AuthenticatedAppLayout() {
 	if (!isSpaceHydrated || !isThemeHydrated) {
 		return (
 			<View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
-				<ActivityIndicator color={colors.accent} />
+				<ActivityIndicator color={colors.accentInk} />
 			</View>
 		);
 	}
@@ -79,6 +80,7 @@ export default function AuthenticatedAppLayout() {
 							<ProposalsProvider>
 							<LettersProvider>
 							<PushProvider>
+								<ResponsesProvider>
 								<ComposerProvider>
 								<SqueezeOverlay />
 							<Stack
@@ -90,19 +92,11 @@ export default function AuthenticatedAppLayout() {
 										headerTitleStyle: { fontFamily: FontFamilies.body },
 									}}
 								>
-									<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-									{/* Legacy compat redirect (P2A): no header flash before it resolves. */}
-									<Stack.Screen name="profile" options={{ headerShown: false }} />
-									<Stack.Screen
-										name="space"
-										options={{
-											// A pushed view, not a sheet: the profile lives
-											// in its own screen with a native back button.
-											title: "Space",
-										}}
-									/>
-									{/* Legacy setting deep link: redirects into Space. */}
-									<Stack.Screen name="settings" options={{ headerShown: false }} />
+								<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+								{/* Legacy compat redirect (P2A): no header flash before it resolves. */}
+								<Stack.Screen name="profile" options={{ headerShown: false }} />
+								{/* Legacy setting deep link: redirects into Space. */}
+								<Stack.Screen name="settings" options={{ headerShown: false }} />
 									<Stack.Screen
 										name="moment/trace"
 										options={{
@@ -263,6 +257,7 @@ export default function AuthenticatedAppLayout() {
 									/>
 								</Stack>
 								</ComposerProvider>
+								</ResponsesProvider>
 							</PushProvider>
 							</LettersProvider>
 							</ProposalsProvider>

@@ -8,6 +8,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { Typography } from '@/constants/typography';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type PaperTextInputProps = Omit<RNTextInputProps, 'style'> & {
@@ -91,8 +92,7 @@ const styles = StyleSheet.create({
   input: {
     minHeight: 48,
     paddingVertical: Spacing[8],
-    fontSize: 16,
-    lineHeight: 24,
+    ...Typography.body,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   inputFocused: {

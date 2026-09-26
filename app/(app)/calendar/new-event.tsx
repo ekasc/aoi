@@ -14,7 +14,7 @@ import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Spacing } from '@/constants/theme';
-import { FontFamilies } from '@/constants/typography';
+import { Typography } from '@/constants/typography';
 import { useCalendar } from '@/features/calendar/calendar-context';
 import { addDays, initialEventStart, startOfDay } from '@/features/calendar/calendar-date-utils';
 import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
@@ -25,6 +25,14 @@ function datePlusOneHour(date: Date) {
   return new Date(date.getTime() + 60 * 60 * 1000);
 }
 
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * The day a new event is seeded onto. A date-only `YYYY-MM-DD` param names a
+ * local calendar day, not UTC midnight — parsing it with `new Date(value)`
+ * would land on the previous day anywhere west of UTC. A full ISO timestamp
+ * keeps its instant, and the local calendar day is read from it later.
+ */
 function getSeedDate(rawDate: string | string[] | undefined) {
   const dateValue = Array.isArray(rawDate) ? rawDate[0] : rawDate;
 
@@ -32,7 +40,11 @@ function getSeedDate(rawDate: string | string[] | undefined) {
     return null;
   }
 
-  const parsedDate = new Date(dateValue);
+  const dateOnly = DATE_ONLY_PATTERN.exec(dateValue);
+  const parsedDate = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(dateValue);
+
   if (Number.isNaN(parsedDate.getTime())) {
     return null;
   }
@@ -371,10 +383,7 @@ const styles = StyleSheet.create({
     gap: Spacing[8],
   },
   titleInput: {
-    fontFamily: FontFamilies.display,
-    fontSize: 22,
-    lineHeight: 30,
-    letterSpacing: -0.2,
+    ...Typography.inputDisplay,
     minHeight: 44,
     paddingVertical: Spacing[8],
     borderBottomWidth: StyleSheet.hairlineWidth,

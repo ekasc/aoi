@@ -1,0 +1,21 @@
+0 verbose cli /usr/local/bin/node /Users/ekassinghchhabra/.local/bin/npm
+1 info using npm@12.0.2
+2 info using node@v20.9.0
+3 warn cli npm v12.0.2 does not support Node.js v20.9.0. This version of npm supports the following node versions: `^22.22.2 || ^24.15.0 || >=26.0.0`. You can find the latest version at https://nodejs.org/.
+4 silly config load:file:/Users/ekassinghchhabra/.hermes/node/lib/node_modules/npm/npmrc
+5 silly config load:file:/Users/ekassinghchhabra/Projects/ts/aoi/marketing-site/.npmrc
+6 silly config load:file:/dev/null
+7 silly config load:file:/usr/local/etc/npmrc
+8 verbose title npm run preview --host 127.0.0.1 --port 4173
+9 verbose argv "run" "preview" "--" "--host" "127.0.0.1" "--port" "4173"
+10 verbose logfile logs-max:10 dir:/Users/ekassinghchhabra/Projects/ts/aoi/.npm/_logs/2026-09-26T01_34_56_795Z-
+11 verbose logfile /Users/ekassinghchhabra/Projects/ts/aoi/.npm/_logs/2026-09-26T01_34_56_795Z-debug-0.log
+12 silly logfile done cleaning log files
+13 notice run preview
+14 notice run vite preview --host 127.0.0.1 --port 4173
+15 verbose cwd /Users/ekassinghchhabra/Projects/ts/aoi/marketing-site
+16 verbose os Darwin 27.0.0
+17 verbose node v20.9.0
+18 verbose npm  v12.0.2
+19 verbose exit 1
+20 verbose code 1

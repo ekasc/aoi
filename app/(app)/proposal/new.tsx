@@ -14,7 +14,7 @@ import { NativeDateTimeField } from "@/components/forms/native-date-time-field";
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Spacing } from "@/constants/theme";
-import { FontFamilies } from "@/constants/typography";
+import { Typography } from "@/constants/typography";
 import { CALENDAR_PRESET_LABELS } from "@/features/calendar/types";
 import type { CalendarPresetLabel } from "@/features/calendar/types";
 import { useProposals } from "@/features/proposals/proposals-context";
@@ -372,10 +372,7 @@ const styles = StyleSheet.create({
 		gap: Spacing[8],
 	},
 	titleInput: {
-		fontFamily: FontFamilies.display,
-		fontSize: 22,
-		lineHeight: 30,
-		letterSpacing: -0.2,
+		...Typography.inputDisplay,
 		minHeight: 44,
 		paddingVertical: Spacing[8],
 		borderBottomWidth: StyleSheet.hairlineWidth,

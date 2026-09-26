@@ -97,6 +97,7 @@ vi.mock('react-native-reanimated', () => {
         createElement('div', {}, children),
     },
     FadeIn: chain,
+    FadeOut: chain,
     FadeInDown: chain,
     ReduceMotion: { System: 'system' },
     useReducedMotion: () => false,

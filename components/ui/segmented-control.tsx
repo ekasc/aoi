@@ -19,6 +19,12 @@ export type SegmentedControlProps<T extends string> = {
   onChange: (value: T) => void;
   accessibilityLabel?: string;
   hidden?: boolean;
+  /**
+   * `compact` shrinks the pill for tight chrome like the Memories title row:
+   * 36pt segments with supporting-size labels. The 44pt touch target is kept
+   * via an 4pt vertical hitSlop, so screen-reader and touch contracts hold.
+   */
+  size?: 'regular' | 'compact';
 };
 
 /**
@@ -33,12 +39,19 @@ const TRACK_PADDING = Spacing[4];
 const TRACK_GAP = Spacing[4];
 const THUMB_DURATION_MS = 220;
 
+/** Visible segment height; hitSlop pads the touch target back to 44pt. */
+const SEGMENT_MIN_HEIGHT: Record<NonNullable<SegmentedControlProps<string>['size']>, number> = {
+  regular: 44,
+  compact: 36,
+};
+
 export function SegmentedControl<T extends string>({
   options,
   value,
   onChange,
   accessibilityLabel,
   hidden = false,
+  size = 'regular',
 }: SegmentedControlProps<T>) {
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
@@ -122,6 +135,7 @@ export function SegmentedControl<T extends string>({
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             key={option.value}
+            hitSlop={size === 'compact' ? 4 : 0}
             onPress={() => {
               if (!selected) {
                 haptics.select();
@@ -130,6 +144,7 @@ export function SegmentedControl<T extends string>({
             }}
             style={[
               styles.segment,
+              { minHeight: SEGMENT_MIN_HEIGHT[size] },
               // Fallback selection wash before the first measure (tests and
               // the first frame); once measured the sliding thumb owns it.
               segmentWidth <= 0 && selected
@@ -138,7 +153,7 @@ export function SegmentedControl<T extends string>({
             ]}
           >
             <ThemedText
-              type="bodyEmphasis"
+              type={size === 'compact' ? 'supporting' : 'bodyEmphasis'}
               style={{ color: selected ? text : muted }}
             >
               {option.label}
@@ -168,7 +183,6 @@ const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
-    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 999,

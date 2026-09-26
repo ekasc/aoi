@@ -7,8 +7,9 @@ import { useSession } from "@/features/session/session-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 /**
- * Consistent entry to the Space/account surface from Story, Together, and
- * Plans. Shows the signed-in user's initial; Space itself is never a tab.
+ * Consistent entry to the Space tab from Story, Together, and Plans. Shows
+ * the signed-in user's initial. Space is a tab; pushing its route from
+ * inside the tab group lands on it with the tab bar intact.
  */
 export function SpaceAvatarButton() {
 	const router = useRouter();
@@ -21,11 +22,7 @@ export function SpaceAvatarButton() {
 	const initial = rawName.charAt(0).toUpperCase();
 
 	const handlePress = useCallback(() => {
-		// withAnchor loads the (tabs) anchor beneath Space. Space is a detail
-		// hoisted above the tabs, so without this it becomes the first (and
-		// only) route in the (app) stack when opened directly — a deep link or
-		// the dev preview — and the native header renders no back button.
-		router.push("/(app)/space", { withAnchor: true });
+		router.push("/(app)/(tabs)/space", { withAnchor: true });
 	}, [router]);
 
 	return (

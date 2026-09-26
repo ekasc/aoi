@@ -17,7 +17,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
 import { Radii, Spacing } from "@/constants/theme";
-import { FontFamilies } from "@/constants/typography";
+import { Typography } from "@/constants/typography";
 import {
 	addDays,
 	startOfDay,
@@ -37,6 +37,8 @@ import {
 import { useSpace } from "@/features/space/space-context";
 import { useSubscription } from "@/features/subscription/subscription-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { relationshipCopy } from "@/features/relationship/relationship-age";
+import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
 
 // Seal confirmation: springs in scale 0.96 to 1, one short spring, entering only.
 // ReduceMotion.System skips it. Never gates data or delays nav.
@@ -69,6 +71,7 @@ export default function NewLetterScreen() {
 	const { letters, sealLetter, isSealing } = useLetters();
 	const { serverPlus, refreshServerPlus } = useSubscription();
 	const { space } = useSpace();
+	const copy = relationshipCopy(useRelationshipAge(space?.relationshipStartDate).tone);
 	const accent = useThemeColor({}, "accent");
 	const background = useThemeColor({}, "background");
 	const border = useThemeColor({}, "border");
@@ -275,7 +278,7 @@ export default function NewLetterScreen() {
 								For {partnerName ?? "the two of you"}
 							</ThemedText>
 							<ThemedText style={{ color: muted }} type="caption">
-								Write it now; they&apos;ll open it on the day you choose.
+								{copy.letterIntro}
 							</ThemedText>
 						</View>
 
@@ -284,7 +287,7 @@ export default function NewLetterScreen() {
 							maxLength={LETTER_BODY_MAX_LENGTH}
 							multiline
 							onChangeText={setBody}
-							placeholder="Write it as if they'll read it on that day…"
+							placeholder={copy.letterPlaceholder}
 							placeholderTextColor={muted}
 							style={[styles.letterInput, { color: text }]}
 							textAlignVertical="top"
@@ -402,24 +405,15 @@ const styles = StyleSheet.create({
 		gap: Spacing[8],
 	},
 	recipient: {
-		fontFamily: FontFamilies.display,
-		fontSize: 22,
-		lineHeight: 28,
-		letterSpacing: -0.2,
+		...Typography.inputDisplay,
 	},
 	// The display serif makes writing feel like writing, content first.
 	letterInput: {
-		fontFamily: FontFamilies.display,
-		fontSize: 22,
-		lineHeight: 32,
-		letterSpacing: -0.2,
+		...Typography.inputDisplay,
 		minHeight: 240,
 		textAlignVertical: "top",
 	},
-	captionInput: {
-		fontSize: 15,
-		lineHeight: 22,
-	},
+	captionInput: Typography.supporting,
 	dateSection: {
 		gap: Spacing[16],
 	},

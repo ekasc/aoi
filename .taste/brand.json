@@ -1,0 +1,298 @@
+{
+  "version": 1,
+  "foundation": {
+    "strategy": "extend",
+    "existingAssets": [
+      "components/landing/immersive-hero.tsx: lowercase “aoi” text wordmark and editorial serif headline",
+      "constants/landing-theme.ts: fixed midnight landing palette",
+      "constants/theme-presets.ts: rose and lavender app palette, including light surfaces",
+      "constants/typography.ts: Georgia web display and system sans body; no bundled font files",
+      "assets/images/midnight-window.jpg and assets/images/midnight-window.source.md: licensed rain-window photograph and provenance",
+      "assets/images/midnight-scrim.png: landing image scrim",
+      "assets/images/icon.png: existing app icon"
+    ],
+    "assetActions": [
+      {
+        "asset": "Lowercase “aoi” text wordmark",
+        "action": "protect",
+        "reason": "It is the wordmark used on the current public screen; no separate marketing logo is verified."
+      },
+      {
+        "asset": "Midnight landing colors in constants/landing-theme.ts",
+        "action": "protect",
+        "reason": "They define the current public screen in both system color schemes."
+      },
+      {
+        "asset": "Light and dark rose palette in constants/theme-presets.ts",
+        "action": "preserve",
+        "reason": "It provides verified brand colors for lighter surfaces and a usable accent."
+      },
+      {
+        "asset": "Typography roles in constants/typography.ts",
+        "action": "preserve",
+        "reason": "The app deliberately uses an editorial system serif with a system sans and ships no font binaries."
+      },
+      {
+        "asset": "assets/images/midnight-window.jpg",
+        "action": "protect",
+        "reason": "It is the current atmospheric landing image and has recorded source and license information."
+      },
+      {
+        "asset": "assets/images/midnight-scrim.png",
+        "action": "preserve",
+        "reason": "It supports readable text over the current landing image."
+      },
+      {
+        "asset": "assets/images/icon.png",
+        "action": "preserve",
+        "reason": "It is the existing app icon; its graphic should remain an app asset rather than be redrawn as a marketing logo."
+      }
+    ],
+    "lockedDecisions": [
+      "SvelteKit marketing interface for Aoi.",
+      "Keep the lowercase “aoi” text wordmark; do not invent a replacement logo.",
+      "Preserve the exact midnight landing colors #120D13, #F6EDF3, #C5B2C2, and #5C4255.",
+      "Preserve the existing serif-display and sans-body typography roles.",
+      "Use product and privacy claims only when verified; no invented customers, testimonials, prices, guarantees, or results."
+    ],
+    "assumptions": [
+      "The marketing page may use verified light app colors for the light compositions shown in the selected references, while retaining the established midnight identity.",
+      "The existing app icon can serve as a favicon if its rendering remains legible at small sizes.",
+      "Illustrative couple imagery and example memories will be identified as examples in page copy."
+    ]
+  },
+  "creativeDirection": {
+    "summary": "An intimate editorial identity: generous type and human imagery set against quiet light surfaces, with AOI’s midnight atmosphere used as a memorable anchor.",
+    "traits": [
+      {
+        "quality": "Editorial",
+        "boundary": "not a magazine imitation with excess labels or ornamental rules"
+      },
+      {
+        "quality": "Private and warm",
+        "boundary": "not sentimental stock-photo advertising"
+      },
+      {
+        "quality": "Spacious",
+        "boundary": "not sparse enough to hide how the product works"
+      },
+      {
+        "quality": "Atmospheric",
+        "boundary": "not a full-page blur or decorative gradient system"
+      }
+    ],
+    "productiveTension": "A quiet, private midnight mood alongside open, readable editorial space.",
+    "signatureDevice": {
+      "description": "A still, rain-softened night photograph behind a dark scrim, paired with a large serif statement and ample negative space, derived from AOI’s existing landing treatment.",
+      "status": "existing",
+      "invariants": [
+        "Use the verified rain-window image only where its atmosphere supports the message.",
+        "Keep the photograph still and the text legible over an opaque-enough scrim.",
+        "Use the device as a focal treatment, not as a repeated background behind ordinary content."
+      ]
+    },
+    "restraint": "Let scale, crop, and spacing carry the identity; reserve atmospheric photography and accent color for moments with a clear purpose.",
+    "avoid": [
+      "Invented client logos, ratings, quotes, or portraits presented as customers.",
+      "Hand-drawn SVG decoration or a new logo.",
+      "A card around every paragraph.",
+      "Repeated hairline grids where the chosen reference has open space.",
+      "Unrelated coral, cyan, and green accents competing with AOI’s rose palette."
+    ]
+  },
+  "colorPalette": [
+    {
+      "name": "Light Canvas",
+      "value": "#F6F2F7",
+      "usage": "Dominant. canvas token in the light theme."
+    },
+    {
+      "name": "Light Surface",
+      "value": "#FFFDFE",
+      "usage": "Dominant. surface token in the light theme."
+    },
+    {
+      "name": "Light Surface alt",
+      "value": "#F7E5F2",
+      "usage": "Supporting. surface alt token in the light theme."
+    },
+    {
+      "name": "Light Text",
+      "value": "#2C1C2B",
+      "usage": "Semantic. text token in the light theme."
+    },
+    {
+      "name": "Light Text muted",
+      "value": "#715B6B",
+      "usage": "Semantic. text muted token in the light theme."
+    },
+    {
+      "name": "Light Divider",
+      "value": "#E1D3DC",
+      "usage": "Semantic. divider token in the light theme."
+    },
+    {
+      "name": "Light Control border",
+      "value": "#73646E",
+      "usage": "Semantic. control border token in the light theme."
+    },
+    {
+      "name": "Light Accent",
+      "value": "#8E3659",
+      "usage": "Sparse accent. accent token in the light theme."
+    },
+    {
+      "name": "Light Accent hover",
+      "value": "#772146",
+      "usage": "Semantic. accent hover token in the light theme."
+    },
+    {
+      "name": "Light On accent",
+      "value": "#FFFFFF",
+      "usage": "Semantic. on accent token in the light theme."
+    },
+    {
+      "name": "Light Accent text",
+      "value": "#721C42",
+      "usage": "Sparse accent. accent text token in the light theme."
+    },
+    {
+      "name": "Light Focus ring",
+      "value": "#923A5D",
+      "usage": "Semantic. focus ring token in the light theme."
+    },
+    {
+      "name": "Dark Canvas",
+      "value": "#120D13",
+      "usage": "Dominant. canvas token in the dark theme."
+    },
+    {
+      "name": "Dark Surface",
+      "value": "#150C12",
+      "usage": "Dominant. surface token in the dark theme."
+    },
+    {
+      "name": "Dark Surface alt",
+      "value": "#31242D",
+      "usage": "Supporting. surface alt token in the dark theme."
+    },
+    {
+      "name": "Dark Text",
+      "value": "#F6EDF3",
+      "usage": "Semantic. text token in the dark theme."
+    },
+    {
+      "name": "Dark Text muted",
+      "value": "#C5B2C2",
+      "usage": "Semantic. text muted token in the dark theme."
+    },
+    {
+      "name": "Dark Divider",
+      "value": "#5C4255",
+      "usage": "Semantic. divider token in the dark theme."
+    },
+    {
+      "name": "Dark Control border",
+      "value": "#90818C",
+      "usage": "Semantic. control border token in the dark theme."
+    },
+    {
+      "name": "Dark Accent",
+      "value": "#E7A3BB",
+      "usage": "Sparse accent. accent token in the dark theme."
+    },
+    {
+      "name": "Dark Accent hover",
+      "value": "#FFB9D1",
+      "usage": "Semantic. accent hover token in the dark theme."
+    },
+    {
+      "name": "Dark On accent",
+      "value": "#000000",
+      "usage": "Semantic. on accent token in the dark theme."
+    },
+    {
+      "name": "Dark Accent text",
+      "value": "#D18EA6",
+      "usage": "Sparse accent. accent text token in the dark theme."
+    },
+    {
+      "name": "Dark Focus ring",
+      "value": "#CA88A0",
+      "usage": "Semantic. focus ring token in the dark theme."
+    }
+  ],
+  "typefaces": [
+    {
+      "family": "Georgia",
+      "source": "Existing web display stack in constants/typography.ts; operating-system font, no bundled file",
+      "roles": [
+        "Lowercase text wordmark",
+        "Large editorial headlines and selected short statements"
+      ],
+      "weights": [
+        400
+      ]
+    },
+    {
+      "family": "Platform system sans",
+      "source": "Existing web body stack in constants/typography.ts; operating-system font, no bundled file",
+      "roles": [
+        "Body copy",
+        "Navigation",
+        "Controls",
+        "Short labels and metadata"
+      ],
+      "weights": [
+        400,
+        600
+      ]
+    }
+  ],
+  "interfaceDirection": "Use a broad desktop content width around 1200–1360px and 24–48px side margins, reducing to roughly 20–24px on mobile. Give headlines generous line breaks and keep body measures near 55–70 characters. Use a 4/8px spacing basis with visibly larger 32–96px gaps between distinct content groups. Preserve the references’ contrast between open light editorial surfaces and contained dark focal surfaces without forcing a divider between every group. Use mostly flat surfaces, restrained borders where controls or disclosures need definition, and little or no shadow. Photographic or product-media units may have modest 16–28px corners; ordinary prose stays unboxed. Controls remain familiar: clear labels, at least 44px targets, visible focus rings, distinct hover, pressed, disabled, and expanded states. Use the project’s established icons or a professional icon set, with no decorative custom SVG system. The rose accent must appear in the primary action, focus and selected states, and one recurring media or content treatment, with contrast checked on both themes.",
+  "imageDirection": {
+    "summary": "Pair meaningful product views and intimate, candid moments with AOI’s existing rain-window atmosphere. Preserve the references’ large image frames, deliberate crops, and human scale while changing their subjects to Aoi.",
+    "subjects": [
+      "Two people sharing an ordinary moment, without posing as customers.",
+      "Hands, keepsakes, places, or small details that plausibly become shared memories.",
+      "Truthful captures of the current Aoi interface, where available.",
+      "Original illustrative moment content clearly presented as examples."
+    ],
+    "treatment": "Use natural light and restrained color on light surfaces; use the verified night image with a scrim for dark atmosphere. Favor substantial image areas and content-shaped crops over floating mockups or ornamental diagrams. Keep faces and key details visible on mobile crops.",
+    "avoid": [
+      "Fake testimonials or named users.",
+      "Images implying generated people are real Aoi customers.",
+      "Unverified interface screens presented as shipping features.",
+      "Generic abstract SVG filler.",
+      "Heavy blur that obscures the subject."
+    ]
+  },
+  "motionDirection": {
+    "summary": "Visible but contained motion should explain how text and imagery come together without changing the reference layouts.",
+    "principles": [
+      "Introduce the hero on load; stagger the headline, supporting copy, action, and existing media frame in place using opacity and a small translation; 500–750ms with a gentle ease-out and at most 240ms total stagger; show the final state immediately for reduced motion.",
+      "Reveal later editorial groups once as they approach the viewport; bring the heading and adjacent image into their fixed layout using opacity and short, directionally related translations; 450–700ms with a soft ease-out; keep all content visible when scripting fails or reduced motion is active.",
+      "Reveal a later media-led group once as it approaches the viewport; disclose the photograph inside its existing frame while nearby copy settles into place, without changing frame size; 500–800ms with a smooth ease-out; show the complete frame immediately for reduced motion.",
+      "Confirm button, navigation, and disclosure input on hover, focus, press, or expansion; change color, border, and small positional emphasis without hiding information; 120–220ms with a direct ease-out; preserve equivalent visible states for reduced motion."
+    ],
+    "avoid": [
+      "transition: all",
+      "Scale-from-zero entrances",
+      "Hover-only information",
+      "Scroll-jacking or perpetual floating",
+      "Layout shifts",
+      "Reveal replay after scrolling, resize, or rerender",
+      "Hidden content on restored scroll positions",
+      "Animations that block interaction"
+    ]
+  },
+  "voice": {
+    "summary": "Warm, direct, and specific. Speak to two people building a shared history through small actions they can recognize; prefer plain verbs such as save, share, plan, and revisit.",
+    "avoid": [
+      "Claims of measured impact or customer love without evidence.",
+      "Overwritten romance and vague promises of connection.",
+      "Unverified security, pricing, or availability claims.",
+      "Product mechanics described as internal implementation."
+    ]
+  }
+}

@@ -1,11 +1,11 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
 import { Stack } from "expo-router/stack";
-import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 
 import { LaunchSplash } from "@/components/launch-splash";
+import { notificationsModule } from "@/features/notifications/notifications-module";
 import { DebugHarness } from "@/components/dev/debug-harness";
 import { ensureDevSeed } from "@/features/dev/dev-seed";
 import { MomentsProvider } from "@/features/moments/moments-context";
@@ -18,14 +18,19 @@ import { useAoiFonts } from "@/hooks/use-aoi-fonts";
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Memories arrive quietly: show banners when the app is open, never sound.
-Notifications.setNotificationHandler({
-	handleNotification: async () => ({
-		shouldShowBanner: true,
-		shouldShowList: true,
-		shouldPlaySound: false,
-		shouldSetBadge: false,
-	}),
-});
+// Only installed where the module can load at all — on Android in Expo Go it
+// throws as it loads, which is why nothing imports it at the top level.
+const notifications = notificationsModule();
+if (notifications) {
+	notifications.setNotificationHandler({
+		handleNotification: async () => ({
+			shouldShowBanner: true,
+			shouldShowList: true,
+			shouldPlaySound: false,
+			shouldSetBadge: false,
+		}),
+	});
+}
 
 // React Navigation's own theme provider (imported via expo-router since
 // SDK 56 forbids `@react-navigation/*` imports in app code), fed from Aoi's

@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import { MenuView, type MenuAction } from "@expo/ui/community/menu";
 import { Image } from "expo-image";
 import { memo, useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -9,6 +8,7 @@ import { VideoPlayer } from "@/components/media/video-player";
 import { FeedPhoto, MomentOrderedAudios, MomentOrderedImages, hasOrderedAttachments, orderedImageAttachments } from "@/components/moments/moment-attachments";
 import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { ThemedText } from "@/components/themed-text";
+import { Pressed } from "@/components/ui/pressed";
 import { MediaFrame } from "@/components/ui/media-frame";
 import { Spacing } from "@/constants/theme";
 import type { Moment } from "@/features/moments/types";
@@ -32,15 +32,14 @@ export type MomentCardProps = {
 	/** Explicit menu trigger, independent of the native long-press gesture. */
 	onActions?: (momentId: string) => void;
 	/**
-	 * Native popover for the ellipsis trigger (iOS). When present the
-	 * trigger opens this menu instead of firing `onActions`, which stays
-	 * as the sheet fallback for other platforms.
+	 * Space reserved at the row's right edge for a floating control the host
+	 * screen puts there. The Memories feed floats its round add button in that
+	 * corner, and without this the button lands on top of this row's own
+	 * actions: a 32pt trigger under a 56pt control is neither visible nor
+	 * tappable, and the tap that was meant for it fires the floating one.
+	 * Screens without such a control leave it at 0.
 	 */
-	nativeActionsMenu?: {
-		actions: MenuAction[];
-		title: string;
-		onAction: (actionId: string) => void;
-	} | null;
+	actionsInset?: number;
 	/**
 	 * Article keeps the existing detail/chapter look (full date, larger
 	 * type). Timeline is the compact Memories row: day separators own the
@@ -93,15 +92,15 @@ function formatGoalTargetLabel(targetAt?: string | null) {
 	return formatMomentDate(targetAt, "Someday");
 }
 
-function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoPress, nativeActionsMenu, presentation = "article" }: MomentCardProps) {
+function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsInset = 0, onPhotoPress, presentation = "article" }: MomentCardProps) {
 	const isTimeline = presentation === "timeline";
 	const secondary = useThemeColor({}, "textSecondary");
-	const accent = useThemeColor({}, "accent");
-	const partnerAccent = useThemeColor({}, "partnerAccent");
+	const accentInk = useThemeColor({}, "accentInk");
+	const partnerAccentInk = useThemeColor({}, "partnerAccentInk");
 	const muted = useThemeColor({}, "muted");
 	const border = useThemeColor({}, "border");
 	const avatarBackground = useThemeColor({}, "surface2");
-	const authorColor = moment.authorRole === "you" ? accent : partnerAccent;
+	const authorColor = moment.authorRole === "you" ? accentInk : partnerAccentInk;
 	const isGoal = moment.type === "goal";
 	// Untitled memories carry an empty title; the legacy creation
 	// placeholder reads as untitled too, so it never prints.
@@ -387,39 +386,35 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoP
 						</Text>
 					</View>
 					<View style={styles.timelineContent}>
-						<View style={styles.timelineHeader}>
+						<View
+							style={[
+								styles.timelineHeader,
+								actionsInset > 0 ? { paddingRight: actionsInset } : null,
+							]}
+						>
 						{timelineByline}
-						{handleActions || nativeActionsMenu ? (
-							nativeActionsMenu ? (
-								<MenuView
-									actions={nativeActionsMenu.actions}
-									onPressAction={({ nativeEvent: { event } }) =>
-										nativeActionsMenu.onAction(event)
-									}
-									testID="native-actions-menu"
-									title={nativeActionsMenu.title}
-								>
-									<View
-										accessibilityHint="Opens edit and remove for this moment"
-										accessibilityLabel="More actions"
-										accessibilityRole="button"
-										style={styles.ellipsisTrigger}
-									>
-										<Ionicons color={muted} name="ellipsis-horizontal" size={18} />
-									</View>
-								</MenuView>
-							) : (
-								<Pressable
-									accessibilityHint="Opens edit and remove for this moment"
-									accessibilityLabel="More actions"
-									accessibilityRole="button"
-									hitSlop={6}
-									onPress={handleActions}
-									style={styles.ellipsis}
-								>
-									<Ionicons color={muted} name="ellipsis-horizontal" size={18} />
-								</Pressable>
-							)
+						{/* One menu path, on every platform. This used to be two:
+						    a native MenuView wrapping a plain View that
+						    announced itself as a button but only the native
+						    touch reached, so VoiceOver could focus it and
+						    activate it into nothing. The long-press already
+						    opens the platform menu where there is one, so the
+						    ellipsis is free to be an honest button that opens
+						    the app's own sheet. */}
+						{handleActions ? (
+							<Pressable
+								accessibilityHint="Opens edit and remove for this moment"
+								accessibilityLabel="More actions"
+								accessibilityRole="button"
+								hitSlop={6}
+								onPress={handleActions}
+								style={({ pressed }) => [
+									styles.ellipsis,
+									pressed && styles.ellipsisPressed,
+								]}
+							>
+								<Ionicons color={muted} name="ellipsis-horizontal" size={18} />
+							</Pressable>
 						) : null}
 						</View>
 					{captionNode ? (
@@ -430,7 +425,7 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoP
 								accessibilityRole="button"
 								delayLongPress={400}
 								onLongPress={handleLongPress}
-								style={({ pressed }) => (pressed ? styles.pressed : undefined)}
+								style={({ pressed }) => (pressed ? Pressed.at : undefined)}
 							>
 								{captionNode}
 							</Pressable>
@@ -500,7 +495,7 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, onPhotoP
 			delayLongPress={400}
 			onLongPress={handleLongPress}
 			onPress={handlePress}
-			style={({pressed}) => pressed ? styles.pressed : undefined}
+			style={({ pressed }) => (pressed ? Pressed.at : undefined)}
 			>
 				{navContent}
 			</Pressable>
@@ -568,13 +563,8 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		justifyContent: "center",
 	},
-	ellipsisTrigger: {
-		// The native popover trigger is a plain view (no hitSlop), so it
-		// carries the full 44pt touch target itself.
-		width: 44,
-		height: 44,
-		alignItems: "center",
-		justifyContent: "center",
+	ellipsisPressed: {
+		opacity: 0.55,
 	},
 	navInner: {
 		gap: Spacing[12],
@@ -620,17 +610,12 @@ const styles = StyleSheet.create({
 	},
 	body: {
 		marginTop: Spacing[4],
-		opacity: 1,
-		lineHeight: 26,
 	},
 	captionGroup: {
 		gap: Spacing[8],
 	},
 	captionBody: {
 		marginTop: Spacing[0],
-	},
-	pressed: {
-		opacity: 0.92,
 	},
 	mediaImage: {
 		width: "100%",

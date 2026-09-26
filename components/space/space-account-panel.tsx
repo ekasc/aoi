@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Linking, View } from 'react-native';
+import { Linking, View } from 'react-native';
 
 import { ThemeSelector } from '@/components/theme/theme-selector';
 import { ThemedText } from '@/components/themed-text';
+import { ActionSheet } from '@/components/ui/action-sheet';
 import { Button } from '@/components/ui/button';
 import { Divider } from '@/components/ui/divider';
 import { Spacing } from '@/constants/theme';
@@ -31,6 +32,9 @@ export function SpaceAccountPanel() {
   const [signOutError, setSignOutError] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [leaveError, setLeaveError] = useState('');
+  const [confirming, setConfirming] = useState<'delete' | 'leave' | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
 
@@ -47,53 +51,48 @@ export function SpaceAccountPanel() {
     }
   }, [router, signOut]);
 
+  // Both destructive paths confirm in the app's own sheet rather than a
+  // system alert: the copy is long, the sheet is themeable and announced as
+  // a modal, and the row that opened it keeps its place underneath.
   const handleDeleteAccount = useCallback(() => {
-    Alert.alert(
-      'Delete your account?',
-      'This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, letters, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete my account',
-          style: 'destructive',
-          onPress: async () => {
-            haptics.warning();
-            setDeleteError('');
-            try {
-              await deleteAccount();
-              router.replace('/(public)');
-            } catch {
-              setDeleteError('Failed to delete account. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  }, [deleteAccount, router]);
+    haptics.warning();
+    setDeleteError('');
+    setConfirming('delete');
+  }, []);
 
   const handleLeaveSpace = useCallback(() => {
-    Alert.alert(
-      'Leave this space?',
-      `You will leave “${space?.name ?? 'this space'}”. Your partner keeps the shared memories, they stay readable to them, and leaving never deletes history. You lose access until you join or create another space. If you are the last member, the space closes.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave space',
-          style: 'destructive',
-          onPress: async () => {
-            haptics.warning();
-            setLeaveError('');
-            try {
-              await leaveSpace();
-              router.replace('/(auth)/space-setup');
-            } catch {
-              setLeaveError('Failed to leave space. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  }, [leaveSpace, router, space?.name]);
+    haptics.warning();
+    setLeaveError('');
+    setConfirming('leave');
+  }, []);
+
+  const handleCloseConfirm = useCallback(() => setConfirming(null), []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      await deleteAccount();
+      router.replace('/(public)');
+    } catch {
+      setConfirming(null);
+      setDeleteError('Failed to delete account. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [deleteAccount, router]);
+
+  const handleConfirmLeave = useCallback(async () => {
+    setIsLeaving(true);
+    try {
+      await leaveSpace();
+      router.replace('/(auth)/space-setup');
+    } catch {
+      setConfirming(null);
+      setLeaveError('Failed to leave space. Please try again.');
+    } finally {
+      setIsLeaving(false);
+    }
+  }, [leaveSpace, router]);
 
   // Raw data export is intentionally never gated by Plus: it archives
   // whatever this account is currently authorized to read.
@@ -240,6 +239,36 @@ export function SpaceAccountPanel() {
           </ThemedText>
         ) : null}
       </View>
+
+      <ActionSheet
+        actions={[
+          {
+            label: isLeaving ? 'Leaving…' : 'Leave this space',
+            onPress: () => void handleConfirmLeave(),
+            variant: 'destructive',
+          },
+          { label: 'Cancel', onPress: handleCloseConfirm },
+        ]}
+        description={`You will leave “${space?.name ?? 'this space'}”. Your partner keeps the shared memories and can still read them, and leaving never deletes history. You lose access until you join or create another space. If you are the last member, the space closes.`}
+        onClose={handleCloseConfirm}
+        title="Leave this space?"
+        visible={confirming === 'leave'}
+      />
+
+      <ActionSheet
+        actions={[
+          {
+            label: isDeleting ? 'Deleting…' : 'Delete my account',
+            onPress: () => void handleConfirmDelete(),
+            variant: 'destructive',
+          },
+          { label: 'Cancel', onPress: handleCloseConfirm },
+        ]}
+        description="This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, letters, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
+        onClose={handleCloseConfirm}
+        title="Delete your account?"
+        visible={confirming === 'delete'}
+      />
     </>
   );
 }

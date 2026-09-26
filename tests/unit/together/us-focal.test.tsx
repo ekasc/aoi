@@ -1,111 +1,51 @@
 import { describe, it, expect } from 'vitest';
-import {
-  findLatestMemory,
-  findReadyLetter,
-  isQuestionUnanswered,
-  selectUsFocal,
-} from '@/features/home/us-focal';
 
-function letter(overrides: Record<string, any> = {}) {
+import { findReadyLetter } from '@/features/home/us-focal';
+import type { Letter } from '@/features/letters/types';
+
+function letter(overrides: Partial<Letter> = {}): Letter {
   return {
     id: 'l1',
-    authorRole: 'partner',
-    authorName: 'Alex',
-    caption: 'Hi',
-    sealedUntil: new Date(Date.now() - 1000).toISOString(),
-    createdAt: new Date().toISOString(),
+    caption: 'For later',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    authorRole: 'you',
+    authorName: 'You',
+    sealedUntil: '2026-01-01T00:00:00.000Z',
     isOpened: false,
-    readyToOpen: true,
+    readyToOpen: false,
     openedAt: null,
     ...overrides,
-  } as any;
+  } as Letter;
 }
 
-function question(overrides: Record<string, any> = {}) {
-  return {
-    weekKey: '2026-W32',
-    questionId: 1,
-    question: 'Q?',
-    yourAnswer: null,
-    yourAnswerUpdatedAt: null,
-    partnerAnswered: false,
-    partnerAnswer: null,
-    partnerName: 'Alex',
-    revealed: false,
-    ...overrides,
-  } as any;
-}
+describe('findReadyLetter', () => {
+  const past = new Date('2026-06-01T00:00:00.000Z');
+  const future = new Date('2027-01-01T00:00:00.000Z');
 
-function moment(overrides: Record<string, any> = {}) {
-  return {
-    id: 'm1',
-    type: 'note',
-    title: 'T',
-    body: 'B',
-    occurredAt: '2026-02-01T00:00:00.000Z',
-    createdAt: '2026-02-01T00:00:00.000Z',
-    authorId: 'user_partner',
-    authorRole: 'partner',
-    authorName: 'Alex',
-    ...overrides,
-  } as any;
-}
+  it('returns the first unopened letter whose seal has broken', () => {
+    const found = findReadyLetter([letter({ sealedUntil: '2026-01-01T00:00:00.000Z' })], past);
+    expect(found?.id).toBe('l1');
+  });
 
-describe('us-focal priority', () => {
-  it('ready letter beats question and memory', () => {
-    const now = new Date();
-    const focal = selectUsFocal({
-      letters: [letter({ id: 'ready' })],
-      question: question(),
-      moments: [moment({ id: 'mem' })],
-      now,
+  it('honours shelf order and never re-sorts', () => {
+    const first = letter({ id: 'newest', sealedUntil: '2026-01-01T00:00:00.000Z' });
+    const second = letter({ id: 'next', sealedUntil: '2026-01-02T00:00:00.000Z' });
+    expect(findReadyLetter([first, second], past)?.id).toBe('newest');
+  });
+
+  it('never returns a letter that is not yet due', () => {
+    expect(findReadyLetter([letter({ sealedUntil: '2027-01-01T00:00:00.000Z' })], past)).toBeNull();
+  });
+
+  it('never returns an already-opened letter, however old', () => {
+    const opened = letter({
+      sealedUntil: '2020-01-01T00:00:00.000Z',
+      isOpened: true,
     });
-    expect(focal.kind).toBe('letter');
+    expect(findReadyLetter([opened], past)).toBeNull();
   });
 
-  it('unopened-but-unready letter does not win', () => {
-    const now = new Date();
-    expect(
-      findReadyLetter(
-        [letter({ sealedUntil: new Date(Date.now() + 86400000).toISOString() })],
-        now
-      )
-    ).toBeNull();
-  });
-
-  it('opened ready letter does not win', () => {
-    expect(findReadyLetter([letter({ isOpened: true })], new Date())).toBeNull();
-  });
-
-  it('unanswered question beats memory; answered or revealed does not', () => {
-    expect(isQuestionUnanswered(question())).toBe(true);
-    expect(isQuestionUnanswered(question({ yourAnswer: 'x' }))).toBe(false);
-    expect(isQuestionUnanswered(question({ yourAnswer: '   ' }))).toBe(true);
-    expect(isQuestionUnanswered(question({ yourAnswer: null, revealed: true }))).toBe(false);
-    expect(isQuestionUnanswered(null)).toBe(false);
-  });
-
-  it('prefers newest partner memory, fallback newest shared', () => {
-    const partnerOld = moment({ id: 'p-old', authorRole: 'partner', occurredAt: '2026-01-01T00:00:00.000Z' });
-    const partnerNew = moment({ id: 'p-new', authorRole: 'partner', occurredAt: '2026-02-01T00:00:00.000Z' });
-    const ownNewest = moment({ id: 'own', authorRole: 'you', occurredAt: '2026-06-01T00:00:00.000Z' });
-    expect(findLatestMemory([partnerOld, partnerNew, ownNewest])?.id).toBe('p-new');
-    expect(
-      findLatestMemory([
-        moment({ id: 'o1', authorRole: 'you', occurredAt: '2026-01-01T00:00:00.000Z' }),
-        moment({ id: 'o2', authorRole: 'you', occurredAt: '2026-04-01T00:00:00.000Z' }),
-      ])?.id
-    ).toBe('o2');
-    expect(findLatestMemory([])).toBeNull();
-  });
-
-  it('empty when nothing available', () => {
-    const focal = selectUsFocal({
-      letters: [letter({ sealedUntil: new Date(Date.now() + 86400000).toISOString() })],
-      question: question({ yourAnswer: 'done' }),
-      moments: [],
-      now: new Date(),
-    });
-    expect(focal.kind).toBe('empty');
+  it('is null for an empty shelf rather than throwing', () => {
+    expect(findReadyLetter([], future)).toBeNull();
   });
 });

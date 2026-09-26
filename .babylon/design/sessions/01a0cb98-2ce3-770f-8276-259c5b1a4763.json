@@ -1,0 +1,12 @@
+{
+  "slug": "overhaul-of-the-us-screen",
+  "subject": "overhaul of the Us screen",
+  "briefPath": ".babylon/design/overhaul-of-the-us-screen-brief.md",
+  "brandPath": ".babylon/design/overhaul-of-the-us-screen-brand.md",
+  "logPath": ".babylon/design/overhaul-of-the-us-screen-log.md",
+  "briefApproved": true,
+  "brandApproved": true,
+  "done": true,
+  "updatedAt": "2026-09-23T04:02:04.641Z",
+  "target": "web"
+}

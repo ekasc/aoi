@@ -8,7 +8,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
-import { Spacing } from '@/constants/theme';
+import { Motion, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type NativeDateTimeFieldProps = {
@@ -156,7 +156,7 @@ export function NativeDateTimeField({
           <MotiView
             from={{ opacity: 0, translateY: 6 }}
             animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 200 }}
+            transition={{ duration: Motion.fast }}
             style={[styles.pickerCard, { borderColor: border, backgroundColor: surface2 }]}
           >
             <DateTimePicker

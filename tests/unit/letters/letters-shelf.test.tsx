@@ -7,6 +7,7 @@ const pushSpy = vi.fn();
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: pushSpy, back: vi.fn(), replace: vi.fn() }),
+  useIsFocused: () => true,
 }));
 
 vi.mock('expo-haptics', () => ({
@@ -92,6 +93,10 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: () => '#000000',
+}));
+
+vi.mock('@/features/space/space-context', () => ({
+  useSpace: () => ({ space: { relationshipStartDate: null } }),
 }));
 
 vi.mock('@/components/themed-text', () => ({

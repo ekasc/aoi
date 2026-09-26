@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { createElement } from 'react';
@@ -66,6 +67,12 @@ vi.mock('moti', () => ({
 }));
 
 vi.mock('react-native-reanimated', () => ({
+  Easing: {
+    linear: {},
+    in: (easing: unknown) => easing,
+    out: (easing: unknown) => easing,
+    inOut: (easing: unknown) => easing,
+  },
   useReducedMotion: () => false,
 }));
 
@@ -105,14 +112,54 @@ function renderDay(events: CalendarEvent[]) {
 
 describe('Day timeline', () => {
   it('shows where an event happens', () => {
-    renderDay([event({ id: 'Career fair', location: 'Crystal Pavilion' })]);
+    renderDay([
+      event({
+        id: 'Career fair',
+        location: 'Crystal Pavilion',
+        startsAt: new Date(2026, 8, 16, 10, 0).toISOString(),
+        endsAt: new Date(2026, 8, 16, 12, 0).toISOString(),
+      }),
+    ]);
     expect(screen.getByText('Career fair')).toBeTruthy();
     expect(screen.getByText('Crystal Pavilion')).toBeTruthy();
+  });
+
+  it('fits a short block to its own span instead of smearing past it', () => {
+    renderDay([
+      event({
+        id: 'Standup',
+        location: 'Crystal Pavilion',
+        startsAt: new Date(2026, 8, 16, 10, 0).toISOString(),
+        endsAt: new Date(2026, 8, 16, 10, 30).toISOString(),
+      }),
+    ]);
+    // The title stays; the owner line and the location would paint onto
+    // the neighbour hours, so a short block leaves them out.
+    expect(screen.getByText('Standup')).toBeTruthy();
+    expect(screen.queryByText(/You · /)).toBeNull();
+    expect(screen.queryByText('Crystal Pavilion')).toBeNull();
   });
 
   it('shows no location line when there is no location', () => {
     renderDay([event({ id: 'Deep work' })]);
     expect(screen.getByText('Deep work')).toBeTruthy();
     expect(screen.queryByText(/Pavilion/)).toBeNull();
+  });
+
+  it('carries ownership in tint and words, never a side stripe', () => {
+    // A coloured border-left on the block is decoration wearing a
+    // convention's clothes: the tinted fill and the ownership caption
+    // already say whose plan it is, in sight and in words.
+    const source = readFileSync('components/calendar/day-timeline.tsx', 'utf8');
+    expect(source).not.toContain('borderLeftWidth');
+    expect(source).not.toContain('borderLeftColor');
+  });
+
+  it('draws day blocks square, the way a calendar draws them', () => {
+    // Rounding is for chips and buttons, not for time. Scoped to the event
+    // style: the all-day chip is a pill on purpose.
+    const source = readFileSync('components/calendar/day-timeline.tsx', 'utf8');
+    const eventStyle = source.match(/\n  event: \{([\s\S]*?)\n  \},/)?.[1] ?? '';
+    expect(eventStyle).toContain('borderRadius: 0');
   });
 });

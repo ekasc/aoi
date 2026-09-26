@@ -1,14 +1,15 @@
 import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 
+import { Reveal } from '@/components/ui/reveal';
 import { ThemedText } from '@/components/themed-text';
 import {
   BeachThemeOrder,
   BeachThemes,
   type BeachThemeId,
 } from '@/constants/theme-presets';
-import { Motion, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { haptics } from '@/features/haptics/haptics';
 import { useAoiTheme } from '@/features/theme/theme-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -72,7 +73,7 @@ export function ThemeSelector({ showDescriptions = true }: ThemeSelectorProps) {
           <Animated.View
             entering={
               shouldAnimateIntro
-                ? FadeIn.duration(Motion.base).delay(index * 80).reduceMotion(ReduceMotion.System)
+                ? Reveal.in().delay(Reveal.stagger(index))
                 : undefined
             }
             key={theme.id}

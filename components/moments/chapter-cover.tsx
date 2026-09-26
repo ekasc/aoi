@@ -24,7 +24,7 @@ export function ChapterCover({ chapter, width }: ChapterCoverProps) {
   const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
   const surface = useThemeColor({}, 'surface');
   const textMuted = useThemeColor({}, 'textMuted');
-  const accent = useThemeColor({}, 'accent');
+  const accentInk = useThemeColor({}, 'accentInk');
 
   const height = (width * 5) / 4;
 
@@ -66,7 +66,7 @@ export function ChapterCover({ chapter, width }: ChapterCoverProps) {
               ? chapter.monthKey?.split('-')[1]
               : String(chapter.anniversaryYear)}
           </ThemedText>
-          <View style={[styles.rule, { backgroundColor: accent }]} />
+          <View style={[styles.rule, { backgroundColor: accentInk }]} />
           <ThemedText type="title" numberOfLines={2} style={styles.fallbackTitle}>
             {chapter.title}
           </ThemedText>

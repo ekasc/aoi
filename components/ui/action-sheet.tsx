@@ -91,7 +91,11 @@ export function ActionSheet({
                 pressed ? { backgroundColor: withAlpha(muted, 0.14) } : null,
               ]}
             >
-              {action.icon ? <Ionicons color={tint} name={action.icon} size={20} /> : null}
+              {action.icon ? (
+                <Ionicons color={tint} name={action.icon} size={20} />
+              ) : (
+                <View style={styles.iconSpacer} />
+              )}
               <ThemedText type="bodyEmphasis" style={{ color: tint }}>
                 {action.label}
               </ThemedText>
@@ -116,7 +120,9 @@ export function ActionSheet({
           >
             {cancelAction.icon ? (
               <Ionicons color={text} name={cancelAction.icon} size={20} />
-            ) : null}
+            ) : (
+              <View style={styles.iconSpacer} />
+            )}
             <ThemedText type="bodyEmphasis" style={{ color: text }}>
               {cancelAction.label}
             </ThemedText>
@@ -151,5 +157,8 @@ const styles = StyleSheet.create({
   },
   cancelRow: {
     marginTop: Spacing[8],
+  },
+  iconSpacer: {
+    width: 20,
   },
 });

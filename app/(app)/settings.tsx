@@ -6,5 +6,5 @@ import { Redirect } from 'expo-router';
  * there with that segment preselected.
  */
 export default function LegacySettingsRedirect() {
-	return <Redirect href="/(app)/space" />;
+	return <Redirect href="/(app)/(tabs)/space" />;
 }

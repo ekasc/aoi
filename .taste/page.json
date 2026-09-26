@@ -1,0 +1,544 @@
+{
+  "version": 1,
+  "page": {
+    "title": "Aoi | A private place for your story",
+    "route": "/",
+    "description": "Keep moments, share them with your partner, make plans, and revisit your story in one private space for two."
+  },
+  "architecture": {
+    "contract": "This page helps couples decide whether Aoi is a useful place for their shared history. The business outcome is a qualified visit to the app destination. The primary conversion is Get Aoi.",
+    "mode": "persuade_convert",
+    "novelty": "medium",
+    "grid": "A centered 12-column grid, maximum width 1360px, with 24–48px desktop gutters and 20–24px compact gutters. Sections may span the grid or use the reference's asymmetric columns.",
+    "signatureRule": "From the hero reference: pair a large, left-aligned editorial statement with one substantial image frame on the right, then place supporting material below that primary pair. Keep the image and text in their reference proportions rather than adding ornamental layers.",
+    "rhythm": "Move from an open hero to dense evidence of what gets lost, then through distinct ways to keep, share, plan, and revisit. Give each image-led section room to breathe. Use the established midnight treatment for one focal passage and an enclosed final invitation."
+  },
+  "navigation": [
+    {
+      "label": "How it works",
+      "target": "#how-it-works"
+    },
+    {
+      "label": "Privacy",
+      "target": "#privacy"
+    },
+    {
+      "label": "Get Aoi",
+      "target": "app_destination"
+    }
+  ],
+  "navigationDesign": {
+    "layoutCase": "reference-navigation",
+    "layout": "Use saleunion-01-hero navigation geometry: a narrow full-width announcement strip above a horizontal bar, lowercase aoi wordmark at left, section links near center, and the primary action at right. The strip says 'A place for the two of you' and links to #how-it-works. Do not copy the reference's business or partner claims.",
+    "behavior": [
+      "Section links scroll to their named section with native scrolling.",
+      "Get Aoi uses a verified app destination before publication.",
+      "Focus, hover, and pressed states remain visible without relying on motion."
+    ],
+    "transformation": {
+      "compact": "Keep the announcement strip and wordmark. Replace inline links with a labelled menu button that opens a keyboard-accessible navigation panel; keep Get Aoi first in that panel.",
+      "medium": "Keep the wordmark and primary action visible; move section links into the menu when they no longer fit.",
+      "expanded": "Show the wordmark, inline links, primary action, and menu affordance in the reference's broad horizontal bar."
+    }
+  },
+  "sections": [
+    {
+      "id": "hero",
+      "layoutFamily": "hero",
+      "layoutCases": [
+        "saleunion-01-hero"
+      ],
+      "referenceDirectionId": "saleunion-01-hero",
+      "purpose": "State what Aoi is and make the first action clear.",
+      "userQuestion": "Is Aoi for us?",
+      "stage": "orient",
+      "dependencies": [],
+      "evidence": [
+        "README.md identifies Aoi as a private relationship app for two people.",
+        "components/landing/immersive-hero.tsx uses the lowercase aoi wordmark and describes a private place for moments and letters."
+      ],
+      "copy": {
+        "eyebrow": "A PRIVATE SPACE FOR TWO",
+        "heading": "Keep the little things that make your story yours.",
+        "body": [
+          "Save moments, share them with your partner, and return to them together in Aoi."
+        ],
+        "callsToAction": [
+          {
+            "label": "Get Aoi",
+            "target": "app_destination"
+          }
+        ]
+      },
+      "layout": "Reference desktop 1505×1045: below the two-row navigation, use a roughly 54/42 split with a 4% gutter. Eyebrow and two-line serif headline occupy the left half around y=285–500; one short supporting block sits below, then one primary button. A single couple photograph fills the right frame from about x=810 to 1420 and y=195 to 810, roughly 41% of viewport width and 59% of height. Keep one small overlapping content card at the photo's lower right, but replace the testimonial with a native example memory labelled 'Example moment'; no stars, quote attribution, portrait stack, or partner logos. Mobile reference 683×2048: announcement and wordmark precede a single-column hero; heading takes about two lines in the upper third, copy and full-width action follow, then the photo occupies nearly the full content width and about one-third of the captured height. The example card overlaps the photo near its lower right. Preserve the reference's generous blank space around the primary pair.",
+      "motion": {
+        "purpose": "spatial_continuity",
+        "trigger": "load",
+        "behavior": "Reveal headline, copy, action, then photograph and its example card within their final positions using opacity and 12–18px translations; stagger groups by 80ms, capped at 240ms total. The frame never changes size.",
+        "durationMs": 650,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Show all elements immediately in their final positions."
+      },
+      "componentNeeds": [
+        "example_memory_card"
+      ],
+      "assetNeeds": [
+        "hero_couple_photo"
+      ],
+      "transformation": {
+        "compact": "Follow the mobile order: headline, copy, action, full-width photo, overlapping example card; retain the full message and action.",
+        "medium": "Keep the left text and right photo until either becomes cramped, then stack without changing their order or overlap.",
+        "expanded": "Restore the 54/42 split and lower-right example-card overlap."
+      }
+    },
+    {
+      "id": "scattered_moments",
+      "layoutFamily": "about",
+      "layoutCases": [
+        "sidrano-09-team"
+      ],
+      "referenceDirectionId": "sidrano-09-team",
+      "purpose": "Show why a dedicated shared place is useful.",
+      "userQuestion": "Why would we move meaningful things out of our chats and camera rolls?",
+      "stage": "qualify",
+      "dependencies": [
+        "hero"
+      ],
+      "evidence": [],
+      "copy": {
+        "heading": "The good stuff gets buried.",
+        "body": [
+          "The photo from Tuesday, a note you meant to keep, and the place you want to visit can end up in different places. Aoi gives those moments one place to return to."
+        ],
+        "callsToAction": []
+      },
+      "layout": "Reference desktop 1505×1057: use the dark full-width field, a large two-line heading at upper left around x=78–700 and y=175–310, and a row of four equal portrait media panels beginning near y=430. Each panel is about 22% of the content width with narrow gaps. Replace team portraits and names with four meaningful media subjects labelled 'Photo', 'Note', 'Place', and 'Date'; put each label beneath its panel in the same text hierarchy. The thin top rule remains because it is visible in this reference, but omit the reference's team number and studio claim. No verified mobile pair exists: derive a two-column grid with the same four panels, then one column below narrow widths; preserve heading-first order and label adjacency. Target section height near one desktop viewport; let mobile height grow naturally.",
+      "motion": {
+        "purpose": "explanation",
+        "trigger": "scroll_enter",
+        "behavior": "As the heading group approaches view, reveal the four media panels once in their fixed grid with opacity and 10px upward movement, staggered 60ms each; each label remains attached to its panel.",
+        "durationMs": 580,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Show the heading and all four panels immediately."
+      },
+      "componentNeeds": [],
+      "assetNeeds": [
+        "scattered_photo_image",
+        "scattered_note_image",
+        "scattered_place_image",
+        "scattered_date_image"
+      ],
+      "transformation": {
+        "compact": "Use one panel per row with its label directly below; retain all four subjects.",
+        "medium": "Use two columns with equal panel heights and stable source order.",
+        "expanded": "Use the reference's four portrait columns beneath the large heading."
+      }
+    },
+    {
+      "id": "keep_a_moment",
+      "layoutFamily": "feature",
+      "layoutCases": [
+        "lexedge-11-blog"
+      ],
+      "referenceDirectionId": "lexedge-11-blog",
+      "purpose": "Make the act of saving a moment concrete.",
+      "userQuestion": "What can we keep in Aoi?",
+      "stage": "evaluate",
+      "dependencies": [
+        "scattered_moments"
+      ],
+      "evidence": [
+        "app/(app)/(tabs)/(memories)/index.tsx is the current Memories screen.",
+        "app/(app)/moment/new.tsx provides a moment creation route."
+      ],
+      "copy": {
+        "eyebrow": "MEMORIES",
+        "heading": "A photo. A note. A moment worth keeping.",
+        "body": [
+          "Example moments: the walk home after dinner; the message that made you laugh. Keep each with the part of the story you want to remember."
+        ],
+        "callsToAction": []
+      },
+      "layout": "Reference desktop 1431×1099: center the small eyebrow above a large serif heading in the top quarter. Place two equal image-led story units beneath it, each around 47% of content width, with wide landscape media at roughly 1.3:1 and a short meta line plus serif title directly below. Use real illustrative photos within each unit and a native HTML/CSS example memory record under or within the media frame; keep the visual weight of the two wide images. Mobile reference 957×1682: retain the centered heading and stack the two wide media units at about 88% of viewport width, each followed immediately by its own example title. The examples must be visibly identified as examples; do not add article dates or publication claims.",
+      "motion": {
+        "purpose": "spatial_continuity",
+        "trigger": "scroll_enter",
+        "behavior": "Reveal the heading group, then disclose each photograph within its existing rounded frame using opacity and a 12px translation; stagger the two units by 100ms and unobserve after the first run.",
+        "durationMs": 650,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Keep both examples fully visible from the start."
+      },
+      "componentNeeds": [
+        "example_memory_record"
+      ],
+      "assetNeeds": [
+        "example_walk_photo",
+        "example_message_photo"
+      ],
+      "transformation": {
+        "compact": "Stack both media stories with image, example label, and title kept together.",
+        "medium": "Use two columns only when each media frame and title remain readable.",
+        "expanded": "Match the reference's two equal landscape stories beneath the centered heading."
+      }
+    },
+    {
+      "id": "share_with_partner",
+      "layoutFamily": "feature",
+      "layoutCases": [
+        "ritovex-04-services"
+      ],
+      "referenceDirectionId": "ritovex-04-services",
+      "purpose": "Explain how a kept moment reaches the other person.",
+      "userQuestion": "How does this become something we share?",
+      "stage": "evaluate",
+      "dependencies": [
+        "keep_a_moment"
+      ],
+      "evidence": [
+        "app/(app)/(tabs)/together.tsx reads partner moments and letters.",
+        "app/(app)/(tabs)/space.tsx contains a Share invite action and partner-joined state."
+      ],
+      "copy": {
+        "eyebrow": "THE TWO OF YOU",
+        "heading": "Keep it together. Come back together.",
+        "body": [
+          "Save a moment in your shared space. Your partner can find it there, and you can return to it later."
+        ],
+        "callsToAction": []
+      },
+      "layout": "Reference desktop 1469×1103: retain the centered heading and short intro in the top quarter of a dark surface, followed by four wide horizontal rows with numbers at the far left, large row titles, short descriptions, and an action affordance at the far right. Use the rows for 'Save a moment', 'Share a letter', 'See what is waiting', and 'Revisit together'. The one highlighted row may hold a roughly 20%-wide tilted media card on its right, but render it as a native example record with a photo, not an abstract render. Keep the reference's row dividers and single highlighted treatment. Mobile reference 945×1707: rows span the content width with number, title, description, and right action in source order; the media card can move below its highlighted row text to avoid covering copy. Because these are explanations, use labelled links to relevant in-page content only where a real destination exists; otherwise omit decorative arrows.",
+      "motion": {
+        "purpose": "explanation",
+        "trigger": "scroll_enter",
+        "behavior": "Reveal the heading and the highlighted example row once; allow the media card to settle 14px into its fixed position while the rows remain readable throughout.",
+        "durationMs": 600,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Display all rows and the example card immediately."
+      },
+      "componentNeeds": [
+        "example_shared_moment"
+      ],
+      "assetNeeds": [
+        "shared_moment_photo"
+      ],
+      "transformation": {
+        "compact": "Keep four full-width rows and descriptions; place the highlighted example below its row copy.",
+        "medium": "Keep the row rhythm and move the media card only where it does not overlap text.",
+        "expanded": "Use the reference's centered introduction, four divided rows, and one highlighted media overlap."
+      }
+    },
+    {
+      "id": "plan_together",
+      "layoutFamily": "feature",
+      "layoutCases": [
+        "meridian-04-services"
+      ],
+      "referenceDirectionId": "meridian-04-services",
+      "purpose": "Show that shared plans belong beside memories.",
+      "userQuestion": "Can Aoi help us make plans too?",
+      "stage": "evaluate",
+      "dependencies": [
+        "share_with_partner"
+      ],
+      "evidence": [
+        "app/(app)/(tabs)/plans.tsx implements a plans calendar and agenda.",
+        "app/(app)/calendar/new-event.tsx provides an event creation route."
+      ],
+      "copy": {
+        "heading": "Make room for the days ahead.",
+        "body": [
+          "Pick a day to meet. Keep a date idea. Remember what you decided together."
+        ],
+        "callsToAction": []
+      },
+      "layout": "Reference desktop 1505×1045: large two-line serif heading occupies the upper left, about 48% of width; below it, three equal image-led columns, each around 30% of width with a near-square photograph, serif title, short muted description, and a short bottom rule. Adapt the columns to 'Choose a day', 'Keep an idea', and 'See what is next'. Use three meaningful photos and, where useful, small native plan details inside their frames without turning them into screenshot substitutes. Mobile reference 683×2048: heading remains large and left aligned, then all three units stack at full content width in the same order, with image, title, and description adjacent. Replace image-center arrow circles with accessible text links only if they have real destinations; no dead controls.",
+      "motion": {
+        "purpose": "spatial_continuity",
+        "trigger": "scroll_enter",
+        "behavior": "Reveal the heading once, then bring the three photo units into their fixed columns with opacity and short upward translation, 80ms apart and 240ms total stagger.",
+        "durationMs": 600,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Show all three units immediately."
+      },
+      "componentNeeds": [],
+      "assetNeeds": [
+        "plan_day_photo",
+        "plan_idea_photo",
+        "plan_next_photo"
+      ],
+      "transformation": {
+        "compact": "Stack all three complete image-text units; preserve their order and content.",
+        "medium": "Use one or two columns according to readable image and text width.",
+        "expanded": "Use the reference's three equal image-led columns under the large left heading."
+      }
+    },
+    {
+      "id": "revisit_story",
+      "layoutFamily": "feature",
+      "layoutCases": [
+        "avoora-03-work-1"
+      ],
+      "referenceDirectionId": "avoora-03-work-1",
+      "purpose": "Show the longer-term value of keeping moments.",
+      "userQuestion": "What happens to these moments over time?",
+      "stage": "evaluate",
+      "dependencies": [
+        "keep_a_moment",
+        "plan_together"
+      ],
+      "evidence": [
+        "app/(app)/(tabs)/together.tsx reads saved moments.",
+        "app/(app)/chapter/[id].tsx provides a chapter detail route."
+      ],
+      "copy": {
+        "eyebrow": "YOUR STORY",
+        "heading": "Return to the days you kept.",
+        "body": [
+          "A small moment today can become part of the story you revisit together."
+        ],
+        "callsToAction": []
+      },
+      "layout": "Reference desktop 1634×963: a bold heading and small label share the top band above one dominant wide media frame spanning about 95% of content width and roughly 76% of section height. Put one meaningful couple or keepsake photograph in that frame. Keep a dark translucent caption strip near the image bottom containing a short example chapter label and date; remove the reference's project number and service categories. Mobile reference 905×1707: label above the large heading, then a nearly full-width tall media frame occupying over half the visible section. Keep the caption strip inside the bottom of the image and readable at narrow widths. The photographed subjects remain illustrative, with 'Example chapter' in the strip.",
+      "motion": {
+        "purpose": "spatial_continuity",
+        "trigger": "scroll_enter",
+        "behavior": "Reveal the single dominant image inside its fixed frame while the heading remains stable; animate opacity and a 16px image translation, then settle the caption strip 80ms later.",
+        "durationMs": 700,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Show the image and caption in their final positions immediately."
+      },
+      "componentNeeds": [],
+      "assetNeeds": [
+        "revisit_couple_photo"
+      ],
+      "transformation": {
+        "compact": "Keep the large portrait crop, heading above, and caption inside the image bottom.",
+        "medium": "Allow the frame to widen without changing the label-heading-image order.",
+        "expanded": "Restore the reference's wide dominant frame and top heading band."
+      }
+    },
+    {
+      "id": "how_it_works",
+      "layoutFamily": "about",
+      "layoutCases": [
+        "waveyu-14-team"
+      ],
+      "referenceDirectionId": "waveyu-14-team",
+      "purpose": "Make starting with Aoi feel understandable.",
+      "userQuestion": "How do we begin?",
+      "stage": "explain",
+      "dependencies": [
+        "share_with_partner",
+        "plan_together"
+      ],
+      "evidence": [
+        "app/(app)/(tabs)/space.tsx exposes an invite code and Share invite action.",
+        "README.md lists relationship-space create or join onboarding."
+      ],
+      "copy": {
+        "eyebrow": "START TOGETHER",
+        "heading": "A space that starts with two.",
+        "body": [
+          "Create your space. Invite your partner. Keep a moment you will both want to find again."
+        ],
+        "callsToAction": []
+      },
+      "layout": "Reference desktop 1505×1057: place a large heading at upper left, a short explanatory sentence to its right, and a row of three tall rounded photographic cards beneath. Use each card as one step, with small top label and large bottom text over a legible image: 'Create a space', 'Invite your partner', and 'Keep your first moment'. Preserve the three-card count, tall crop, and close gaps; omit the reference's handwritten slogans and surf ornament. Mobile reference 783×2048 shows one dominant portrait card with a peek of the next and navigation controls below. Implement a three-item accessible carousel at compact widths with labelled Previous and Next controls, visible position, keyboard operation, and all three steps available. The heading and intro stay above the carousel.",
+      "motion": {
+        "purpose": "spatial_continuity",
+        "trigger": "scroll_enter",
+        "behavior": "Reveal the three step cards once in their fixed row; on compact screens reveal the first card and keep later cards available through the carousel. Animate opacity and 10px translation with 80ms staggering.",
+        "durationMs": 650,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Show the card state immediately; carousel controls continue to work without animated travel."
+      },
+      "componentNeeds": [],
+      "assetNeeds": [
+        "create_space_photo",
+        "invite_partner_photo",
+        "first_moment_photo"
+      ],
+      "transformation": {
+        "compact": "Use the reference's one-card carousel with next-card peek and accessible controls; preserve every step and its copy.",
+        "medium": "Show one or two tall cards with the same controls if space is limited.",
+        "expanded": "Show all three portrait cards simultaneously under the heading and intro."
+      }
+    },
+    {
+      "id": "privacy",
+      "layoutFamily": "about",
+      "layoutCases": [
+        "xodexdesign-05-image-statement"
+      ],
+      "referenceDirectionId": "xodexdesign-05-image-statement",
+      "purpose": "Clarify the relationship-space boundary without overstating security.",
+      "userQuestion": "Who is this space for?",
+      "stage": "de_risk",
+      "dependencies": [
+        "how_it_works"
+      ],
+      "evidence": [
+        "README.md calls Aoi a private relationship app for two people.",
+        "app/(app)/(tabs)/space.tsx exposes partner invitation and partner-joined states."
+      ],
+      "copy": {
+        "heading": "A space for the two of you.",
+        "body": [
+          "Create a shared space and invite your partner into it."
+        ],
+        "callsToAction": [
+          {
+            "label": "Read the Privacy Policy",
+            "target": "verified_privacy_url"
+          }
+        ]
+      },
+      "layout": "Reference desktop 1704×923: one nearly full-bleed image with soft lower corners fills the section; a short two-line white statement sits centered over the subject around the middle, with no surrounding prose card. Use the verified rain-window image and its scrim as the single image, preserving the image-led geometry while using Aoi's established subject. Place the supporting sentence and policy link in a restrained readable overlay below the statement, because the real content needs an actionable policy destination. Mobile reference 1254×1254: keep the same single image and centered two-line statement in a nearly square frame with generous top image space; move the sentence and link below within the frame if they would obscure the statement. The policy link appears only with a verified destination.",
+      "motion": {
+        "purpose": "explanation",
+        "trigger": "scroll_enter",
+        "behavior": "Reveal the centered statement once over the already visible still image using opacity and 10px translation; do not move the image or animate blur.",
+        "durationMs": 550,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Show image, statement, and link immediately."
+      },
+      "componentNeeds": [],
+      "assetNeeds": [
+        "midnight_window_photo"
+      ],
+      "transformation": {
+        "compact": "Keep a single nearly square image frame with centered statement and readable policy link.",
+        "medium": "Preserve the single-image geometry and adjust the scrim for text contrast.",
+        "expanded": "Use the reference's near-full-width image statement with generous space around the centered text."
+      }
+    },
+    {
+      "id": "get_aoi",
+      "layoutFamily": "cta",
+      "layoutCases": [
+        "lexedge-13-cta"
+      ],
+      "referenceDirectionId": "lexedge-13-cta",
+      "purpose": "Give a clear next step after the visitor understands the product.",
+      "userQuestion": "Where do we go next?",
+      "stage": "act",
+      "dependencies": [
+        "revisit_story",
+        "privacy"
+      ],
+      "evidence": [],
+      "copy": {
+        "eyebrow": "GET AOI",
+        "heading": "Start keeping your story together.",
+        "body": [],
+        "callsToAction": [
+          {
+            "label": "Get Aoi",
+            "target": "app_destination"
+          }
+        ]
+      },
+      "layout": "Reference desktop 1554×1012: one large rounded dark panel inset about 2% from page edges and occupying nearly the full section height. Center a small eyebrow, a large two-line serif heading, and one light-filled action around the panel's middle; leave the lower half mostly open. Mobile reference 1100×1438: keep the same inset rounded panel, with the heading broken across roughly three lines and the single action immediately below. Adapt the background to the established midnight treatment without a second decorative image; retain the reference's broad quiet field and centered hierarchy.",
+      "motion": {
+        "purpose": "spatial_continuity",
+        "trigger": "scroll_enter",
+        "behavior": "Bring the eyebrow, headline, and action into their fixed centered positions once with opacity and a small 12px upward translation, 80ms apart.",
+        "durationMs": 600,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "Show the complete invitation immediately."
+      },
+      "componentNeeds": [],
+      "assetNeeds": [],
+      "transformation": {
+        "compact": "Keep one centered heading and one full-size action inside the tall inset panel.",
+        "medium": "Preserve the panel proportions and centered hierarchy.",
+        "expanded": "Match the reference's large inset panel and ample open lower field."
+      }
+    },
+    {
+      "id": "footer",
+      "layoutFamily": "footer",
+      "layoutCases": [
+        "fabrica-16-footer"
+      ],
+      "referenceDirectionId": "fabrica-16-footer",
+      "purpose": "Provide orientation, legal links, and a final brand signature.",
+      "userQuestion": "Where can I find the page sections and legal information?",
+      "stage": "continue",
+      "dependencies": [
+        "get_aoi"
+      ],
+      "evidence": [
+        "components/landing/immersive-hero.tsx uses the lowercase aoi text wordmark.",
+        "features/legal/legal-links.ts reads configured Privacy Policy and Terms of Service URLs."
+      ],
+      "copy": {
+        "heading": "Keep the moments you want to return to.",
+        "body": [
+          "Aoi is a private shared space for two people."
+        ],
+        "callsToAction": [
+          {
+            "label": "How it works",
+            "target": "#how-it-works"
+          },
+          {
+            "label": "Privacy",
+            "target": "#privacy"
+          },
+          {
+            "label": "Get Aoi",
+            "target": "app_destination"
+          },
+          {
+            "label": "Privacy Policy",
+            "target": "verified_privacy_url"
+          },
+          {
+            "label": "Terms of Service",
+            "target": "verified_terms_url"
+          }
+        ]
+      },
+      "layout": "Reference desktop 1568×973: use a light footer with a large sentence in the left half, utility content and links in the right half, an oversized wordmark toward the lower right, and a narrow dark legal strip across the bottom. Omit the reference's newsletter, fake contact details, portrait, and social links because those destinations are not established. Use the freed right-side space for the page and legal links while preserving the broad two-column hierarchy and large lower wordmark. Mobile reference 789×2048: stack the statement, link groups, oversized wordmark, then dark legal strip in that order. Keep wordmark lowercase 'aoi' and avoid inventing a graphic logo.",
+      "motion": {
+        "purpose": "none",
+        "trigger": "none",
+        "behavior": "Footer content remains visible; link hover, focus, and press feedback uses the shared control behavior.",
+        "durationMs": 0,
+        "easing": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "reducedMotion": "No change."
+      },
+      "componentNeeds": [],
+      "assetNeeds": [],
+      "transformation": {
+        "compact": "Stack statement, navigation links, legal links, large wordmark, and legal strip without hiding any destination.",
+        "medium": "Use two columns where link groups remain readable.",
+        "expanded": "Preserve the reference's broad left statement, right utility area, lower oversized wordmark, and full-width dark strip."
+      }
+    }
+  ],
+  "responsive": [
+    "Compact: use one primary content column; reduce simultaneity by stacking media stories and using the reference's controlled three-step carousel.",
+    "Medium: allow two-column compositions only when text measures and media crops remain legible; preserve source order.",
+    "Expanded: reproduce each selected desktop reference's measured column ratios, media count, overlap, and open space.",
+    "Never replace a meaningful photograph with decorative art or crop away the relevant people or object.",
+    "All examples remain labelled as examples in visible copy."
+  ],
+  "interactions": [
+    "Get Aoi links use one verified destination and the same label throughout; do not publish a dead or guessed store link.",
+    "Anchor navigation and the compact menu work with keyboard, touch, and screen readers.",
+    "The how-it-works carousel exposes all three steps through labelled controls and keeps its current position understandable.",
+    "All links and controls have visible focus, hover, and pressed states; feedback takes 120–220ms and never carries required information.",
+    "Scroll reveals run once on individual groups, start before entry, and leave content visible on restored scroll, resize, rapid scrolling, and reduced-motion changes."
+  ],
+  "acceptanceCriteria": [
+    "The page answers what Aoi is, why to use it, what can be kept and shared, how plans and revisiting fit, who joins the space, and how to begin.",
+    "Nine substantive sections plus a footer use exact selected reference IDs and retain each reference's recognizable desktop and compact geometry.",
+    "Claims about the current app are limited to the recorded project evidence; illustrative content is visibly identified and no customer proof is invented.",
+    "The app and legal destinations are verified before their links are published.",
+    "The hero visibly animates on load; at least two later groups reveal on scroll; buttons, navigation, and carousel controls give direct feedback.",
+    "Reduced motion shows immediately readable final states; rapid scroll, middle-position reload, resize, and reduced-motion toggle do not hide or replay visited sections.",
+    "Every meaningful image need is fulfilled with a suitable, provenance-checked asset before Build."
+  ]
+}

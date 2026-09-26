@@ -248,11 +248,12 @@ function forwardPhotoPress(
 
 /**
  * Timeline photo sets read as one sideways strip: peek-sized prints in a
- * row that bleeds off both screen edges, snapped stop to stop, instead of
- * stacking every photo down the chronology. The strip sits at entry level
- * (outside the text column's padding), so the first print is flush with the
- * screen edge. One small dot row carries position; the photos stay the only
- * content.
+ * row, snapped stop to stop, instead of stacking every photo down the
+ * chronology. The strip sits at entry level (outside the text column's
+ * padding), and every stop centres its print: the content opens and closes
+ * with half a viewport of padding, with neighbours peeking on both sides
+ * of the centred print. One small dot row carries position; the photos
+ * stay the only content.
  */
 function MomentImagePager({
   images,
@@ -268,13 +269,17 @@ function MomentImagePager({
   const total = images.length;
   const [page, setPage] = useState(0);
   const { width: windowWidth } = useWindowDimensions();
-  const accent = useThemeColor({}, 'accent');
+  const accentInk = useThemeColor({}, 'accentInk');
   const border = useThemeColor({}, 'border');
 
-  // Peek-sized prints: each fills most of the strip with the next one
-  // peeking in, so the set reads as a sideways scroll.
+  // Peek-sized prints: each fills most of the strip with neighbours
+  // peeking on both sides, so the set reads as a sideways scroll.
   const photoWidth = Math.round(Math.min(STRIP_PHOTO_MAX, windowWidth * STRIP_PHOTO_FRACTION));
   const stride = photoWidth + STRIP_GAP;
+  // Half a viewport of padding on each end centres the first and last
+  // prints; every stop between them is already a multiple of the stride,
+  // so the interval stops land centred with no alignment prop.
+  const sideInset = Math.max(0, Math.round((windowWidth - photoWidth) / 2));
 
   const handleMomentumEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -303,10 +308,14 @@ function MomentImagePager({
         showsHorizontalScrollIndicator={false}
         snapToInterval={stride}
         decelerationRate="fast"
+        contentContainerStyle={{ paddingHorizontal: sideInset }}
         onMomentumScrollEnd={handleMomentumEnd}
       >
         {images.map((image, index) => (
-          <View key={image.mediaId} style={{ width: photoWidth, marginRight: STRIP_GAP }}>
+          <View
+            key={image.mediaId}
+            style={{ width: photoWidth, marginRight: index === total - 1 ? 0 : STRIP_GAP }}
+          >
             {photo(image, index)}
           </View>
         ))}
@@ -317,7 +326,7 @@ function MomentImagePager({
             <View
               key={image.mediaId}
               testID="photo-page-dot"
-              style={[styles.pageDot, { backgroundColor: index === page ? accent : border }]}
+              style={[styles.pageDot, { backgroundColor: index === page ? accentInk : border }]}
             />
           ))}
         </View>

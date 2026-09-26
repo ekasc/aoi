@@ -1,0 +1,48 @@
+{
+  "originalRequest": "i want a sveltekit spa marketing app for aoi.",
+  "subject": "Aoi, a private shared space for two people to save moments, exchange thoughtful gestures, make plans, and revisit their history together.",
+  "pageType": "SvelteKit single-page marketing app",
+  "scope": "A responsive public marketing page, separate from the existing Expo app. Include navigation and a footer. Keep this first scope to one substantive page with links to existing legal pages.",
+  "primaryGoal": "Help couples understand Aoi’s value and take a clear next step toward using the app.",
+  "audience": "Couples who want a private, calm place for their relationship, including couples living apart.",
+  "offer": "One shared place to keep meaningful moments, send them to a partner, plan time together, and return to what they have built.",
+  "primaryAction": "Get Aoi, linking only to a verified app entry or store destination when available.",
+  "creativeControl": "High for page composition, imagery, copy, and motion after reference images are selected; preserve Aoi’s intimate tone and recognizable dark landing identity unless the references support a deliberate evolution.",
+  "requiredContent": [
+    "Hero: Aoi’s private space for two, with a clear value statement and primary action.",
+    "The scattered-moments problem: meaningful photos, notes, and ideas become hard to find across chats and other apps.",
+    "Keep a moment: show how a photo, note, or small memory becomes part of a shared history.",
+    "Share with your partner: explain the value of one person saving something and the other receiving it.",
+    "Plan time together: present shared plans and meaningful dates as part of the same relationship space.",
+    "Return to your story: show how saved moments become worth revisiting together.",
+    "Private by design: explain the two-person setting using only privacy claims verified by the current product and policy.",
+    "How it works: create a shared space, invite a partner, then start keeping and revisiting moments.",
+    "Closing invitation: restate the benefit and offer the same primary action."
+  ],
+  "constraints": [
+    "Use SvelteKit for the marketing interface.",
+    "Treat the page as a client-side SPA as requested while keeping public content accessible and discoverable where the framework permits.",
+    "Do not use the older marketing documents’ unverified price, guarantee, testimonials, encryption claims, or store availability as current facts.",
+    "Use selected reference images for the desktop and mobile composition of every section in the subsequent design phase.",
+    "Respect reduced-motion preferences while providing visible entrance and scroll animation by default.",
+    "Do not present illustrative memories or people as real Aoi customers."
+  ],
+  "brandInputs": [
+    "Existing public app screen: lowercase text wordmark “aoi,” intimate editorial copy, a dark atmospheric backdrop, and restrained motion. Source: app/(public)/index.tsx and components/landing/immersive-hero.tsx.",
+    "Existing landing colors: midnight #120D13, light ink #F6EDF3, muted text #C5B2C2, border #5C4255. Source: constants/landing-theme.ts.",
+    "Current app theme also uses rose and lavender accents with light and dark surfaces. Source: constants/theme-presets.ts.",
+    "Older marketing guidance uses the line “Keep the moments that matter” and describes a private couples app. Source: marketing/01-value-proposition.md. Treat its visual and commercial details as historical guidance rather than confirmed current requirements.",
+    "The app ships no custom font binaries; its typography resolves through system stacks. Source: hooks/use-aoi-fonts.ts."
+  ],
+  "assumptions": [
+    "This first brief covers a single marketing page rather than the older proposed multi-page documentation site.",
+    "The main conversion is toward using the mobile app; exact destination depends on verified current links.",
+    "Use original illustrative couple moments and product examples where needed, with concise copy making clear they are examples.",
+    "The current app and product loop take precedence over older marketing specifications when they disagree."
+  ],
+  "unresolved": [
+    "The final app or store destination has not been verified.",
+    "Selected visual references for each section are still needed in the subsequent design phase."
+  ],
+  "explicitAnswers": []
+}

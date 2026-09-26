@@ -37,7 +37,7 @@ vi.mock('@/components/media/audio-player', () => ({
 
 // Distinct colors so the indicator can tell active from inactive dots.
 vi.mock('@/hooks/use-theme-color', () => ({
-  useThemeColor: (_theme: any, key: string) => (key === 'accent' ? '#111111' : '#eeeeee'),
+  useThemeColor: (_theme: any, key: string) => (key === 'accentInk' ? '#111111' : '#eeeeee'),
 }));
 
 vi.mock('expo-image', () => ({
@@ -107,7 +107,7 @@ vi.mock('react-native', () => {
 
   // onMomentumScrollEnd is intentionally not forwarded to the DOM; the
   // paging test drives it through react-test-renderer props instead.
-  const ScrollView = ({ children, style, horizontal, pagingEnabled, snapToInterval, testID }: any) =>
+  const ScrollView = ({ children, style, horizontal, pagingEnabled, snapToInterval, testID, contentContainerStyle }: any) =>
     React.createElement(
       'div',
       {
@@ -116,6 +116,7 @@ vi.mock('react-native', () => {
         'data-horizontal': String(horizontal),
         'data-paging': String(pagingEnabled),
         'data-snap': String(snapToInterval),
+        'data-side-inset': String(contentContainerStyle?.paddingHorizontal ?? ''),
       },
       children
     );
@@ -164,20 +165,26 @@ function threePhotoMoment() {
 }
 
 describe('MomentOrderedImages timeline carousel', () => {
-  it('lays a multi-photo set as an edge-bleed sideways strip with snap stops', () => {
+  it('lays a multi-photo set as a centred sideways strip with snap stops', () => {
     render(<MomentOrderedImages moment={threePhotoMoment()} paged onPhotoPress={() => {}} />);
 
     const scroll = screen.getByTestId('photo-scroll');
     expect(scroll.getAttribute('data-horizontal')).toBe('true');
     // One stride (304pt print + 8pt gap) per stop on the 390pt track.
     expect(scroll.getAttribute('data-snap')).toBe('312');
+    // Half a viewport of padding on each end centres the first and last
+    // prints: (390 - 304) / 2.
+    expect(scroll.getAttribute('data-side-inset')).toBe('43');
 
     const prints = Array.from(scroll.children);
     expect(prints).toHaveLength(3);
     for (const print of prints) {
-      // Peek-sized: most of the track with the next print peeking in.
+      // Peek-sized: most of the track with neighbours peeking on both sides.
       expect((print as HTMLElement).style.width).toBe('304px');
     }
+    // Gaps between prints only: no trailing margin unbalancing the last stop.
+    expect((prints[0] as HTMLElement).style.marginRight).toBe('8px');
+    expect(['', '0px']).toContain((prints[2] as HTMLElement).style.marginRight);
 
     expect(screen.getByLabelText('Photo 1 of 3')).toBeTruthy();
     expect(screen.getByLabelText('Photo 2 of 3')).toBeTruthy();

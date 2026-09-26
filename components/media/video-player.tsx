@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MediaFrame } from '@/components/ui/media-frame';
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 
 export type VideoPlayerProps = {
@@ -60,6 +61,7 @@ export function VideoPlayer({
   aspectRatio = 16 / 9,
 }: VideoPlayerProps) {
   const [started, setStarted] = useState(false);
+  const surface2 = useThemeColor({}, 'surface2');
   const handlePlay = useCallback(() => setStarted(true), []);
 
   const surface = started ? (
@@ -80,7 +82,7 @@ export function VideoPlayer({
           transition={200}
         />
       ) : (
-        <View style={[styles.fill, styles.placeholder]} />
+        <View style={[styles.fill, { backgroundColor: surface2 }]} />
       )}
       <View pointerEvents="none" style={styles.overlay}>
         <View style={styles.playButton}>
@@ -97,9 +99,6 @@ const styles = StyleSheet.create({
   fill: {
     width: '100%',
     height: '100%',
-  },
-  placeholder: {
-    backgroundColor: 'rgba(128, 128, 128, 0.2)',
   },
   overlay: {
     ...StyleSheet.absoluteFill,

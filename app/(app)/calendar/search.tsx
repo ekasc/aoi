@@ -33,8 +33,8 @@ export default function CalendarSearchScreen() {
 
 	const border = useThemeColor({}, 'border');
 	const muted = useThemeColor({}, 'muted');
-	const accent = useThemeColor({}, 'accent');
-	const partnerAccent = useThemeColor({}, 'partnerAccent');
+	const accentInk = useThemeColor({}, 'accentInk');
+	const partnerAccentInk = useThemeColor({}, 'partnerAccentInk');
 
 	const load = useCallback(async () => {
 		const current = generation.current + 1;
@@ -126,7 +126,7 @@ export default function CalendarSearchScreen() {
 			) : null}
 
 			{events === null && !error ? (
-				<ActivityIndicator color={accent} style={styles.spinner} />
+				<ActivityIndicator color={accentInk} style={styles.spinner} />
 			) : null}
 
 			{events !== null && trimmed.length > 0 && hits.length === 0 ? (
@@ -162,7 +162,7 @@ export default function CalendarSearchScreen() {
 										styles.authorDot,
 										{
 											backgroundColor:
-												event.isOwn && !event.together ? accent : partnerAccent,
+												event.isOwn && !event.together ? accentInk : partnerAccentInk,
 										},
 									]}
 								/>

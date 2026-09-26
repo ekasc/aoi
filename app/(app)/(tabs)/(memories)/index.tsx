@@ -4,17 +4,22 @@ import { MenuView, type MenuAction } from "@expo/ui/community/menu";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { useReducedMotion } from "react-native-reanimated";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Animated, {
+	FadeIn,
+	FadeOut,
+	ReduceMotion,
+	useAnimatedStyle,
+	useSharedValue,
+} from 'react-native-reanimated';
 import {
-	Animated,
+	AppState,
 	FlatList,
 	Pressable,
-	ScrollView,
 	StyleSheet,
-	TextInput,
 	useWindowDimensions,
 	View,
+	type LayoutChangeEvent,
 	type ListRenderItemInfo,
 	type NativeScrollEvent,
 	type NativeSyntheticEvent,
@@ -22,7 +27,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MemorySky, fabBottomOffset } from "@/components/home/memory-sky";
-import { SpaceAvatarButton } from "@/components/space/space-avatar-button";
 import { GalleryMonthHeader } from "@/components/moments/gallery-month-header";
 import {
 	GalleryPhotoTile,
@@ -36,12 +40,11 @@ import { PendingMemoryRow } from "@/components/moments/pending-memory-row";
 import { ThemedText } from "@/components/themed-text";
 import { ActionSheet } from "@/components/ui/action-sheet";
 import { GlassSurface } from "@/components/ui/glass-surface";
+import { Pressed } from "@/components/ui/pressed";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Radii, Spacing, withAlpha } from "@/constants/theme";
+import { Elevation, Motion, Radii, Spacing, shadow, withAlpha } from "@/constants/theme";
 import { getDaysTogether } from "@/features/time-together/time-together";
-import { haptics } from "@/features/haptics/haptics";
 import { useMoments } from "@/features/moments/moments-context";
 import { useStoryFeed } from "@/features/moments/use-story-feed";
 import {
@@ -54,19 +57,27 @@ import {
 	type GalleryRow,
 } from "@/features/moments/gallery";
 import {
-	filterFeedMoments,
+	feedRowIndexForMomentId,
+	firstUnreadPartnerId,
+	galleryRowIndexForMomentId,
+	loadSeenCursor,
+	newestOccurredAt,
+	saveSeenCursor,
+	scrollListToIndexOrEnd,
+} from "@/features/moments/seen-cursor";
+import {
 	groupFeedChronological,
 	type FeedMonthSection,
-	type FeedTypeFilter,
 } from "@/features/moments/story-feed";
 import { isOwnMoment } from "@/features/moments/ownership";
-import { settleTargetForProgress } from "@/features/moments/header-settle";
 import { useResurfaceNotification } from "@/features/moments/use-resurface-notification";
 import type { Moment } from "@/features/moments/types";
 import type { PendingRecord } from "@/features/composer/types";
 import { useSpace } from "@/features/space/space-context";
 import { useAoiTheme } from "@/features/theme/theme-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { relationshipCopy } from "@/features/relationship/relationship-age";
+import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
 
 /** Round FAB over the feed, clear of the docked system tab bar. */
 const FAB_SIZE = 56;
@@ -85,15 +96,6 @@ const ROOT_MAX_WIDTH = 720;
 /** Dense gallery gutters, in points. */
 const GALLERY_GAP = 2;
 
-/** Scroll-up distance past the deep point that reopens the header anywhere. */
-const REOPEN_DISTANCE = 24;
-
-/**
- * Height the on-demand search controls add to the header: the search row
- * (44) plus its gap (8) plus the filter chips row (44).
- */
-const SEARCH_CONTROLS_HEIGHT = 44 + Spacing[8] + 44;
-
 /**
  * Distance the reader travels away from the top before the top edge is
  * allowed to page again. Shortened to the list's actual scroll range, so a
@@ -101,21 +103,8 @@ const SEARCH_CONTROLS_HEIGHT = 44 + Spacing[8] + 44;
  */
 const TOP_ARM_DISTANCE = 200;
 
-/** Milliseconds a header settle/reopen takes (header-only; feed never moves). */
-const HEADER_ANIM_DURATION = 220;
-
 /** How long the "Kept in your story" confirmation stays up. */
 const KEPT_NOTICE_DURATION_MS = 5000;
-
-
-
-/** Archive filters, in the order they earn space. */
-const FILTERS: { key: FeedTypeFilter; label: string }[] = [
-	{ key: "all", label: "All" },
-	{ key: "photos", label: "Photos" },
-	{ key: "notes", label: "Notes" },
-	{ key: "voice", label: "Voice" },
-];
 
 /**
  * Own-moment long-press actions. On iOS these render in a native SwiftUI
@@ -140,8 +129,9 @@ const MOMENT_MENU_ACTIONS: MenuAction[] = [
  * chapter. The Gallery is the same archive as a dense, month-grouped photo
  * grid. Neither owns a second data source — the shared moments list is the
  * only feed input, paged by the same cursor the context owns. Unsent
- * memories pin to the top of the Feed. The compact sky stays pinned behind
- * the header, same as Plans.
+ * memories pin to the top of the Feed. The fixed header carries the title
+ * and the Feed/Gallery switcher side by side; Space lives in the tab bar.
+ * The compact sky stays pinned behind the header, same as Plans.
  */
 export default function MemoriesScreen() {
 	const router = useRouter();
@@ -158,6 +148,18 @@ export default function MemoriesScreen() {
 	const feed = useStoryFeed();
 	const { moments: signalMoments, removeMoment } = useMoments();
 	const { space } = useSpace();
+	const relationshipAge = useRelationshipAge(space?.relationshipStartDate);
+	const adaptiveCopy = useMemo(
+		() => relationshipCopy(relationshipAge.tone),
+		[relationshipAge.tone],
+	);
+	const [now, setNow] = useState(() => new Date());
+	useEffect(() => {
+		const subscription = AppState.addEventListener("change", (state) => {
+			if (state === "active") setNow(new Date());
+		});
+		return () => subscription.remove();
+	}, []);
 	const [actionMoment, setActionMoment] = useState<Moment | null>(null);
 	const [confirmMoment, setConfirmMoment] = useState<Moment | null>(null);
 	const [isRemoving, setIsRemoving] = useState(false);
@@ -168,100 +170,30 @@ export default function MemoriesScreen() {
 			? "gallery"
 			: "feed",
 	);
-	const [switcherHidden, setSwitcherHidden] = useState(false);
-	const [isSearching, setIsSearching] = useState(false);
 	const [viewerPhoto, setViewerPhoto] = useState<{
 		photos: ViewerPhoto[];
 		index: number;
 		/** Window frame of the tile that opened this session (morph origin). */
 		origin?: PhotoOrigin;
 	} | null>(null);
-	const [query, setQuery] = useState("");
-	const [typeFilter, setTypeFilter] = useState<FeedTypeFilter>("all");
-	const [searchFocused, setSearchFocused] = useState(false);
 
-	// Pinned overlay header: title row above the view switcher (always that
-	// order). The feed scrolls underneath it, and the header condenses 1:1
-	// with the scroll — no timed toggle, so nothing ever jumps: content only
-	// moves exactly as much as the finger scrolls. The sky stays pinned
-	// behind the header throughout.
+	// Pinned overlay header: a single fixed row — the title on the left, the
+	// Feed/Gallery switcher on the right. The feed scrolls underneath it; the
+	// sky stays pinned behind it throughout. The switcher lives in the title
+	// row so it is always reachable, and Space lives in the tab bar.
 	const TITLE_ROW = 56;
-	const TABS_ROW = 52;
-	const HEADER_GAP = Spacing[8];
 	const HEADER_PAD_BOTTOM = Spacing[12];
-	// A short list or a slow drag can park the header half-shed: it settles
-	// to the nearer endpoint on scroll rest (pure rule, unit-tested).
-	const searchExtra = isSearching ? SEARCH_CONTROLS_HEIGHT : 0;
-	const headerExpanded =
-		insets.top + TITLE_ROW + HEADER_GAP + TABS_ROW + HEADER_PAD_BOTTOM + searchExtra;
-	// Condensed height: the title row survives; the gap + switcher row are shed.
-	const headerCollapsed =
-		insets.top + TITLE_ROW + HEADER_PAD_BOTTOM + searchExtra;
-	// Scroll distance that fully condenses the header: exactly the shed row.
-	const COLLAPSE_DISTANCE = HEADER_GAP + TABS_ROW;
-	// Collapse progress, 0 open → 1 condensed. `collapse` runs the native
-	// driver (opacity, scale); `collapseLayout` runs the JS driver (height);
-	// `frost` runs the title-bar frost. Linkage sets them straight from the
-	// scroll offset; settle/reopen animations own the values while set.
-	const [collapse] = useState(() => new Animated.Value(0));
-	const [collapseLayout] = useState(() => new Animated.Value(0));
-	const [frost] = useState(() => new Animated.Value(0));
-	const reduceMotion = useReducedMotion();
-	// Linkage origin: the offset the shed distance is measured from. Zero at
-	// the top; moved to the reopen point wherever the header comes back, so
-	// recondensing stays gradual instead of snapping. Never negative
-	// (settle-to-condensed requires resting at/past the shed distance), so
-	// the top always rests exactly open.
-	const originRef = useRef(0);
-	// Deepest offset seen while condensed; scrolling up past it reopens.
-	const maxYRef = useRef(0);
-	const lastYRef = useRef(0);
-	// Last applied progress (drives settle decisions); in-flight animation
-	// handle, which owns the values while set and suppresses linkage.
-	const progressRef = useRef(0);
-	const settleRef = useRef<Animated.CompositeAnimation | null>(null);
-	// Mirrors the condensed state in React state so the switcher leaves the
-	// accessibility tree (and stops receiving taps) once fully faded. The ref
-	// gates it so scrolls only re-render on the crossing, not per frame.
-	const switcherHiddenRef = useRef(false);
-	// Snap the header to an endpoint: header-only, over the static feed, so
-	// content never moves. Resyncs the linkage origin on completion so later
-	// scrolls continue without snapping.
-	const settleHeader = useCallback(
-		(target: 0 | 1) => {
-			settleRef.current?.stop();
-			switcherHiddenRef.current = target === 1;
-			setSwitcherHidden(target === 1);
-			progressRef.current = target;
-			const duration = reduceMotion ? 0 : HEADER_ANIM_DURATION;
-			const anim = Animated.parallel([
-				Animated.timing(collapse, { toValue: target, duration, useNativeDriver: true }),
-				Animated.timing(collapseLayout, { toValue: target, duration, useNativeDriver: false }),
-			]);
-			settleRef.current = anim;
-			// `stop()` also calls this completion, with finished === false. Only
-			// the animation that actually reached its target may resync the
-			// linkage origin, and only if it still owns the header (a newer
-			// settle or a view switch may have taken over meanwhile).
-			anim.start(({ finished }) => {
-				if (settleRef.current !== anim) {
-					return;
-				}
-				settleRef.current = null;
-				if (!finished) {
-					return;
-				}
-				originRef.current = lastYRef.current - target * COLLAPSE_DISTANCE;
-				maxYRef.current = lastYRef.current;
-			});
-		},
-		[collapse, collapseLayout, reduceMotion, COLLAPSE_DISTANCE],
-	);
-	// Scroll-linked condense: progress is the offset past the origin clamped
-	// to the shed distance, so the header meets the rising feed with no gap
-	// and no jump. Scrolling up 24px past the deep point reopens the header
-	// anywhere in the feed — a header-only fade over the static list, so the
-	// feed still never moves.
+	const headerHeight = insets.top + TITLE_ROW + HEADER_PAD_BOTTOM;
+	// Absolute scroll distance over which the title-bar frost fades in, so
+	// rows sliding underneath dissolve into frost instead of ghosting through
+	// the title. Transparent at the very top, where the sky shows instead.
+	const FROST_DISTANCE = 60;
+	// `frost` runs the title-bar frost. This used to be a React Native
+	// Animated.Value written with setValue from onScroll, which put a
+	// 60fps JS-thread update and a style interpolation on the app's main
+	// screen. As a shared value the scroll handler and the style both run on
+	// the UI thread and React never hears about scrolling.
+	const frost = useSharedValue(0);
 	// Oldest lives at the top, so scrolling back to it pages older history
 	// above (pinned by maintainVisibleContentPosition, no jump). This arm is
 	// the only automatic, scroll-driven paging trigger: older pages land at
@@ -273,22 +205,80 @@ export default function MemoriesScreen() {
 	// and it is measured against the range the list actually has (see
 	// onScroll), so a short feed still arms.
 	const topArmRef = useRef(false);
-	const onScroll = useCallback(
+	// The feed reads oldest-first and older history prepends above, so the
+	// present lives at the END of the list. Without landing there, the reader
+	// arrives at the oldest memory they have and scrolls forward through their
+	// own past to reach today — the archive running one way and the reader the
+	// other. Both lists land on the newest, until the reader takes over.
+	const feedListRef = useRef<FlatList<FeedRow> | null>(null);
+	const galleryListRef = useRef<FlatList<GalleryRow> | null>(null);
+	const readerScrolledRef = useRef(false);
+	// Where a fresh screen lands: the first unread partner post, so the
+	// reader moves forward through everything new — or the newest post when
+	// caught up. Undefined until the stored cursor loads; rows stay gated
+	// until then so nothing paints, slices, or jumps on a guess.
+	const [seenCursor, setSeenCursor] = useState<string | null | undefined>(undefined);
+	const seenStoredRef = useRef<string | null>(null);
+	// Placement is observed, never assumed: set once a landing jump is seen
+	// deep in a list (or the list proves too short to jump), and never again
+	// for this space. Until then the unread target owns a sliced prefix.
+	const [placed, setPlaced] = useState(false);
+
+	// A new space decides and places fresh: the resolve below resets both,
+	// so a stale cursor or placement never leaks across accounts.
+	const placementSpaceRef = useRef<string | null>(null);
+	useEffect(() => {
+		let live = true;
+		void loadSeenCursor(space?.id).then((cursor) => {
+			if (!live) {
+				return;
+			}
+			if (placementSpaceRef.current !== (space?.id ?? null)) {
+				placementSpaceRef.current = space?.id ?? null;
+				setPlaced(false);
+			}
+			seenStoredRef.current = cursor;
+			setSeenCursor(cursor);
+		});
+		return () => {
+			live = false;
+		};
+	}, [space?.id]);
+	// Each presentation keeps its own scroll position: switching tabs never
+	// moves, mounts, or jumps a list, so there is no flash.
+	// The landing jump (top to newest on first content) would flash if
+	// painted: each list stays invisible until it is already where it
+	// belongs — jumped deep, or too short to jump at all. One way only;
+	// later data never re-hides a placed list.
+	const [readyView, setReadyView] = useState({ feed: false, gallery: false });
+	const viewportH = useRef({ feed: 0, gallery: 0 });
+	const contentH = useRef({ feed: 0, gallery: 0 });
+	const markReady = useCallback((presented: MemoriesView) => {
+		setReadyView((ready) => (ready[presented] ? ready : { ...ready, [presented]: true }));
+	}, []);
+	const handleScrollBeginDrag = useCallback(() => {
+		// A real drag: the reader owns the position from here.
+		readerScrolledRef.current = true;
+	}, []);
+	// Both presentations write the same two values: the frost ramp (UI
+	// thread) and the paging arm (JS, because it decides to fetch). Only the
+	// visible list ever scrolls, so there is nothing to arbitrate.
+	const trackScroll = useCallback(
 		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
 			const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
 			const y = Math.max(0, contentOffset.y);
-			lastYRef.current = y;
-			// Frost tracks the absolute offset over the full shed distance, so
-			// the sky stays crisp through the first stretch of scrolling and
-			// only fully frosts once the header is condensed (or reopened
-			// deep, where rows sit underneath it).
-			frost.setValue(Math.min(1, y / COLLAPSE_DISTANCE));
+			// Frost tracks the absolute offset over a short ramp, so the sky
+			// stays crisp through the first stretch of scrolling and rows
+			// sliding underneath the fixed header dissolve into frost. A
+			// plain assignment on a shared value: the header style is a
+			// UI-thread `useAnimatedStyle`, so the interpolation and the
+			// opacity write both happen off the JS thread now.
+			frost.value = Math.min(1, y / FROST_DISTANCE);
 			// The arm is a distance travelled away from the top, but a feed
-			// that cannot travel the whole way (a short archive, or a filter
-			// that leaves a few rows) must still be able to reach older
-			// history: the distance shrinks to the range the list has. A list
-			// with no range at all never scrolls, so its header owns an
-			// explicit control instead (see listHeader).
+			// that cannot travel the whole way (a short archive) must still
+			// be able to reach older history: the distance shrinks to the
+			// range the list has. A list with no range at all never scrolls,
+			// so its header owns an explicit control instead (see listHeader).
 			const range = Math.max(0, contentSize.height - layoutMeasurement.height);
 			if (y >= Math.min(TOP_ARM_DISTANCE, range) && y > 0) {
 				topArmRef.current = true;
@@ -297,126 +287,72 @@ export default function MemoriesScreen() {
 				topArmRef.current = false;
 				feed.loadMore();
 			}
-			if (settleRef.current) {
-				return;
-			}
-			const progress = Math.min(1, Math.max(0, (y - originRef.current) / COLLAPSE_DISTANCE));
-			if (progress >= 1) {
-				maxYRef.current = Math.max(maxYRef.current, y);
-				if (maxYRef.current - y > REOPEN_DISTANCE) {
-					settleHeader(0);
-					return;
-				}
-			} else {
-				maxYRef.current = y;
-			}
-			progressRef.current = progress;
-			collapse.setValue(progress);
-			collapseLayout.setValue(progress);
-			const hidden = progress >= 1;
-			if (hidden !== switcherHiddenRef.current) {
-				switcherHiddenRef.current = hidden;
-				setSwitcherHidden(hidden);
-			}
 		},
-		[collapse, collapseLayout, frost, settleHeader, feed, COLLAPSE_DISTANCE],
+		[feed, frost],
 	);
-	// Settle to an endpoint when the scroll comes to rest mid-condense: a
-	// short list (or a slow drag) can otherwise park the header half-shed,
-	// with the tabs half-faded and clipped.
-	const onScrollSettle = useCallback(() => {
-		if (settleRef.current) {
-			return;
-		}
-		const target = settleTargetForProgress(progressRef.current, lastYRef.current, COLLAPSE_DISTANCE);
-		if (target !== null) {
-			settleHeader(target);
-		}
-	}, [settleHeader, COLLAPSE_DISTANCE]);
-	// A fresh fling cancels the settle: linkage owns the values again from
-	// wherever the stopped animation left them (near-linkage by construction).
-	const onCancelSettle = useCallback(() => {
-		settleRef.current?.stop();
-		settleRef.current = null;
-	}, []);
-	// The title stays put and only scales down, so the title bar keeps a stable
-	// left edge while the switcher row fades.
-	const titleShrinkStyle = useMemo(
-		() => ({
-			transform: [
-				{
-					scale: collapse.interpolate({
-						inputRange: [0, 1],
-						outputRange: [1, 0.68],
-					}),
-				},
-			],
-		}),
-		[collapse],
+	// A scroll from deep in a list proves that list has landed: reveal it
+	// and place it. Each list reports for itself, so one list's scroll can
+	// never ready, place, or move the other.
+	const handleFeedScroll = useCallback(
+		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+			const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+			const y = Math.max(0, contentOffset.y);
+			if (y > 40) {
+				markReady('feed');
+				setPlaced(true);
+			}
+			// Reading through the bottom marks the archive seen, up to its
+			// newest moment. Writes only ever move forward, and only on
+			// genuine advance, so resting at the bottom is free.
+			if (
+				y + layoutMeasurement.height >= contentSize.height - layoutMeasurement.height
+			) {
+				const newest = newestOccurredAt(feed.moments);
+				if (newest && (!seenStoredRef.current || newest > seenStoredRef.current)) {
+					seenStoredRef.current = newest;
+					void saveSeenCursor(space?.id, newest);
+				}
+			}
+			trackScroll(event);
+		},
+		[markReady, trackScroll, feed.moments, space?.id],
 	);
-	// The Feed/Gallery switcher fades out as the header condenses — opacity
-	// only. The row itself is shed by the height below and clipped by the
-	// header's overflow, so it fades and leaves together with its space.
-	const tabsHideStyle = useMemo(
-		() => ({
-			opacity: collapse.interpolate({
-				inputRange: [0, 1],
-				outputRange: [1, 0],
-			}),
-		}),
-		[collapse],
-	);
-	// The header condenses from the expanded height to the title bar as the
-	// feed scrolls underneath it. Height runs on the JS driver; it is set
-	// straight from the scroll offset (see onScroll), never timed.
-	const headerLayoutStyle = useMemo(
-		() => ({
-			height: collapseLayout.interpolate({
-				inputRange: [0, 1],
-				outputRange: [headerExpanded, headerCollapsed],
-			}),
-		}),
-		[collapseLayout, headerExpanded, headerCollapsed],
+	const handleGalleryScroll = useCallback(
+		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+			const y = Math.max(0, event.nativeEvent.contentOffset.y);
+			if (y > 40) {
+				markReady('gallery');
+				setPlaced(true);
+			}
+			trackScroll(event);
+		},
+		[markReady, trackScroll],
 	);
 	// Frosted ground behind the title bar: present whenever the feed has
 	// moved (even with the header reopened mid-feed), so rows sliding
 	// underneath always dissolve into frost instead of ghosting through the
 	// title. Transparent at the very top, where the sky shows instead.
-	const headerBackgroundStyle = useMemo(
-		() => ({
-			opacity: frost.interpolate({
-				inputRange: [0, 1],
-				outputRange: [0, 1],
-			}),
-		}),
-		[frost],
-	);
-	const now = useMemo(() => new Date(), []);
+	const headerBackgroundStyle = useAnimatedStyle(() => ({ opacity: frost.value }));
 	const muted = useThemeColor({}, "muted");
 	const background = useThemeColor({}, "background");
 	const accent = useThemeColor({}, "accent");
+	const accentInk = useThemeColor({}, "accentInk");
 	const border = useThemeColor({}, "border");
 	const surface = useThemeColor({}, "surface");
 	const onAccent = useThemeColor({}, "onAccent");
 	const danger = useThemeColor({}, "danger");
-	const text = useThemeColor({}, "textPrimary");
+	const shadowColor = useThemeColor({}, "shadow");
 	const { mode } = useAoiTheme();
 	// On pale-tinted light glass the near-white onAccent washes out, so the
 	// glyph rides the accent itself there; dark glass keeps onAccent.
-	const fabIconColor = mode === "dark" ? onAccent : accent;
+	const fabIconColor = mode === "dark" ? onAccent : accentInk;
 
 	useResurfaceNotification(signalMoments);
 
-	// Search + type filter are pure client filters over the loaded feed. The
-	// Feed is the source; sections are regrouped from whatever survives so
-	// month headings always match the visible rows. The Gallery reads the
-	// same filtered list, then keeps only real photos. Pending rows are
-	// hidden while filtering (they are transient, not archive).
-	const isFiltering = query.trim().length > 0 || typeFilter !== "all";
-	const shownMoments = useMemo(
-		() => filterFeedMoments(feed.moments, { query, type: typeFilter }),
-		[feed.moments, query, typeFilter],
-	);
+	// The feed is the source, unfiltered: sections are regrouped from the
+	// loaded moments so month headings always match the visible rows. The
+	// Gallery reads the same list, then keeps only real photos.
+	const shownMoments = feed.moments;
 	// Oldest-first: the oldest memory sits at the top, so months read
 	// oldest-first and each month's memories run oldest-first inside it —
 	// the story reads top to bottom, newest at the bottom.
@@ -457,10 +393,8 @@ export default function MemoriesScreen() {
 		const out: FeedRow[] = [];
 		// Unsent memories have no date yet, so they pin to the top of the
 		// stream as an action tray, above the oldest month.
-		if (!isFiltering) {
-			for (const record of feed.pending) {
-				out.push({ kind: "pending", key: `pending:${record.clientId}`, record });
-			}
+		for (const record of feed.pending) {
+			out.push({ kind: "pending", key: `pending:${record.clientId}`, record });
 		}
 		for (const section of sections) {
 			out.push({ kind: "month", key: `month:${section.monthKey}`, section });
@@ -469,78 +403,163 @@ export default function MemoriesScreen() {
 			}
 		}
 		return out;
-	}, [feed.pending, sections, isFiltering]);
+	}, [feed.pending, sections]);
 
+	// The unread target, decided from the archive: the first unread partner
+	// post to read forward from, or null for the newest when caught up.
+	// Undefined until the cursor loads.
+	const unreadTargetId = useMemo<string | null | undefined>(() => {
+		if (seenCursor === undefined) {
+			return undefined;
+		}
+		if (seenCursor === null) {
+			return null;
+		}
+		return firstUnreadPartnerId(feed.moments, seenCursor);
+	}, [seenCursor, feed.moments]);
 
-	// Dense 3-column grid, edge to edge: tiles size to the list itself,
-	// whichever is narrower (the capped content column or the window), and
-	// only the 2pt gutters come out of that width.
-	const galleryTileSize = useMemo(() => {
-		const contentWidth = Math.min(windowWidth, ROOT_MAX_WIDTH);
-		const usable = contentWidth - GALLERY_GAP * (GALLERY_COLUMNS - 1);
-		return Math.max(1, Math.floor(usable / GALLERY_COLUMNS));
-	}, [windowWidth]);
+	// What each list actually renders. Before the cursor loads, nothing: a
+	// guess here paints, slices, or jumps on stale state. With an unread
+	// target decided and nothing placed yet, each list shows only through
+	// that row — the landing puts it at the end, exactly, with no measuring.
+	const displayRows = useMemo(() => {
+		if (seenCursor === undefined) {
+			return [];
+		}
+		if (placed || !unreadTargetId) {
+			return rows;
+		}
+		const index = feedRowIndexForMomentId(rows, unreadTargetId);
+		return index < 0 ? rows : rows.slice(0, index + 1);
+	}, [seenCursor, placed, unreadTargetId, rows]);
+
+	const displayGalleryRows = useMemo(() => {
+		if (seenCursor === undefined) {
+			return [];
+		}
+		if (placed || !unreadTargetId) {
+			return galleryRows;
+		}
+		const index = galleryRowIndexForMomentId(galleryRows, unreadTargetId);
+		return index < 0 ? galleryRows : galleryRows.slice(0, index + 1);
+	}, [seenCursor, placed, unreadTargetId, galleryRows]);
+
+	// Places a fresh list exactly once: the unread target when there is one,
+	// the newest otherwise. Later content changes never re-place — pagination
+	// prepends and refreshes all leave the position to the reader.
+	const landForContent = useCallback(
+		(presented: MemoriesView) => {
+			if (
+				placed ||
+			readerScrolledRef.current ||
+			feed.moments.length === 0 ||
+			seenCursor === undefined
+			) {
+				return;
+			}
+			const ref = presented === 'feed' ? feedListRef : galleryListRef;
+			if (seenCursor === null) {
+				// First run: the archive as found is already seen.
+				const newest = newestOccurredAt(feed.moments);
+				if (newest) {
+					seenStoredRef.current = newest;
+				void saveSeenCursor(space?.id, newest);
+				}
+			}
+			if (unreadTargetId) {
+				const index =
+					presented === 'feed'
+						? feedRowIndexForMomentId(rows, unreadTargetId)
+						: galleryRowIndexForMomentId(galleryRows, unreadTargetId);
+				scrollListToIndexOrEnd(ref.current, index);
+			} else {
+				try {
+					ref.current?.scrollToEnd({ animated: false });
+				} catch {
+					// A list that cannot scroll keeps its opening frame.
+				}
+			}
+		},
+		[
+				placed,
+				feed.moments,
+				seenCursor,
+				unreadTargetId,
+				rows,
+				galleryRows,
+				space?.id,
+			],
+	);
+
+	const handleFeedContentSizeChange = useCallback(
+		(_width: number, height: number) => {
+			contentH.current.feed = height;
+			landForContent('feed');
+			if (height <= viewportH.current.feed) {
+				markReady('feed');
+				setPlaced(true);
+			}
+		},
+		[landForContent, markReady],
+	);
+	const handleGalleryContentSizeChange = useCallback(
+		(_width: number, height: number) => {
+			contentH.current.gallery = height;
+			landForContent('gallery');
+			if (height <= viewportH.current.gallery) {
+				markReady('gallery');
+				setPlaced(true);
+			}
+		},
+		[landForContent, markReady],
+	);
+	const handleFeedLayout = useCallback(
+		(event: LayoutChangeEvent) => {
+			viewportH.current.feed = event.nativeEvent.layout.height;
+		},
+		[],
+	);
+	const handleGalleryLayout = useCallback(
+		(event: LayoutChangeEvent) => {
+			viewportH.current.gallery = event.nativeEvent.layout.height;
+		},
+		[],
+	);
+
+	// Dense grid, edge to edge: tiles size to the list itself, whichever is
+	// narrower (the capped content column or the window), and only the 2pt
+	// gutters come out of that width. A row fills that width whatever it
+	// holds: a month with one photo drew a third of a row and left the rest
+	// blank, which reads as a tile that failed to arrive, not as a grid.
+	const contentWidth = useMemo(
+		() => Math.min(windowWidth, ROOT_MAX_WIDTH),
+		[windowWidth],
+	);
+	const galleryTileSizeFor = useCallback(
+		(count: number) => {
+			const columns = Math.max(1, Math.min(count, GALLERY_COLUMNS));
+			const usable = contentWidth - GALLERY_GAP * (columns - 1);
+			return Math.max(1, Math.floor(usable / columns));
+		},
+		[contentWidth],
+	);
 
 	const handleSelectView = useCallback(
 		(next: MemoriesView) => {
+			if (next === view) {
+				return;
+			}
 			setView(next);
 			setViewerPhoto(null);
-			// The incoming list mounts at its own top: reopen the header the way
-			// a fresh list does. Values only — the native scroll view is never
-			// commanded. The settle is stopped BEFORE the reset, so a canceled
-			// animation cannot resync the origin to the outgoing list, and the
-			// paging arm is disarmed: the incoming list starts at y = 0, where a
-			// stale arm would fetch a page the reader never asked for.
-			settleRef.current?.stop();
-			settleRef.current = null;
-			originRef.current = 0;
-			maxYRef.current = 0;
-			lastYRef.current = 0;
-			progressRef.current = 0;
-			collapse.setValue(0);
-			collapseLayout.setValue(0);
-			frost.setValue(0);
-			switcherHiddenRef.current = false;
-			setSwitcherHidden(false);
+			// Both lists stay mounted at their own offsets, so the switch
+			// moves nothing: no mount, no jump to newest, no flash — and the
+			// header is fixed, so there is nothing to restore. The paging arm
+			// is disarmed: without a landing jump, a stale arm must not spend
+			// itself on a page the reader never asked for.
 			topArmRef.current = false;
 		},
-		[collapse, collapseLayout, frost],
+		[view],
 	);
-
-	// Narrowing the archive (search, filters) can clamp an armed list back to
-	// the top, where the stale arm would spend itself on a page nobody asked
-	// for. Every filter change disarms it.
-	const handleQueryChange = useCallback((next: string) => {
-		topArmRef.current = false;
-		setQuery(next);
-	}, []);
-
-	const handleSelectFilter = useCallback((next: FeedTypeFilter) => {
-		haptics.select();
-		topArmRef.current = false;
-		setTypeFilter(next);
-	}, []);
-
-	// Search is an on-demand control: the archive opens clean, and closing
-	// search clears the filter so the whole archive returns.
-	const handleToggleSearch = useCallback(() => {
-		if (isSearching) {
-			topArmRef.current = false;
-			setQuery("");
-			setTypeFilter("all");
-			setSearchFocused(false);
-		} else {
-			haptics.select();
-		}
-		setIsSearching((prev) => !prev);
-	}, [isSearching]);
-
-	const handleClearFilters = useCallback(() => {
-		topArmRef.current = false;
-		setQuery("");
-		setTypeFilter("all");
-		setSearchFocused(false);
-	}, []);
 
 	const momentsById = useMemo(() => {
 		const byId = new Map<string, Moment>();
@@ -779,18 +798,15 @@ export default function MemoriesScreen() {
 		const own = isOwnMoment(item.moment);
 		const card = (
 			<MomentCard
+				actionsInset={FAB_SIZE}
 				moment={item.moment}
 				presentation="timeline"
-				nativeActionsMenu={
-					own && useNativeMomentMenu
-						? {
-								actions: MOMENT_MENU_ACTIONS,
-								title: item.moment.title?.trim() || "This moment",
-								onAction: (event) => handleMomentMenuAction(item.moment, event),
-							}
-						: undefined
-				}
-				onActions={own && !useNativeMomentMenu ? handleMomentLongPress : undefined}
+				// The ellipsis is the explicit route to a moment's actions and
+				// is offered on every platform: it used to exist only where the
+				// long-press was not already opening a native menu, which left
+				// iOS rows with no visible affordance at all. Here the long-press
+				// and the ellipsis do different things, so neither is redundant.
+				onActions={own ? handleMomentLongPress : undefined}
 				onPhotoPress={handleOpenFeedPhoto}
 				onLongPress={
 					own && !useNativeMomentMenu ? handleMomentLongPress : undefined
@@ -841,6 +857,11 @@ export default function MemoriesScreen() {
 					/>
 				);
 			}
+			// One tile in a row has the row to itself, and a full-width square
+			// would crop it to a block: it draws as a 16:9 banner instead.
+			const rowSize = galleryTileSizeFor(item.items.length);
+			const rowHeight =
+				item.items.length === 1 ? Math.round(rowSize * (9 / 16)) : undefined;
 			return (
 				<View style={styles.galleryGridRow}>
 					{item.items.map((tile, column) => {
@@ -854,7 +875,8 @@ export default function MemoriesScreen() {
 									item={tile}
 									key={tile.key}
 									onPress={handleOpenGalleryItem}
-									size={galleryTileSize}
+									height={rowHeight}
+									size={rowSize}
 								/>
 							);
 						}
@@ -865,7 +887,8 @@ export default function MemoriesScreen() {
 									item={tile}
 									key={tile.key}
 									onPress={handleOpenGalleryItem}
-									size={galleryTileSize}
+									height={rowHeight}
+									size={rowSize}
 								/>
 							);
 						}
@@ -875,14 +898,15 @@ export default function MemoriesScreen() {
 								item={tile}
 								key={tile.key}
 								onPress={handleOpenGalleryItem}
-								size={galleryTileSize}
+								height={rowHeight}
+								size={rowSize}
 							/>
 						);
 					})}
 				</View>
 			);
 		},
-		[galleryTileSize, handleOpenGalleryItem, handleOpenMonth],
+		[galleryTileSizeFor, handleOpenGalleryItem, handleOpenMonth],
 	);
 
 	const handleCloseActionSheet = useCallback(() => {
@@ -957,23 +981,10 @@ export default function MemoriesScreen() {
 
 	const emptyState = useMemo(
 		() => (
-			// The three faces of the empty list are async states, so the switch
+			// The faces of the empty list are async states, so the switch
 			// between them is announced instead of silently swapping text.
 			<View accessibilityLiveRegion="polite" style={styles.emptyState}>
-				{isFiltering ? (
-					<>
-						<ThemedText type="meta" style={{ color: muted }}>
-							No matches
-						</ThemedText>
-						<ThemedText type="title">Nothing here yet</ThemedText>
-						<ThemedText type="body" style={{ color: muted }}>
-							Try another word, or a different filter.
-						</ThemedText>
-						<View style={styles.emptyCta}>
-							<Button label="Clear filters" onPress={handleClearFilters} />
-						</View>
-					</>
-				) : feed.isLoading ? (
+				{feed.isLoading ? (
 					<>
 						<ThemedText type="meta" style={{ color: muted }}>
 							Memories
@@ -1000,14 +1011,13 @@ export default function MemoriesScreen() {
 						<ThemedText type="meta" style={{ color: muted }}>
 							Begin
 						</ThemedText>
-						<ThemedText type="title">Your first memory</ThemedText>
+						<ThemedText type="title">{adaptiveCopy.memoryTitle}</ThemedText>
 						<ThemedText type="body" style={{ color: muted }}>
-							A photo, a few lines, or a short recording, kept just
-							for the two of you.
+							{adaptiveCopy.memoryBody}
 						</ThemedText>
 						<View style={styles.emptyCta}>
 							<Button
-								label="Keep your first memory"
+								label={adaptiveCopy.memoryButton}
 								onPress={handleOpenEditor}
 							/>
 						</View>
@@ -1026,7 +1036,7 @@ export default function MemoriesScreen() {
 				)}
 			</View>
 		),
-		[muted, handleOpenEditor, handleClearFilters, feed, isFiltering],
+		[muted, handleOpenEditor, feed, adaptiveCopy],
 	);
 
 
@@ -1069,7 +1079,7 @@ export default function MemoriesScreen() {
 						style={styles.loadEarlier}
 					>
 						<ThemedText type="caption" style={{ color: danger }}>
-							Couldn't load earlier memories. Try again
+									Couldn&apos;t load earlier memories. Try again
 						</ThemedText>
 					</Pressable>
 				</View>
@@ -1084,13 +1094,13 @@ export default function MemoriesScreen() {
 					onPress={feed.loadMore}
 					style={styles.loadEarlier}
 				>
-					<ThemedText type="caption" style={{ color: accent }}>
+					<ThemedText type="caption" style={{ color: accentInk }}>
 						Load earlier memories
 					</ThemedText>
 				</Pressable>
 			</View>
 		);
-	}, [feed, muted, accent, danger]);
+	}, [feed, muted, accentInk, danger]);
 
 
 	const contentContainerStyle = useMemo(
@@ -1098,14 +1108,16 @@ export default function MemoriesScreen() {
 			styles.contentContainer,
 			{
 				// The header is a pinned overlay; the list runs full-screen
-				// underneath it, so content starts below the open header and
-				// slides under the title bar as it condenses. The pad scrolls
-				// with the content, 1:1 with the header shed — no gap, no jump.
-				paddingTop: headerExpanded + Spacing[4],
-				paddingBottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + Spacing[8],
+				// underneath it, so content starts below the fixed header and
+				// slides under the title bar as it scrolls. The pad scrolls
+				// with the content — no gap, no jump.
+				// The end clears the floating FAB with room to spare, so the
+				// newest memory never parks underneath it.
+				paddingTop: headerHeight + Spacing[4],
+				paddingBottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + FAB_SIZE + Spacing[24],
 			},
 		],
-		[insets.bottom, headerExpanded],
+		[insets.bottom, headerHeight],
 	);
 
 	// FAB floats over the feed, clear of the docked system tab bar.
@@ -1133,8 +1145,7 @@ export default function MemoriesScreen() {
 	return (
 		<View style={rootStyle}>
 			{/* Frosted page texture + sky: the header's backdrop, pinned at the
-			    top. It is never faded or removed — only the switcher section
-			    above it fades. */}
+			    top. It is never faded or removed. */}
 			<Animated.View
 				accessible={false}
 				accessibilityElementsHidden
@@ -1147,17 +1158,15 @@ export default function MemoriesScreen() {
 			</Animated.View>
 
 			<View pointerEvents="box-none" style={styles.header}>
-				<Animated.View
+				<View
 					style={[
 						styles.headerInner,
-						{ paddingTop: insets.top },
-						headerLayoutStyle,
+						{ paddingTop: insets.top, height: headerHeight },
 					]}
 				>
-					{/* Frosted ground behind the title bar for the condensed
-					    state: blur keeps the pinned sky visible while rows
-					    sliding underneath dissolve into it. Decorative: hidden
-					    from the accessibility tree. */}
+					{/* Frosted ground behind the title bar: blur keeps the pinned
+					    sky visible while rows sliding underneath dissolve into
+					    it. Decorative: hidden from the accessibility tree. */}
 					<Animated.View
 						accessible={false}
 						accessibilityElementsHidden
@@ -1178,27 +1187,12 @@ export default function MemoriesScreen() {
 						/>
 					</Animated.View>
 					<View style={[styles.titleRow, { height: TITLE_ROW }]}>
-						<Animated.View style={[styles.titleAnchor, titleShrinkStyle]}>
-							<ThemedText type="display">Memories</ThemedText>
-						</Animated.View>
-						<View style={styles.titleActions}>
-							<IconButton
-								accessibilityLabel={isSearching ? "Close search" : "Search memories"}
-								label={isSearching ? "Close search" : "Search memories"}
-								onPress={handleToggleSearch}
-								variant="secondary"
-							>
-								<Ionicons color={muted} name={isSearching ? "close" : "search"} size={18} />
-							</IconButton>
-							<SpaceAvatarButton />
-						</View>
-					</View>
-					<Animated.View style={[styles.tabsRow, { height: TABS_ROW }, tabsHideStyle]}>
-						<View style={styles.switchWrap}>
+						<ThemedText type="title">Memories</ThemedText>
+						<View style={styles.viewSwitch}>
 							<SegmentedControl
 								accessibilityLabel="Memories view"
-								hidden={switcherHidden}
 								onChange={handleSelectView}
+								size="compact"
 								options={[
 									{
 										value: "feed",
@@ -1214,85 +1208,21 @@ export default function MemoriesScreen() {
 								value={view}
 							/>
 						</View>
-					</Animated.View>
-					{isSearching ? (
-						<>
-							<View
-								style={[
-									styles.searchWrap,
-									{
-										borderColor: searchFocused ? accent : border,
-										backgroundColor: surface,
-									},
-								]}
-							>
-								<Ionicons color={searchFocused ? accent : muted} name="search" size={18} />
-								<TextInput
-									accessibilityLabel="Search memories"
-									autoCapitalize="none"
-									autoComplete="off"
-									autoCorrect={false}
-									onBlur={() => setSearchFocused(false)}
-									onChangeText={handleQueryChange}
-									onFocus={() => setSearchFocused(true)}
-									placeholder="Search memories"
-									placeholderTextColor={muted}
-									returnKeyType="search"
-									selectionColor={accent}
-									spellCheck={false}
-									style={[styles.searchInput, { color: text }]}
-									value={query}
-								/>
-								{query.length > 0 ? (
-									<Pressable
-										accessibilityLabel="Clear search"
-										accessibilityRole="button"
-										hitSlop={13}
-										onPress={() => handleQueryChange("")}
-										style={styles.searchClear}
-									>
-										<Ionicons color={muted} name="close-circle" size={18} />
-									</Pressable>
-								) : null}
-							</View>
-							<ScrollView
-								contentContainerStyle={styles.chipRow}
-								horizontal
-								keyboardShouldPersistTaps="handled"
-								showsHorizontalScrollIndicator={false}
-							>
-								{FILTERS.map((filter) => {
-									const on = filter.key === typeFilter;
-									return (
-										<Pressable
-											accessibilityLabel={`${filter.label} filter`}
-											accessibilityRole="button"
-											accessibilityState={{ selected: on }}
-											hitSlop={4}
-											key={filter.key}
-											onPress={() => handleSelectFilter(filter.key)}
-											style={({ pressed }) => [
-												styles.chip,
-												{
-													borderColor: on ? accent : border,
-													backgroundColor: on ? withAlpha(accent, 0.16) : surface,
-												},
-												pressed ? styles.pressed : null,
-											]}
-										>
-											<ThemedText type="supporting" style={{ color: on ? accent : muted }}>
-												{filter.label}
-											</ThemedText>
-										</Pressable>
-									);
-								})}
-							</ScrollView>
-						</>
-					) : null}
-				</Animated.View>
+					</View>
+				</View>
 			</View>
 
 			{keptNotice ? (
+				// Arrives and leaves. It is dismissible, so without an exit it
+				// used to vanish out from under the finger the reader had just
+				// tapped. Leaving is quicker than arriving: the screen is
+				// getting on with it, not asking for another look.
+				<Animated.View
+					entering={FadeIn.duration(Motion.fast).reduceMotion(ReduceMotion.System)}
+					exiting={FadeOut.duration(Motion.exit).reduceMotion(ReduceMotion.System)}
+					pointerEvents="box-none"
+					style={styles.keptLayer}
+				>
 				<Pressable
 					accessibilityLabel="Kept in your story. Dismiss."
 					accessibilityLiveRegion="polite"
@@ -1301,7 +1231,7 @@ export default function MemoriesScreen() {
 					style={[
 						styles.keptOverlay,
 						{
-							top: headerExpanded + Spacing[8],
+							top: headerHeight + Spacing[8],
 							backgroundColor: surface,
 							borderColor: border,
 						},
@@ -1311,29 +1241,50 @@ export default function MemoriesScreen() {
 						Kept in your story
 					</ThemedText>
 				</Pressable>
+				</Animated.View>
 			) : null}
 
 			{/* Keyboard belongs to composer; subscribing underlying archive to global keyboard frame events clamps header-adjusted negative offsets on sheet dismissal. */}
+			{/* Both presentations stay mounted at their own offsets, stacked
+			    with only the live one visible, audible, and touchable: switching
+			    tabs reveals instead of rebuilding, so there is no mount, no
+			    jump to newest, and no flash. */}
 			<View style={styles.listWrap}>
-			{view === "gallery" ? (
+				<View
+					accessibilityElementsHidden={view !== 'gallery'}
+					aria-hidden={view !== 'gallery'}
+					importantForAccessibility={view === 'gallery' ? 'auto' : 'no-hide-descendants'}
+					pointerEvents={view === 'gallery' ? 'auto' : 'none'}
+					style={[
+						styles.listLayer,
+						view !== 'gallery' && styles.listHidden,
+						!readyView.gallery && styles.listPending,
+					]}
+					testID="gallery-layer"
+				>
 				<FlatList
 					alwaysBounceVertical={false}
 					bounces={false}
 					contentInsetAdjustmentBehavior="never"
 					contentContainerStyle={contentContainerStyle}
-					onScroll={onScroll}
-					onScrollEndDrag={onScrollSettle}
-					onMomentumScrollBegin={onCancelSettle}
-					onMomentumScrollEnd={onScrollSettle}
+					onScroll={handleGalleryScroll}
+					// The header is a pinned overlay, so the list's own
+					// contentInset is zero and the spinner would draw at
+					// y=0, underneath it.
+					progressViewOffset={headerHeight}
 					scrollEventThrottle={16}
 					// Older history prepends above: hold the visible row so
 					// paging never shifts what the reader is looking at.
 					maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-					data={galleryRows}
+					data={displayGalleryRows}
+					onContentSizeChange={handleGalleryContentSizeChange}
+					onLayout={handleGalleryLayout}
+					onScrollBeginDrag={handleScrollBeginDrag}
+					ref={galleryListRef}
 					key="gallery"
 					keyboardDismissMode="on-drag"
 					keyExtractor={galleryKeyExtractor}
-					ListEmptyComponent={emptyState}
+					ListEmptyComponent={seenCursor === undefined ? null : emptyState}
 					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
 					refreshing={feed.isRefreshing}
@@ -1341,25 +1292,39 @@ export default function MemoriesScreen() {
 					showsVerticalScrollIndicator={false}
 					style={styles.list}
 				/>
-			) : (
+				</View>
+				<View
+					accessibilityElementsHidden={view !== 'feed'}
+					aria-hidden={view !== 'feed'}
+					importantForAccessibility={view === 'feed' ? 'auto' : 'no-hide-descendants'}
+					pointerEvents={view === 'feed' ? 'auto' : 'none'}
+					style={[
+						styles.listLayer,
+						view !== 'feed' && styles.listHidden,
+						!readyView.feed && styles.listPending,
+					]}
+					testID="feed-layer"
+				>
 				<FlatList
 					alwaysBounceVertical={false}
 					bounces={false}
 					contentInsetAdjustmentBehavior="never"
 					contentContainerStyle={contentContainerStyle}
-					onScroll={onScroll}
-					onScrollEndDrag={onScrollSettle}
-					onMomentumScrollBegin={onCancelSettle}
-					onMomentumScrollEnd={onScrollSettle}
+					onScroll={handleFeedScroll}
+					progressViewOffset={headerHeight}
 					scrollEventThrottle={16}
 					// Older history prepends above: hold the visible row so
 					// paging never shifts what the reader is looking at.
 					maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-					data={rows}
+					data={displayRows}
+					onContentSizeChange={handleFeedContentSizeChange}
+					onLayout={handleFeedLayout}
+					onScrollBeginDrag={handleScrollBeginDrag}
+					ref={feedListRef}
 					key="feed"
 					keyboardDismissMode="on-drag"
 					keyExtractor={feedKeyExtractor}
-					ListEmptyComponent={emptyState}
+					ListEmptyComponent={seenCursor === undefined ? null : emptyState}
 					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
 					refreshing={feed.isRefreshing}
@@ -1367,7 +1332,7 @@ export default function MemoriesScreen() {
 					showsVerticalScrollIndicator={false}
 					style={styles.list}
 				/>
-			)}
+				</View>
 			</View>
 			<Pressable
 				accessibilityLabel="Add memory"
@@ -1377,8 +1342,9 @@ export default function MemoriesScreen() {
 					styles.fab,
 					{
 						bottom: fabBottom,
-						opacity: pressed ? 0.85 : 1,
+						boxShadow: shadow(Elevation.floating, shadowColor),
 					},
+					pressed ? Pressed.onMedia : undefined,
 				]}
 			>
 				<GlassSurface
@@ -1439,52 +1405,28 @@ const styles = StyleSheet.create({
 		paddingBottom: Spacing[0],
 		gap: Spacing[8],
 	},
-	switchWrap: {
-		flex: 1,
-	},
-	searchWrap: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: Spacing[8],
-		minHeight: 44,
-		paddingHorizontal: Spacing[12],
-		borderRadius: Radii.card,
-		borderCurve: "continuous",
-		borderWidth: StyleSheet.hairlineWidth,
-	},
-	searchInput: {
-		flex: 1,
-		fontSize: 16,
-		paddingVertical: Spacing[8],
-	},
-	searchClear: {
-		alignItems: "center",
-		justifyContent: "center",
-		minWidth: 28,
-		minHeight: 28,
-	},
-	chipRow: {
-		gap: Spacing[8],
-		paddingRight: Spacing[16],
-	},
-	chip: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: Spacing[4],
-		minHeight: 44,
-		paddingHorizontal: Spacing[12],
-		borderRadius: Radii.pill,
-		borderCurve: "continuous",
-		borderWidth: StyleSheet.hairlineWidth,
-	},
-	pressed: {
-		opacity: 0.6,
-	},
 	list: {
 		flex: 1,
 	},
 	listWrap: {
 		flex: 1,
+	},
+	// Both presentations fill the same box, stacked: the live one shows,
+	// the idle one holds its scroll position invisibly underneath.
+	listLayer: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+	},
+	listHidden: {
+		opacity: 0,
+	},
+	// A list that has not landed yet stays invisible: the alternative is a
+	// frame of the top of the archive before the jump to newest.
+	listPending: {
+		opacity: 0,
 	},
 	header: {
 		position: "absolute",
@@ -1496,29 +1438,25 @@ const styles = StyleSheet.create({
 	headerInner: {
 		paddingHorizontal: Spacing[24],
 		paddingBottom: Spacing[12],
-		gap: Spacing[8],
-		// The header height animates on collapse; clip the shed switcher row
-		// instead of letting it spill below the title bar.
-		overflow: "hidden",
 	},
 	titleRow: {
 		flexDirection: "row",
-		alignItems: "flex-end",
+		alignItems: "center",
 		justifyContent: "space-between",
-	},
-	titleActions: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: Spacing[8],
-	},
-	titleAnchor: {
-		// Scale shrinks toward the top-left corner, not the centre.
-		transformOrigin: "top left",
-	},
-	tabsRow: {
-		flexDirection: "row",
-		alignItems: "center",
 		gap: Spacing[12],
+	},
+	// The Feed/Gallery switcher rides the title row: flexible so it squeezes
+	// on narrow phones, capped so it never crowds the title on wide ones.
+	viewSwitch: {
+		flex: 1,
+		maxWidth: 200,
+	},
+	keptLayer: {
+		position: "absolute",
+		left: 0,
+		right: 0,
+		top: 0,
+		zIndex: 5,
 	},
 	keptOverlay: {
 		position: "absolute",
@@ -1549,7 +1487,6 @@ const styles = StyleSheet.create({
 		borderRadius: FAB_SIZE / 2,
 		alignItems: "center",
 		justifyContent: "center",
-		boxShadow: "0 4px 12px rgba(0, 0, 0, 0.25)",
 	},
 	fabGlass: {
 		flex: 1,

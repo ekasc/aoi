@@ -18,6 +18,7 @@ import { PartnerDetailsProvider } from "@/features/partner-details/partner-detai
 import { ProposalsProvider } from "@/features/proposals/proposals-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
+import { ResponsesProvider } from "@/features/responses/responses-context";
 import { SessionContext } from "@/features/session/session-context";
 import { SomedayProvider } from "@/features/someday/someday-context";
 import { SpaceContext } from "@/features/space/space-context";
@@ -78,11 +79,13 @@ function DevTogetherPreview() {
 									<ProposalsProvider>
 										<LettersProvider>
 											<PushProvider>
-												<ComposerProvider>
-													<DevErrorBoundary label="TogetherScreen">
-														<TogetherScreen />
-													</DevErrorBoundary>
-												</ComposerProvider>
+												<ResponsesProvider>
+													<ComposerProvider>
+														<DevErrorBoundary label="TogetherScreen">
+															<TogetherScreen />
+														</DevErrorBoundary>
+													</ComposerProvider>
+												</ResponsesProvider>
 											</PushProvider>
 										</LettersProvider>
 									</ProposalsProvider>

@@ -11,6 +11,9 @@ import {
   LIGHT_SKY_MID,
   LIGHT_SKY_TOP,
   isDarkBackground,
+  dayPhaseForHour,
+  moodSkyStops,
+  tintSkyMidForPhase,
   MEMORY_SKY_CLOUD_A,
   MEMORY_SKY_CLOUD_B,
   MEMORY_SKY_MAX_STARS,
@@ -190,8 +193,20 @@ describe('MemorySky absolute quarter sky', () => {
     unmount();
   });
 
-  it('keeps the caption small and quiet below the strip in normal flow', () => {
+  it('stretches the gradient canvas over the strip bleed, so no seam shows at the right edge', () => {
     const { container, unmount } = render(
+      createElement(MemorySky, { moments: [makeMoment('m-1')] }),
+    );
+    const canvas = skyCanvas(container);
+    expect(canvas).not.toBeNull();
+    // 390pt mocked window + the 16pt bleed on each side: a window-wide
+    // canvas anchored at the strip's left edge stops 16pt short on the
+    // right and leaves a dark seam.
+    expect((canvas as HTMLElement).style.width).toBe('422px');
+    unmount();
+  });
+
+  it('keeps the caption small and quiet below the strip in normal flow', () => {    const { container, unmount } = render(
       createElement(MemorySky, { moments: [makeMoment('m-1')] }),
     );
     const strip = skyStrip(container);
@@ -382,8 +397,10 @@ describe('MemorySky empty state', () => {
   });
 });
 
-describe('MemorySky decorative a11y', () => {
-  it('is pointer-events none, non-accessible, and hidden from screen readers', () => {
+describe('MemorySky a11y, decorative unless it is the interface', () => {
+  it('is pointer-events none, non-accessible, and hidden when nothing can press it', () => {
+    // A sky nothing can touch is a picture, and a picture must not be
+    // announced. This is the default everywhere except the Us screen.
     const { container, unmount } = render(
       createElement(MemorySky, { moments: [makeMoment('m-1')] }),
     );
@@ -391,12 +408,30 @@ describe('MemorySky decorative a11y', () => {
     expect(root).not.toBeNull();
     expect(root?.getAttribute('aria-hidden')).toBe('true');
     expect(root?.outerHTML).toContain('none');
-    expect(SOURCE).toContain('pointerEvents="none"');
-    expect(SOURCE).toContain('accessible={false}');
-    expect(SOURCE).toContain('accessibilityElementsHidden');
-    expect(SOURCE).toContain('importantForAccessibility="no-hide-descendants"');
-    expect(SOURCE).toContain('aria-hidden');
     unmount();
+  });
+
+  it('stops hiding itself once a caller gives it a press handler', () => {
+    // On Us the sky IS the interface. A sky that announced nothing and
+    // swallowed no touches would make the primary surface unreachable by
+    // touch and by a screen reader alike.
+    const { container, unmount } = render(
+      createElement(MemorySky, {
+        moments: [makeMoment('m-1')],
+        onPress: () => {},
+      }),
+    );
+    const root = skyRoot(container);
+    expect(root?.getAttribute('aria-hidden')).not.toBe('true');
+    unmount();
+  });
+
+  it('is one pressable control rather than a grid of tiny targets', () => {
+    // Stars are 0.35-0.9pt across, so aiming at one is not possible and
+    // hit-testing to the nearest would only ever have been a workaround.
+    // The whole field is the target, which is what makes the sky tappable.
+    expect(SOURCE).toContain('onResponderRelease');
+    expect(SOURCE).toContain('onStartShouldSetResponder');
   });
 });
 
@@ -654,5 +689,58 @@ describe('MemorySky sky palette', () => {
     expect(isDarkBackground('#120D13')).toBe(true);
     expect(isDarkBackground('rgb(246, 242, 247)')).toBe(false);
     expect(isDarkBackground('rgb(18, 13, 19)')).toBe(true);
+  });
+});
+
+describe('MemorySky living aura (Us immersive sky)', () => {
+  it('maps hours to dawn/day/dusk/night phases', () => {
+    expect(dayPhaseForHour(6)).toBe('dawn');
+    expect(dayPhaseForHour(7.9)).toBe('dawn');
+    expect(dayPhaseForHour(8)).toBe('day');
+    expect(dayPhaseForHour(12)).toBe('day');
+    expect(dayPhaseForHour(16.9)).toBe('day');
+    expect(dayPhaseForHour(17)).toBe('dusk');
+    expect(dayPhaseForHour(20)).toBe('dusk');
+    expect(dayPhaseForHour(21)).toBe('night');
+    expect(dayPhaseForHour(4)).toBe('night');
+    expect(dayPhaseForHour(0)).toBe('night');
+  });
+
+  it('keeps the canonical mid at day and tints subtly otherwise', () => {
+    expect(tintSkyMidForPhase(LIGHT_SKY_MID, 'day')).toBe(LIGHT_SKY_MID);
+    for (const phase of ['dawn', 'dusk', 'night'] as const) {
+      const tinted = tintSkyMidForPhase(LIGHT_SKY_MID, phase);
+      expect(tinted).toMatch(/^#[0-9a-f]{6}$/);
+      expect(tinted).not.toBe(LIGHT_SKY_MID);
+    }
+  });
+
+  it('warms the whole gradient for a letter, cools it for a question', () => {
+    const [top, mid] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', null);
+    expect([top, mid]).toEqual([LIGHT_SKY_TOP, LIGHT_SKY_MID]);
+    for (const glow of ['letter', 'question'] as const) {
+      const [warmTop, warmMid] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', glow);
+      expect(warmTop).toMatch(/^#[0-9a-f]{6}$/);
+      expect(warmMid).toMatch(/^#[0-9a-f]{6}$/);
+      expect(warmTop).not.toBe(LIGHT_SKY_TOP);
+      expect(warmMid).not.toBe(LIGHT_SKY_MID);
+    }
+    const [letterTop] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', 'letter');
+    const [questionTop] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', 'question');
+    expect(letterTop).not.toBe(questionTop);
+  });
+
+  it('paints the same star field whatever the sky is holding', () => {
+    const moments = [makeMoment('m-1')];
+    for (const glow of [null, 'letter', 'question'] as const) {
+      const view = render(
+        createElement(MemorySky, { moments, immersive: true, glow }),
+      );
+      expect(starCounts(skyCanvas(view.container) as HTMLElement).total).toBe(1);
+      expect(
+        view.container.querySelector('[data-testid="memory-sky-glow-halo"]'),
+      ).toBeNull();
+      view.unmount();
+    }
   });
 });

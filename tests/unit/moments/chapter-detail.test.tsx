@@ -196,10 +196,14 @@ describe('ChapterDetailScreen (range-loaded, Story-independent)', () => {
     const { default: ChapterDetailScreen } = await import('@/app/(app)/chapter/[id]');
     render(<ChapterDetailScreen />);
 
-    // 1999-01 is a valid range that simply holds nothing here.
-    await waitFor(() =>
-      expect(screen.getByTestId('chapter-cover-month:1999-01')).toBeTruthy()
-    );
+    // 1999-01 is a valid range that simply holds nothing here. It used to
+    // pass by rendering a cover and "0 memories" with an empty gap where the
+    // entries would be, which explained nothing. Now it says so and offers
+    // the way out.
+    await waitFor(() => expect(screen.getByText('Nothing kept here yet')).toBeTruthy());
+    expect(screen.getByText('Keep a memory')).toBeTruthy();
+    // No ornament for an empty chapter: the cover had nothing to illustrate.
+    expect(screen.queryByTestId('chapter-cover-month:1999-01')).toBeNull();
     expect(loadChapterRange).toHaveBeenCalledTimes(1);
   });
 

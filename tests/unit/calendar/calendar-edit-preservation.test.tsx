@@ -97,6 +97,59 @@ describe('EditCalendarEventScreen preservation', () => {
     expect(updateEventSpy.mock.calls[0][0].reminderMinutesBefore).toEqual([30]);
   });
 
+  it('round-trips a one-day all-day event without shifting the end day', async () => {
+    const allDayStart = new Date(2026, 2, 10, 0, 0, 0, 0);
+    const allDayEnd = new Date(2026, 2, 11, 0, 0, 0, 0); // exclusive midnight
+    getEventById.mockResolvedValueOnce({
+      ...storedEvent,
+      allDay: true,
+      startsAt: allDayStart.toISOString(),
+      endsAt: allDayEnd.toISOString(),
+    });
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
+    expect(updateEventSpy.mock.calls[0][0].allDay).toBe(true);
+    expect(new Date(updateEventSpy.mock.calls[0][0].startsAt).getTime()).toBe(
+      allDayStart.getTime()
+    );
+    expect(new Date(updateEventSpy.mock.calls[0][0].endsAt).getTime()).toBe(
+      allDayEnd.getTime()
+    );
+  });
+
+  it('round-trips a multi-day all-day event without shifting the end day', async () => {
+    const allDayStart = new Date(2026, 2, 10, 0, 0, 0, 0);
+    const allDayEnd = new Date(2026, 2, 13, 0, 0, 0, 0); // exclusive midnight
+    getEventById.mockResolvedValueOnce({
+      ...storedEvent,
+      allDay: true,
+      startsAt: allDayStart.toISOString(),
+      endsAt: allDayEnd.toISOString(),
+    });
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
+    expect(new Date(updateEventSpy.mock.calls[0][0].startsAt).getTime()).toBe(
+      allDayStart.getTime()
+    );
+    expect(new Date(updateEventSpy.mock.calls[0][0].endsAt).getTime()).toBe(
+      allDayEnd.getTime()
+    );
+  });
+
   it('keeps the weekly recurrence the toggle represents', async () => {
     getEventById.mockResolvedValueOnce({ ...storedEvent, recurrence: 'weekly' as const });
     const { default: EditCalendarEventScreen } = await import(

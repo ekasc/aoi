@@ -1,7 +1,7 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { isExpoPushToken, type PushTokenPlatform } from '@aoi/shared';
 
+import { notificationsModule } from '@/features/notifications/notifications-module';
 import { registerPushToken } from '@/features/push/push-api';
 
 function currentPlatform(): PushTokenPlatform {
@@ -31,8 +31,16 @@ function currentPlatform(): PushTokenPlatform {
  * session.
  */
 export async function registerDevicePushToken(): Promise<boolean> {
+  // The module itself is the gate: it is null wherever notifications are off,
+  // and importing it on Android in Expo Go throws before any of this runs.
+  const notifications = notificationsModule();
+
+  if (!notifications) {
+    return false;
+  }
+
   try {
-    const permission = await Notifications.requestPermissionsAsync();
+    const permission = await notifications.requestPermissionsAsync();
 
     if (!permission.granted) {
       return false;
@@ -40,7 +48,7 @@ export async function registerDevicePushToken(): Promise<boolean> {
 
     // Throws on simulators and without a physical-device project — guarded
     // by the surrounding catch.
-    const token = await Notifications.getExpoPushTokenAsync();
+    const token = await notifications.getExpoPushTokenAsync();
 
     if (!isExpoPushToken(token.data)) {
       return false;

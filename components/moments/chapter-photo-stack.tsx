@@ -13,7 +13,7 @@ import Animated, {
 
 import { ThemedText } from '@/components/themed-text';
 import { IconButton } from '@/components/ui/icon-button';
-import { Radii, Spacing } from '@/constants/theme';
+import { Radii, Spacing, Springs } from '@/constants/theme';
 import type { Moment } from '@/features/moments/types';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -26,8 +26,8 @@ const VISIBLE_CARDS = 4;
 /** 10pt hysteresis before a touch becomes a swipe; taps stay taps. */
 const SWIPE_DISTANCE = 60;
 const SWIPE_VELOCITY = 700;
-/** Clamped settle: never overshoots past center (damping 32 ~= critical for stiffness 240). */
-const SETTLE_SPRING = { damping: 32, stiffness: 240, overshootClamping: true } as const;
+/** A released drag settling back to centre: the shared settle spring. */
+const SETTLE_SPRING = Springs.rest;
 const SCALE_BY_DEPTH = [1, 0.94, 0.88, 0.83];
 const OFFSET_Y_BY_DEPTH = [0, 10, 20, 30];
 const ROTATION_BY_DEPTH = ['0deg', '-4deg', '3deg', '-2deg'];

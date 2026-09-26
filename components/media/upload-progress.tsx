@@ -24,6 +24,7 @@ const STATE_LABELS: Record<UploadState, string> = {
 
 export function UploadProgress({ state, progress, error }: UploadProgressProps) {
   const accent = useThemeColor({}, 'accent');
+  const accentInk = useThemeColor({}, 'accentInk');
   const surface2 = useThemeColor({}, 'surface2');
   const border = useThemeColor({}, 'border');
   const muted = useThemeColor({}, 'muted');
@@ -59,7 +60,7 @@ export function UploadProgress({ state, progress, error }: UploadProgressProps) 
           />
         </View>
       ) : (
-        <ThemedText type="caption" style={{ color: accent }}>
+        <ThemedText type="caption" style={{ color: accentInk }}>
           ✓ Media uploaded
         </ThemedText>
       )}

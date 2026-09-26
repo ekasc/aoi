@@ -1,8 +1,8 @@
-import * as Notifications from 'expo-notifications';
 import { parsePushNotificationData } from '@aoi/shared';
 import { useEffect, type PropsWithChildren } from 'react';
 
 import { isStubMode } from '@/features/api-client';
+import { notificationsModule } from '@/features/notifications/notifications-module';
 import { useCalendar } from '@/features/calendar/calendar-context';
 import { useLetters } from '@/features/letters/letters-context';
 import { useMoments } from '@/features/moments/moments-context';
@@ -43,7 +43,7 @@ export function PushProvider({ children }: PropsWithChildren) {
   const { reload: reloadLetters } = useLetters();
 
   useEffect(() => {
-    if (isStubMode() || registeredThisSession) {
+    if (!notificationsModule() || isStubMode() || registeredThisSession) {
       return;
     }
 
@@ -60,7 +60,9 @@ export function PushProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (isStubMode()) {
+    const notifications = notificationsModule();
+
+    if (!notifications || isStubMode()) {
       return;
     }
 
@@ -126,14 +128,14 @@ export function PushProvider({ children }: PropsWithChildren) {
     };
 
     // Foreground delivery.
-    const receivedSubscription = Notifications.addNotificationReceivedListener(
+    const receivedSubscription = notifications.addNotificationReceivedListener(
       (notification) => routePushData(notification.request.content.data)
     );
 
     // The user tapped a notification that arrived while the app was
     // backgrounded/killed — light up the same routing.
     const responseSubscription =
-      Notifications.addNotificationResponseReceivedListener((response) =>
+      notifications.addNotificationResponseReceivedListener((response) =>
         routePushData(response.notification.request.content.data)
       );
 

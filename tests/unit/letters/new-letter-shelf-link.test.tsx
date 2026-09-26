@@ -4,11 +4,13 @@ import { createElement } from 'react';
 
 const pushSpy = vi.fn();
 const backSpy = vi.fn();
+const routerMock = { push: pushSpy, back: backSpy, replace: vi.fn() };
 
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ push: pushSpy, back: backSpy, replace: vi.fn() }),
+  useRouter: () => routerMock,
   useLocalSearchParams: () => ({}),
+  useIsFocused: () => true,
 }));
 
 vi.mock('react-native', () => {
@@ -86,6 +88,7 @@ vi.mock('react-native', () => {
     Pressable,
     ScrollView: View,
     KeyboardAvoidingView: View,
+    AppState: { addEventListener: () => ({ remove: () => {} }) },
     Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
   };
 });
@@ -109,6 +112,7 @@ vi.mock('react-native-reanimated', () => {
         createElement('div', {}, children),
     },
     FadeIn: chain,
+    FadeOut: chain,
     FadeInDown: chain,
     ZoomIn: chain,
     ReduceMotion: { System: 'system' },

@@ -15,6 +15,7 @@ import { ProposalsProvider } from '@/features/proposals/proposals-context';
 import { PushProvider } from '@/features/push/push-context';
 import { SessionContext } from '@/features/session/session-context';
 import { SomedayProvider } from '@/features/someday/someday-context';
+import { SqueezeProvider } from '@/features/squeeze/squeeze-context';
 import { SpaceContext } from '@/features/space/space-context';
 
 type PreviewScreen = 'plans' | 'year' | 'search';
@@ -52,6 +53,7 @@ export default function DevCalendar() {
 						<SomedayProvider>
 							<MomentsProvider>
 								<ProposalsProvider>
+								<SqueezeProvider>
 									<PushProvider>
 									<DevErrorBoundary label={`CalendarDev:${selected}`}>
 										{selected === 'year' ? (
@@ -63,6 +65,7 @@ export default function DevCalendar() {
 										)}
 									</DevErrorBoundary>
 									</PushProvider>
+								</SqueezeProvider>
 								</ProposalsProvider>
 							</MomentsProvider>
 						</SomedayProvider>

@@ -7,6 +7,8 @@ import { join } from 'node:path';
 // The shared react-native mock passes Pressable `style` straight through,
 // but tab screens compute `style={({ pressed }) => ...}`. Resolve press-state
 // styles as unpressed so the real screens render in this file.
+vi.mock('@/components/home/us-glass-backdrop', () => ({ UsGlassBackdrop: () => null }));
+
 vi.mock('react-native', () => {
   function flattenStyle(style: unknown): unknown {
     if (Array.isArray(style)) {
@@ -223,6 +225,9 @@ vi.mock('react-native-reanimated', () => {
   chain.duration = () => chain;
   chain.delay = () => chain;
   chain.reduceMotion = () => chain;
+  chain.springify = () => chain;
+  chain.damping = () => chain;
+  chain.stiffness = () => chain;
   return {
     default: {
       View: ({ children }: { children?: unknown }) =>
@@ -230,7 +235,9 @@ vi.mock('react-native-reanimated', () => {
       createAnimatedComponent: (component: unknown) => component,
     },
     FadeIn: chain,
+    FadeOut: chain,
     FadeInDown: chain,
+    FadeInUp: chain,
     ReduceMotion: { System: 'system' },
     // Together now renders MemorySky which uses the reduced-motion +
     // shared-value surface. Mirror the shared setup mock (the passing
@@ -238,6 +245,21 @@ vi.mock('react-native-reanimated', () => {
     useReducedMotion: () => false,
     useSharedValue: (initial: unknown) => ({ value: initial }),
     useAnimatedStyle: () => ({}),
+    // Us reads its scroll position on the UI thread and arms each reveal
+    // band from it, so the screen under test needs both of these.
+    useAnimatedScrollHandler:
+      (handler?: (event: unknown) => void) =>
+      (event: unknown) =>
+        handler?.(event),
+    useAnimatedReaction: (
+      prepare: () => unknown,
+      react: (current: unknown, previous: unknown) => void,
+    ) => {
+      const fired = { current: false };
+      if (fired.current) return;
+      fired.current = true;
+      react(prepare(), undefined);
+    },
     withTiming: (value: unknown) => value,
     withSpring: (value: unknown) => value,
     withDelay: (_delay: number, value: unknown) => value,
@@ -388,6 +410,26 @@ vi.mock('@/features/theme/theme-context', () => ({
 
 vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: () => '#000000',
+}));
+
+// The Us screen now renders the exchange, which reaches for the capture
+// paths and the responses store. Neither is what this suite is about.
+vi.mock('@/features/responses/responses-context', () => ({
+  useResponses: () => ({
+    responses: [],
+    isLoading: false,
+    error: null,
+    loadFor: vi.fn(),
+    add: vi.fn(async () => true),
+  }),
+}));
+vi.mock('@/components/media/media-picker', () => ({ MediaPicker: () => null }));
+vi.mock('@/components/media/voice-recorder', () => ({ VoiceRecorder: () => null }));
+vi.mock('expo-image-picker', () => ({
+  MediaTypeOptions: { Images: 'Images', Videos: 'Videos' },
+  requestMediaLibraryPermissionsAsync: vi.fn(async () => ({ granted: true })),
+  launchImageLibraryAsync: vi.fn(async () => ({ canceled: true })),
+  launchCameraAsync: vi.fn(async () => ({ canceled: true })),
 }));
 
 vi.mock('@/features/session/session-context', () => ({
@@ -663,17 +705,19 @@ async function renderTabsLayout() {
 }
 
 describe('P2A tab structure (system tab bar)', () => {
-  it('declares exactly Memories, Us, Plans triggers in that visible order', async () => {
+  it('declares exactly Memories, Us, Plans, Space triggers in that visible order', async () => {
     await renderTabsLayout();
     expect(capturedTabTriggers.map((entry) => entry.name)).toEqual([
       '(memories)',
       'together',
       'plans',
+      'space',
     ]);
     expect(capturedTabTriggers.map((entry) => entry.label)).toEqual([
       'Memories',
       'Us',
       'Plans',
+      'Space',
     ]);
   });
 
@@ -698,9 +742,11 @@ describe('P2A tab structure (system tab bar)', () => {
     const names = capturedTabTriggers.map((entry) => entry.name);
     expect(names).not.toContain('profile');
     expect(names).not.toContain('settings');
+    // Space is a real tab now, not a pushed detail.
+    expect(names).toContain('space');
   });
 
-  it('uses book/mail/calendar SF + vector pairs — no hearts anywhere in the bar', async () => {
+  it('uses book/mail/calendar/person SF + vector pairs — no hearts anywhere in the bar', async () => {
     const { container } = await renderTabsLayout();
     const seen = tabIconNames();
     expect(seen.length).toBeGreaterThan(0);
@@ -714,6 +760,8 @@ describe('P2A tab structure (system tab bar)', () => {
     expect(tabSf('together', true)).toBe('envelope.fill');
     expect(tabSf('plans', false)).toBe('calendar');
     expect(tabSf('plans', true)).toBe('calendar.circle.fill');
+    expect(tabSf('space', false)).toBe('person');
+    expect(tabSf('space', true)).toBe('person.fill');
     // The same outline/filled pairs cross-platform through Ionicons.
     expect(tabVectorIcon('(memories)', false)).toBe('book-outline');
     expect(tabVectorIcon('(memories)', true)).toBe('book');
@@ -721,6 +769,8 @@ describe('P2A tab structure (system tab bar)', () => {
     expect(tabVectorIcon('together', true)).toBe('mail');
     expect(tabVectorIcon('plans', false)).toBe('calendar-outline');
     expect(tabVectorIcon('plans', true)).toBe('calendar');
+    expect(tabVectorIcon('space', false)).toBe('person-outline');
+    expect(tabVectorIcon('space', true)).toBe('person');
     // The bar renders those Ionicons in trigger order.
     expect(
       Array.from(container.querySelectorAll('[data-icon]')).map((icon) =>
@@ -733,85 +783,35 @@ describe('P2A tab structure (system tab bar)', () => {
       'mail',
       'calendar-outline',
       'calendar',
+      'person-outline',
+      'person',
     ]);
   });
 });
 
 describe('P2A Together ownership', () => {
-  it('exposes Letters and This week with squeeze, but neither Someday nor Memory wall', async () => {
-    const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
-    const { container } = render(<TogetherScreen />);
+  it('gives the letters shelf and the reflection to Space, not to Us', async () => {
+    // Us is one memory and the exchange on it. The shelf of letters and the
+    // weekly reflection moved to Space, next to the rest of what the two of
+    // them keep, so neither is orphaned and neither sits on a home surface
+    // as a recurring obligation.
+    const { default: SpaceScreen } = await import('@/app/(app)/(tabs)/space');
+    render(<SpaceScreen />);
     expect(screen.getByText('Letters')).toBeTruthy();
-    // The card's eyebrow and the row's state line both read "This week" now,
-    // which the screen means: the question is the thing happening, and the
-    // row is still the way to it.
-    expect(screen.getAllByText('This week').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Squeeze')).toBeTruthy();
+    expect(screen.getByText('Reflection')).toBeTruthy();
+
+    const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
+    render(<TogetherScreen />);
+    // Us does not re-offer them, and it does not own a capture target either.
     expect(screen.queryByText('Someday')).toBeNull();
     expect(screen.queryByText('Memory wall')).toBeNull();
-    // Calm contract: the capture trio stays hidden until the Keep a memory
-    // toggle is asked (progressive disclosure, mirror together-actions).
-    expect(screen.queryByLabelText('Keep a photo memory')).toBeNull();
-    expect(screen.queryByLabelText('Keep a note memory')).toBeNull();
-    expect(screen.queryByLabelText('Keep a voice memory')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Keep a memory'));
-    // Current contract: chunky Keep-a-memory targets (64px min-height,
-    // 44px min-width, camera/pencil/mic glyphs) mirror together-actions.
-    const keeps: Array<[string, string, string]> = [
-      ['Keep a photo memory', 'Photo', 'camera'],
-      ['Keep a note memory', 'Note', 'pencil'],
-      ['Keep a voice memory', 'Voice', 'mic'],
-    ];
-    for (const [a11y, label, icon] of keeps) {
-      const target = screen.getByLabelText(a11y) as HTMLElement;
-      expect(target.textContent).toContain(label);
-      expect(container.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
-      expect(target.style.minHeight).toMatch(/64/);
-      expect(target.style.minWidth).toMatch(/44/);
-    }
-    // Unified routes: every Keep target goes to Memories composer intents.
-    fireEvent.click(screen.getByLabelText('Keep a photo memory'));
-    expect(pushSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'photos' },
-    });
-    fireEvent.click(screen.getByLabelText('Keep a note memory'));
-    expect(pushSpy).toHaveBeenLastCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'note' },
-    });
-    expect(screen.queryByText('Keep a note')).toBeNull();
-    // Current contract: small centered squeeze heart pill (44px min-height,
-    // 44px min-width, pill radius, centered) mirror together-cute/sheets.
-    const pill = screen.getByLabelText('Send a squeeze to your partner') as HTMLElement;
-    expect(pill.style.minHeight).toMatch(/44/);
-    expect(pill.style.minWidth).toMatch(/44/);
-    expect(pill.style.borderRadius).toMatch(/999/);
-    expect(pill.style.alignSelf).toMatch(/center/);
-    expect(container.querySelector('[data-icon="heart"]')).toBeTruthy();
-    // Voice is a plain tap to Memories — no Us overlay, no hold timers.
-    fireEvent.click(screen.getByLabelText('Keep a voice memory'));
-    expect(pushSpy).toHaveBeenLastCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'voice' },
-    });
-    expect(screen.queryByLabelText('Recording voice note. Release to finish.')).toBeNull();
-    expect(screen.queryByLabelText('Voice note ready to send.')).toBeNull();
   });
 
-  it('sends a squeeze from the centered compact pill', async () => {
+  it('sends a squeeze from the pill in one tap', async () => {
     const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
-    const { container } = render(<TogetherScreen />);
-    // Current contract is a small centered squeeze heart pill, not a
-    // secondary-row button — assert the pill sizing before sending.
-    const pill = screen.getByLabelText('Send a squeeze to your partner') as HTMLElement;
-    expect(pill.style.minHeight).toMatch(/44/);
-    expect(pill.style.minWidth).toMatch(/44/);
-    expect(pill.style.borderRadius).toMatch(/999/);
-    expect(pill.style.alignSelf).toMatch(/center/);
-    expect(container.querySelector('[data-icon="heart"]')).toBeTruthy();
-    expect(screen.getByText('Squeeze')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Send a squeeze to your partner'));
+    render(<TogetherScreen />);
+    expect(screen.getAllByText('Squeeze').length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByText('Squeeze'));
     // Production sends via Promise.resolve().then — flush the microtask.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sendSqueezeSpy).toHaveBeenCalledTimes(1);
@@ -819,26 +819,24 @@ describe('P2A Together ownership', () => {
 });
 
 describe('P2A Memories ownership', () => {
-  it('owns the pinned header in-screen: title, search chrome, Space entry, and the Add-memory FAB; no archive menu', async () => {
+  it('owns the pinned header in-screen: title, Feed/Gallery switcher, and the Add-memory FAB; no archive menu, no search, no Space entry', async () => {
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(<MemoriesScreen />);
     // One stream, no separate destinations: no title-menu, no Photos row.
     // The screen renders its own pinned title (the native header is off).
     expect(screen.getByText('Memories')).toBeTruthy();
     expect(screen.queryByLabelText('Memories, open archive menu')).toBeNull();
-    // One archive: the four kinds are filters, never separate destinations.
-    // Filters ride with the on-demand search control (the archive opens
-    // clean), so open search before asserting them.
-    fireEvent.click(screen.getByLabelText('Search memories'));
-    expect(screen.getByLabelText('Photos filter')).toBeTruthy();
-    expect(screen.getByLabelText('Search memories')).toBeTruthy();
+    // The Feed/Gallery switcher rides the title row, always reachable.
+    expect(screen.getByLabelText('Feed')).toBeTruthy();
+    expect(screen.getByLabelText('Gallery')).toBeTruthy();
+    // Search is gone from the archive; Space lives in the tab bar.
+    expect(screen.queryByLabelText('Search memories')).toBeNull();
+    expect(screen.queryByLabelText('Open Space settings')).toBeNull();
     // Capture is back on the screen itself: the round glass FAB over the feed.
     const fab = screen.getByLabelText('Add memory') as HTMLElement;
     expect(fab.style.width).toBe('56px');
     expect(fab.style.height).toBe('56px');
     expect(fab.style.borderRadius).toBe('28px');
-    // The Space entry rides the in-screen header now.
-    expect(screen.getByLabelText('Open Space settings')).toBeTruthy();
     // No persistent composer footer — capture lives in the dedicated editor.
     expect(screen.queryByTestId('inline-composer')).toBeNull();
   });
@@ -889,24 +887,18 @@ describe('P2A Memories ownership', () => {
 });
 
 describe('P2A Plans ownership', () => {
-  it('exposes the avatar entry', async () => {
+  it('keeps Space off the calendar, which is a calendar and nothing else', async () => {
     const { default: CalendarScreen } = await import('@/app/(app)/(tabs)/plans');
     render(<CalendarScreen />);
-    expect(screen.getByLabelText('Open Space settings')).toBeTruthy();
+    // Space has its own entry points; the plans screen is the month and the
+    // day, with no profile chrome over the grid.
+    expect(screen.queryByLabelText('Open Space settings')).toBeNull();
   });
-
-  it('reaches Space from Plans', async () => {
-    const { default: CalendarScreen } = await import('@/app/(app)/(tabs)/plans');
-    render(<CalendarScreen />);
-    fireEvent.click(screen.getByLabelText('Open Space settings'));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/space', { withAnchor: true });
-  });
-
 });
 
 describe('P2A Space surface', () => {
   it('keeps relationship content with a Space/Account switch and no location UI', async () => {
-    const { default: SpaceScreen } = await import('@/app/(app)/space');
+    const { default: SpaceScreen } = await import('@/app/(app)/(tabs)/space');
     render(<SpaceScreen />);
     expect(screen.getAllByText('Space').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Edit relationship')).toBeTruthy();
@@ -918,7 +910,7 @@ describe('P2A Space surface', () => {
   });
 
   it('reveals account controls on the same screen without navigating', async () => {
-    const { default: SpaceScreen } = await import('@/app/(app)/space');
+    const { default: SpaceScreen } = await import('@/app/(app)/(tabs)/space');
     render(<SpaceScreen />);
     expect(screen.queryByText('Sign out')).toBeNull();
     fireEvent.click(screen.getByText('Account'));
@@ -939,8 +931,8 @@ describe('P2A legacy redirects', () => {
       .map((entry) => entry.replace(/\.tsx$/, ''))
       .sort();
 
-  it('tab routes are the memories group plus the Us and Plans screens', () => {
-    expect(discoveredTabScreens()).toEqual(['plans', 'together']);
+  it('tab routes are the memories group plus the Us, Plans, and Space screens', () => {
+    expect(discoveredTabScreens()).toEqual(['plans', 'space', 'together']);
     const memoriesDir = join(tabsDir, '(memories)');
     expect(readdirSync(memoriesDir).sort()).toEqual(['_layout.tsx', 'index.tsx']);
   });
@@ -951,6 +943,7 @@ describe('P2A legacy redirects', () => {
       '(memories)',
       'together',
       'plans',
+      'space',
     ]);
   });
 
@@ -961,17 +954,17 @@ describe('P2A legacy redirects', () => {
     expect(existsSync(join(import.meta.dirname, '../../../app/(app)/profile.tsx'))).toBe(true);
     const { default: LegacyProfileRedirect } = await import('@/app/(app)/profile');
     render(<LegacyProfileRedirect />);
-    expect(capturedRedirect.href).toBe('/(app)/space');
+    expect(capturedRedirect.href).toBe('/(app)/(tabs)/space');
   });
 
   it('legacy settings redirects into the Space account segment, not a second screen', async () => {
     // The standalone settings screen is gone: account controls live in the
-    // Space screen's Account segment, so /settings resolves to /(app)/space.
+    // Space screen's Account segment, so /settings resolves to the Space tab.
     expect(existsSync(join(import.meta.dirname, '../../../app/(app)/(tabs)/settings.tsx'))).toBe(false);
     expect(existsSync(join(import.meta.dirname, '../../../app/(app)/settings.tsx'))).toBe(true);
     const { default: LegacySettingsRedirect } = await import('@/app/(app)/settings');
     render(<LegacySettingsRedirect />);
-    expect(capturedRedirect.href).toBe('/(app)/space');
+    expect(capturedRedirect.href).toBe('/(app)/(tabs)/space');
   });
 });
 
@@ -1010,11 +1003,11 @@ describe('Memories stack layout', () => {
     expect(capturedStackOptions.headerLargeTitle).toBeUndefined();
   });
 
-  it('keeps the Space entry on the screen, not the native header', async () => {
-    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
-    render(<MemoriesScreen />);
+  it('opens the Space tab from the avatar entry', async () => {
+    const { SpaceAvatarButton } = await import('@/components/space/space-avatar-button');
+    render(<SpaceAvatarButton />);
     fireEvent.click(screen.getByLabelText('Open Space settings'));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/space', { withAnchor: true });
+    expect(pushSpy).toHaveBeenCalledWith('/(app)/(tabs)/space', { withAnchor: true });
   });
 });
 

@@ -24,6 +24,7 @@ function AudioPlayerComponent({ uri, label }: AudioPlayerProps) {
   const onAccent = useThemeColor({}, 'onAccent');
   const surface2 = useThemeColor({}, 'surface2');
   const muted = useThemeColor({}, 'muted');
+  const border = useThemeColor({}, 'border');
   const { isPlaying, progress, seconds, toggle } = useVoicePlayback(uri);
 
   // Unlabelled keeps the original wording; a labelled player names what it
@@ -46,7 +47,7 @@ function AudioPlayerComponent({ uri, label }: AudioPlayerProps) {
       >
         <Ionicons color={onAccent} name={isPlaying ? 'pause' : 'play'} size={16} />
       </Pressable>
-      <View style={styles.progressTrack}>
+      <View style={[styles.progressTrack, { backgroundColor: border }]}>
         <View
           style={[
             styles.progressFill,
@@ -84,7 +85,6 @@ const styles = StyleSheet.create({
     width: 32,
   },
   progressTrack: {
-    backgroundColor: 'rgba(128, 128, 128, 0.25)',
     borderRadius: 2,
     flex: 1,
     height: 4,

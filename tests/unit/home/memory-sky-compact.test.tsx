@@ -129,6 +129,19 @@ afterEach(() => {
 });
 
 describe('MemorySky compact backdrop (Memories/Plans)', () => {
+  it('restores the full Us sky without enlarging compact working-screen skies', () => {
+    const immersive = render(createElement(MemorySky, { moments: [], compact: true, immersive: true }));
+    const compact = render(createElement(MemorySky, { moments: [], compact: true }));
+    const immersiveRoot = skyRoot(immersive.container) as HTMLElement;
+    const immersiveStrip = skyStrip(immersive.container) as HTMLElement;
+    expect(parseFloat(immersiveStrip.style.height)).toBe(265);
+    expect(immersiveRoot.style.position).not.toBe('absolute');
+    expect(parseFloat(immersiveRoot.style.height)).toBe(138);
+    expect(parseFloat(immersiveStrip.style.top)).toBeLessThan(0);
+    expect(parseFloat((skyStrip(compact.container) as HTMLElement).style.height)).toBe(139);
+    immersive.unmount();
+    compact.unmount();
+  });
   it('is half the Us viewport fraction with the same top safety', () => {
     expect(MEMORY_SKY_COMPACT_QUARTER).toBe(MEMORY_SKY_QUARTER / 2);
     expect(MEMORY_SKY_QUARTER).toBe(0.3);
@@ -472,8 +485,12 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     expect(PLANS_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(
       PLANS_SOURCE.indexOf('<MemorySky compact'),
     );
+    // Anchored against the stage, not against the ScrollView text: every
+    // scroller on this screen lives inside the mode stage, and the split's
+    // extracted layer bodies can sit anywhere in the file. The sky being
+    // before the stage is what makes it unshiftable by scroll.
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<ScrollView\n'),
+      PLANS_SOURCE.indexOf('styles.modeStage'),
     );
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
       PLANS_SOURCE.indexOf('styles.pillRow'),
@@ -513,23 +530,24 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     expect(SOURCE).toContain('MEMORY_SKY_TOP_SAFETY');
   });
 
-  it('Memories condenses its overlay header with the scroll; the sky stays pinned', () => {
-    // The screen owns the pinned overlay header (title + Feed/Gallery
-    // switcher). The list runs full-screen underneath with a top pad that
-    // scrolls 1:1 against the header shed, so the header meets the rising
-    // feed with no gap and no jump — and the sky is never faded or removed.
+  it('Memories pins a fixed overlay header with the scroll; the sky stays pinned', () => {
+    // The screen owns a fixed pinned overlay header (title + Feed/Gallery
+    // switcher side by side). The list runs full-screen underneath with a
+    // top pad below the fixed header, so the header meets the rising feed
+    // with no gap and no jump — and the sky is never faded or removed.
+    // Nothing collapses, settles, or hides: the switcher lives in the title
+    // row so it is always reachable, and Space lives in the tab bar.
     expect(INDEX_SOURCE).not.toContain('compactSkyHeightForWindow');
-    expect(INDEX_SOURCE).toContain('headerExpanded');
-    expect(INDEX_SOURCE).toContain('headerCollapsed');
-    expect(INDEX_SOURCE).toContain('COLLAPSE_DISTANCE');
-    expect(INDEX_SOURCE).toContain('headerLayoutStyle');
+    expect(INDEX_SOURCE).toContain('headerHeight');
+    expect(INDEX_SOURCE).not.toContain('headerExpanded');
+    expect(INDEX_SOURCE).not.toContain('headerCollapsed');
+    expect(INDEX_SOURCE).not.toContain('COLLAPSE_DISTANCE');
+    expect(INDEX_SOURCE).not.toContain('collapseLayout');
+    expect(INDEX_SOURCE).not.toContain('settleTargetForProgress');
+    expect(INDEX_SOURCE).not.toContain('onScrollEndDrag');
+    expect(INDEX_SOURCE).not.toContain('onMomentumScrollEnd');
+    expect(INDEX_SOURCE).not.toContain('onMomentumScrollBegin');
     expect(INDEX_SOURCE).toContain('headerBackgroundStyle');
-    expect(INDEX_SOURCE).toContain('collapseLayout');
-    // A short list or slow drag can park the header half-shed: it settles
-    // to the nearer endpoint on scroll rest (pure rule, unit-tested).
-    expect(INDEX_SOURCE).toContain('settleTargetForProgress');
-    expect(INDEX_SOURCE).toContain('onScrollEndDrag');
-    expect(INDEX_SOURCE).toContain('onMomentumScrollEnd');
     expect(INDEX_SOURCE).not.toContain('collapseFadeStyle');
     expect(INDEX_SOURCE).not.toContain('HEADER_CONTENT_MIN_HEIGHT');
     expect(INDEX_SOURCE).not.toContain('SKY_REVEAL_HEIGHT');
@@ -538,10 +556,16 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     expect(INDEX_SOURCE).not.toContain('headerBlock: {');
     expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
     expect(INDEX_SOURCE).not.toContain('title="Memories"');
+    expect(INDEX_SOURCE).not.toContain('<SpaceAvatarButton');
+    expect(INDEX_SOURCE).not.toContain('Search memories');
+    expect(INDEX_SOURCE).not.toContain('styles.tabsRow');
+    expect(INDEX_SOURCE).not.toContain('styles.searchWrap');
+    expect(INDEX_SOURCE).toContain('styles.viewSwitch');
     expect(INDEX_SOURCE).toContain('contentInsetAdjustmentBehavior="never"');
-    // The docked system bar is cleared explicitly now that insets are local.
+    // The docked system bar is cleared explicitly now that insets are local,
+    // and the end clears the floating FAB with room to spare.
     expect(INDEX_SOURCE).toContain(
-      'fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + Spacing[8]',
+      'fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + FAB_SIZE + Spacing[24]',
     );
     expect(INDEX_SOURCE).not.toContain('tabBarRowTopOffset');
     // Full-bleed sky: the root carries no horizontal padding (it would
@@ -585,37 +609,80 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
       PLANS_SOURCE.indexOf('styles.pillRow'),
     );
-    // The strip and the weekday row are chrome, not list content.
-    expect(PLANS_SOURCE).toContain('<WeekStrip');
+    // The weekday row is chrome, not list content. The week strip is gone:
+    // the day lives in the sheet now, so the header is the pill plus grid.
+    expect(PLANS_SOURCE).not.toContain('<WeekStrip');
   });
 
 
-  it('leaves the Us tab totally untouched', () => {
-    expect(TOGETHER_SOURCE).not.toContain('compactSkyHeightForWindow');
-    expect(TOGETHER_SOURCE).not.toContain('headerBlock');
-    expect(TOGETHER_SOURCE).not.toContain('<MemorySky compact');
-    expect(TOGETHER_SOURCE).toContain('<MemorySky moments');
+  it('gives Us the same working-screen sky band as Plans, not a hero banner', () => {
+    // Us used to opt into `immersive`, the decorative full-bleed layout that
+    // exists so a banner can take half the viewport. It is a tab now and it
+    // takes the same band every other working screen takes.
+    //
+    // `immersive` is the prop that makes the band full-bleed and feathers
+    // it into the page, and it drops the standalone "N memories lighting
+    // your sky" caption as well. It is not the old 50vh hero: the height is
+    // ours, and it is a band.
+    //
+    // `compact` was tried here and is wrong for a tab: it draws a bounded
+    // canvas, so inside the padded content the clouds clip into a visible
+    // rectangle with hard edges.
+    // This used to be the opposite instruction. The sky was decoration
+    // pinned above a screen about something else, and it was trimmed to a
+    // band so it stopped looking like a page. Now it IS the screen, so it is
+    // full-bleed, it owns the press handler, and its height is most of the
+    // viewport rather than a strip of it.
+    const sky = TOGETHER_SOURCE.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
+    expect(sky).toMatch(/\bimmersive\b/);
+    expect(sky).toMatch(/\bonPress=/);
+    expect(sky).not.toMatch(/\bcompact\b/);
+    expect(TOGETHER_SOURCE).not.toMatch(/<MemorySky[\s\S]{0,320}?\bheader\b/);
+    expect(TOGETHER_SOURCE).toMatch(/presentationHeight=\{skyHeight\}/);
+    // Most of the screen, not a strip: the field has to be worth reaching
+    // into, and that means the stars have room to be apart.
+    expect(TOGETHER_SOURCE).toMatch(/Math\.max\(320, height -/);
   });
 });
 
 describe('Tab header normalization (one shared anatomy)', () => {
-  it('keeps Us on the shared ScreenHeader while Plans heads its days with Calendar pills', () => {
-    expect(TOGETHER_SOURCE).toContain('<ScreenHeader');
-    expect(TOGETHER_SOURCE).toContain('title="Us"');
+  it('keeps Us titled over its own sky while Plans heads its days with Calendar pills', () => {
+    // This rule existed so the three tabs could not drift into three headers.
+    // Us is now the one stated exception, and it is the only one that could
+    // be: it is the only tab whose surface is a full-bleed image, so the
+    // title has to be light chrome drawn over that image rather than a
+    // header built for a page of content sitting on a background.
+    expect(TOGETHER_SOURCE).not.toContain('<ScreenHeader');
+    // The title is a ThemedText over the sky, not a ScreenHeader prop.
+    expect(TOGETHER_SOURCE).toMatch(/<ThemedText[^>]*>\s*Us\s*<\/ThemedText>/);
+    expect(TOGETHER_SOURCE).not.toContain('title="Us"');
     // Not an oversight: Calendar has no title row. The month pill names the
-    // month and the view pill switches between the grid and the day.
+    // month; a grid cell lifts the day into the sheet, so there is no view
+    // pill and no week strip.
     expect(PLANS_SOURCE).not.toContain('<ScreenHeader');
-    expect(PLANS_SOURCE).toContain('<WeekStrip');
+    expect(PLANS_SOURCE).not.toContain('<WeekStrip');
     expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
     // The native stack header is off; the screen renders the title itself.
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
     expect(MEMORIES_LAYOUT_SOURCE).not.toContain("title: 'Memories'");
-    expect(INDEX_SOURCE).toContain('type="display"');
+    expect(INDEX_SOURCE).toContain('type="title"');
+    expect(INDEX_SOURCE).toContain('>Memories</');
+    // Us is the exception, and it is the point: it is the only screen whose
+    // surface is a full-bleed image, so it sets the title over that image
+    // rather than borrowing a header meant for a page of content.
+    expect(TOGETHER_SOURCE).not.toContain('<ScreenHeader');
+    expect(TOGETHER_SOURCE).toMatch(/<ThemedText[^>]*>\s*Us\s*<\/ThemedText>/);
   });
 
   it('keeps one title scale and one action-cluster rhythm in the shared header', () => {
-    expect(HEADER_SOURCE).toContain('fontSize: 28');
-    expect(HEADER_SOURCE).toContain('lineHeight: 34');
+    // One title scale means the header does not carry a size of its own: the
+    // display token is the only thing that decides how big this title is.
+    // It used to pin `fontSize: 28` here, which is the same contract written
+    // as a literal, and the reason four screens each invented a page-title
+    // size of their own.
+    expect(HEADER_SOURCE).toContain('type="display"');
+    expect(HEADER_SOURCE).not.toMatch(/fontSize:\s*\d+/);
+    expect(HEADER_SOURCE).not.toMatch(/lineHeight:\s*\d+/);
     expect(HEADER_SOURCE).toContain("'#FFF8FA'");
     expect(HEADER_SOURCE).toContain('gap: Spacing[12]');
     expect(HEADER_SOURCE).toContain('showAvatar');

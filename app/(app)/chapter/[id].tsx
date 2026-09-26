@@ -83,16 +83,20 @@ export default function ChapterDetailScreen() {
     setAttempt((value) => value + 1);
   };
 
-  const handleOpenStackPhoto = useCallback(
-    (moment: Moment) => {
+  // One navigator behind two stable adapters: the photo stack hands over a
+  // whole Moment, the card hands over an id. Built inline per row they
+  // changed identity every render, which is enough on its own to defeat the
+  // memo on MomentCard and re-render every photo, video and audio player in
+  // the chapter whenever anything above it moved.
+  const navigateToMember = useCallback(
+    (id: string, at: string | undefined) => {
       router.push({
         pathname: '/(app)/moment/[id]' as const,
-        params: { id: moment.id, at: moment.occurredAt },
+        params: { id, at },
       });
     },
     [router],
   );
-
   const ready = state.status === 'ready' ? state : null;
   const members = ready?.members ?? [];
   const title = ready?.title ?? '';
@@ -100,6 +104,18 @@ export default function ChapterDetailScreen() {
   const coverPhotoUri =
     members.find((member) => member.type === 'media' && member.mediaPreview)?.mediaPreview ?? null;
   const subtitle = members.length === 1 ? '1 memory' : `${members.length} memories`;
+
+  const handleOpenStackPhoto = useCallback(
+    (moment: Moment) => navigateToMember(moment.id, moment.occurredAt),
+    [navigateToMember],
+  );
+  const openMember = useCallback(
+    (momentId: string) => {
+      const member = members.find((candidate) => candidate.id === momentId);
+      navigateToMember(momentId, member?.occurredAt);
+    },
+    [members, navigateToMember],
+  );
   const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle');
   const [exportError, setExportError] = useState('');
   const { serverPlus, refreshServerPlus } = useSubscription();
@@ -193,9 +209,11 @@ export default function ChapterDetailScreen() {
       showsVerticalScrollIndicator={false}
     >
       <Stack.Screen options={{ title }} />
-      {coverPhotoUri ? (
-        <ThemedText type="caption" style={{ color: muted, textAlign: 'center' }}>{subtitle}</ThemedText>
-      ) : <ChapterCover
+      {/* The cover is an illustration of the chapter, not a replacement for
+          it. A photo used to swap the whole block out, so any chapter with
+          media lost its title. */}
+      {members.length > 0 ? (
+      <ChapterCover
         chapter={{
           id: readyId,
           kind: readyId.startsWith('anniversary:') ? 'anniversary' : 'monthly',
@@ -208,22 +226,30 @@ export default function ChapterDetailScreen() {
           anniversaryYear: null,
         }}
         width={240}
-      />}
-      <ChapterPhotoStack moments={members} onOpenMoment={handleOpenStackPhoto} />
-      <View style={styles.entries}>
-        {members.map((member) => (
-          <MomentCard
-            key={member.id}
-            moment={member}
-            onPress={() =>
-              router.push({
-                pathname: '/(app)/moment/[id]' as const,
-                params: { id: member.id, at: member.occurredAt },
-              })
-            }
-          />
-        ))}
-      </View>
+      />
+      ) : null}
+      <ThemedText type="caption" style={{ color: muted, textAlign: 'center' }}>
+        {subtitle}
+      </ThemedText>
+      {members.length === 0 ? (
+        <View accessibilityLiveRegion="polite" style={styles.empty}>
+          <ThemedText type="title">Nothing kept here yet</ThemedText>
+          <ThemedText type="body" style={{ color: muted, textAlign: 'center' }}>
+            Memories you keep this month will gather here, in the order they
+            happened.
+          </ThemedText>
+          <Button label="Keep a memory" onPress={() => router.push('/(app)/moment/new')} />
+        </View>
+      ) : (
+        <>
+          <ChapterPhotoStack moments={members} onOpenMoment={handleOpenStackPhoto} />
+          <View style={styles.entries}>
+            {members.map((member) => (
+              <MomentCard key={member.id} moment={member} onPress={openMember} />
+            ))}
+          </View>
+        </>
+      )}
       <View style={styles.exportRow}>
         <Button
           label={
@@ -263,6 +289,13 @@ const styles = StyleSheet.create({
   entries: {
     width: '100%',
     gap: Spacing[24],
+  },
+  empty: {
+    alignItems: 'center',
+    gap: Spacing[12],
+    paddingHorizontal: Spacing[16],
+    paddingVertical: Spacing[24],
+    width: '100%',
   },
   exportRow: {
     width: '100%',

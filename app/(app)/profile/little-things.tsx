@@ -15,6 +15,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Divider } from '@/components/ui/divider';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
+import { Typography } from "@/constants/typography";
 import {
   usePartnerDetails,
 } from '@/features/partner-details/partner-details-context';
@@ -88,6 +89,7 @@ export default function LittleThingsScreen() {
   const border = useThemeColor({}, 'border');
   const background = useThemeColor({}, 'background');
   const muted = useThemeColor({}, 'muted');
+  const onAccent = useThemeColor({}, 'onAccent');
   const surface = useThemeColor({}, 'surface');
   const text = useThemeColor({}, 'text');
   const [draft, setDraft] = useState('');
@@ -183,7 +185,7 @@ export default function LittleThingsScreen() {
                   >
                     <ThemedText
                       type="meta"
-                      style={{ color: isActive ? '#FFFFFF' : muted }}
+                      style={{ color: isActive ? onAccent : muted }}
                     >
                       {CATEGORY_LABELS[value]}
                     </ThemedText>
@@ -202,7 +204,7 @@ export default function LittleThingsScreen() {
               { backgroundColor: accent, opacity: canSave ? 1 : 0.4 },
             ]}
           >
-            <ThemedText type="meta" style={{ color: '#FFFFFF' }}>
+            <ThemedText type="meta" style={{ color: onAccent }}>
               Keep it
             </ThemedText>
           </Pressable>
@@ -260,8 +262,7 @@ const styles = StyleSheet.create({
     padding: Spacing[16],
   },
   input: {
-    fontSize: 17,
-    lineHeight: 24,
+    ...Typography.subheading,
     minHeight: 48,
   },
   categoryRow: {

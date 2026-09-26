@@ -99,7 +99,10 @@ vi.mock('react-native', () => {
     Text,
     TextInput,
     Pressable,
-    ScrollView: View,
+    ScrollView: (props: Record<string, unknown>) => {
+      const { children, ...rest } = props;
+      return createElement('div', { ...rest, 'data-scrollview': 'true' }, children);
+    },
     Alert: { alert: vi.fn() },
   };
 });
@@ -151,10 +154,65 @@ describe('paywall (v1 benefit contract)', () => {
     expect(screen.queryByText('$39.99')).toBeNull();
   });
 
+  it('scrolls, so nothing on the purchase screen is unreachable', async () => {
+    // This screen used to lay its content out in a plain View with
+    // `justifyContent: 'center'` and no ScrollView at all. On a short
+    // viewport the centre alignment clipped the top and the bottom together,
+    // so the hero and the legal line were both gone and the rest was
+    // unscrollable.
+    const { container } = await renderPaywall();
+
+    const scroller = container.querySelector('[data-scrollview]');
+    expect(scroller).toBeTruthy();
+
+    // Everything below the fold is present in the tree, not merely implied.
+    const copy = container.textContent ?? '';
+    expect(copy).toMatch(/Prices vary by region/);
+    expect(copy).toMatch(/Why Plus\?/);
+  });
+
+  it('makes no plan preselected and will not buy without a choice', async () => {
+    const { act } = await import('@testing-library/react');
+    await renderPaywall();
+
+    // It used to default to plans[1] and light it up, so a reader who
+    // tapped straight through had agreed to a plan they never picked.
+    expect(screen.getByText('Choose a plan')).toBeTruthy();
+    expect(screen.queryByText(/Continue, €/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Choose a plan'));
+    });
+    expect(purchaseSpy).not.toHaveBeenCalled();
+  });
+
+  it('explains Plus in the app sheet, not a system alert', async () => {
+    await renderPaywall();
+
+    fireEvent.click(screen.getByLabelText('Why Plus?'));
+    // The sheet's own copy, mounted by the platform sheet.
+    expect(await screen.findByText(/raises the limits on your shared Space/)).toBeTruthy();
+  });
+
+  it('gives the explanation a real touch target', async () => {
+    // It was a bare caption Pressable: about 19pt tall, against a 44pt
+    // floor, on the only control that says what the product does.
+    const { container } = await renderPaywall();
+    const cta = [...container.querySelectorAll('[aria-label]')].find(
+      (el) => el.getAttribute('aria-label') === 'Why Plus?'
+    ) as HTMLElement | undefined;
+    expect(cta).toBeTruthy();
+    const minHeight = parseFloat(getComputedStyle(cta as HTMLElement).minHeight || '0');
+    expect(minHeight).toBeGreaterThanOrEqual(44);
+  });
+
   it('purchases the exact selected package identifier', async () => {
     await renderPaywall();
 
-    fireEvent.click(screen.getByLabelText(`Choose Monthly €3.99`));
+    // Nothing is preselected: the reader picks a plan, and the shelf is a
+    // radio group so the selection is announced rather than implied by a
+    // filled card nobody can interrogate.
+    fireEvent.click(screen.getByLabelText(`Monthly, €3.99`));
     const { act } = await import('@testing-library/react');
     await act(async () => {
       fireEvent.click(screen.getByText(/Continue,/));

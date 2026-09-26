@@ -10,6 +10,7 @@ import { useReducedMotion } from "react-native-reanimated";
 
 import { Radii } from "@/constants/theme";
 import { ThemedText } from "@/components/themed-text";
+import { Pressed } from "@/components/ui/pressed";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
@@ -94,8 +95,8 @@ export function Button({
 				pressed && !isDisabled && currentVariant.pressedContainer
 					? currentVariant.pressedContainer
 					: undefined,
-				pressed && !isDisabled ? styles.pressed : undefined,
-				pressed && !isDisabled && !reduceMotion ? styles.pressedScale : undefined,
+				pressed && !isDisabled ? Pressed.at : undefined,
+				pressed && !isDisabled && !reduceMotion ? Pressed.scaled : undefined,
 				isDisabled ? styles.disabled : undefined,
 			]}
 			{...rest}
@@ -127,12 +128,6 @@ const styles = StyleSheet.create({
 	md: {
 		paddingHorizontal: 16,
 		paddingVertical: 12,
-	},
-	pressed: {
-		opacity: 0.92,
-	},
-	pressedScale: {
-		transform: [{ scale: 0.97 }],
 	},
 	disabled: {
 		opacity: 0.55,

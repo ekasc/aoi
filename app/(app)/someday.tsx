@@ -11,14 +11,16 @@ import {
 	TextInput,
 	View,
 } from "react-native";
-import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Reveal } from '@/components/ui/reveal';
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Divider } from "@/components/ui/divider";
 import { Surface } from "@/components/ui/surface";
-import { Motion, Radii, Spacing } from "@/constants/theme";
+import { Radii, Spacing } from "@/constants/theme";
+import { Typography } from "@/constants/typography";
 import { useSomeday } from "@/features/someday/someday-context";
 import type { SomedayCategory, SomedayItem } from "@/features/someday/types";
 import { SOMEDAY_TITLE_MAX_LENGTH } from "@/features/someday/types";
@@ -34,9 +36,9 @@ const CATEGORY_LABELS: Record<SomedayCategory, string> = {
 
 const CATEGORY_ORDER: SomedayCategory[] = ["place", "food", "film", "other"];
 
-const ROW_ANIMATION = FadeIn.duration(Motion.base).reduceMotion(
-	ReduceMotion.System,
-);
+const ROW_ANIMATION = Reveal.in();
+/** Removable rows, so they need somewhere to go as well. */
+const ROW_EXIT = Reveal.out();
 
 function formatCheckedDay(iso: string) {
 	const date = new Date(iso);
@@ -67,7 +69,7 @@ function OpenRow({
 		item.createdByRole === "you" ? "you" : partnerName;
 
 	return (
-		<Animated.View entering={ROW_ANIMATION}>
+		<Animated.View entering={ROW_ANIMATION} exiting={ROW_EXIT}>
 			<View style={styles.row}>
 				<Pressable
 					accessibilityLabel={`Check off: ${item.title}`}
@@ -114,7 +116,7 @@ function DoneRow({
 			: "You checked it off";
 
 	return (
-		<Animated.View entering={ROW_ANIMATION}>
+		<Animated.View entering={ROW_ANIMATION} exiting={ROW_EXIT}>
 			<Pressable
 				accessibilityLabel={`Undo check-off: ${item.title}`}
 				accessibilityRole="button"
@@ -160,6 +162,7 @@ export default function SomedayScreen() {
 	} = useSomeday();
 	const { space } = useSpace();
 	const accent = useThemeColor({}, "accent");
+	const accentInk = useThemeColor({}, "accentInk");
 	const background = useThemeColor({}, "background");
 	const border = useThemeColor({}, "border");
 	const muted = useThemeColor({}, "muted");
@@ -302,7 +305,7 @@ export default function SomedayScreen() {
 
 				{isLoading ? (
 					<View style={styles.center}>
-						<ActivityIndicator color={accent} />
+						<ActivityIndicator color={accentInk} />
 					</View>
 				) : error && openItems.length === 0 && doneItems.length === 0 ? (
 					<Surface style={styles.emptyCard}>
@@ -380,8 +383,7 @@ const styles = StyleSheet.create({
 		padding: Spacing[16],
 	},
 	input: {
-		fontSize: 17,
-		lineHeight: 24,
+		...Typography.subheading,
 		minHeight: 44,
 	},
 	categoryRow: {

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 
 import {
   LANDING_BACKGROUND_DARK,
@@ -9,8 +9,9 @@ import {
   landingSubtle,
   landingThemeForColorScheme,
 } from '@/constants/landing-theme';
+import { Reveal } from '@/components/ui/reveal';
 import { Motion } from '@/constants/theme';
-import { FontFamilies } from '@/constants/typography';
+import { Typography } from '@/constants/typography';
 
 export { LANDING_BACKGROUND_DARK, LANDING_BACKGROUND_LIGHT, landingInk, landingSubtle };
 
@@ -34,7 +35,7 @@ export function ImmersiveHero({ cta, legal, variant = 'welcome' }: ImmersiveHero
 
   return (
     <Animated.View
-      entering={FadeIn.duration(Motion.slow).reduceMotion(ReduceMotion.System)}
+      entering={Reveal.in(Motion.slow)}
       style={styles.root}
     >
       <View style={styles.wordmarkWrap}>
@@ -64,9 +65,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   wordmark: {
-    fontFamily: FontFamilies.display,
-    fontSize: 28,
-    lineHeight: 32,
+    ...Typography.title,
     fontWeight: '400',
   },
   spacer: {
@@ -78,16 +77,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   headline: {
-    fontFamily: FontFamilies.display,
-    fontSize: 44,
-    lineHeight: 49,
+    ...Typography.hero,
     fontWeight: '400',
     textAlign: 'left',
   },
   body: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '400',
+    ...Typography.body,
     textAlign: 'left',
     maxWidth: 340,
   },

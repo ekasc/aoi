@@ -58,6 +58,7 @@ vi.mock('react-native-reanimated', () => {
         createElement('div', {}, children),
     },
     FadeIn: chain,
+    FadeOut: chain,
     ZoomIn: chain,
     ReduceMotion: { System: 'system' },
     useReducedMotion: () => false,
@@ -163,9 +164,27 @@ describe('letter reader', () => {
     expect(screen.getByText('For a quiet day')).toBeTruthy();
     expect(screen.queryByText(SECRET_BODY)).toBeNull();
     expect(container.textContent).not.toContain(SECRET_BODY);
-    fireEvent.click(screen.getByText('Back to Letters'));
+    // The way out is "Not now" rather than "Back to Letters": the reader
+    // may have arrived from Us rather than from the shelf, and either way
+    // deferring a letter is not going back to a list.
+    fireEvent.click(screen.getByText('Not now'));
     expect(backSpy).toHaveBeenCalledTimes(1);
     unmount();
+  });
+
+  it('offers no way to open a letter that is not due yet', async () => {
+    mockLettersState.letters = [baseLetter({ body: SECRET_BODY, sealedUntil: '2099-01-01T00:00:00.000Z' })];
+    await renderReader();
+    expect(screen.queryByText('Open it')).toBeNull();
+    expect(screen.queryByText(SECRET_BODY)).toBeNull();
+  });
+
+  it('offers a way to open a letter whose seal has broken', async () => {
+    mockLettersState.letters = [baseLetter({ body: SECRET_BODY })];
+    await renderReader();
+    // A ready letter that announced itself and gave the reader nothing to do
+    // about it was the reason the Us card felt like a dead end.
+    expect(screen.getByText('Open it')).toBeTruthy();
   });
 
   it('shows the full body in the reading surface once opened', async () => {

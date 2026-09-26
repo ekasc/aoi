@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   AppState,
@@ -128,6 +128,64 @@ export function backgroundAtAlpha(color: string, alpha: number): string {
     return `rgba(${Number(rgb[1])}, ${Number(rgb[2])}, ${Number(rgb[3])}, ${clamped})`;
   }
   return color;
+}
+
+/** What the Us sky is holding its breath for: a letter come due, or a
+ *  question waiting on both of you. Null means a quiet sky. Us-only
+ *  (`immersive`, which Us sets on its own); working-screen strips
+ *  without `immersive` never glow. */
+export type SkyGlowKind = 'letter' | 'question';
+
+/** Time-of-day aura phase for the Us sky, derived from `now`. */
+export type DayPhase = 'dawn' | 'day' | 'dusk' | 'night';
+
+/** Subtle mid-stop tints per phase; day keeps the canonical palette. */
+export const DAY_PHASE_TINTS = {
+  dawn: '#E8A06A',
+  day: null,
+  dusk: '#C96F5A',
+  night: '#232B4D',
+} as const;
+
+export function dayPhaseForHour(hour: number): DayPhase {
+  const h = Number.isFinite(hour) ? ((Math.floor(hour) % 24) + 24) % 24 : 12;
+  if (h >= 5 && h < 8) {
+    return 'dawn';
+  }
+  if (h >= 8 && h < 17) {
+    return 'day';
+  }
+  if (h >= 17 && h < 21) {
+    return 'dusk';
+  }
+  return 'night';
+}
+
+/** Nudge the dusk mid-stop toward the phase tint (Us sky only). */
+export function tintSkyMidForPhase(skyMid: string, phase: DayPhase): string {
+  const tint = DAY_PHASE_TINTS[phase];
+  return tint ? mixHex(skyMid, tint, 0.22) : skyMid;
+}
+
+/**
+ * Us sky mood: the whole gradient runs a few degrees warmer when a letter
+ * is waiting, cooler when a question is. No shapes, no pulse — just light.
+ * Pure so it stays testable; applied only to the Us (`immersive`) stops.
+ */
+export function moodSkyStops(
+  skyTop: string,
+  skyMid: string,
+  phase: DayPhase,
+  glow: SkyGlowKind | null,
+): [string, string] {
+  const mid = tintSkyMidForPhase(skyMid, phase);
+  if (glow === 'letter') {
+    return [mixHex(skyTop, '#8A4B3C', 0.16), mixHex(mid, '#A9765B', 0.16)];
+  }
+  if (glow === 'question') {
+    return [mixHex(skyTop, '#3A3F66', 0.16), mixHex(mid, '#6E6E9E', 0.16)];
+  }
+  return [skyTop, mid];
 }
 
 /** Feather veil colors: same background RGB from clear to opaque. */
@@ -473,18 +531,24 @@ function CloudLayer({
 
 // Single bounded twinkle overlay: one star glows at a time, then clears.
 // The static field underneath never animates per star.
+/** A star's own rhythm: quick to brighten, slow to fade, slow to settle.
+ *  Ambience rather than interaction, so it does not use `Motion`. */
+const TWINKLE_RISE_MS = 200;
+const TWINKLE_FALL_MS = 700;
+const TWINKLE_SETTLE_MS = 450;
+
 function TwinkleOverlay({ x, y, color }: { x: number; y: number; color: string }) {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.7);
 
   useEffect(() => {
     opacity.value = withSequence(
-      withTiming(1, { duration: 200 }),
-      withTiming(0, { duration: 700 }),
+      withTiming(1, { duration: TWINKLE_RISE_MS }),
+      withTiming(0, { duration: TWINKLE_FALL_MS }),
     );
     scale.value = withSequence(
-      withTiming(1, { duration: 450 }),
-      withTiming(0.9, { duration: 450 }),
+      withTiming(1, { duration: TWINKLE_SETTLE_MS }),
+      withTiming(0.9, { duration: TWINKLE_SETTLE_MS }),
     );
     return () => {
       cancelAnimation(opacity);
@@ -511,7 +575,11 @@ export function MemorySky({
   focused = true,
   now,
   compact = false,
+  immersive = false,
   header = false,
+  glow = null,
+  presentationHeight,
+  onPress,
 }: {
   moments: Moment[];
   daysTogether?: number | null;
@@ -519,16 +587,45 @@ export function MemorySky({
   focused?: boolean;
   now?: Date;
   compact?: boolean;
+  /** Full Us sky height with a decorative, absolute layout. */
+  immersive?: boolean;
   /** A working screen's header band: compact, then shorter again. */
   header?: boolean;
+  /**
+   * A tap anywhere on the sky. The whole field is one control rather than a
+   * grid of tiny targets: stars are sub-pixel, so aiming at one is not
+   * possible, and a miss that opens something is a far smaller failure than
+   * a tap that opens nothing.
+   */
+  onPress?: () => void;
+  /** What the Us sky holds its breath for. Us-only; compact never glows. */
+  glow?: SkyGlowKind | null;
+  presentationHeight?: number;
 }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const compactLayout = compact && !immersive;
   const background = useThemeColor({}, 'background');
   const muted = useThemeColor({}, 'muted');
   const isDark = isDarkBackground(background);
   const skyTop = isDark ? DARK_SKY_TOP : LIGHT_SKY_TOP;
   const skyMid = isDark ? DARK_SKY_MID : LIGHT_SKY_MID;
+  // Living-sky aura (Us full sky only): the dusk stops breathe with the
+  // time of day — dawn gold, dusk ember, night deepened, day canonical —
+  // and run a few degrees warmer/cooler for what is waiting. Static per
+  // render (Us refreshes `now` on focus/foreground); the drift and twinkle
+  // carry the continuous motion.
+  const auraPhase = useMemo(
+    () => dayPhaseForHour((now ?? new Date()).getHours()),
+    [now],
+  );
+  const [moodTop, moodMid] = useMemo(
+    () =>
+      immersive
+        ? moodSkyStops(skyTop, skyMid, auraPhase, glow ?? null)
+        : [skyTop, skyMid] as [string, string],
+    [immersive, skyTop, skyMid, auraPhase, glow],
+  );
   const reduceMotion = useReducedMotion();
   const systemReduce = useSystemReduceMotion();
   const appActive = useAppActive();
@@ -538,11 +635,11 @@ export function MemorySky({
 
   const skyFraction = header
     ? MEMORY_SKY_HEADER_QUARTER
-    : compact
+    : compactLayout
       ? MEMORY_SKY_COMPACT_QUARTER
       : MEMORY_SKY_QUARTER;
-  const skyHeight =
-    Math.round(windowHeight * skyFraction) + MEMORY_SKY_TOP_SAFETY;
+  const skyHeight = presentationHeight ??
+    (Math.round(windowHeight * skyFraction) + MEMORY_SKY_TOP_SAFETY);
   // Us (non-compact): absolute strip covering the top ~30% including the
   // notch — starts above the safe area (negative top extends upward over
   // the toolbar padding + notch plus TOP_SAFETY so the old y8 stripe can
@@ -554,7 +651,7 @@ export function MemorySky({
   // FrostedBackdrop), so the internal sky is simply top0 left0 right0 with
   // no dependence on toolbar height or insets. The screen-filling root
   // parent already includes the inset, giving full bleed with no spacer.
-  const stripTop = compact
+  const stripTop = compactLayout
     ? 0
     : -(
         insets.top +
@@ -587,7 +684,7 @@ export function MemorySky({
   // Compact visible bottom in virtual sy: uniform scale clips via overflow
   // hidden, so only the top skyHeight / (H * scaleX) shows. Stars fade to 0
   // there (renderer data), never clipped mid-glow.
-  const compactVisibleBottomSy = compact
+  const compactVisibleBottomSy = compactLayout
     ? Math.min(1, skyHeight / (MEMORY_SKY_CANVAS_H * (windowWidth / MEMORY_SKY_CANVAS_W)))
     : 1;
 
@@ -629,9 +726,9 @@ export function MemorySky({
           size: star.size,
           r: starRadiusForZoom(star.size, zoom),
           sparkleR: sparkleHalfLengthForZoom(star.size, zoom),
-          opacity: compact
-            ? fadeCompactStarOpacity(baseOpacity, p.sy, compactVisibleBottomSy)
-            : fadeAboveQuestion(baseOpacity, p.sy),
+            opacity: compactLayout
+              ? fadeCompactStarOpacity(baseOpacity, p.sy, compactVisibleBottomSy)
+              : fadeAboveQuestion(baseOpacity, p.sy),
           color: starToneColor(star.tone),
           bright: isBrightDayStar(star.dayIndex),
           rotationDeg: sparkleRotationDeg(key),
@@ -687,7 +784,7 @@ export function MemorySky({
         size,
         r: starRadiusForZoom(size, 1),
         sparkleR: sparkleHalfLengthForZoom(size, 1),
-        opacity: compact
+        opacity: compactLayout
           ? fadeCompactStarOpacity(starRestOpacity(moment.id), layout.topPct / 100, compactVisibleBottomSy)
           : fadeAboveQuestion(starRestOpacity(moment.id), layout.topPct / 100),
         color: moment.authorRole === 'partner' ? DAY_SKY_STAR_PARTNER : DAY_SKY_STAR_YOU,
@@ -703,7 +800,7 @@ export function MemorySky({
       }
     }
     return out;
-  }, [field, buckets, zoom, visible, compact, compactVisibleBottomSy]);
+  }, [field, buckets, zoom, visible, compactLayout, compactVisibleBottomSy]);
 
   const starByKey = useMemo(() => {
     const map = new Map<string, PlottedStar>();
@@ -714,13 +811,13 @@ export function MemorySky({
   }, [plotted]);
 
   const twinkleIds = useMemo(() => {
-    if (!compact) {
+    if (!compactLayout) {
       return [...starByKey.keys()];
     }
     return [...starByKey.entries()]
       .filter(([, star]) => isCompactTwinkleEligible(star.opacity))
       .map(([key]) => key);
-  }, [starByKey, compact]);
+  }, [starByKey, compactLayout]);
 
   const newestKey = useMemo(() => {
     if (field && field.stars.length > 0) {
@@ -805,14 +902,21 @@ export function MemorySky({
     };
   }, [motionAllowed, twinkleIds, newestKey, count]);
 
+
   const twinkleStar = twinkleKey ? (starByKey.get(twinkleKey) ?? null) : null;
   const twinkleAttr = (
     twinkleStar ? { 'data-star-key': twinkleStar.key } : {}
   ) as unknown as Record<string, string>;
-  const scaleX = windowWidth / MEMORY_SKY_CANVAS_W;
+  // Us strip bleeds past the content padding on both sides (left/right -16
+  // in the style below), so its gradient canvas must cover the strip — a
+  // window-wide canvas anchored at the strip's left edge stops 16pt short
+  // of the right edge and leaves a dark seam. Compact strips are exactly
+  // window-wide, so the width is unchanged there.
+  const skyCanvasW = compactLayout ? windowWidth : windowWidth + Spacing[16] * 2;
+  const scaleX = skyCanvasW / MEMORY_SKY_CANVAS_W;
   // Compact keeps the approved star shapes (uniform scale, lower half clips
   // via overflow hidden) instead of squashing the field vertically.
-  const scaleY = compact ? scaleX : skyHeight / MEMORY_SKY_CANVAS_H;
+  const scaleY = compactLayout ? scaleX : skyHeight / MEMORY_SKY_CANVAS_H;
   // Veil is the full-size sky's technique (flat page under it). The compact
   // strip must NOT use it: it blends to transparent through the gradient.
   const featherHeight = Math.round(skyHeight * MEMORY_SKY_FEATHER_FRACTION);
@@ -820,10 +924,10 @@ export function MemorySky({
   const featherPositions = [...MEMORY_SKY_FEATHER_POSITIONS];
   // Compact main gradient fades to same-hue transparent exactly at the
   // visible strip bottom (skyHeight); Us keeps the opaque background melt.
-  const skyGradientColors = compact
+  const skyGradientColors = compactLayout
     ? compactSkyGradientColors(skyTop, skyMid, background)
-    : [skyTop, skyMid, background];
-  const skyGradientPositions = compact
+    : [moodTop, moodMid, background];
+  const skyGradientPositions = compactLayout
     ? [...MEMORY_SKY_COMPACT_GRADIENT_POSITIONS]
     : [0, 0.55, 1];
 
@@ -882,28 +986,36 @@ export function MemorySky({
   // handles soft edges and overflow clips only at sides. Drift stays subtle.
   const cloudWidthFull = windowWidth + 120;
   const cloudHeightFull = Math.round(cloudWidthFull * MEMORY_SKY_CLOUD_ASPECT);
-  const cloudWidth = compact
+  const cloudWidth = compactLayout
     ? Math.round(cloudWidthFull * MEMORY_SKY_COMPACT_CLOUD_SCALE)
     : cloudWidthFull;
-  const cloudHeight = compact
+  const cloudHeight = compactLayout
     ? Math.round(cloudWidth * MEMORY_SKY_CLOUD_ASPECT)
     : cloudHeightFull;
-  const cloudBTop = compact ? MEMORY_SKY_COMPACT_CLOUD_B_TOP : -24;
-  const cloudATop = compact
+  const cloudBTop = compactLayout ? MEMORY_SKY_COMPACT_CLOUD_B_TOP : -24;
+  const cloudATop = compactLayout
     ? skyHeight - cloudHeight - MEMORY_SKY_COMPACT_CLOUD_BOTTOM_CLEARANCE
     : skyHeight - cloudHeightFull + 28;
-  const cloudBOpacity = compact ? MEMORY_SKY_COMPACT_CLOUD_B_OPACITY : 0.45;
-  const cloudAOpacity = compact ? MEMORY_SKY_COMPACT_CLOUD_A_OPACITY : 0.55;
+  const cloudBOpacity = compactLayout ? MEMORY_SKY_COMPACT_CLOUD_B_OPACITY : 0.45;
+  const cloudAOpacity = compactLayout ? MEMORY_SKY_COMPACT_CLOUD_A_OPACITY : 0.55;
 
   return (
     <View
       testID="memory-sky"
-      pointerEvents="none"
-      accessible={false}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      aria-hidden
-      style={compact ? [styles.rootCompact, { height: skyHeight }] : styles.root}
+      pointerEvents={onPress ? 'auto' : 'none'}
+      accessible={onPress ? true : false}
+      accessibilityElementsHidden={onPress ? undefined : true}
+      importantForAccessibility={onPress ? 'yes' : 'no-hide-descendants'}
+      aria-hidden={onPress ? undefined : true}
+      onStartShouldSetResponder={onPress ? () => true : undefined}
+      onResponderRelease={onPress}
+      style={
+        compactLayout
+          ? [styles.rootCompact, { height: skyHeight }]
+          : immersive
+            ? [styles.rootImmersive, { height: Math.max(0, skyHeight + stripTop) }]
+            : styles.root
+      }
     >
       <View
         testID="memory-sky-strip"
@@ -911,7 +1023,7 @@ export function MemorySky({
         accessible={false}
         style={[
           styles.sky,
-          compact
+          compactLayout
             ? {
                 top: 0,
                 left: 0,
@@ -935,8 +1047,8 @@ export function MemorySky({
           <SkiaReady>
             {(ready) =>
               ready ? (
-                <Canvas style={{ width: windowWidth, height: skyHeight }}>
-                  <Rect x={0} y={0} width={windowWidth} height={skyHeight}>
+                <Canvas style={{ width: skyCanvasW, height: skyHeight }}>
+                  <Rect x={0} y={0} width={skyCanvasW} height={skyHeight}>
                     <LinearGradient
                       start={vec(0, 0)}
                       end={vec(0, skyHeight)}
@@ -955,7 +1067,7 @@ export function MemorySky({
                   </Group>
                 </Canvas>
               ) : (
-                <View style={{ width: windowWidth, height: skyHeight }} />
+                <View style={{ width: skyCanvasW, height: skyHeight }} />
               )
             }
           </SkiaReady>
@@ -999,7 +1111,7 @@ export function MemorySky({
             />
           </View>
         ) : null}
-        {compact ? null : (
+        {compactLayout ? null : (
         <View
           testID="memory-sky-feather"
           pointerEvents="none"
@@ -1009,8 +1121,8 @@ export function MemorySky({
           <SkiaReady>
             {(ready) =>
               ready ? (
-                <Canvas style={{ width: windowWidth, height: featherHeight }}>
-                  <Rect x={0} y={0} width={windowWidth} height={featherHeight}>
+                <Canvas style={{ width: skyCanvasW, height: featherHeight }}>
+                  <Rect x={0} y={0} width={skyCanvasW} height={featherHeight}>
                     <LinearGradient
                       start={vec(0, 0)}
                       end={vec(0, featherHeight)}
@@ -1020,7 +1132,7 @@ export function MemorySky({
                   </Rect>
                 </Canvas>
               ) : (
-                <View style={{ width: windowWidth, height: featherHeight }} />
+                <View style={{ width: skyCanvasW, height: featherHeight }} />
               )
             }
           </SkiaReady>
@@ -1035,7 +1147,7 @@ export function MemorySky({
           />
         ) : null}
       </View>
-      {compact ? null : (
+      {compactLayout || immersive ? null : (
       <ThemedText
         type="caption"
         style={[styles.caption, { color: muted, marginTop: captionMarginTop }]}
@@ -1049,6 +1161,9 @@ export function MemorySky({
 
 const styles = StyleSheet.create({
   root: {},
+  rootImmersive: {
+    flexShrink: 0,
+  },
   rootCompact: {
     position: 'absolute',
     top: 0,

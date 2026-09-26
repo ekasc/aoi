@@ -33,7 +33,9 @@ const proposalsMock = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }));
 
-vi.mock('expo-notifications', () => notificationsMock);
+vi.mock('@/features/notifications/notifications-module', () => ({
+  notificationsModule: () => notificationsMock,
+}));
 vi.mock('@/features/api-client', () => apiClientMock);
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ refresh: momentsMock.refresh }),

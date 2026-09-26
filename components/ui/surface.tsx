@@ -1,6 +1,6 @@
-import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
+import { StyleSheet, View, type ViewProps } from 'react-native';
 
-import { Radii, Spacing, withAlpha } from '@/constants/theme';
+import { Elevation, Radii, Spacing, shadow, withAlpha } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/glass-surface';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -10,6 +10,7 @@ export type SurfaceProps = ViewProps & {
 
 export function Surface({ children, style, variant = 'card', ...rest }: SurfaceProps) {
   const shadowColor = useThemeColor({}, 'shadow');
+  const cardShadow = shadow(Elevation.card, shadowColor);
   const surface = useThemeColor({}, 'surface');
   const surface2 = useThemeColor({}, 'surface2');
   const pageBackground = useThemeColor({}, 'background');
@@ -23,16 +24,7 @@ export function Surface({ children, style, variant = 'card', ...rest }: SurfaceP
     return (
       <GlassSurface
         effect="regular"
-        style={[
-          styles.card,
-          styles.raised,
-          Platform.select({
-            ios: { shadowColor },
-            android: {},
-            default: { shadowColor },
-          }),
-          style,
-        ]}
+        style={[styles.card, { boxShadow: cardShadow }, style]}
         {...rest}
       >{children}</GlassSurface>
     );
@@ -49,16 +41,7 @@ export function Surface({ children, style, variant = 'card', ...rest }: SurfaceP
           borderColor: border,
           borderWidth: StyleSheet.hairlineWidth,
         },
-        isRaised
-          ? [
-              styles.raised,
-              Platform.select({
-                ios: { shadowColor },
-                android: {},
-                default: { shadowColor },
-              }),
-            ]
-          : undefined,
+        isRaised ? { boxShadow: cardShadow } : undefined,
         style,
       ]}
       {...rest}
@@ -76,20 +59,5 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     borderRadius: Radii.md,
     padding: Spacing[16],
-  },
-  raised: {
-    ...Platform.select({
-      ios: {
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: {},
-      default: {
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-      },
-    }),
   },
 });

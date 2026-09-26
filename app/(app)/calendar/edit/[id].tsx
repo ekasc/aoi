@@ -15,7 +15,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
-import { FontFamilies } from '@/constants/typography';
+import { Typography } from '@/constants/typography';
 import { useCalendar } from '@/features/calendar/calendar-context';
 import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
 import type { CalendarEvent, CalendarPresetLabel } from '@/features/calendar/types';
@@ -95,13 +95,16 @@ export default function EditCalendarEventScreen() {
   const [isWorking, setIsWorking] = useState(false);
   const [loadError, setLoadError] = useState('');
 
-  // All-day events span 00:00 → next midnight; timed events use the raw picks.
+  // All-day state already carries the stored convention: startsAt is the
+  // first day's midnight and endsAt is the midnight after the last day.
+  // Normalizing both to midnight keeps an unchanged save lossless — adding
+  // a day here would push the event one day later on every edit.
   const effectiveStart = useMemo(
     () => (allDay ? startOfDay(startsAt) : startsAt),
     [allDay, startsAt]
   );
   const effectiveEnd = useMemo(
-    () => (allDay ? addDays(startOfDay(endsAt), 1) : endsAt),
+    () => (allDay ? startOfDay(endsAt) : endsAt),
     [allDay, endsAt]
   );
   const isRangeInvalid = effectiveEnd.getTime() <= effectiveStart.getTime();
@@ -700,10 +703,7 @@ const styles = StyleSheet.create({
     gap: Spacing[8],
   },
   titleInput: {
-    fontFamily: FontFamilies.display,
-    fontSize: 22,
-    lineHeight: 30,
-    letterSpacing: -0.2,
+    ...Typography.inputDisplay,
     minHeight: 44,
     paddingVertical: Spacing[8],
     borderBottomWidth: StyleSheet.hairlineWidth,

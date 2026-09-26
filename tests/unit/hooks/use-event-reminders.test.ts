@@ -20,23 +20,28 @@ const notificationsMock = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock('expo-notifications', () => ({
-  requestPermissionsAsync: async () => ({ granted: notificationsMock.granted }),
-  getAllScheduledNotificationsAsync: async () => notificationsMock.scheduled,
-  cancelScheduledNotificationAsync: async (identifier: string) => {
-    notificationsMock.cancelled.push(identifier);
-    if (notificationsMock.failingCancels.has(identifier)) {
-      throw new Error('cancel failed');
-    }
-  },
-  scheduleNotificationAsync: async (request: unknown) => {
-    notificationsMock.scheduleRequests.push(
-      request as (typeof notificationsMock.scheduleRequests)[number]
-    );
-    return `notif_${notificationsMock.scheduleRequests.length}`;
-  },
-  setNotificationHandler: () => {},
-  SchedulableTriggerInputTypes: { DATE: 'date', TIME_INTERVAL: 'timeInterval' },
+// This suite proves the scheduling logic, and stands in for the lazy loader
+// the app uses — the module is never imported statically, so mocking it
+// directly would no longer reach this code.
+vi.mock('@/features/notifications/notifications-module', () => ({
+  notificationsModule: () => ({
+    requestPermissionsAsync: async () => ({ granted: notificationsMock.granted }),
+    getAllScheduledNotificationsAsync: async () => notificationsMock.scheduled,
+    cancelScheduledNotificationAsync: async (identifier: string) => {
+      notificationsMock.cancelled.push(identifier);
+      if (notificationsMock.failingCancels.has(identifier)) {
+        throw new Error('cancel failed');
+      }
+    },
+    scheduleNotificationAsync: async (request: unknown) => {
+      notificationsMock.scheduleRequests.push(
+        request as (typeof notificationsMock.scheduleRequests)[number]
+      );
+      return `notif_${notificationsMock.scheduleRequests.length}`;
+    },
+    setNotificationHandler: () => {},
+    SchedulableTriggerInputTypes: { DATE: 'date', TIME_INTERVAL: 'timeInterval' },
+  }),
 }));
 
 function futureEvent(offsets: number[] = [30]) {

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Children, createElement, isValidElement, type ReactNode } from 'react';
 
+vi.mock('@/components/home/us-glass-backdrop', () => ({ UsGlassBackdrop: () => null }));
+
 vi.mock('react-native', () => {
   function flattenStyle(style: unknown): unknown {
     if (Array.isArray(style)) {
@@ -104,6 +106,7 @@ vi.mock('react-native-reanimated', () => {
       createAnimatedComponent: (component: unknown) => component,
     },
     FadeIn: chain,
+    FadeOut: chain,
     FadeInDown: chain,
     ReduceMotion: { System: 'system' },
     useReducedMotion: () => false,
@@ -398,18 +401,20 @@ describe('authenticated default entry is Memories', () => {
 });
 
 describe('tab order and labels (Memories first)', () => {
-  it('visible order is Memories, Us, Plans with the memories trigger first', async () => {
+  it('visible order is Memories, Us, Plans, Space with the memories trigger first', async () => {
     const { default: TabsLayout } = await import('@/app/(app)/(tabs)/_layout');
     render(<TabsLayout />);
     expect(capturedTabTriggers.map((entry) => entry.name)).toEqual([
       '(memories)',
       'together',
       'plans',
+      'space',
     ]);
     expect(capturedTabTriggers.map((entry) => entry.label)).toEqual([
       'Memories',
       'Us',
       'Plans',
+      'Space',
     ]);
     // Memories is the leading trigger the platform bar renders.
     expect(capturedTabTriggers[0]?.name).toBe('(memories)');
@@ -425,12 +430,16 @@ describe('tab order and labels (Memories first)', () => {
     expect(tabSf('together', true)).toBe('envelope.fill');
     expect(tabSf('plans', false)).toBe('calendar');
     expect(tabSf('plans', true)).toBe('calendar.circle.fill');
+    expect(tabSf('space', false)).toBe('person');
+    expect(tabSf('space', true)).toBe('person.fill');
     expect(tabVectorIcon('(memories)', false)).toBe('book-outline');
     expect(tabVectorIcon('(memories)', true)).toBe('book');
     expect(tabVectorIcon('together', false)).toBe('mail-outline');
     expect(tabVectorIcon('together', true)).toBe('mail');
     expect(tabVectorIcon('plans', false)).toBe('calendar-outline');
     expect(tabVectorIcon('plans', true)).toBe('calendar');
+    expect(tabVectorIcon('space', false)).toBe('person-outline');
+    expect(tabVectorIcon('space', true)).toBe('person');
   });
 
   it('Memories feed renders at 320px with the FAB capture entry on the screen', async () => {

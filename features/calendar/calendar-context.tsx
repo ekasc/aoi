@@ -18,7 +18,7 @@ import {
 	toDayKey,
 } from "@/features/calendar/calendar-date-utils";
 import { isStubMode } from "@/features/api-client";
-import { createCalendarSeed } from "@/features/calendar/calendar-seed";
+import { applyCalendarSeed, getCalendarSeedMarker, setCalendarSeedMarker } from "@/features/calendar/calendar-seed";
 import { useEventReminders } from "@/features/calendar/use-event-reminders";
 import type {
 	CalendarContextValue,
@@ -35,7 +35,6 @@ import * as _remoteCalendarImpl from "@/features/calendar/remote-calendar-reposi
 const _useRemote = !isStubMode();
 
 const initCalendarDb = _useRemote ? _remoteCalendarImpl.initCalendarDb : _calendarImpl.initCalendarDb;
-const countCalendarEvents = _useRemote ? _remoteCalendarImpl.countCalendarEvents : _calendarImpl.countCalendarEvents;
 const listEventsInMonth = _useRemote ? _remoteCalendarImpl.listEventsInMonth : _calendarImpl.listEventsInMonth;
 const listEventsInRange = _useRemote ? _remoteCalendarImpl.listEventsInRange : _calendarImpl.listEventsInRange;
 const insertEvent = _useRemote ? _remoteCalendarImpl.insertEvent : _calendarImpl.insertEvent;
@@ -54,6 +53,25 @@ const getCalendarEventById: typeof getEventById = getEventById;
 const CalendarContext = createContext<CalendarContextValue | undefined>(
 	undefined,
 );
+
+// One flight per process: a dev double-mount must await the same plant
+// instead of planting twice. Reset on failure so a later mount retries.
+let seedTask: Promise<void> | null = null;
+
+function ensureCalendarSeedOnce(): Promise<void> {
+	if (!seedTask) {
+		seedTask = applyCalendarSeed({
+			loadMarker: getCalendarSeedMarker,
+			saveMarker: setCalendarSeedMarker,
+			removeById: (id) => deleteEvent(id),
+			plant: (input) => insertEvent(input),
+		}).catch((err: unknown) => {
+			seedTask = null;
+			throw err;
+		});
+	}
+	return seedTask;
+}
 
 export function CalendarProvider({ children }: PropsWithChildren) {
 	const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -98,11 +116,10 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		async function bootstrapCalendar() {
 			try {
 				await initCalendarDb();
-				const existingCount = await countCalendarEvents();
-
-				if (existingCount === 0) {
-					const seedEvents = createCalendarSeed();
-					await Promise.all(seedEvents.map(insertEvent));
+				// Seeding is local-only: the remote repository reports a dummy
+				// count precisely so server data is never seeded.
+				if (!_useRemote) {
+					await ensureCalendarSeedOnce();
 				}
 
 				if (!isActive) {

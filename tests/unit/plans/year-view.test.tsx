@@ -63,21 +63,36 @@ vi.mock('react-native', () => {
     },
     ScrollView: ({ children, style, ...rest }: Record<string, unknown>) =>
       createElement('div', { ...withAria(rest), style: flattenStyle(style) }, children as never),
+    // The real list mounts a window around its opening index, not every item:
+    // the year screen holds seventeen years, and rendering all of them here
+    // made this file cost seconds of the suite budget and time out under load.
+    // Respecting the window keeps the mock honest and the test cheap, and it
+    // fails if the screen ever drops back to an unbounded list.
     FlatList: ({
       data,
       renderItem,
       style,
+      initialScrollIndex = 0,
+      windowSize = 21,
       ...rest
     }: {
       data?: unknown[];
       renderItem?: (info: { item: unknown; index: number }) => unknown;
       style?: unknown;
-    }) =>
-      createElement(
+      initialScrollIndex?: number;
+      windowSize?: number;
+    }) => {
+      const items = data ?? [];
+      const start = Math.max(0, initialScrollIndex - Math.floor(windowSize / 2));
+      const visible = items.slice(start, start + windowSize);
+      return createElement(
         'div',
         { ...withAria(rest as Record<string, unknown>), style: flattenStyle(style) },
-        (data ?? []).map((item, index) => renderItem?.({ index, item })) as never,
-      ),
+        visible.map((item, offset) =>
+          renderItem?.({ index: start + offset, item }),
+        ) as never,
+      );
+    },
     Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
     useWindowDimensions: () => ({ fontScale: 1, height: 844, scale: 3, width: 390 }),
   };
@@ -100,6 +115,7 @@ vi.mock('react-native-reanimated', () => ({
     createAnimatedComponent: (component: unknown) => component,
     View: ({ children }: { children?: unknown }) => createElement('div', {}, children),
   },
+  FadeOut: {},
   FadeIn: {},
   FadeInDown: {},
   ReduceMotion: { System: 'system' },
@@ -111,8 +127,20 @@ vi.mock('expo-router', () => ({
 }));
 
 vi.mock('@/hooks/use-theme-color', () => ({
-  useThemeColor: () => '#000000',
+  // Real colours, named distinctly, so a test can tell whose ink a mark
+  // draws with: the DOM drops invalid colour strings silently.
+  useThemeColor: (_overrides: unknown, name?: string) =>
+    name === 'partnerAccentInk' ? '#222222' : '#111111',
 }));
+
+let mockRangeEvents: Record<string, unknown>[] = [
+  {
+    endsAt: '2026-09-16T11:00:00.000Z',
+    id: 'fair',
+    startsAt: '2026-09-16T10:00:00.000Z',
+    title: 'Career fair',
+  },
+];
 
 vi.mock('@/features/calendar/calendar-context', () => ({
   useCalendar: () => ({
@@ -122,14 +150,7 @@ vi.mock('@/features/calendar/calendar-context', () => ({
     visibleMonth: new Date(2026, 8, 1),
     // The density read: one plan on 16 September 2026, which is the day the
     // screen is told is selected, so the dot and the accent agree.
-    eventsInRange: async () => [
-      {
-        endsAt: '2026-09-16T11:00:00.000Z',
-        id: 'fair',
-        startsAt: '2026-09-16T10:00:00.000Z',
-        title: 'Career fair',
-      },
-    ],
+    eventsInRange: async () => mockRangeEvents,
   }),
 }));
 
@@ -137,6 +158,14 @@ beforeEach(() => {
   backSpy.mockClear();
   setSelectedDateSpy.mockClear();
   setVisibleMonthSpy.mockClear();
+  mockRangeEvents = [
+    {
+      endsAt: '2026-09-16T11:00:00.000Z',
+      id: 'fair',
+      startsAt: '2026-09-16T10:00:00.000Z',
+      title: 'Career fair',
+    },
+  ];
 });
 
 describe('Calendar year view', () => {
@@ -174,5 +203,89 @@ describe('Calendar year view', () => {
     // One day, one dot, no matter how many years are on screen.
     expect(screen.getAllByTestId('plans:2026-09-16')).toHaveLength(1);
     expect(screen.queryByTestId('plans:2026-09-17')).toBeNull();
+  });
+
+  it('colours each day dot by whose plans it holds', async () => {
+    mockRangeEvents = [
+      {
+        id: 'mine',
+        title: 'Standup',
+        startsAt: '2026-09-15T09:00:00.000Z',
+        endsAt: '2026-09-15T09:30:00.000Z',
+        actor: 'you',
+        actorName: 'You',
+        label: { preset: 'Work' },
+        isOwn: true,
+      },
+      {
+        id: 'theirs',
+        title: 'Dinner out',
+        startsAt: '2026-09-16T19:00:00.000Z',
+        endsAt: '2026-09-16T21:00:00.000Z',
+        actor: 'partner',
+        actorName: 'Alex',
+        label: { preset: 'Date' },
+        isOwn: false,
+      },
+      {
+        id: 'ours',
+        title: 'Weekend away',
+        startsAt: '2026-09-17T10:00:00.000Z',
+        endsAt: '2026-09-17T12:00:00.000Z',
+        actor: 'partner',
+        actorName: 'Alex',
+        label: { preset: 'Date' },
+        together: true,
+        isOwn: false,
+      },
+    ];
+    const { default: YearScreen } = await import('@/app/(app)/calendar/year');
+    render(<YearScreen />);
+
+    // Ink, not fill: at mini size the dot is a mark, so it takes the
+    // lightness that reads. Shared plans read as the viewer's ink, the
+    // way their month strips take the viewer's fill.
+    const mine = await screen.findByTestId('plans:2026-09-15');
+    expect((mine as HTMLElement).style.backgroundColor).toBe('#111111');
+    expect(
+      ((await screen.findByTestId('plans:2026-09-16')) as HTMLElement).style
+        .backgroundColor,
+    ).toBe('#222222');
+    expect(
+      ((await screen.findByTestId('plans:2026-09-17')) as HTMLElement).style
+        .backgroundColor,
+    ).toBe('#111111');
+  });
+
+  it('lets the strongest voice win a day with several plans', async () => {
+    mockRangeEvents = [
+      {
+        id: 'mine',
+        title: 'Standup',
+        startsAt: '2026-09-15T09:00:00.000Z',
+        endsAt: '2026-09-15T09:30:00.000Z',
+        actor: 'you',
+        actorName: 'You',
+        label: { preset: 'Work' },
+        isOwn: true,
+      },
+      {
+        id: 'theirs',
+        title: 'Dinner out',
+        startsAt: '2026-09-15T19:00:00.000Z',
+        endsAt: '2026-09-15T21:00:00.000Z',
+        actor: 'partner',
+        actorName: 'Alex',
+        label: { preset: 'Date' },
+        isOwn: false,
+      },
+    ];
+    const { default: YearScreen } = await import('@/app/(app)/calendar/year');
+    render(<YearScreen />);
+
+    // One mark per day: shared would win outright, and theirs beats yours —
+    // your own plans you already know about.
+    const dot = await screen.findByTestId('plans:2026-09-15');
+    expect((dot as HTMLElement).style.backgroundColor).toBe('#222222');
   });
 });

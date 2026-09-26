@@ -21,6 +21,11 @@ import {
 	startOfMonth,
 	toDayKey,
 } from '@/features/calendar/calendar-date-utils';
+import {
+	getEventOwnership,
+	ownershipInkForTone,
+	type EventOwnershipTone,
+} from '@/features/calendar/event-ownership';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 /** Every row is the same fixed height, so the list opens on this year without
@@ -59,8 +64,8 @@ type MiniMonthProps = {
 	width: number;
 	now: Date;
 	selectedDate: Date;
-	/** Day keys that hold plans, or null while they are being read. */
-	daysWithPlans: Set<string> | null;
+	/** Whose plans each day holds, or null while they are being read. */
+	planTones: Map<string, EventOwnershipTone> | null;
 	onOpen: (month: Date) => void;
 };
 
@@ -69,10 +74,11 @@ function MiniMonth({
 	width,
 	now,
 	selectedDate,
-	daysWithPlans,
+	planTones,
 	onOpen,
 }: MiniMonthProps) {
-	const accent = useThemeColor({}, 'accent');
+	const accentInk = useThemeColor({}, 'accentInk');
+	const partnerAccentInk = useThemeColor({}, 'partnerAccentInk');
 	const muted = useThemeColor({}, 'muted');
 	const textColor = useThemeColor({}, 'text');
 	const weeks = useMemo(() => weeksOf(month), [month]);
@@ -94,13 +100,14 @@ function MiniMonth({
 						const inMonth = isSameMonth(day, month);
 						const isToday = isSameDay(day, now);
 						const isSelected = isSameDay(day, selectedDate);
+						const tone = planTones?.get(toDayKey(day));
 						return (
 							<View key={day.toISOString()} style={styles.miniDay}>
 								<ThemedText
 									style={[
 										styles.miniDayText,
 										{
-											color: isToday || isSelected ? accent : textColor,
+											color: isToday || isSelected ? accentInk : textColor,
 											fontWeight: isToday || isSelected ? '700' : '400',
 											opacity: inMonth ? 1 : 0.35,
 										},
@@ -108,12 +115,21 @@ function MiniMonth({
 								>
 									{day.getDate()}
 								</ThemedText>
-								{/* A day that holds plans carries a dot, the same signal
-								    the month grid gives. */}
-								{daysWithPlans?.has(toDayKey(day)) ? (
+								{/* A day that holds plans carries a dot in its owner's
+								    ink: the month grid's fills shrunk to a mark, so
+								    colour — not a second signal — says whose it is. */}
+								{tone ? (
 									<View
 										accessible={false}
-										style={[styles.miniDot, { backgroundColor: accent }]}
+										style={[
+											styles.miniDot,
+											{
+												backgroundColor: ownershipInkForTone(tone, {
+													ownInkColor: accentInk,
+													partnerInkColor: partnerAccentInk,
+												}),
+											},
+										]}
 										testID={`plans:${toDayKey(day)}`}
 									/>
 								) : (
@@ -151,7 +167,11 @@ function YearSection({
 }: YearSectionProps) {
 	const { eventsInRange } = useCalendar();
 	const muted = useThemeColor({}, 'muted');
-	const [daysWithPlans, setDaysWithPlans] = useState<Set<string> | null>(null);
+	const accent = useThemeColor({}, 'accent');
+	const partnerAccent = useThemeColor({}, 'partnerAccent');
+	const [planTones, setPlanTones] = useState<Map<string, EventOwnershipTone> | null>(
+		null,
+	);
 	const [failed, setFailed] = useState(false);
 
 	// Each year reads its own density as it mounts, so scrolling costs nothing
@@ -159,25 +179,41 @@ function YearSection({
 	useEffect(() => {
 		let live = true;
 		setFailed(false);
-		setDaysWithPlans(null);
+		setPlanTones(null);
 		eventsInRange(new Date(year, 0, 1), new Date(year + 1, 0, 1))
 			.then((events) => {
 				if (!live) {
 					return;
 				}
-				setDaysWithPlans(
-					new Set(events.map((event) => toDayKey(new Date(event.startsAt)))),
-				);
+				// One mark per day, so a day with several plans takes the
+				// strongest voice: shared first, then theirs — yours you
+				// already know about.
+				const rank: Record<EventOwnershipTone, number> = {
+					together: 2,
+					partner: 1,
+					you: 0,
+				};
+				const palette = { ownColor: accent, partnerColor: partnerAccent };
+				const tones = new Map<string, EventOwnershipTone>();
+				for (const event of events) {
+					const key = toDayKey(new Date(event.startsAt));
+					const tone = getEventOwnership(event, palette).tone;
+					const current = tones.get(key);
+					if (current === undefined || rank[tone] > rank[current]) {
+						tones.set(key, tone);
+					}
+				}
+				setPlanTones(tones);
 			})
 			.catch(() => {
 				if (live) {
 					setFailed(true);
 				}
 			});
-		return () => {
-			live = false;
-		};
-	}, [eventsInRange, year]);
+			return () => {
+				live = false;
+			};
+	}, [eventsInRange, year, accent, partnerAccent]);
 
 	return (
 		<MotiView
@@ -206,7 +242,7 @@ function YearSection({
 				{Array.from({ length: 12 }, (_, monthIndex) => (
 					<MiniMonth
 						key={monthIndex}
-						daysWithPlans={daysWithPlans}
+						planTones={planTones}
 						month={new Date(year, monthIndex, 1)}
 						now={now}
 						onOpen={onOpen}

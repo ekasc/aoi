@@ -1,11 +1,10 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
-  FadeIn,
-  ReduceMotion,
   useReducedMotion,
 } from 'react-native-reanimated';
 import type { Letter } from '@aoi/shared';
 
+import { Reveal } from '@/components/ui/reveal';
 import { ThemedText } from '@/components/themed-text';
 import { Surface } from '@/components/ui/surface';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
@@ -18,7 +17,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 
 // Ready edge: single warning pulse on mount, opacity only, runs once.
 // Entering only; ReduceMotion.System skips it. No loop, no particles.
-const READY_PULSE = FadeIn.duration(350).reduceMotion(ReduceMotion.System);
+const READY_PULSE = Reveal.in();
 
 export type LetterCardProps = {
   letter: Letter;
@@ -38,16 +37,16 @@ export type LetterCardProps = {
  * recalls ("Opened …").
  */
 export function LetterCard({ letter, now, onPress }: LetterCardProps) {
-  const accent = useThemeColor({}, 'accent');
+  const accentInk = useThemeColor({}, 'accentInk');
   const warning = useThemeColor({}, 'warning');
-  const partnerAccent = useThemeColor({}, 'partnerAccent');
+  const partnerAccentInk = useThemeColor({}, 'partnerAccentInk');
   const secondary = useThemeColor({}, 'textSecondary');
   const surface = useThemeColor({}, 'surface');
   const surface2 = useThemeColor({}, 'surface2');
   const border = useThemeColor({}, 'border');
   const reduceMotion = useReducedMotion();
 
-  const authorColor = letter.authorRole === 'you' ? accent : partnerAccent;
+  const authorColor = letter.authorRole === 'you' ? accentInk : partnerAccentInk;
 
   if (letter.isOpened) {
     const heading = letter.caption ?? 'An opened letter';

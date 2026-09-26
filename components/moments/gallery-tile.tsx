@@ -27,6 +27,8 @@ export type GalleryTileProps = {
   item: GalleryItem;
   /** Square edge in points; the grid owns the math. */
   size: number;
+  /** Banner height for a lone item; square by default. */
+  height?: number;
   /** Announced name for the tap. */
   accessibilityLabel: string;
   /** The tap reports its own window frame so the viewer can morph from it. */
@@ -50,8 +52,11 @@ function useMeasuredTilePress({ item, onPress }: Pick<GalleryTileProps, 'item' |
   return { nodeRef, handlePress };
 }
 
-function tileFrame(size: number) {
-  return { height: size, width: size };
+function tileFrame(size: number, height?: number) {
+  // Square by default. A row holding one thing spans the width instead, and
+  // a full-width square would crop a landscape photo to a block, so that row
+  // asks for a banner height.
+  return { height: height ?? size, width: size };
 }
 
 /**
@@ -107,6 +112,7 @@ export function VoiceTileVisual() {
 function GalleryPhotoTileComponent({
   item,
   size,
+  height,
   accessibilityLabel,
   onPress,
 }: GalleryTileProps) {
@@ -122,7 +128,7 @@ function GalleryPhotoTileComponent({
       ref={nodeRef}
       style={({ pressed }) => [
         styles.tile,
-        tileFrame(size),
+        tileFrame(size, height),
         { backgroundColor: backgroundSubtle },
         pressed ? styles.pressed : null,
       ]}
@@ -153,6 +159,7 @@ export const GalleryPhotoTile = memo(GalleryPhotoTileComponent);
 function GalleryVideoTileComponent({
   item,
   size,
+  height,
   accessibilityLabel,
   onPress,
 }: GalleryTileProps) {
@@ -168,7 +175,7 @@ function GalleryVideoTileComponent({
       ref={nodeRef}
       style={({ pressed }) => [
         styles.tile,
-        tileFrame(size),
+        tileFrame(size, height),
         { backgroundColor: backgroundSubtle },
         pressed ? styles.pressed : null,
       ]}
@@ -191,6 +198,7 @@ export const GalleryVideoTile = memo(GalleryVideoTileComponent);
 function GalleryVoiceTileComponent({
   item,
   size,
+  height,
   accessibilityLabel,
   onPress,
 }: GalleryTileProps) {
@@ -207,7 +215,7 @@ function GalleryVoiceTileComponent({
       ref={nodeRef}
       style={({ pressed }) => [
         styles.tile,
-        tileFrame(size),
+        tileFrame(size, height),
         { backgroundColor: surface2 },
         pressed ? styles.pressed : null,
       ]}

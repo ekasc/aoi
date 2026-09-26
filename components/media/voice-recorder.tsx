@@ -39,7 +39,7 @@ function formatElapsed(durationMillis: number): string {
  * a voice trace is a breath, not a voicemail.
  */
 export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecordingChange }: VoiceRecorderProps) {
-  const accent = useThemeColor({}, 'accent');
+  const accentInk = useThemeColor({}, 'accentInk');
   const onAccent = useThemeColor({}, 'onAccent');
   const surface2 = useThemeColor({}, 'surface2');
   const muted = useThemeColor({}, 'muted');
@@ -138,7 +138,7 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
         ]}
       >
         <Ionicons
-          color={isRecording ? onAccent : accent}
+          color={isRecording ? onAccent : accentInk}
           name={isRecording ? 'stop' : 'mic-outline'}
           size={20}
         />
@@ -160,7 +160,7 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
         ]}
       >
         <Ionicons
-          color={isRecording ? onAccent : accent}
+          color={isRecording ? onAccent : accentInk}
           name={isRecording ? 'stop' : 'mic-outline'}
           size={20}
         />

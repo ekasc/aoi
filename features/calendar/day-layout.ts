@@ -6,8 +6,10 @@ export const DAY_HOUR_HEIGHT = 64;
 export const DAY_MIN_EVENT_HEIGHT = 44;
 /** The hour label column. */
 export const DAY_GUTTER_WIDTH = 56;
-/** Pixels of gap between two events that run at the same time. */
-export const DAY_EVENT_GAP = 4;
+/** Breathing room around every block: from the hour lines above and below
+    it, and from the neighbour it shares an hour with. Four pixels read as
+    the block touching the lines; eight reads as it floating between them. */
+export const DAY_EVENT_GAP = 8;
 
 export const MINUTES_IN_DAY = 24 * 60;
 

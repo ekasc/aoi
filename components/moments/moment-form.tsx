@@ -9,17 +9,19 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeInDown, ReduceMotion } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { MediaPicker } from '@/components/media/media-picker';
 import { UploadProgress } from '@/components/media/upload-progress';
 import { ThemedText } from '@/components/themed-text';
+import { Reveal } from '@/components/ui/reveal';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Motion, Spacing } from '@/constants/theme';
-import { FontFamilies } from '@/constants/typography';
+import { Typography } from '@/constants/typography';
+import { haptics } from '@/features/haptics/haptics';
 import { newDraftClientId } from '@/features/moments/draft-identity';
 import { isQuotaExceededError, useMediaUpload } from '@/features/media/use-media-upload';
 import { useSubscription } from '@/features/subscription/subscription-context';
@@ -284,10 +286,10 @@ export function MomentForm({
         showsVerticalScrollIndicator={false}
       >
         <Animated.View
-          entering={FadeInDown.duration(Motion.slow).reduceMotion(ReduceMotion.System)}
+          entering={Reveal.up(Motion.slow)}
           style={styles.hero}
         >
-          <ThemedText type="display" style={styles.heroTitle}>
+          <ThemedText type="display">
             {heroTitle}
           </ThemedText>
           <ThemedText type="body" style={{ color: muted }}>
@@ -296,29 +298,36 @@ export function MomentForm({
         </Animated.View>
 
         {showTypePicker ? (
-          <View style={styles.typeGrid}>
+          <View accessibilityRole="radiogroup" style={styles.typeGrid}>
             {MOMENT_TYPES.map((option, index) => {
               const selected = option.value === type;
               return (
                 <Animated.View
-                  entering={FadeInDown.duration(Motion.base)
-                    .delay(40 + index * 30)
-                    .reduceMotion(ReduceMotion.System)}
+                  entering={Reveal.up().delay(Motion.stagger + Reveal.stagger(index))}
                   key={option.value}
-                  style={[
-                    styles.typeCell,
-                    index === MOMENT_TYPES.length - 1 && styles.typeCellLast,
-                  ]}
+                  style={styles.typeCell}
                 >
                   <Pressable
                     accessibilityLabel={`Moment type ${option.label}`}
-                    accessibilityRole="button"
-                    onPress={() => handleTypeSelect(option)}
-                    style={[
+                    accessibilityRole="radio"
+                    // The chosen type is the one filled with the accent, and
+                    // without this a screen reader announced four identical
+                    // buttons with no way to tell which one was active.
+                    accessibilityState={{ checked: selected }}
+                    onPress={() => {
+                      if (!selected) {
+                        haptics.select();
+                      }
+                      handleTypeSelect(option);
+                    }}
+                    style={({ pressed }) => [
                       styles.typeCard,
                       {
                         borderColor: selected ? accent : border,
                         backgroundColor: selected ? accent : surface,
+                        // The least responsive control in the capture flow:
+                        // tapping a type gave no acknowledgement at all.
+                        opacity: pressed ? 0.85 : 1,
                       },
                     ]}
                   >
@@ -350,7 +359,8 @@ export function MomentForm({
         ) : null}
 
         <Animated.View
-          entering={FadeIn.duration(Motion.base).reduceMotion(ReduceMotion.System)}
+          entering={Reveal.in()}
+          exiting={Reveal.out()}
           style={styles.contentWrap}
         >
           {isMedia ? (
@@ -475,7 +485,7 @@ export function MomentForm({
             ) : null}
 
             {quotaBlocked ? (
-              <View style={styles.quotaPanel}>
+              <Animated.View entering={Reveal.in()} exiting={Reveal.out()} style={styles.quotaPanel}>
                 <ThemedText type="body">This Space is out of media room.</ThemedText>
                 <ThemedText type="caption" style={{ color: muted }}>
                   Aoi Plus raises your shared Space to 5 GiB, your draft stays right here.
@@ -488,7 +498,7 @@ export function MomentForm({
                   />
                   <Button label="Keep editing" variant="ghost" onPress={() => setQuotaBlocked(false)} />
                 </View>
-              </View>
+              </Animated.View>
             ) : null}
           </Surface>
         </Animated.View>
@@ -500,24 +510,30 @@ export function MomentForm({
           { borderColor: border, backgroundColor: background },
         ]}
       >
-        <Button
-          label={
-            uploadState === 'uploading'
-              ? 'Uploading media…'
-              : uploadState === 'confirming'
-                ? 'Confirming upload…'
-                : isSaving
-                  ? submittingLabel
-                  : submitLabel
-          }
-          onPress={handleSave}
-          disabled={isSaving}
-        />
-        <Button
-          label="Cancel"
-          onPress={onCancel}
-          variant="secondary"
-        />
+        {/* One row, cancel left and save right. Stacked full-width buttons
+            put two 44pt targets and a 12pt gap across the bottom of the
+            capture flow, which is both more chrome than the job needs and
+            the platform's own convention for a form's own actions. */}
+        <View style={styles.footerActions}>
+          <View style={styles.footerCancel}>
+            <Button label="Cancel" onPress={onCancel} variant="ghost" />
+          </View>
+          <View style={styles.footerSave}>
+            <Button
+              label={
+                uploadState === 'uploading'
+                  ? 'Uploading media…'
+                  : uploadState === 'confirming'
+                    ? 'Confirming upload…'
+                    : isSaving
+                      ? submittingLabel
+                      : submitLabel
+              }
+              disabled={isSaving}
+              onPress={handleSave}
+            />
+          </View>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -547,10 +563,6 @@ const styles = StyleSheet.create({
     gap: Spacing[4],
     paddingBottom: Spacing[8],
   },
-  heroTitle: {
-    fontSize: 40,
-    lineHeight: 46,
-  },
   typeGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -558,9 +570,6 @@ const styles = StyleSheet.create({
   },
   typeCell: {
     width: '48%',
-  },
-  typeCellLast: {
-    flexGrow: 1,
   },
   typeCard: {
     minHeight: 88,
@@ -585,9 +594,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: Spacing[12],
     paddingVertical: Spacing[12],
-    fontFamily: FontFamilies.display,
-    fontSize: 22,
-    lineHeight: 28,
+    ...Typography.inputDisplay,
   },
   noteInput: {
     minHeight: 120,
@@ -616,6 +623,17 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing[16],
     paddingTop: Spacing[12],
-    gap: Spacing[12],
+  },
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[8],
+  },
+  footerCancel: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  footerSave: {
+    flex: 1,
   },
 });

@@ -1,0 +1,407 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "hero_couple_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate Aoi’s private space for two.",
+      "requirements": [
+        "Illustrative people, not Aoi customers."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "hero"
+      ],
+      "aspectRatio": "3:2",
+      "composition": "Couple sharing a printed photo on a sofa; both faces remain visible in the narrower hero frame, with lower-right space for the separate example card.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-bc8b8bc6-bee4-49e9-aa92-20acee3d9217.png"
+      },
+      "destination": "assets/marketing/hero_couple_photo.png"
+    },
+    {
+      "id": "example_memory_card",
+      "kind": "component",
+      "status": "needed",
+      "purpose": "Label the overlapping hero example as an illustrative memory.",
+      "requirements": [
+        "Build with accessible HTML and CSS; include visible “Example moment” text."
+      ],
+      "role": "component",
+      "sectionIds": [
+        "hero"
+      ]
+    },
+    {
+      "id": "scattered_photo_image",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Show a photo worth keeping.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "scattered_moments"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Hand holding a printed rainy-walk photo; the couple and print stay central in the tall panel, with the label outside below.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-8155ad50-3352-4fb4-9c32-bc20ddb54430.png"
+      },
+      "destination": "assets/marketing/scattered_photo_image.png"
+    },
+    {
+      "id": "scattered_note_image",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Show a personal note that might get lost.",
+      "requirements": [
+        "Illustrative example; do not present the writing as readable content."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "scattered_moments"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Hand opening a folded note inside a book; note fills the center of a close vertical crop, with the label outside below.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-2377330d-67e0-4361-9be8-8bab3d098b7a.png"
+      },
+      "destination": "assets/marketing/scattered_note_image.png"
+    },
+    {
+      "id": "scattered_place_image",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Represent a place the couple wants to remember.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "scattered_moments"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Rainy café window with two cups in the foreground; doorway and cups remain visible in the tall panel, with the label outside below.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-f1d0eea0-3b1e-498b-8232-110927a7c050.png"
+      },
+      "destination": "assets/marketing/scattered_place_image.png"
+    },
+    {
+      "id": "scattered_date_image",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Represent a date preserved as a keepsake.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "scattered_moments"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Two tickets and a dried flower in a journal; keepsakes stay central in the vertical crop, with the label outside below.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-8acfb8d6-ef2c-45b0-b2b0-bca9dcaafc77.png"
+      },
+      "destination": "assets/marketing/scattered_date_image.png"
+    },
+    {
+      "id": "example_memory_record",
+      "kind": "component",
+      "status": "needed",
+      "purpose": "Present the two memory stories as examples.",
+      "requirements": [
+        "Build with accessible HTML and CSS; visibly identify each record as an example."
+      ],
+      "role": "component",
+      "sectionIds": [
+        "keep_a_moment"
+      ]
+    },
+    {
+      "id": "example_walk_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate a saved walk home.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "keep_a_moment"
+      ],
+      "aspectRatio": "3:2",
+      "composition": "Couple walking together down a wet street at dusk; both figures remain central in the wide story frame and mobile crop.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-a85b5471-df36-47c9-9a73-fb857c0124db.png"
+      },
+      "destination": "assets/marketing/example_walk_photo.png"
+    },
+    {
+      "id": "example_message_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate a small message worth saving.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "keep_a_moment"
+      ],
+      "aspectRatio": "3:2",
+      "composition": "Couple smiling over a small note at a kitchen table; faces and note occupy the center of the wide story frame.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-d11946a9-ad3c-489c-8ff6-243fc42f840f.png"
+      },
+      "destination": "assets/marketing/example_message_photo.png"
+    },
+    {
+      "id": "example_shared_moment",
+      "kind": "component",
+      "status": "needed",
+      "purpose": "Show how a saved moment appears in the shared space.",
+      "requirements": [
+        "Build a native accessible example record with visible example labeling; place it alongside the photograph in the highlighted row."
+      ],
+      "role": "component",
+      "sectionIds": [
+        "share_with_partner"
+      ]
+    },
+    {
+      "id": "shared_moment_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Give the highlighted shared-moment record meaningful media.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "share_with_partner"
+      ],
+      "aspectRatio": "3:2",
+      "composition": "Two hands holding a printed rainy-walk photograph over a dark table; the print stays central for the smaller highlighted frame.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-e5c82203-732c-4dc4-8f18-08d9f1bffbc7.png"
+      },
+      "destination": "assets/marketing/shared_moment_photo.png"
+    },
+    {
+      "id": "plan_day_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate choosing a day together.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "plan_together"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Couple looking at a paper planner in a café; faces and planner stay inside the central near-square desktop crop.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-c1c2585f-be5c-4fa5-9583-f069a84bcaac.png"
+      },
+      "destination": "assets/marketing/plan_day_photo.png"
+    },
+    {
+      "id": "plan_idea_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate keeping a date idea.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "plan_together"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Couple sketching a picnic idea beside a map; hands, notebook, and faces remain central in the near-square desktop crop.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-be89ae78-aef6-463d-b69e-63005a0e3aaa.png"
+      },
+      "destination": "assets/marketing/plan_idea_photo.png"
+    },
+    {
+      "id": "plan_next_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate an upcoming plan.",
+      "requirements": [
+        "Illustrative example."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "plan_together"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Couple putting on coats for an outing; both figures remain central in the near-square desktop crop and full mobile portrait.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-5beb3428-9ccd-453a-bf64-b740089b960f.png"
+      },
+      "destination": "assets/marketing/plan_next_photo.png"
+    },
+    {
+      "id": "revisit_couple_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Show the value of revisiting a shared history.",
+      "requirements": [
+        "Illustrative people and chapter; identify the chapter as an example in page copy."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "revisit_story"
+      ],
+      "aspectRatio": "3:2",
+      "composition": "Couple looking through printed photos on a sofa at night; faces and keepsakes stay central for the mobile crop, with a dark lower band for a separate caption strip.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-78d57440-53d2-44b9-8625-3d686ad9c5d5.png"
+      },
+      "destination": "assets/marketing/revisit_couple_photo.png"
+    },
+    {
+      "id": "create_space_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate creating a shared space.",
+      "requirements": [
+        "Illustrative person; add step label and title as native text."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "how_it_works"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Woman holding a phone beside a window; face and phone stay central in the tall card, with a darker lower area for native step text.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-3c9966f7-0128-4188-a39b-0f2ab7616a49.png"
+      },
+      "destination": "assets/marketing/create_space_photo.png"
+    },
+    {
+      "id": "invite_partner_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate inviting a partner who is away.",
+      "requirements": [
+        "Illustrative person; add step label and title as native text."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "how_it_works"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Man using a phone on a train platform; person stays central in the tall card, with the darker coat supporting native step text near the bottom.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-b91b1fa5-a10f-45cb-97d2-e29eab8d18aa.png"
+      },
+      "destination": "assets/marketing/invite_partner_photo.png"
+    },
+    {
+      "id": "first_moment_photo",
+      "kind": "image",
+      "status": "ready",
+      "purpose": "Illustrate keeping the first moment together.",
+      "requirements": [
+        "Illustrative people; add step label and title as native text."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "how_it_works"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Couple placing a printed photograph into a keepsake box; faces, hands, and box stay central in the tall carousel card.",
+      "source": {
+        "kind": "generated",
+        "reference": "image_gen.imagegen/exec-39d0f202-9bfc-4b8e-9f1d-e4f072855835.png"
+      },
+      "destination": "assets/marketing/first_moment_photo.png"
+    },
+    {
+      "id": "midnight_window_photo",
+      "kind": "image",
+      "status": "existing",
+      "purpose": "Provide Aoi’s established rain-window atmosphere behind the privacy statement.",
+      "requirements": [
+        "Use the existing scrim for readable overlay text; preserve the photo-page and license details recorded in assets/images/midnight-window.source.md."
+      ],
+      "role": "photography",
+      "sectionIds": [
+        "privacy"
+      ],
+      "aspectRatio": "2:3",
+      "composition": "Rain-softened lights without a focal person; crop the central window texture into the wide desktop statement and nearly square mobile frame, keeping the center clear for text.",
+      "source": {
+        "kind": "project",
+        "reference": "assets/images/midnight-window.jpg",
+        "license": "Unsplash License; photograph by freestocks. Source page: https://unsplash.com/photos/a-rain-streaked-window-with-a-bokeh-effect-Imvn4PWHPcQ"
+      },
+      "destination": "assets/images/midnight-window.jpg"
+    },
+    {
+      "id": "brand_display_font",
+      "kind": "font",
+      "status": "needed",
+      "purpose": "Preserve the approved Georgia display and wordmark typography.",
+      "requirements": [
+        "The project specifies Georgia through the operating-system web stack and bundles no font binary. Self-hosting this exact family requires a licensed local font file and documented reuse terms; retain the approved system stack until available."
+      ],
+      "role": "font",
+      "sectionIds": [
+        "hero",
+        "keep_a_moment",
+        "plan_together",
+        "revisit_story",
+        "how_it_works",
+        "privacy",
+        "get_aoi",
+        "footer"
+      ]
+    },
+    {
+      "id": "brand_body_font",
+      "kind": "font",
+      "status": "needed",
+      "purpose": "Preserve the approved platform system sans body typography.",
+      "requirements": [
+        "The approved body face is a platform-dependent system stack, not one downloadable family. A locally hosted replacement requires an approved specific family, its actual weight files, and a license; retain the verified system stack meanwhile."
+      ],
+      "role": "font",
+      "sectionIds": [
+        "hero",
+        "scattered_moments",
+        "keep_a_moment",
+        "share_with_partner",
+        "plan_together",
+        "revisit_story",
+        "how_it_works",
+        "privacy",
+        "get_aoi",
+        "footer"
+      ]
+    }
+  ]
+}

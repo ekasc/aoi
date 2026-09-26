@@ -25,6 +25,8 @@ let mockLibraryPermission = { granted: true };
 let mockCameraPermission = { granted: true };
 let mockMicPermission = { granted: true };
 let mockAudioStatus: ((status: any) => void) | null = null;
+const launchLibrarySpy = vi.fn(async () => mockLibraryResult);
+const launchCameraSpy = vi.fn(async () => mockCameraResult);
 
 vi.mock('@/features/composer/composer-context', () => ({
   useComposer: () => ({
@@ -84,8 +86,8 @@ vi.mock('expo-router', () => ({
 vi.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: async () => mockLibraryPermission,
   requestCameraPermissionsAsync: async () => mockCameraPermission,
-  launchImageLibraryAsync: async () => mockLibraryResult,
-  launchCameraAsync: async () => mockCameraResult,
+  launchImageLibraryAsync: (...args: any[]) => launchLibrarySpy(...args),
+  launchCameraAsync: (...args: any[]) => launchCameraSpy(...args),
 }));
 
 vi.mock('expo-haptics', () => ({
@@ -232,6 +234,7 @@ vi.mock('react-native', () => {
     StyleSheet: { create: (s: any) => s, hairlineWidth: 1, absoluteFill: {}, absoluteFillObject: {} },
     AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
     Linking: { openSettings: openSettingsSpy },
+    InteractionManager: { runAfterInteractions: (callback: () => void) => { callback(); return { cancel: vi.fn() }; } },
     Platform: { OS: 'ios', select: (o: any) => o.ios },
   };
 });
@@ -301,14 +304,16 @@ beforeEach(() => {
   mockPrepare.mockClear();
   mockRecord.mockClear();
   mockStop.mockClear();
+  launchLibrarySpy.mockClear();
+  launchCameraSpy.mockClear();
   vi.useRealTimers();
 });
 
 describe('Memory editor opens directly with keyboard + controls (no collapse)', () => {
-  it('renders writing with autofocus and compact icon controls immediately, no type sheet', async () => {
+  it('renders writing with compact icon controls immediately, no type sheet', async () => {
     await renderComposer();
     const input = screen.getByLabelText('Keep something') as HTMLElement;
-    expect(input.getAttribute('data-autofocus')).toBe('true');
+    expect(input.getAttribute('data-autofocus')).toBe('false');
     // One prompt only: the empty-state hint guides the draft; the input
     // itself carries no duplicate placeholder.
     expect(screen.getByText('Something small from today — a photo, a line, a sound.')).toBeTruthy();
@@ -377,7 +382,10 @@ describe('Compact toolbar regression (single row, chip date, no wrap)', () => {
     await renderComposer();
     expect(screen.getByText('New memory')).toBeTruthy();
     const source = await import('node:fs').then((fs) => fs.readFileSync('components/moments/inline-memory-composer.tsx', 'utf8'));
-    expect(source).toContain('fontSize: 17');
+    // Restrained, and on the scale: this pinned `fontSize: 17`, an
+    // off-scale size three screens had each invented separately. `subheading`
+    // is the nearest step and is the same one to look at.
+    expect(source).toContain('...Typography.subheading');
     expect(source).toContain('flexShrink: 1');
     expect(source).not.toContain('type="title">New memory');
   });
@@ -392,6 +400,46 @@ describe('Compact toolbar regression (single row, chip date, no wrap)', () => {
 });
 
 describe('InlineMemoryComposer photo intents (explicit, no auto-other)', () => {
+  it('hydrates before launching a photos intent and consumes it once', async () => {
+    mockHydrating = true;
+    const consumed = vi.fn();
+    const view = await renderComposer({ intent: 'photos', onIntentConsumed: consumed });
+    expect(launchLibrarySpy).not.toHaveBeenCalled();
+
+    mockHydrating = false;
+    await act(async () => {
+      view.rerender(createElement((await import('@/components/moments/inline-memory-composer')).InlineMemoryComposer, {
+        intent: 'photos',
+        onIntentConsumed: consumed,
+      }));
+    });
+    expect(launchLibrarySpy).toHaveBeenCalledTimes(1);
+    expect(consumed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not launch a second picker while the first is staging', async () => {
+    let resolvePicker!: (result: any) => void;
+    launchLibrarySpy.mockImplementationOnce(() => new Promise((resolve) => { resolvePicker = resolve; }));
+    await renderComposer();
+    const choose = screen.getByLabelText('Choose photos');
+    fireEvent.click(choose);
+    fireEvent.click(choose);
+    expect(launchLibrarySpy).toHaveBeenCalledTimes(1);
+    await act(async () => resolvePicker({ canceled: true }));
+  });
+
+  it('voice intent consumes without opening a picker or recording', async () => {
+    const consumed = vi.fn();
+    await renderComposer({ intent: 'voice', onIntentConsumed: consumed });
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    expect(consumed).toHaveBeenCalledTimes(1);
+    expect(launchLibrarySpy).not.toHaveBeenCalled();
+    expect(launchCameraSpy).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
   it('library cancel leaves the draft untouched and never opens camera', async () => {
     mockLibraryResult = { canceled: true };
     await renderComposer();
@@ -430,16 +478,13 @@ describe('InlineMemoryComposer photo intents (explicit, no auto-other)', () => {
     expect(addAssetsSpy).not.toHaveBeenCalled();
   });
 
-  it('picker denial shows inline Open Settings (user action only)', async () => {
-    mockLibraryPermission = { granted: false } as any;
+  it('library picker uses the system flow without requesting full library permission', async () => {
     await renderComposer();
-    fireEvent.focus(screen.getByLabelText('Keep something'));
     await act(async () => {
       fireEvent.click(screen.getByLabelText('Choose photos'));
     });
-    expect(screen.getByText('Open Settings')).toBeTruthy();
-    fireEvent.click(screen.getByText('Open Settings'));
-    expect(openSettingsSpy).toHaveBeenCalled();
+    expect(launchLibrarySpy).toHaveBeenCalledTimes(1);
+    expect(openSettingsSpy).not.toHaveBeenCalled();
     expect(addAssetsSpy).not.toHaveBeenCalled();
   });
 });
@@ -483,6 +528,24 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
     });
     expect(saveSpy).not.toHaveBeenCalled();
     expect(backSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps save, discard, and exit guarded while a voice asset is staging', async () => {
+    mockDraft = makeDraft({ body: 'voice memory' });
+    addAssetsSpy.mockImplementationOnce(() => new Promise(() => {}));
+    await renderComposer();
+    await act(async () => {
+      mockAudioStatus?.({ isFinished: true, hasError: false, url: 'file:///staging.m4a' });
+    });
+
+    expect((globalThis as any).__preventLeave.prevent).toBe(true);
+    fireEvent.click(screen.getByText('Save'));
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('More options'));
+    fireEvent.click(screen.getByText('Discard draft'));
+    expect(discardDraftSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('sheet:Discard this memory?')).toBeTruthy();
   });
 
   it('disables voice when attachments are full or saving', async () => {

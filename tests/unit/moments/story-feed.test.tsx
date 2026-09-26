@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { createElement } from 'react';
 
 import {
@@ -205,12 +205,13 @@ vi.mock('@/features/moments/use-resurface-notification', () => ({
 
 vi.mock('react-native', () => {
   const React = require('react');
-  const View = ({ children, accessibilityLabel, accessibilityRole }: any) =>
+  const View = ({ children, accessibilityLabel, accessibilityRole, testID }: any) =>
     React.createElement(
       'div',
       {
         ...(typeof accessibilityLabel === 'string' ? { 'aria-label': accessibilityLabel } : {}),
         ...(typeof accessibilityRole === 'string' ? { role: accessibilityRole } : {}),
+        ...(typeof testID === 'string' ? { 'data-testid': testID } : {}),
       },
       children
     );
@@ -452,8 +453,18 @@ vi.mock('@expo/vector-icons', () => ({
   Ionicons: () => null,
 }));
 
+// Both presentations stay mounted, so shared content exists twice: screen
+// assertions scope to the layer under test.
+function feedLayer() {
+  return within(screen.getByTestId('feed-layer'));
+}
+
+function galleryLayer() {
+  return within(screen.getByTestId('gallery-layer'));
+}
+
 describe('Memories story feed (oldest-first archive)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     feedMoments = [];
     feedPending = [];
     feedLoading = false;
@@ -467,7 +478,9 @@ describe('Memories story feed (oldest-first archive)', () => {
     refreshMoments.mockClear();
     removeMoment.mockClear();
     acknowledgeDelivered.mockClear();
+    await globalThis.__mockAsyncStorage.clear();
   });
+
 
   it('renders memories oldest-first under oldest-first month sections', async () => {
     feedMoments = [
@@ -477,12 +490,13 @@ describe('Memories story feed (oldest-first archive)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
-    const cards = screen.getAllByTestId(/moment-/).map((n) => n.getAttribute('data-testid'));
+    await act(async () => {});
+    const cards = feedLayer().getAllByTestId(/moment-/).map((n) => n.getAttribute('data-testid'));
     expect(cards).toEqual(['moment-older', 'moment-middle', 'moment-newer']);
-    expect(screen.getByText('March 2026')).toBeTruthy();
-    expect(screen.getByText('February 2026')).toBeTruthy();
+    expect(feedLayer().getByText('March 2026')).toBeTruthy();
+    expect(feedLayer().getByText('February 2026')).toBeTruthy();
     // Oldest month leads; the newest memory sits at the bottom.
-    const html = screen.getByTestId('story-feed').innerHTML;
+    const html = feedLayer().getByTestId('story-feed').innerHTML;
     expect(html.indexOf('February 2026')).toBeLessThan(html.indexOf('March 2026'));
   });
 
@@ -499,6 +513,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
 
     fireEvent.click(screen.getByText('Gallery'));
     // The second tile of that memory's grid row.
@@ -513,6 +528,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     feedMoments = [makeMoment({ id: 'm-1', occurredAt: '2026-03-15T10:00:00.000Z' })];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     fireEvent.click(screen.getByLabelText('Open March 2026 chapter'));
     expect(pushSpy).toHaveBeenCalledWith('/(app)/chapter/month:2026-03');
   });
@@ -524,6 +540,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     expect(screen.queryByTestId('moment-goal-1')).toBeNull();
     expect(screen.getByTestId('moment-note-1')).toBeTruthy();
   });
@@ -533,7 +550,8 @@ describe('Memories story feed (oldest-first archive)', () => {
     feedPending = [makePending({ clientId: 'p-1' })];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
-    const html = screen.getByTestId('story-feed').innerHTML;
+    await act(async () => {});
+    const html = feedLayer().getByTestId('story-feed').innerHTML;
     expect(html.indexOf('pending-p-1')).toBeLessThan(html.indexOf('moment-m-1'));
   });
 
@@ -543,6 +561,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     feedPending = [makePending({ clientId: 'd-1', status: 'delivered', deliveredMoment: real })];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     // The delivered ack is deferred off the render commit; flush timers.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -562,9 +581,10 @@ describe('Memories story feed (oldest-first archive)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     // A same-day anniversary is not a pinned post: no card precedes content.
     expect(screen.queryByTestId('resurface')).toBeNull();
-    const html = screen.getByTestId('story-feed').innerHTML;
+    const html = feedLayer().getByTestId('story-feed').innerHTML;
     expect(html.indexOf('moment-oldie')).toBeLessThan(html.indexOf('moment-fresh'));
   });
 
@@ -573,6 +593,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     feedHasMore = true;
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     // The archive reads oldest-first and older pages land at the top, so a
     // bottom-edge trigger would fetch the wrong edge of the feed.
     expect(capturedList.onEndReached).toBeUndefined();
@@ -607,6 +628,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     feedMoments = [makeMoment({ id: 'm-1' })];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     await act(async () => {
       capturedList.onRefresh();
     });
@@ -616,14 +638,16 @@ describe('Memories story feed (oldest-first archive)', () => {
   it('shows the first-memory empty state and the offline retry', async () => {
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     const first = render(createElement(MemoriesScreen));
-    expect(screen.getByText('Your first memory')).toBeTruthy();
-    fireEvent.click(screen.getByText('Keep your first memory'));
+    await act(async () => {});
+    expect(feedLayer().getByText('Your first memory')).toBeTruthy();
+    fireEvent.click(feedLayer().getByText('Keep your first memory'));
     expect(pushSpy).toHaveBeenCalledWith('/(app)/moment/new');
     first.unmount();
 
     feedError = 'Nope';
     render(createElement(MemoriesScreen));
-    fireEvent.click(screen.getByText('Try again'));
+    await act(async () => {});
+    fireEvent.click(feedLayer().getByText('Try again'));
     expect(refreshMoments).toHaveBeenCalled();
   });
 
@@ -647,6 +671,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     expect(screen.getByTestId('moment-mine').getAttribute('data-actions')).toBe('yes');
     expect(screen.getByTestId('moment-theirs').getAttribute('data-actions')).toBe('no');
   });
@@ -667,6 +692,7 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     const menu = screen.getByTestId('native-moment-menu');
     // Own moment inside the menu, with Edit + destructive Delete actions.
     expect(menu.querySelector('[data-testid="moment-mine"]')).toBeTruthy();
@@ -685,6 +711,7 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     fireEvent.click(
       screen.getByTestId('native-moment-menu').querySelector('[data-menu-action="edit"]') as HTMLElement,
     );
@@ -701,6 +728,7 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     fireEvent.click(
       screen.getByTestId('native-moment-menu').querySelector('[data-menu-action="delete"]') as HTMLElement,
     );
@@ -712,23 +740,26 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     expect(removeMoment).toHaveBeenCalledWith('mine');
   });
 
-  it('opens the ellipsis as a native popover menu on iOS, never the sheet', async () => {
+  it('opens the app sheet from the ellipsis on iOS, routing Edit to the editor', async () => {
     (process.env as any).EXPO_OS = 'ios';
     feedMoments = [
       makeMoment({ id: 'mine', isOwn: true, title: 'Lake day', occurredAt: '2026-03-16T10:00:00.000Z' }),
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
-    const menu = screen.getByTestId('native-actions-menu');
-    // The More actions trigger rides the native menu, with Edit + Delete.
-    expect(menu.querySelector('[aria-label="More actions"]')).toBeTruthy();
-    expect(menu.querySelector('[data-menu-action="edit"]')).toBeTruthy();
-    expect(menu.querySelector('[data-menu-action="delete"]')).toBeTruthy();
-    // Tapping the trigger opens the popover, not the sheet fallback.
+    await act(async () => {});
+
+    // The long-press opens the platform menu (asserted above). The ellipsis is
+    // the explicit control, and it is the app's own sheet on every platform:
+    // it used to ride a native menu whose trigger was a plain View announcing
+    // itself as a button, so a screen reader could focus it and fire it into
+    // nothing.
     fireEvent.click(screen.getByLabelText('More actions'));
-    expect(screen.queryByTestId('sheet:Lake day')).toBeNull();
+    const sheet = await screen.findByTestId('sheet:Lake day');
+    expect(sheet).toBeTruthy();
+
     // Edit routes straight to the editor.
-    fireEvent.click(menu.querySelector('[data-menu-action="edit"]') as HTMLElement);
+    fireEvent.click(within(sheet).getByText('Edit'));
     expect(pushSpy).toHaveBeenCalledWith({
       pathname: '/(app)/moment/edit/[id]',
       params: { id: 'mine', at: '2026-03-16T10:00:00.000Z' },
@@ -742,6 +773,7 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     expect(screen.queryByTestId('native-actions-menu')).toBeNull();
     fireEvent.click(screen.getByLabelText('More actions'));
     const sheet = screen.getByTestId('sheet:Lake day');
@@ -770,6 +802,7 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
     fireEvent.click(screen.getByLabelText('Open feed photo'));
     await act(async () => {});
     // Full screen with the set counter; swiping stays in the viewer.
@@ -834,37 +867,10 @@ describe('archive controls on the Memories screen', () => {
   async function renderScreen() {
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
+    // The seen cursor loads async: flush it so rows render before assertions.
+    await act(async () => {});
   }
-
-  it('narrows the archive by search text', async () => {
-    feedMoments = [
-      makeMoment({ id: 'lake', type: 'media', mediaPreview: 'file:///l.jpg', title: 'Lake day' }),
-      makeMoment({ id: 'porch', type: 'note', body: 'porch light' }),
-    ];
-    await renderScreen();
-    expect(screen.getByTestId('moment-lake')).toBeTruthy();
-    // The archive opens clean: the field is behind the on-demand Search
-    // control, so the button is tapped before the input exists.
-    fireEvent.click(screen.getByLabelText('Search memories'));
-    fireEvent.change(screen.getByLabelText('Search memories'), { target: { value: 'porch' } });
-    await act(async () => {});
-    expect(screen.getByTestId('moment-porch')).toBeTruthy();
-    expect(screen.queryByTestId('moment-lake')).toBeNull();
-  });
-
-  it('narrows the archive by type chip', async () => {
-    feedMoments = [
-      makeMoment({ id: 'lake', type: 'media', mediaPreview: 'file:///l.jpg', title: 'Lake day' }),
-      makeMoment({ id: 'porch', type: 'note', body: 'porch light' }),
-    ];
-    await renderScreen();
-    // Filters ride with search; open it before tapping a type chip.
-    fireEvent.click(screen.getByLabelText('Search memories'));
-    fireEvent.click(screen.getByLabelText('Photos filter'));
-    await act(async () => {});
-    expect(screen.getByTestId('moment-lake')).toBeTruthy();
-    expect(screen.queryByTestId('moment-porch')).toBeNull();
-  });
 
   it('switches to the Gallery grid and links a full-screen photo back to its memory', async () => {
     feedMoments = [
@@ -875,8 +881,8 @@ describe('archive controls on the Memories screen', () => {
     fireEvent.click(screen.getByLabelText('Gallery'));
     await act(async () => {});
     // The grid is month-grouped and tiles only real photos.
-    expect(screen.getByText('March 2026')).toBeTruthy();
-    expect(screen.queryByTestId('moment-lake')).toBeNull();
+    expect(galleryLayer().getByText('March 2026')).toBeTruthy();
+    expect(galleryLayer().queryByTestId('moment-lake')).toBeNull();
     fireEvent.click(screen.getByLabelText('Open photo 1 of 1 from March 2026'));
     await act(async () => {});
     // Full screen: the viewer's controls prove the photo opened...
@@ -897,21 +903,9 @@ describe('archive controls on the Memories screen', () => {
       makeMoment({ id: 'lake', type: 'media', mediaPreview: 'file:///l.jpg', title: 'Lake day' }),
     ];
     await renderScreen();
-    expect(screen.getByText('March 2026')).toBeTruthy();
+    expect(galleryLayer().getByText('March 2026')).toBeTruthy();
     expect(screen.getByLabelText('Open photo 1 of 1 from March 2026')).toBeTruthy();
-    expect(screen.queryByTestId('moment-lake')).toBeNull();
-  });
-
-  it('shows a clear affordance when a search matches nothing', async () => {
-    feedMoments = [makeMoment({ id: 'lake', title: 'Lake day' })];
-    await renderScreen();
-    fireEvent.click(screen.getByLabelText('Search memories'));
-    fireEvent.change(screen.getByLabelText('Search memories'), { target: { value: 'nope' } });
-    await act(async () => {});
-    expect(screen.getByText('Clear filters')).toBeTruthy();
-    fireEvent.click(screen.getByText('Clear filters'));
-    await act(async () => {});
-    expect(screen.getByTestId('moment-lake')).toBeTruthy();
+    expect(galleryLayer().queryByTestId('moment-lake')).toBeNull();
   });
 });
 
@@ -925,6 +919,9 @@ describe('archive native scroll view (inset ownership, no offset reset)', () => 
   async function renderScreen() {
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
+    await act(async () => {});
+    // The seen cursor loads async: flush it so rows render before assertions.
+    await act(async () => {});
   }
 
   it('lets the native scroll view own its inset: never commands offset 0', async () => {
@@ -944,46 +941,25 @@ describe('archive native scroll view (inset ownership, no offset reset)', () => 
     expect(scrollToOffsetSpy).not.toHaveBeenCalled();
   });
 
-  it('remounts the native scroll view per view so each keeps automatic insets', async () => {
+  it('keeps both scroll views mounted so switching never loses an offset', async () => {
     feedMoments = [
       makeMoment({ id: 'lake', type: 'media', mediaPreview: 'file:///l.jpg', title: 'Lake day' }),
     ];
     await renderScreen();
-    expect(flatListMountSpy).toHaveBeenCalledTimes(1);
+    // Both presentations mount together, each landing on the newest.
+    expect(flatListMountSpy).toHaveBeenCalledTimes(2);
     expect(flatListUnmountSpy).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByLabelText('Gallery'));
     await act(async () => {});
-    // A fresh scroll view, not the feed's stale offset.
+    // A reveal, not a rebuild: no remount, no unmount, no landing jump.
     expect(flatListMountSpy).toHaveBeenCalledTimes(2);
-    expect(flatListUnmountSpy).toHaveBeenCalledTimes(1);
+    expect(flatListUnmountSpy).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByLabelText('Feed'));
     await act(async () => {});
-    expect(flatListMountSpy).toHaveBeenCalledTimes(3);
-    expect(flatListUnmountSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('preserves the mounted list and focused input across query edits', async () => {
-    feedMoments = [makeMoment({ id: 'porch', type: 'note', body: 'porch light' })];
-    await renderScreen();
-    fireEvent.click(screen.getByLabelText('Search memories'));
-    await act(async () => {});
-    const input = screen.getByLabelText('Search memories');
-    input.focus();
-
-    const mountsBefore = flatListMountSpy.mock.calls.length;
-    const unmountsBefore = flatListUnmountSpy.mock.calls.length;
-
-    fireEvent.change(input, { target: { value: 'p' } });
-    await act(async () => {});
-    fireEvent.change(input, { target: { value: 'po' } });
-    await act(async () => {});
-
-    // Filtering keeps the same native scroll view (and the input) mounted.
-    expect(flatListMountSpy).toHaveBeenCalledTimes(mountsBefore);
-    expect(flatListUnmountSpy).toHaveBeenCalledTimes(unmountsBefore);
-    expect(screen.getByLabelText('Search memories')).toBe(document.activeElement);
+    expect(flatListMountSpy).toHaveBeenCalledTimes(2);
+    expect(flatListUnmountSpy).not.toHaveBeenCalled();
   });
 
   it('keeps automatic keyboard insets off the archive in both views', async () => {

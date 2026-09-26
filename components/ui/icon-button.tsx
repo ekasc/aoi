@@ -10,6 +10,7 @@ import { useReducedMotion } from "react-native-reanimated";
 import { Radii } from "@/constants/theme";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { ThemedText } from "@/components/themed-text";
+import { Pressed } from "@/components/ui/pressed";
 
 type IconButtonVariant = "accent" | "secondary" | "ghost" | "accentSecondary";
 
@@ -76,8 +77,8 @@ export function IconButton({
 			style={({ pressed }) => [
 				styles.base,
 				currentVariant.container,
-				pressed && !disabled ? styles.pressed : undefined,
-				pressed && !disabled && !reduceMotion ? styles.pressedScale : undefined,
+				pressed && !disabled ? Pressed.at : undefined,
+				pressed && !disabled && !reduceMotion ? Pressed.scaled : undefined,
 				disabled ? styles.disabled : undefined,
 			]}
 			{...rest}
@@ -100,12 +101,6 @@ const styles = StyleSheet.create({
 		borderWidth: StyleSheet.hairlineWidth,
 		alignItems: "center",
 		justifyContent: "center",
-	},
-	pressed: {
-		opacity: 0.92,
-	},
-	pressedScale: {
-		transform: [{ scale: 0.97 }],
 	},
 	disabled: {
 		opacity: 0.55,

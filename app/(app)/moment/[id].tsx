@@ -10,7 +10,7 @@ import { ActionSheet } from '@/components/ui/action-sheet';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
-import { FontFamilies } from '@/constants/typography';
+import { Typography } from '@/constants/typography';
 import { clampPhotoAspect } from '@/components/moments/moment-card';
 import {
   MeasuredPress,
@@ -366,18 +366,8 @@ const styles = StyleSheet.create({
     gap: Spacing[24],
     paddingHorizontal: Spacing[24],
   },
-  serifTitle: {
-    fontFamily: FontFamilies.display,
-    fontSize: 26,
-    lineHeight: 34,
-    fontWeight: '400',
-  },
-  serifBody: {
-    fontFamily: FontFamilies.display,
-    fontSize: 20,
-    lineHeight: 30,
-    fontWeight: '400',
-  },
+  serifTitle: Typography.readTitle,
+  serifBody: Typography.readBody,
   editRow: {
     alignSelf: 'flex-start',
     minHeight: 44,

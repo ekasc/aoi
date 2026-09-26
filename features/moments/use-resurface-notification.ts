@@ -1,8 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
-import { SchedulableTriggerInputTypes } from 'expo-notifications';
 import { useEffect, useRef } from 'react';
 
+import { notificationsModule } from '@/features/notifications/notifications-module';
 import { findResurfaces, formatResurfaceLabel } from '@/features/moments/resurface';
 import type { Moment } from '@/features/moments/types';
 
@@ -51,7 +50,9 @@ export function useResurfaceNotification(moments: Moment[]): void {
   const scheduled = useRef(false);
 
   useEffect(() => {
-    if (scheduled.current || moments.length === 0) {
+    const notifications = notificationsModule();
+
+    if (!notifications || scheduled.current || moments.length === 0) {
       return;
     }
 
@@ -73,7 +74,7 @@ export function useResurfaceNotification(moments: Moment[]): void {
           return;
         }
 
-        const permission = await Notifications.requestPermissionsAsync();
+        const permission = await notifications.requestPermissionsAsync();
 
         if (!permission.granted) {
           return;
@@ -84,14 +85,14 @@ export function useResurfaceNotification(moments: Moment[]): void {
           top.moment.body || top.moment.title || 'a moment you kept'
         );
 
-        await Notifications.scheduleNotificationAsync({
+        await notifications.scheduleNotificationAsync({
           content: {
             title: formatResurfaceLabel(top.yearsAgo),
             body: `“${excerpt}”, worth a look back together.`,
             sound: false,
           },
           trigger: {
-            type: SchedulableTriggerInputTypes.DATE,
+            type: notifications.SchedulableTriggerInputTypes.DATE,
             date: nextDeliveryDate(now),
           },
         });

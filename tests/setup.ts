@@ -556,6 +556,29 @@ vi.mock('react-native-reanimated', () => {
     useDerivedValue: (fn: any) => React.useState(() => ({ value: fn() }))[0],
     useReducedMotion: () => false,
     useAnimatedStyle: () => ({}),
+    // A scroll handler is just a callback the host list would invoke. The
+    // mock hands it back so a component can put it on a ScrollView, and
+    // exposes it so a test can drive one directly.
+    useAnimatedScrollHandler: (handler?: (event: any) => void) =>
+      Object.assign(
+        (event: any) => handler?.(event),
+        { __handler: handler },
+      ),
+    // A reaction fires its callback when the prepared value changes. Under
+    // the mock the prepared value is stable at its first result, so the
+    // callback runs once on mount, which is what these tests need.
+    useAnimatedReaction: (
+      prepare: () => any,
+      react: (current: any, previous: any) => void,
+    ) => {
+      const fired = React.useRef(false);
+      React.useEffect(() => {
+        if (fired.current) return;
+        fired.current = true;
+        react(prepare(), undefined);
+      }, []);
+    },
+    runOnUI: (fn: (...args: unknown[]) => unknown) => fn,
     interpolate: (_value: number, _input: number[], output: number[]) => output[0],
     Extrapolation: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
     useAnimatedKeyboard: () => ({ height: { value: 0 }, state: { value: 0 } }),

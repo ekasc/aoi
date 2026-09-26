@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
 	ActivityIndicator,
 	ScrollView,
@@ -13,7 +13,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
 import { Radii, Spacing } from "@/constants/theme";
-import { FontFamilies } from "@/constants/typography";
+import { Typography } from "@/constants/typography";
 import { useLetters } from "@/features/letters/letters-context";
 import {
 	formatOpenedDayLabel,
@@ -41,11 +41,37 @@ export default function LetterReaderScreen() {
 	const insets = useSafeAreaInsets();
 	const { id } = useLocalSearchParams<{ id?: string | string[] }>();
 	const letterId = Array.isArray(id) ? id[0] : id;
-	const { letters, isLoading, error, reload } = useLetters();
-	const accent = useThemeColor({}, "accent");
+	const { letters, isLoading, error, reload, openLetter } = useLetters();
+	const [isOpening, setIsOpening] = useState(false);
+	const [openError, setOpenError] = useState("");
+
+	/**
+	 * Breaking the seal. The unopened view said "Ready to open" and offered
+	 * only a way back, so arriving here from Us dropped the reader into a
+	 * sheet that announced the letter was ready and then gave them nothing to
+	 * do about it.
+	 */
+	const handleOpen = useCallback(async () => {
+		if (isOpening) {
+			return;
+		}
+		setIsOpening(true);
+		setOpenError("");
+		try {
+			await openLetter(String(id));
+		} catch (error) {
+			setOpenError(
+				error instanceof Error ? error.message : "That letter would not open right now."
+			);
+		} finally {
+			setIsOpening(false);
+		}
+	}, [id, isOpening, openLetter]);
+	const accentInk = useThemeColor({}, "accentInk");
 	const background = useThemeColor({}, "background");
 	const muted = useThemeColor({}, "muted");
-	const partnerAccent = useThemeColor({}, "partnerAccent");
+	const danger = useThemeColor({}, "danger");
+	const partnerAccentInk = useThemeColor({}, "partnerAccentInk");
 
 	const letter = useMemo(
 		() => letters.find((entry) => entry.id === letterId) ?? null,
@@ -91,7 +117,7 @@ export default function LetterReaderScreen() {
 		return (
 			<View style={[styles.center, { backgroundColor: background }]}>
 				<Stack.Screen options={{ title: "Letter" }} />
-				<ActivityIndicator accessibilityLabel="Loading" color={accent} />
+				<ActivityIndicator accessibilityLabel="Loading" color={accentInk} />
 			</View>
 		);
 	}
@@ -159,8 +185,23 @@ export default function LetterReaderScreen() {
 						{statusLabel}
 					</ThemedText>
 				</Surface>
+
+				{ready ? (
+					<Button
+						label={isOpening ? "Opening…" : "Open it"}
+						onPress={handleOpen}
+						disabled={isOpening}
+					/>
+				) : null}
+
+				{openError ? (
+					<ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+						{openError}
+					</ThemedText>
+				) : null}
+
 				<Button
-					label="Back to Letters"
+					label="Not now"
 					onPress={handleBackToShelf}
 					variant="secondary"
 				/>
@@ -168,7 +209,7 @@ export default function LetterReaderScreen() {
 		);
 	}
 
-	const authorColor = letter.authorRole === "you" ? accent : partnerAccent;
+	const authorColor = letter.authorRole === "you" ? accentInk : partnerAccentInk;
 	const openedSuffix = letter.openedAt
 		? ` · Opened ${formatOpenedDayLabel(letter.openedAt)}`
 		: "";
@@ -239,10 +280,5 @@ const styles = StyleSheet.create({
 		height: 8,
 		width: 8,
 	},
-	readingBody: {
-		fontFamily: FontFamilies.display,
-		fontSize: 20,
-		lineHeight: 32,
-		letterSpacing: -0.2,
-	},
+	readingBody: Typography.readBody,
 });

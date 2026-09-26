@@ -8,21 +8,23 @@ import {
 	TextInput,
 	View,
 } from "react-native";
-import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Reveal } from '@/components/ui/reveal';
 import { ThemedText } from "@/components/themed-text";
 import { Button } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
 import { Motion, Radii, Spacing } from "@/constants/theme";
+import { Typography } from "@/constants/typography";
 import { useQuestion } from "@/features/question/question-context";
 import { WEEKLY_ANSWER_MAX_LENGTH } from "@/features/question/types";
 import { useSpace } from "@/features/space/space-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { relationshipCopy } from "@/features/relationship/relationship-age";
+import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
 
-const REVEAL_ANIMATION = FadeIn.duration(Motion.slow).reduceMotion(
-	ReduceMotion.System,
-);
+const REVEAL_ANIMATION = Reveal.in(Motion.slow);
 
 function AnswerCard({
   answer,
@@ -59,10 +61,11 @@ export default function QuestionScreen() {
 	const { state, isLoading, error, isSaving, submitAnswer, reload } =
 		useQuestion();
 	const { space } = useSpace();
-	const accent = useThemeColor({}, "accent");
+	const copy = relationshipCopy(useRelationshipAge(space?.relationshipStartDate).tone);
+	const accentInk = useThemeColor({}, "accentInk");
 	const background = useThemeColor({}, "background");
 	const muted = useThemeColor({}, "muted");
-	const partnerAccent = useThemeColor({}, "partnerAccent");
+	const partnerAccentInk = useThemeColor({}, "partnerAccentInk");
 	const text = useThemeColor({}, "text");
 	const warning = useThemeColor({}, "warning");
 	const [draft, setDraft] = useState("");
@@ -136,7 +139,7 @@ export default function QuestionScreen() {
       >
 				{isLoading && !state ? (
 					<View style={styles.center}>
-						<ActivityIndicator color={accent} />
+						<ActivityIndicator color={accentInk} />
 					</View>
 				) : error && !state ? (
 					<Surface style={styles.errorCard}>
@@ -154,7 +157,7 @@ export default function QuestionScreen() {
 					<>
 						<View style={styles.promptBlock}>
 							<ThemedText type="caption" style={{ color: muted }}>
-								One question this week, answer whenever you like.
+								{copy.reflectionIntro}
 							</ThemedText>
 							<ThemedText type="title" accessibilityRole="header">
 								{state.question}
@@ -200,12 +203,12 @@ export default function QuestionScreen() {
 								<AnswerCard
 									answer={state.yourAnswer ?? ""}
 									label="You"
-									labelColor={accent}
+									labelColor={accentInk}
 								/>
 								<AnswerCard
 									answer={state.partnerAnswer ?? ""}
 									label={partnerName}
-									labelColor={partnerAccent}
+									labelColor={partnerAccentInk}
 								/>
 								<View style={styles.editWrap}>
 									<Button
@@ -255,8 +258,7 @@ const styles = StyleSheet.create({
 		borderRadius: Radii.lg,
 	},
 	input: {
-		fontSize: 17,
-		lineHeight: 24,
+		...Typography.subheading,
 		minHeight: 112,
 		textAlignVertical: "top",
 	},

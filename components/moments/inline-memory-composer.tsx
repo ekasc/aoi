@@ -5,7 +5,7 @@ import DateTimePicker, {
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useRouter } from 'expo-router';
 import { MotiView } from 'moti';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'react-native-reanimated';
 import {
   Linking,
@@ -24,8 +24,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ActionSheet } from '@/components/ui/action-sheet';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
-import { Radii, Spacing } from '@/constants/theme';
-import { FontFamilies } from '@/constants/typography';
+import { Motion, Radii, Spacing } from '@/constants/theme';
+import { Typography } from '@/constants/typography';
 import { userSafeMessage, useComposer } from '@/features/composer/composer-context';
 import { MOMENT_LOCALE } from '@/features/moments/labels';
 import { haptics } from '@/features/haptics/haptics';
@@ -40,6 +40,8 @@ export type InlineMemoryComposerProps = {
   /** Contextual intent from Memories ?compose=… (note focus, photos/camera/voice expand). */
   intent?: string | string[] | null;
   onIntentConsumed?: () => void;
+  /** Native form sheets become interactive after the stack transition ends. */
+  presentationReady?: boolean;
 };
 
 function normalizeIntent(raw: string | string[] | null | undefined): ComposerIntent | null {
@@ -75,7 +77,7 @@ function withLocalYMD(baseIso: string, picked: Date): string {
   return next.toISOString();
 }
 
-export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryComposerProps) {
+export function InlineMemoryComposer({ intent, onIntentConsumed, presentationReady = true }: InlineMemoryComposerProps) {
   const {
     draft,
     hydrating,
@@ -106,14 +108,16 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
   const [isSaving, setIsSaving] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [quotaBlocked, setQuotaBlocked] = useState(false);
-  const [pickerDenied, setPickerDenied] = useState<'library' | 'camera' | null>(null);
+  const [pickerDenied, setPickerDenied] = useState<'camera' | null>(null);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [discardVisible, setDiscardVisible] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceStaging, setVoiceStaging] = useState(false);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const inputRef = useRef<TextInput | null>(null);
   const savingRef = useRef(false);
-  const consumedIntentRef = useRef<string | null>(null);
+  const consumedIntentRef = useRef<ComposerIntent | null>(null);
+  const pickerBusyRef = useRef(false);
   const pendingLeaveRef = useRef<(() => void) | null>(null);
   const [allowLeave, setAllowLeave] = useState(false);
 
@@ -128,17 +132,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
     pendingLeaveRef.current = leave;
     setDiscardVisible(true);
   }, []);
-  usePreventLeave(draftNonEmpty && !allowLeave, handleBlockedLeave);
-
-  useLayoutEffect(() => {
-    if (!normalizedIntent) return;
-    if (consumedIntentRef.current === normalizedIntent) return;
-    consumedIntentRef.current = normalizedIntent;
-    if (normalizedIntent === 'note') {
-      inputRef.current?.focus();
-    }
-    onIntentConsumed?.();
-  }, [normalizedIntent, onIntentConsumed]);
+  usePreventLeave((draftNonEmpty || pickerBusy || voiceBusy) && !allowLeave, handleBlockedLeave);
 
   const handleBodyChange = useCallback((value: string) => {
     setLocalError(null);
@@ -151,6 +145,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
   const remaining = draft ? MOMENT_ATTACHMENT_MAX - draft.assets.length : MOMENT_ATTACHMENT_MAX;
 
   const handlePickLibrary = useCallback(async () => {
+    if (pickerBusyRef.current) return;
     setLocalError(null);
     setPickerDenied(null);
     setQuotaBlocked(false);
@@ -159,11 +154,8 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
       return;
     }
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setPickerDenied('library');
-        return;
-      }
+      pickerBusyRef.current = true;
+      setPickerBusy(true);
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
@@ -182,10 +174,14 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
       await addAssets(descriptors);
     } catch (err) {
       setLocalError(userSafeMessage(err));
+    } finally {
+      pickerBusyRef.current = false;
+      setPickerBusy(false);
     }
   }, [addAssets, draft, remaining]);
 
   const handleTakePhoto = useCallback(async () => {
+    if (pickerBusyRef.current) return;
     setLocalError(null);
     setPickerDenied(null);
     setQuotaBlocked(false);
@@ -194,6 +190,8 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
       return;
     }
     try {
+      pickerBusyRef.current = true;
+      setPickerBusy(true);
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
         setPickerDenied('camera');
@@ -215,8 +213,36 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
       }]);
     } catch (err) {
       setLocalError(userSafeMessage(err));
+    } finally {
+      pickerBusyRef.current = false;
+      setPickerBusy(false);
     }
   }, [addAssets, draft, remaining]);
+
+  useEffect(() => {
+    if (!normalizedIntent) {
+      consumedIntentRef.current = null;
+      return;
+    }
+    if (!presentationReady || hydrating || !draft || consumedIntentRef.current === normalizedIntent) return;
+
+    // The route gates this effect on the native sheet's transitionEnd. The
+    // ref makes the route intent single-flight.
+    const frame = requestAnimationFrame(() => {
+      if (consumedIntentRef.current === normalizedIntent) return;
+      consumedIntentRef.current = normalizedIntent;
+      if (normalizedIntent === 'note') {
+        inputRef.current?.focus();
+      } else if (normalizedIntent === 'photos') {
+        void handlePickLibrary();
+      } else if (normalizedIntent === 'camera') {
+        void handleTakePhoto();
+      }
+      // Voice stays passive: entering this route must never start recording.
+      onIntentConsumed?.();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [draft, handlePickLibrary, handleTakePhoto, hydrating, normalizedIntent, onIntentConsumed, presentationReady]);
 
   const handleOpenSettings = useCallback(() => {
     void Linking.openSettings().catch(() => {});
@@ -276,7 +302,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!draftNonEmpty || isSaving || savingRef.current || voiceBusy) return;
+    if (!draftNonEmpty || isSaving || savingRef.current || voiceBusy || pickerBusyRef.current) return;
     savingRef.current = true;
     setIsSaving(true);
     setLocalError(null);
@@ -302,6 +328,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
   }, [draftNonEmpty, isSaving, voiceBusy, save, refreshServerPlus, router]);
 
   const handleDiscard = useCallback(async () => {
+    if (pickerBusyRef.current || voiceBusy || savingRef.current) return;
     setLocalError(null);
     setQuotaBlocked(false);
     setPickerDenied(null);
@@ -317,7 +344,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
     // back to a plain dismiss.
     setDiscardVisible(false);
     setAllowLeave(true);
-  }, [discardDraft]);
+  }, [discardDraft, voiceBusy]);
 
   useEffect(() => {
     if (!allowLeave) {
@@ -333,13 +360,13 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
   }, [allowLeave, router]);
 
   const handleClose = useCallback(() => {
-    if (draftNonEmpty) {
+    if (draftNonEmpty || pickerBusyRef.current || voiceBusy) {
       pendingLeaveRef.current = null;
       setDiscardVisible(true);
       return;
     }
     router.back();
-  }, [draftNonEmpty, router]);
+  }, [draftNonEmpty, router, voiceBusy]);
 
   const handleOpenDiscard = useCallback(() => {
     // Opened from the overflow menu, not an exit attempt: discard dismisses.
@@ -362,15 +389,15 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
     [draft?.assets]
   );
 
-  const canSave = draftNonEmpty && !hydrating && !isSaving && !voiceBusy;
+  const canSave = draftNonEmpty && !hydrating && !isSaving && !voiceBusy && !pickerBusy;
   const combinedError = localError ?? composerError;
   const showQuota = quotaBlocked || (combinedError?.includes('out of media room') ?? false);
   const occurredDate = draft ? new Date(draft.occurredAt) : new Date();
   const validOccurredDate = Number.isNaN(occurredDate.getTime()) ? new Date() : occurredDate;
   const isToday = draft ? isTodayLocal(draft.occurredAt) : true;
   const dateLabel = isToday ? 'Today' : formatShortDate(validOccurredDate);
-  const voiceDisabled = remaining <= 0 || isSaving;
-  const mediaDisabled = remaining <= 0 || isSaving;
+  const voiceDisabled = remaining <= 0 || isSaving || pickerBusy;
+  const mediaDisabled = remaining <= 0 || isSaving || pickerBusy;
 
   if (hydrating || !draft) {
     return (
@@ -423,7 +450,6 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
         <TextInput
           ref={inputRef}
           accessibilityLabel="Keep something"
-          autoFocus
           multiline
           onChangeText={handleBodyChange}
           placeholderTextColor={muted}
@@ -476,7 +502,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
         {pickerDenied ? (
           <View style={styles.inlineError}>
             <ThemedText type="caption" style={{ color: muted }}>
-              {pickerDenied === 'camera' ? 'Camera' : 'Photo library'} access is needed to attach photos.
+              Camera access is needed to attach photos.
             </ThemedText>
             <Button label="Open Settings" size="sm" variant="secondary" onPress={handleOpenSettings} />
           </View>
@@ -527,7 +553,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed }: InlineMemoryC
             <MotiView
               from={{ opacity: 0, translateY: 6 }}
               animate={{ opacity: 1, translateY: 0 }}
-              transition={{ type: 'timing', duration: 200 }}
+              transition={{ duration: Motion.fast }}
               style={[styles.datePickerCard, { borderColor: border, backgroundColor: surface2 }]}
             >
               <DateTimePicker
@@ -643,9 +669,9 @@ const styles = StyleSheet.create({
     gap: Spacing[8],
   },
   headerTitle: {
+    ...Typography.subheading,
     flex: 1,
     flexShrink: 1,
-    fontSize: 17,
     textAlign: 'center',
   },
   scroll: {
@@ -654,16 +680,14 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     gap: Spacing[12],
+    paddingHorizontal: Spacing[24],
     paddingVertical: Spacing[8],
   },
   input: {
     // Display serif like the letter editor: writing should feel like
     // writing, content first. No fixed tall box — the empty hint sits
     // right under the first line instead of a 240pt void.
-    fontFamily: FontFamilies.display,
-    fontSize: 22,
-    lineHeight: 32,
-    letterSpacing: -0.2,
+    ...Typography.inputDisplay,
     minHeight: 44,
     paddingVertical: Spacing[8],
     textAlignVertical: 'top',

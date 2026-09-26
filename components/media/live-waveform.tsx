@@ -57,7 +57,7 @@ function LiveWaveformComponent({
   gap = WAVE_BAR_GAP,
   progress,
 }: LiveWaveformProps) {
-  const accent = useThemeColor({}, 'accent');
+  const accentInk = useThemeColor({}, 'accentInk');
   const muted = useThemeColor({}, 'muted');
 
   const wavePath = useDerivedValue(() => {
@@ -89,9 +89,9 @@ function LiveWaveformComponent({
           <Canvas style={{ height, width }}>
             <Path color={muted} opacity={REST_OPACITY} path={wavePath} />
             <Group clip={playedClip}>
-              <Path color={accent} path={wavePath} />
+              <Path color={accentInk} path={wavePath} />
             </Group>
-            <Rect color={accent} height={height} width={PLAYHEAD_WIDTH} x={playheadX} y={0} />
+            <Rect color={accentInk} height={height} width={PLAYHEAD_WIDTH} x={playheadX} y={0} />
           </Canvas>
         ) : null
       }

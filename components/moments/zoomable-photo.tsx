@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 
+import { Springs } from '@/constants/theme';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 
 export const ZOOM_MIN = 1;
@@ -86,20 +87,13 @@ export const OPEN_EASING = Easing.bezier(0.22, 1, 0.36, 1);
  * had into the tile and settles. A reversed open curve (slow, then fast)
  * reads as a stall followed by whiplash — momentum, stop, momentum — which is
  * exactly what a hand-off should never feel like.
+ *
+ * This file is where the app's spring vocabulary was invented, and where
+ * three others then grew their own. Both are now the shared tokens; the
+ * names stay because they are the words this file reads in.
  */
-export const CLOSE_SPRING = {
-  stiffness: 220,
-  damping: 26,
-  mass: 1,
-  overshootClamping: true,
-};
-/** Spring for a released drag that does not dismiss. */
-export const DRAG_SPRING = {
-  stiffness: 240,
-  damping: 30,
-  mass: 1,
-  overshootClamping: true,
-};
+export const CLOSE_SPRING = Springs.rest;
+export const DRAG_SPRING = Springs.rest;
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 

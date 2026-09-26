@@ -11,6 +11,14 @@ import {
 import { AppState } from 'react-native';
 
 import { isStubMode } from '@/features/api-client';
+import {
+  buildSimulatedPartnerPost,
+  CLEAR_SIMULATED_POSTS_KEY,
+  loadSimulatedPosts,
+  saveSimulatedPosts,
+  SIMULATE_PARTNER_POST_KEY,
+  type SimulatePartnerPostOverrides,
+} from '@/features/dev/simulate-partner';
 import { mediaObjectUrl } from '@aoi/shared';
 import { getPreviewSeedMoments, usePreviewVariant } from '@/features/dev/preview';
 import { mockMoments } from '@/features/moments/mock-data';
@@ -453,7 +461,7 @@ function useRemoteMoments(): MomentsContextValue {
 // ── Stub (local) implementation ──────────────────────────────────────────
 
 function useStubMoments(): MomentsContextValue {
-  const { importedMilestones } = useSpace();
+  const { importedMilestones, space } = useSpace();
   const preview = usePreviewVariant();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
@@ -499,6 +507,54 @@ function useStubMoments(): MomentsContextValue {
     );
     return nextMoment;
   }, []);
+
+  // Dev-only two-user simulator (see features/dev/simulate-partner.ts):
+  // with one phone there is no other way to receive a partner post.
+  // Planted posts persist so the unread flow survives the reload it needs
+  // to be tested. Never linked from UI; the globals below are evaluated
+  // from the Metro console (`dev:eval`) while the app runs.
+  useEffect(() => {
+    if (!__DEV__) {
+      return;
+    }
+    let live = true;
+    void loadSimulatedPosts().then((stored) => {
+      if (!live || stored.length === 0) {
+        return;
+      }
+      setLocalMoments((currentMoments) => {
+        const ids = new Set(currentMoments.map((moment) => moment.id));
+        const missing = stored.filter((post) => !ids.has(post.id));
+        return missing.length === 0
+          ? currentMoments
+          : sortMomentsOldestFirst([...currentMoments, ...missing]);
+      });
+    });
+    const globals = globalThis as unknown as Record<string, unknown>;
+    globals[SIMULATE_PARTNER_POST_KEY] = async (
+      overrides: SimulatePartnerPostOverrides = {},
+    ) => {
+      const created = await addMoment(
+        buildSimulatedPartnerPost(space?.partnerName, overrides),
+      );
+      const stored = await loadSimulatedPosts();
+      const merged = new Map(stored.map((post) => [post.id, post]));
+      merged.set(created.id, created);
+      await saveSimulatedPosts([...merged.values()]);
+      return created;
+    };
+    globals[CLEAR_SIMULATED_POSTS_KEY] = async () => {
+      const stored = await loadSimulatedPosts();
+      const ids = new Set(stored.map((post) => post.id));
+      setLocalMoments((currentMoments) =>
+        currentMoments.filter((moment) => !ids.has(moment.id)),
+      );
+      await saveSimulatedPosts([]);
+    };
+    return () => {
+      live = false;
+    };
+  }, [addMoment, space?.partnerName]);
 
   const updateMoment = useCallback(
     async (momentId: string, patch: UpdateMomentInput) => {

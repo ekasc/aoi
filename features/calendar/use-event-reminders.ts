@@ -1,7 +1,6 @@
-import * as Notifications from 'expo-notifications';
-import { SchedulableTriggerInputTypes } from 'expo-notifications';
 import { useCallback, useMemo } from 'react';
 
+import { notificationsModule } from '@/features/notifications/notifications-module';
 import {
   buildEventReminderTriggers,
   reminderIdentifiersForEvent,
@@ -23,13 +22,19 @@ export type EventRemindersApi = {
  */
 export function useEventReminders(): EventRemindersApi {
   const cancelEventReminders = useCallback(async (eventId: string) => {
+    const notifications = notificationsModule();
+
+    if (!notifications) {
+      return;
+    }
+
     try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      const scheduled = await notifications.getAllScheduledNotificationsAsync();
       const identifiers = reminderIdentifiersForEvent(scheduled, eventId);
       // allSettled: one failed cancel must never leave the others scheduled.
       await Promise.allSettled(
         identifiers.map((identifier) =>
-          Notifications.cancelScheduledNotificationAsync(identifier)
+          notifications.cancelScheduledNotificationAsync(identifier)
         )
       );
     } catch {
@@ -39,13 +44,19 @@ export function useEventReminders(): EventRemindersApi {
 
   const rescheduleEventReminders = useCallback(
     async (event: RemindableEvent) => {
+      const notifications = notificationsModule();
+
+      if (!notifications) {
+        return;
+      }
+
       try {
         // Cancelling needs no permission, so clear stale triggers first —
         // otherwise a revoked permission would leak old reminders on edits
         // and deletes.
         await cancelEventReminders(event.id);
 
-        const permission = await Notifications.requestPermissionsAsync();
+        const permission = await notifications.requestPermissionsAsync();
         if (!permission.granted) {
           return;
         }
@@ -53,7 +64,7 @@ export function useEventReminders(): EventRemindersApi {
         const triggers = buildEventReminderTriggers(event);
         await Promise.allSettled(
           triggers.map((trigger) =>
-            Notifications.scheduleNotificationAsync({
+            notifications.scheduleNotificationAsync({
               content: {
                 title: trigger.title,
                 body: trigger.body,
@@ -65,7 +76,7 @@ export function useEventReminders(): EventRemindersApi {
                 },
               },
               trigger: {
-                type: SchedulableTriggerInputTypes.DATE,
+                type: notifications.SchedulableTriggerInputTypes.DATE,
                 date: trigger.fireDate,
               },
             })

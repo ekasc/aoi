@@ -8,6 +8,7 @@ vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: pushSpy, back: vi.fn(), replace: vi.fn() }),
   useLocalSearchParams: () => ({}),
+  useIsFocused: () => true,
 }));
 
 // Resolve press-state styles as unpressed so the real screen renders.
@@ -86,6 +87,7 @@ vi.mock('react-native', () => {
     Pressable,
     ScrollView: View,
     KeyboardAvoidingView: View,
+    AppState: { addEventListener: () => ({ remove: () => {} }) },
     Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
   };
 });
@@ -109,6 +111,7 @@ vi.mock('react-native-reanimated', () => {
         createElement('div', {}, children),
     },
     FadeIn: chain,
+    FadeOut: chain,
     FadeInDown: chain,
     ZoomIn: chain,
     ReduceMotion: { System: 'system' },
