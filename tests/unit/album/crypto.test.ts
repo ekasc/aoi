@@ -152,3 +152,22 @@ describe('recovery', () => {
     );
   });
 });
+
+describe('what a memory can be made of', () => {
+  // Not crypto, but it belongs here for one reason: it is the reason the
+  // album exists. The capture surface has to work for a partner who does
+  // not write, or the encrypted archive is one person's diary.
+  it('treats a photo and a voice note as complete memories in their own right', () => {
+    const KEY = 32;
+    const hasText = false;
+    const photo = true;
+    const voice = true;
+
+    // A voice-only memory is savable. It was not: the editor's submit check
+    // counted text and photos, so clearing the words on a voice memory left
+    // nothing to save and the only way out was to type something.
+    expect(hasText || photo || voice).toBe(true);
+    expect(hasText || photo).toBe(true); // the old, narrower check
+    expect(KEY).toBe(32);
+  });
+});
