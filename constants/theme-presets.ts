@@ -14,6 +14,16 @@ export type BeachThemeColors = {
   accent: string;
   accentStrong: string;
   partnerAccent: string;
+  /**
+   * The accent as *ink*: text, dots, and hairline marks rather than fills.
+   * Some palettes pick an accent light enough to work only as a fill (a bright
+   * teal behind dark text); drawn as a mark or a word on the page background
+   * it drops under 4.5:1. These variants carry the same hue at a lightness
+   * that clears contrast on every surface in the theme. Use `accent` for
+   * fills and `accentInk` for anything the reader has to see on its own.
+   */
+  accentInk: string;
+  partnerAccentInk: string;
   onAccent: string;
   danger: string;
   onDanger: string;
@@ -62,6 +72,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#8E3659',
       accentStrong: '#742B49',
       partnerAccent: '#675285',
+      accentInk: '#8E3659',
+      partnerAccentInk: '#675285',
       background: '#F6F2F7',
       surface: '#FFFCFF',
       surface2: '#EDE3EE',
@@ -93,6 +105,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#E7A3BB',
       accentStrong: '#D58BA7',
       partnerAccent: '#C1ADD7',
+      accentInk: '#E7A3BB',
+      partnerAccentInk: '#C1ADD7',
       background: '#120D13',
       surface: '#241B26',
       surface2: '#302230',
@@ -129,6 +143,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#4ECDC4',
       accentStrong: '#2DB3AB',
       partnerAccent: '#E07A5F',
+      accentInk: '#1F6D68',
+      partnerAccentInk: '#A93D21',
       background: '#F0DFCA',
       surface: '#FFF6EC',
       surface2: '#F6E8D8',
@@ -160,6 +176,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#71CEC9',
       accentStrong: '#54B7B2',
       partnerAccent: '#E88A70',
+      accentInk: '#71CEC9',
+      partnerAccentInk: '#E88A70',
       background: '#14110E',
       surface: '#1C1814',
       surface2: '#27211B',
@@ -196,6 +214,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#26D0CE',
       accentStrong: '#15ABA9',
       partnerAccent: '#A8E6CF',
+      accentInk: '#157574',
+      partnerAccentInk: '#227758',
       background: '#F2F8F5',
       surface: '#FFFFFF',
       surface2: '#E8F4F0',
@@ -227,6 +247,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#33DBD9',
       accentStrong: '#1FA9A7',
       partnerAccent: '#B9F2DE',
+      accentInk: '#33DBD9',
+      partnerAccentInk: '#B9F2DE',
       background: '#0F1716',
       surface: '#182220',
       surface2: '#1F2C29',
@@ -263,6 +285,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#2E6A62',
       accentStrong: '#1F4F49',
       partnerAccent: '#D4A373',
+      accentInk: '#2C665F',
+      partnerAccentInk: '#815428',
       background: '#E4DACD',
       surface: '#F7F1E8',
       surface2: '#ECE3D6',
@@ -294,6 +318,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#4A8D83',
       accentStrong: '#357066',
       partnerAccent: '#DEB488',
+      accentInk: '#539E93',
+      partnerAccentInk: '#DEB488',
       background: '#121411',
       surface: '#1C1F1A',
       surface2: '#252923',
@@ -330,6 +356,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#8A3E28',
       accentStrong: '#6E3220',
       partnerAccent: '#527A6B',
+      accentInk: '#8A3E28',
+      partnerAccentInk: '#4C7163',
       background: '#FCF9F2',
       surface: '#FFFDF8',
       surface2: '#F3ECDD',
@@ -361,6 +389,8 @@ export const BeachThemes: Record<BeachThemeId, BeachThemePreset> = {
       accent: '#C57E5F',
       accentStrong: '#D89373',
       partnerAccent: '#8FB5A3',
+      accentInk: '#C57E5F',
+      partnerAccentInk: '#8FB5A3',
       background: '#16120E',
       surface: '#1D1812',
       surface2: '#262019',

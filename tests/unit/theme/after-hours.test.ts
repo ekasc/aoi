@@ -1,10 +1,26 @@
 import { describe, it, expect } from 'vitest';
 
+import { AccentWash } from '@/constants/theme';
 import {
   BeachThemes,
   BeachThemeOrder,
   DEFAULT_BEACH_THEME_ID,
 } from '@/constants/theme-presets';
+
+/** The accent washed over a surface, the way the app tints a plan block. */
+function washOver(accent: string, surface: string, alpha: number): string {
+  const channels = (hex: string) =>
+    [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
+  const [ar, ag, ab] = channels(accent);
+  const [br, bg, bb] = channels(surface);
+  return (
+    '#' +
+    [ar, ag, ab]
+      .map((value, index) => Math.round(value * alpha + [br, bg, bb][index] * (1 - alpha)))
+      .map((value) => value.toString(16).padStart(2, '0'))
+      .join('')
+  );
+}
 
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
@@ -191,6 +207,117 @@ describe('After Hours theme foundation', () => {
             ).toBeGreaterThanOrEqual(4.5);
           }
         }
+      }
+    }
+  });
+
+  // The accents are used two ways: as fills (behind onAccent text) and as ink
+  // (a word, a dot, a ring). A palette can pick an accent light enough to work
+  // only as a fill, so ink has its own token and its own guarantee. Without
+  // this, a bright teal accent shipped as body text at 1.5:1.
+  it('keeps accentInk readable as text on every surface in every theme', () => {
+    for (const id of BeachThemeOrder) {
+      for (const mode of ['light', 'dark'] as const) {
+        const palette = BeachThemes[id][mode];
+        const surfaces = [
+          palette.background,
+          palette.surface,
+          palette.surface2,
+          palette.surfaceSubtle,
+          palette.backgroundSubtle,
+        ];
+        for (const [name, ink] of [
+          ['accentInk', palette.accentInk],
+          ['partnerAccentInk', palette.partnerAccentInk],
+        ] as const) {
+          for (const bg of surfaces) {
+            expect(
+              contrast(ink, bg),
+              `${id}/${mode} ${name} on ${bg}`,
+            ).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps accent marks visible as graphics on the page and inside a strip', () => {
+    // A strip dot is the only sighted signal of whose plan a day holds, so it
+    // is a graphical object required to understand the content: 3:1 minimum,
+    // on the page and on the 16% tint the strip itself draws.
+    const tintOf = (accent: string, bg: string) => {
+      const ch = (hex: string) => [1, 3, 5].map((o) => parseInt(hex.slice(o, o + 2), 16));
+      const [ar, ag, ab] = ch(accent);
+      const [br, bg_, bb] = ch(bg);
+      const mix = (a: number, b: number) => Math.round(a * 0.16 + b * 0.84);
+      return (
+        '#' +
+        [mix(ar, br), mix(ag, bg_), mix(ab, bb)]
+          .map((v) => v.toString(16).padStart(2, '0'))
+          .join('')
+      );
+    };
+    for (const id of BeachThemeOrder) {
+      for (const mode of ['light', 'dark'] as const) {
+        const palette = BeachThemes[id][mode];
+        for (const [name, ink] of [
+          ['accentInk', palette.accentInk],
+          ['partnerAccentInk', palette.partnerAccentInk],
+        ] as const) {
+          for (const bg of [palette.background, palette.surface]) {
+            expect(contrast(ink, bg), `${id}/${mode} ${name} mark on ${bg}`).toBeGreaterThanOrEqual(3);
+          }
+          expect(
+            contrast(ink, tintOf(palette.accent, palette.background)),
+            `${id}/${mode} ${name} mark on the strip tint`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+      }
+    }
+  });
+
+  // Text does not only sit on the flat tokens. A plan block, a strip behind an
+  // event title and a selected chip are all the accent washed over a surface,
+  // and text lands on those. The wash alpha was 0.16 and the muted caption
+  // inside a plan block measured 4.32:1 in two light themes — under AA, and
+  // invisible to a suite that only checked the flat tokens.
+  it('keeps text readable on an accent-washed surface in every theme', () => {
+    // The sites that actually put words on a wash, rather than every tint and
+    // surface crossed with each other: a test that asserts combinations the
+    // app never paints would force the palettes to pay for nothing.
+    const textOnWash = (palette: (typeof BeachThemes)[keyof typeof BeachThemes]['light']) =>
+      [
+        // components/calendar/day-timeline.tsx: a plan block's time range.
+        ['block caption, own plan', palette.muted, washOver(palette.accent, palette.background, AccentWash)],
+        ['block caption, partner plan', palette.muted, washOver(palette.partnerAccent, palette.background, AccentWash)],
+        // memories: the label of a selected filter chip, which sits on a surface.
+        ['selected chip label', palette.accentInk, washOver(palette.accent, palette.surface, AccentWash)],
+      ] as const;
+
+    for (const id of BeachThemeOrder) {
+      for (const mode of ['light', 'dark'] as const) {
+        const palette = BeachThemes[id][mode];
+        for (const [site, ink, wash] of textOnWash(palette)) {
+          expect(contrast(ink, wash), `${id}/${mode} ${site}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+
+  it('keeps accent marks visible on an accent-washed surface', () => {
+    // A strip dot is the only sighted signal of whose plan a day holds.
+    for (const id of BeachThemeOrder) {
+      for (const mode of ['light', 'dark'] as const) {
+        const palette = BeachThemes[id][mode];
+        const wash = washOver(palette.accent, palette.background, AccentWash);
+        expect(
+          contrast(palette.accentInk, wash),
+          `${id}/${mode} accentInk mark on the strip`,
+        ).toBeGreaterThanOrEqual(3);
+        expect(
+          contrast(palette.partnerAccentInk, wash),
+          `${id}/${mode} partnerAccentInk mark on the strip`,
+        ).toBeGreaterThanOrEqual(3);
       }
     }
   });

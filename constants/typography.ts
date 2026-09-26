@@ -44,6 +44,19 @@ export const FontFamilies: {
 };
 
 export const Typography = {
+  /**
+   * The one level above `display`, for the two moments that earn it: the
+   * pair's names on Us, and the landing wordmark. Everything else that
+   * wants to be "the big title on this page" uses `display` unadjusted —
+   * the four screens that each invented their own size (28, 34, 34, 40)
+   * for that same role were the reason the scale read as arbitrary.
+   */
+  hero: {
+    fontFamily: FontFamilies.display,
+    fontSize: 44,
+    lineHeight: 50,
+    letterSpacing: -0.6,
+  },
   display: {
     fontFamily: FontFamilies.display,
     fontSize: 32,
@@ -70,6 +83,41 @@ export const Typography = {
     fontSize: 16,
     lineHeight: 24,
     letterSpacing: 0.05,
+  },
+  /**
+   * The serif every content form writes into: a moment's title, a letter's
+   * words, an event's name. The display serif is what makes writing here feel
+   * like writing rather than like filling in a field, and it needs more
+   * leading than `title` because the reader is producing the text, not just
+   * scanning it.
+   */
+  inputDisplay: {
+    fontFamily: FontFamilies.display,
+    fontSize: 22,
+    lineHeight: 30,
+    letterSpacing: -0.2,
+  },
+  /**
+   * The reading surface: a letter's words, a memory's note, a moment's
+   * detail body. Serif, because this is the app's own writing rather than a
+   * label, and looser than `body` because the reader is here to stay.
+   *
+   * `readTitle` is the heading above it. Both existed as four sets of local
+   * values (20/32, 20/30, 26/34 and 22/32) before they were named.
+   */
+  readTitle: {
+    fontFamily: FontFamilies.display,
+    fontSize: 26,
+    lineHeight: 32,
+    letterSpacing: -0.3,
+    fontWeight: '400',
+  },
+  readBody: {
+    fontFamily: FontFamilies.display,
+    fontSize: 20,
+    lineHeight: 30,
+    letterSpacing: -0.1,
+    fontWeight: '400',
   },
   bodyEmphasis: {
     fontFamily: FontFamilies.body,
