@@ -199,6 +199,9 @@ importers:
       '@react-native-google-signin/google-signin':
         specifier: ^16.1.5
         version: 16.1.5(expo@57.0.20)(react-native@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)
+      '@scure/bip39':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@shopify/react-native-skia':
         specifier: ^2.11.2
         version: 2.11.2(ea44867b4e13e34c5016e385a7de9ec4)
@@ -3031,6 +3034,9 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@scure/bip39@2.4.0':
+    resolution: {integrity: sha512-82dxFbZUYboyOf0AXiydsQrFQ5Q4h9mX+O2UkE91ROYmsc0BKMGZLwDmy96Jpa2+vrtoxomjUhy1RPIgH/r2nA==}
 
   '@shopify/react-native-skia@2.11.2':
     resolution: {integrity: sha512-BGTSMlsl3gM/gw9FyfCDgEATBQvNkhyDX9iEDu/iu3ZLcZT7+QzeFwpC0Sij2pLjuY33x3UDPS2DhSis7Mo7Xw==}
@@ -9796,6 +9802,10 @@ snapshots:
   '@rolldown/pluginutils@1.0.1': {}
 
   '@rtsao/scc@1.1.0': {}
+
+  '@scure/bip39@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
 
   '@shopify/react-native-skia@2.11.2(ea44867b4e13e34c5016e385a7de9ec4)':
     dependencies:
