@@ -192,3 +192,92 @@ function partnerOf(device: ReturnType<typeof generateDeviceKeys>) {
 function fromB64(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, 'base64'));
 }
+
+describe('the local repository', () => {
+  it('round-trips media and a backup, and overwrites rather than duplicates', async () => {
+    const { createLocalAlbumRepository } = await import('@/features/album/local-album-repository');
+    const store = globalThis.__mockAsyncStorage;
+    await store.clear();
+
+    const a = generateDeviceKeys('a', when);
+    const b = generateDeviceKeys('b', when);
+    const spaceKey = sealFor(a, b);
+    const media = sealAlbumMedia(
+      spaceKey,
+      photo,
+      { createdAt: when.toISOString(), byteLength: photo.length, mimeType: 'image/jpeg' },
+      generateMediaKey,
+    );
+
+    const repo = createLocalAlbumRepository('space-1');
+    expect(await repo.listMedia()).toEqual([]);
+    await repo.putMedia(media);
+    expect(await repo.listMedia()).toHaveLength(1);
+
+    // Writing the same id again must replace it, not append a twin.
+    await repo.putMedia({ ...media, byteLength: 1 });
+    const rows = await repo.listMedia();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].byteLength).toBe(1);
+
+    await repo.deleteMedia(media.id);
+    expect(await repo.listMedia()).toEqual([]);
+  });
+
+  it('drops a stored row it cannot make sense of', async () => {
+    const { createLocalAlbumRepository } = await import('@/features/album/local-album-repository');
+    const store = globalThis.__mockAsyncStorage;
+    await store.clear();
+
+    // A half-written record from an older shape, or a truncated write. It
+    // must not surface as a photo that cannot be opened.
+    await store.setItem(
+      'aoi.album.media.v1.space-1',
+      JSON.stringify([
+        { id: 'broken', sealed: { nonce: 'n' } },
+        { nothing: 'useful' },
+        null,
+      ]),
+    );
+    expect(await createLocalAlbumRepository('space-1').listMedia()).toEqual([]);
+  });
+
+  it('keeps two spaces apart', async () => {
+    const { createLocalAlbumRepository } = await import('@/features/album/local-album-repository');
+    const store = globalThis.__mockAsyncStorage;
+    await store.clear();
+
+    const a = generateDeviceKeys('a', when);
+    const b = generateDeviceKeys('b', when);
+    const media = sealAlbumMedia(
+      sealFor(a, b),
+      photo,
+      { createdAt: when.toISOString(), byteLength: photo.length, mimeType: 'image/jpeg' },
+      generateMediaKey,
+    );
+
+    await createLocalAlbumRepository('space-1').putMedia(media);
+    // A different space must not see it. Leaving a space has to actually
+    // leave, and a shared key prefix is the obvious way to get that wrong.
+    expect(await createLocalAlbumRepository('space-2').listMedia()).toEqual([]);
+  });
+
+  it('round-trips a backup', async () => {
+    const { createLocalAlbumRepository } = await import('@/features/album/local-album-repository');
+    const store = globalThis.__mockAsyncStorage;
+    await store.clear();
+
+    const a = generateDeviceKeys('a', when);
+    const b = generateDeviceKeys('b', when);
+    const backup: SpaceBackup = {
+      identities: [toWire(identityOf(a))],
+      deviceKeys: [signDeviceKey(a.signing, 'a', a.agreement.publicKey)],
+      envelopes: [authoriseDevice(a, toWire(identityOf(b)), sealFor(a, b), when)],
+    };
+
+    const repo = createLocalAlbumRepository('space-1');
+    expect(await repo.getBackup()).toBeNull();
+    await repo.putBackup(backup);
+    expect((await repo.getBackup())?.envelopes).toHaveLength(1);
+  });
+});
