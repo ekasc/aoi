@@ -8,6 +8,9 @@
     "scheme": "aoi",
     "userInterfaceStyle": "automatic",
     "ios": {
+		"NSPhotoLibraryUsageDescription": "Aoi reads your photo library on this device to find photos of the two of you. They are matched on device and never uploaded.",
+		"NSPhotoLibraryAddUsageDescription": "Aoi saves photos you choose to keep as memories.",
+
       "supportsTablet": true,
       "bundleIdentifier": "com.ekasc.aoi",
       "deploymentTarget": "16.4",
@@ -37,6 +40,7 @@
       "expo-router",
       "./plugins/expo-dev-menu-fab",
       "./plugins/with-ios-scene-delegate",
+			"./plugins/with-ios-personal-team",
       [
         "expo-splash-screen",
         {

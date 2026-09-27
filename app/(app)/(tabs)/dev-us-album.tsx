@@ -1,55 +1,43 @@
 import * as ImagePicker from 'expo-image-picker';
-import { Image } from 'expo-image';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Stack } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
-import { Pressed } from '@/components/ui/pressed';
 import { Spacing } from '@/constants/theme';
+import { openAlbumMedia, sealAlbumMedia } from '@/features/album/album';
+import { generateMediaKey } from '@/features/album/crypto';
+import { generateDeviceKeys, spaceKeyFor, verificationFingerprint } from '@/features/album/keys';
+import { createLocalAlbumRepository } from '@/features/album/local-album-repository';
+import { generateRecoveryPhrase, spaceKeyFromPhrase } from '@/features/album/recovery';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
-const STORAGE_KEY = 'aoi.dev.us-album.v1';
-
-type Picked = {
-  /**
-   * The library identifier, when the picker gave one.
-   *
-   * It is nullable, and the reason is the probe's most useful finding: PHPicker
-   * hands back an id only when the user granted real library access. When they
-   * pick under limited permission, or browse by file on Android, it is null
-   * and there is nothing to compare a later pick against. Which means an "us
-   * album" built this way is a snapshot you maintain, not a live binding to a
-   * collection, and you cannot detect new arrivals from picker data alone.
-   */
-  assetId: string | null;
-  uri: string;
-  width: number;
-  height: number;
-};
-
 /**
- * THROWAWAY. Not a screen, a probe.
+ * THROWAWAY. A test rig, not a screen.
  *
- * The question this answers is narrow: if a couple points the system picker
- * at the photos of the two of them, what actually comes back, and does
- * anything about it move on its own afterwards?
+ * It exists so the part of the album that actually carries risk can be
+ * exercised on a real phone without a native build: the key stack is pure JS
+ * plus expo-secure-store, so all of it runs in Expo Go today.
  *
- * What it can honestly answer, in Expo Go:
- *   - whether the system picker lets you select a whole album in one go
- *   - exactly what an asset carries back (id, uri, dimensions, date)
- *   - whether a later pick overlaps the earlier one, which is the observable
- *     part of "does it update"
+ * What it does, end to end:
+ *   1. makes a real identity for this device
+ *   2. shows the fingerprint, which is the thing two people compare
+ *   3. shows a recovery phrase, once
+ *   4. picks photos, seals each one under a random media key, wraps that
+ *      under the space key, and stores it through the local repository
+ *   5. reads them back, so a round trip is visible rather than asserted
  *
- * What it cannot answer here, and the screen says so rather than implying:
- *   - spotting NEW photos on its own. That needs expo-media-library, which is
- *     a native module, which needs a dev build.
- *   - grouping the photos into people. That needs expo-face-detector, same
- *     story, and it is a bigger question than this probe is.
+ * What it cannot do here: watch the library for new photos. That needs
+ * expo-media-library and a bare observer, and therefore a dev build. The
+ * screen says so rather than implying the automatic path is covered.
  */
+
+const SPACE_ID = 'dev-album-space';
+
+type Step = { at: string; what: string; ok: boolean };
+
 export default function DevUsAlbumScreen() {
   const insets = useSafeAreaInsets();
   const background = useThemeColor({}, 'background');
@@ -57,78 +45,105 @@ export default function DevUsAlbumScreen() {
   const muted = useThemeColor({}, 'textSecondary');
   const accent = useThemeColor({}, 'accent');
 
-  const [picked, setPicked] = useState<Picked[]>([]);
-  const [lastPick, setLastPick] = useState<{ added: number; repeated: number } | null>(null);
+  const [steps, setSteps] = useState<Step[]>([]);
+  const [phrase, setPhrase] = useState<string | null>(null);
+  const [phraseWorks, setPhraseWorks] = useState<boolean | null>(null);
+  const [sealedCount, setSealedCount] = useState(0);
+  const [roundTrip, setRoundTrip] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState('');
 
-  const load = useCallback(async () => {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      setPicked([]);
-      return;
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setPicked(parsed as Picked[]);
-      }
-    } catch {
-      setPicked([]);
-    }
+  const log = useCallback((what: string, ok = true) => {
+    setSteps((current) => [...current, { at: new Date().toLocaleTimeString(), what, ok }]);
   }, []);
 
-  // Re-read on focus so a pick made and abandoned is visible on the way back.
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load])
+  // Keys are made in memory on purpose: this is a rig, and persisting them
+  // would only make it look more like the real thing than it is.
+  const [device] = useState(() => generateDeviceKeys('dev-device', new Date()));
+  const [partner] = useState(() => generateDeviceKeys('dev-partner', new Date()));
+  const [spaceKey] = useState(() => spaceKeyFor(device, partner.agreement.publicKey));
+
+  const repository = createLocalAlbumRepository(SPACE_ID);
+
+  // A pure function of keys that never change, so it is computed rather than
+  // stored. No effect, no setState, nothing to cascade.
+  const fingerprint = useMemo(
+    () => verificationFingerprint(device.signing.publicKey, partner.signing.publicKey),
+    [device, partner],
   );
 
-  const pick = useCallback(async () => {
-    setBusy(true);
-    setNote('');
+  useEffect(() => {
+    void repository.listMedia().then((rows) => setSealedCount(rows.length));
+  }, [repository]);
+
+  const makePhrase = useCallback(() => {
+    const next = generateRecoveryPhrase();
+    setPhrase(next);
+    setPhraseWorks(null);
+    log('Recovery phrase generated');
+  }, [log]);
+
+  const checkPhrase = useCallback(() => {
+    if (!phrase) {
+      return;
+    }
+    // The real test: does the phrase reproduce the same space key the live
+    // one is using? A phrase that derives something else recovers nothing.
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const recovered = spaceKeyFromPhrase(phrase);
+      const same = Buffer.from(recovered).equals(Buffer.from(spaceKey));
+      setPhraseWorks(same);
+      log(`Phrase reproduces the space key: ${same ? 'yes' : 'no'}`, same);
+    } catch (error) {
+      setPhraseWorks(false);
+      log(`Phrase rejected: ${(error as Error).message}`, false);
+    }
+  }, [log, phrase, spaceKey]);
+
+  const sealPhotos = useCallback(async () => {
+    setBusy(true);
+    setRoundTrip(null);
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
-        // No limit: the point of the probe is to see whether an entire album
-        // comes back in one gesture.
         allowsEditing: false,
         quality: 0.8,
         exif: false,
       });
-      if (result.canceled) {
-        setNote('Cancelled.');
+      if (picked.canceled) {
+        log('Pick cancelled', false);
         return;
       }
-      const next: Picked[] = result.assets.map((asset) => ({
-        assetId: asset.assetId ?? null,
-        uri: asset.uri,
-        width: asset.width,
-        height: asset.height,
-      }));
-      const previousIds = new Set(picked.map((p) => p.assetId).filter(Boolean));
-      const repeated = next.filter((p) => p.assetId && previousIds.has(p.assetId)).length;
-      setLastPick({ added: next.length - repeated, repeated });
-      setPicked(next);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      setNote(
-        `Picked ${next.length}. ${next.length - repeated} new to this device, ${repeated} already in the set.`
-      );
+      for (const asset of picked.assets) {
+        const bytes = await fetch(asset.uri).then((r) => r.arrayBuffer());
+        const meta = {
+          createdAt: new Date().toISOString(),
+          byteLength: bytes.byteLength,
+          mimeType: asset.mimeType ?? 'image/jpeg',
+          ...(asset.width !== undefined ? { width: asset.width } : {}),
+          ...(asset.height !== undefined ? { height: asset.height } : {}),
+        };
+        await repository.putMedia(
+          sealAlbumMedia(spaceKey, new Uint8Array(bytes), meta, generateMediaKey),
+        );
+      }
+      const rows = await repository.listMedia();
+      setSealedCount(rows.length);
+
+      // Read the first one back, so a round trip is shown rather than trusted.
+      if (rows[0]) {
+        const opened = openAlbumMedia(spaceKey, rows[0]);
+        setRoundTrip(
+          `${rows.length} sealed · first opens to ${opened.byteLength} bytes`,
+        );
+        log(`Sealed and reopened ${rows.length} photo(s)`);
+      }
     } catch (error) {
-      setNote(error instanceof Error ? error.message : 'The picker failed.');
+      log(`Failed: ${(error as Error).message}`, false);
     } finally {
       setBusy(false);
     }
-  }, [picked]);
-
-  const clear = useCallback(async () => {
-    setPicked([]);
-    setLastPick(null);
-    setNote('');
-    await AsyncStorage.removeItem(STORAGE_KEY);
-  }, []);
+  }, [log, repository, spaceKey]);
 
   return (
     <ScrollView
@@ -139,123 +154,107 @@ export default function DevUsAlbumScreen() {
       contentInsetAdjustmentBehavior="never"
       style={{ backgroundColor: background }}
     >
-      <Stack.Screen options={{ title: 'Us album probe' }} />
+      <Stack.Screen options={{ title: 'Album probe' }} />
 
-      <ThemedText type="title">Us album probe</ThemedText>
+      <ThemedText type="title">Album probe</ThemedText>
       <ThemedText type="body" style={{ color: muted }}>
-        Throwaway. Pick the photos of the two of you and watch what comes back.
+        Throwaway. The real key stack, on this phone, right now.
       </ThemedText>
 
       <View style={[styles.limits, { borderColor: border }]}>
         <Text style={[styles.limitsTitle, { color: accent }]}>What this cannot do in Expo Go</Text>
         <Text style={[styles.limitsBody, { color: muted }]}>
-          Spot new photos by itself. That needs expo-media-library.
-          {'\n'}Group them into people. That needs expo-face-detector.
-          {'\n\n'}Both are native modules, so both need a dev build. Everything
-          below works today.
+          Watch the library for new photos. That needs a native observer and
+          a dev build.{'\n'}Recognise which photos are the two of you. That needs
+          {'\n'}a face model, also a dev build.{'\n\n'}Everything below runs today.
         </Text>
       </View>
 
-      <View style={styles.actions}>
-        <Button
-          disabled={busy}
-          label={busy ? 'Opening…' : 'Pick photos of us'}
-          onPress={pick}
-        />
-        {picked.length > 0 ? (
-          <Button label="Clear" onPress={clear} variant="ghost" />
+      <Panel title="Fingerprint" border={border} muted={muted}>
+        <Text selectable style={[styles.fingerprint, { color: muted }]}>
+          {fingerprint ?? '…'}
+        </Text>
+        <ThemedText type="caption" style={{ color: muted }}>
+          Read this to the other person. If it does not match what they see,
+          stop.
+        </ThemedText>
+      </Panel>
+
+      <Panel title="Recovery" border={border} muted={muted}>
+        <View style={styles.actions}>
+          <Button label={phrase ? 'Make another' : 'Make a phrase'} onPress={makePhrase} size="sm" />
+          {phrase ? <Button label="Does it recover?" onPress={checkPhrase} size="sm" variant="secondary" /> : null}
+        </View>
+        {phrase ? <Text selectable style={[styles.phrase, { color: muted }]}>{phrase}</Text> : null}
+        {phraseWorks !== null ? (
+          <ThemedText type="caption" style={{ color: phraseWorks ? muted : '#ff6b6b' }}>
+            {phraseWorks
+              ? 'It reproduces the same space key. Written down, it would work.'
+              : 'It does not recover this album.'}
+          </ThemedText>
         ) : null}
-      </View>
+      </Panel>
 
-      {note ? (
-        <ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
-          {note}
-        </ThemedText>
-      ) : null}
-
-      {lastPick ? (
-        <View style={[styles.stats, { borderColor: border }]}>
-          <Stat label="In the set" value={String(picked.length)} />
-          <Stat label="New last pick" value={String(lastPick.added)} />
-          <Stat label="Already in it" value={String(lastPick.repeated)} />
+      <Panel title="Photos" border={border} muted={muted}>
+        <View style={styles.actions}>
+          <Button
+            disabled={busy}
+            label={busy ? 'Sealing…' : 'Pick and seal photos'}
+            onPress={sealPhotos}
+            size="sm"
+          />
         </View>
-      ) : null}
-
-      {picked.length === 0 ? (
         <ThemedText type="caption" style={{ color: muted }}>
-          Nothing picked yet.
+          {roundTrip ?? `${sealedCount} sealed so far`}
         </ThemedText>
-      ) : (
-        <View style={styles.grid}>
-          {picked.map((photo, index) => (
-            <View key={`${photo.assetId ?? 'x'}-${index}`} style={[styles.tile, { borderColor: border }]}>
-              <Image accessible={false} contentFit="cover" source={{ uri: photo.uri }} style={styles.tileImage} />
-              <Text numberOfLines={1} style={[styles.tileId, { color: muted }]}>
-                {photo.assetId ? photo.assetId.slice(-8) : 'no id'}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
+      </Panel>
 
-      {picked.length > 0 ? (
-        <ThemedText type="caption" style={{ color: muted }}>
-          The eight characters under each photo are the tail of the library
-          identifier, and where it says &ldquo;no id&rdquo; the picker gave none. That
-          column is the whole question: with ids you can tell a repeat pick
-          from a new one, and without them you cannot tell anything.
-        </ThemedText>
-      ) : null}
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setNote('')}
-        style={({ pressed }) => [styles.dismiss, pressed ? Pressed.at : undefined]}
-      >
-        <ThemedText type="caption" style={{ color: muted }}>
-          Dismiss message
-        </ThemedText>
-      </Pressable>
+      <Panel title="Log" border={border} muted={muted}>
+        {steps.length === 0 ? (
+          <ThemedText type="caption" style={{ color: muted }}>
+            Nothing yet.
+          </ThemedText>
+        ) : (
+          steps.map((step) => (
+            <Text key={`${step.at}-${step.what}`} style={[styles.logLine, { color: muted }]}>
+              {step.at} {step.ok ? '·' : '×'} {step.what}
+            </Text>
+          ))
+        )}
+      </Panel>
     </ScrollView>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  const muted = useThemeColor({}, 'textSecondary');
+function Panel({
+  title,
+  border,
+  muted,
+  children,
+}: {
+  title: string;
+  border: string;
+  muted: string;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={styles.stat}>
-      <Text style={[styles.statValue, { color: value === '0' ? muted : undefined }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: muted }]}>{label}</Text>
+    <View style={[styles.panel, { borderColor: border }]}>
+      <ThemedText type="label" style={{ color: muted }}>
+        {title}
+      </ThemedText>
+      {children}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    gap: Spacing[16],
-    paddingHorizontal: Spacing[16],
-  },
-  limits: {
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: Spacing[8],
-    padding: Spacing[12],
-  },
+  content: { gap: Spacing[16], paddingHorizontal: Spacing[16] },
+  limits: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, gap: Spacing[8], padding: Spacing[12] },
   limitsTitle: { fontSize: 13, fontWeight: '600' },
   limitsBody: { fontSize: 13, lineHeight: 19 },
-  actions: { gap: Spacing[8] },
-  stats: {
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    padding: Spacing[12],
-  },
-  stat: { flex: 1, gap: 2 },
-  statValue: { fontSize: 22, fontWeight: '600' },
-  statLabel: { fontSize: 12 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[8] },
-  tile: { borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', width: '31%' },
-  tileImage: { aspectRatio: 1, width: '100%' },
-  tileId: { fontSize: 9, paddingHorizontal: 3, paddingVertical: 2 },
-  dismiss: { alignItems: 'center', minHeight: 44, justifyContent: 'center' },
+  panel: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, gap: Spacing[8], padding: Spacing[12] },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[8] },
+  fingerprint: { fontSize: 17, letterSpacing: 1.5, lineHeight: 26 },
+  phrase: { fontSize: 13, lineHeight: 20 },
+  logLine: { fontSize: 12, lineHeight: 17 },
 });

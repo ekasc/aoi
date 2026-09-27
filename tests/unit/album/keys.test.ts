@@ -11,6 +11,7 @@ import {
   fromWire,
 } from '@/features/album/keys';
 import { formatPhraseForDisplay, generateRecoveryPhrase, spaceKeyFromPhrase } from '@/features/album/recovery';
+import { cosineSimilarity, matchByCosine } from '@/features/album/face-pipeline';
 import { ENGLISH_WORDLIST } from '@/features/album/wordlist';
 
 const when = new Date('2026-09-26T00:00:00.000Z');
@@ -197,5 +198,49 @@ describe('the recovery phrase', () => {
     expect(ENGLISH_WORDLIST).toHaveLength(2048);
     expect(ENGLISH_WORDLIST[0]).toBe('abandon');
     expect(ENGLISH_WORDLIST[ENGLISH_WORDLIST.length - 1]).toBe('zoo');
+  });
+});
+
+describe('matching a face', () => {
+  const unit = (values: number[]): Float32Array => {
+    const norm = Math.sqrt(values.reduce((sum, v) => sum + v * v, 0));
+    return Float32Array.from(values.map((v) => v / norm));
+  };
+
+  it('separates a face from an unrelated one', () => {
+    const june = unit([1, 0.1, 0.2, 0, 0.1]);
+    const similar = unit([0.98, 0.12, 0.18, 0.01, 0.09]);
+    const stranger = unit([0, 1, 0, 0.3, 0.1]);
+
+    expect(cosineSimilarity(june, similar)).toBeGreaterThan(0.99);
+    expect(cosineSimilarity(june, stranger)).toBeLessThan(0.5);
+  });
+
+  it('returns unsure rather than guessing', () => {
+    // The whole point of the threshold. A pipeline that classifies every
+    // face is a pipeline that puts strangers in the album.
+    const prints = [{ person: 'you' as const, embedding: unit([1, 0, 0, 0, 0]) }];
+    const borderline = unit([0.5, 0.6, 0.2, 0, 0]);
+
+    const result = matchByCosine(borderline, prints);
+    expect(result.kind).toBe('unsure');
+    expect(matchByCosine(borderline, [], 0.1).kind).toBe('unsure');
+  });
+
+  it('picks the closer of the two when both are above the line', () => {
+    const prints = [
+      { person: 'you' as const, embedding: unit([1, 0, 0, 0, 0]) },
+      { person: 'partner' as const, embedding: unit([0, 1, 0, 0, 0]) },
+    ];
+    const result = matchByCosine(unit([0.05, 0.99, 0, 0, 0]), prints);
+    expect(result).toEqual({ kind: 'match', person: 'partner', confidence: expect.any(Number) });
+  });
+
+  it('treats a mismatched or empty vector as no match, not as a crash', () => {
+    expect(cosineSimilarity(new Float32Array([1, 0]), new Float32Array([0, 0, 0]))).toBe(0);
+    expect(cosineSimilarity(new Float32Array([]), new Float32Array([]))).toBe(0);
+    expect(matchByCosine(new Float32Array([0, 0]), [
+      { person: 'you' as const, embedding: unit([1, 0]) },
+    ]).kind).toBe('unsure');
   });
 });
