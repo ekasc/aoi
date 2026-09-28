@@ -60,7 +60,10 @@ export default function AuthLayout() {
     >
       <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} />
       <Stack.Screen name="verify-code" options={{ title: 'Verify code' }} />
-      <Stack.Screen name="space-setup" options={{ title: 'Get started' }} />
+      {/* The screen renders its own heading, so the nav bar stays out of it.
+          Naming it here set a title and re-enabled a header the route had
+          explicitly opted out of. */}
+      <Stack.Screen name="space-setup" options={{ headerShown: false }} />
     </Stack>
   );
 }
