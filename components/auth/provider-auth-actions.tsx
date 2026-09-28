@@ -15,6 +15,7 @@ import {
 import Constants from 'expo-constants';
 
 import { ThemedText } from '@/components/themed-text';
+import { Pressed } from '@/components/ui/pressed';
 import { buildCapabilities } from '@/features/auth/capabilities';
 import type { AuthProvider } from '@/features/auth/types';
 import { useSession } from '@/features/session/session-context';
@@ -323,8 +324,8 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   pressed: {
-    opacity: 0.88,
-    transform: [{ translateY: 1 }],
+    ...Pressed.at,
+    ...Pressed.scaled,
   },
   disabled: {
     opacity: 0.55,
