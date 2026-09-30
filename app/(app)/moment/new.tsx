@@ -19,7 +19,7 @@ export default function NewMemoryScreen() {
 	const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
 	const background = useThemeColor({}, "background");
 	const isIos = process.env.EXPO_OS === "ios";
-	const { compose } = useLocalSearchParams<{ compose?: string | string[] }>();
+	const { compose, dedication } = useLocalSearchParams<{ compose?: string | string[]; dedication?: string | string[] }>();
 	const [presentationReady, setPresentationReady] = useState(process.env.EXPO_OS !== "ios");
 
 	useEffect(() => {
@@ -53,6 +53,7 @@ export default function NewMemoryScreen() {
 			style={[styles.root, { backgroundColor: background }, keyboardStyle]}
 		>
 			<InlineMemoryComposer
+				dedication={(Array.isArray(dedication) ? dedication[0] : dedication) === 'partner'}
 				intent={compose}
 				onIntentConsumed={handleIntentConsumed}
 				presentationReady={presentationReady}

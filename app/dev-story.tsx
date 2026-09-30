@@ -44,7 +44,7 @@ export default function DevStory() {
 }
 
 function DevStoryPreview() {
-	const { variant } = useLocalSearchParams<{ variant?: string | string[] }>();
+	const { variant, firstPage } = useLocalSearchParams<{ variant?: string | string[]; firstPage?: string }>();
 	const selected = parsePreviewVariant(
 		Array.isArray(variant) ? variant[0] : variant,
 	);
@@ -76,7 +76,11 @@ function DevStoryPreview() {
 	}
 	return (
 		<SessionContext.Provider value={PREVIEW_SESSION}>
-			<SpaceContext.Provider value={PREVIEW_SPACE}>
+			<SpaceContext.Provider value={PREVIEW_SPACE.space ? { ...PREVIEW_SPACE, space: {
+				...PREVIEW_SPACE.space,
+				partnerJoined: firstPage !== 'create',
+				createdByUserId: selected === 'welcome' ? 'preview-june' : PREVIEW_SPACE.space.createdByUserId,
+			} } : PREVIEW_SPACE}>
 				<ComposerProvider>
 					<DevErrorBoundary label="MemoriesScreen">
 						<MemoriesScreen />

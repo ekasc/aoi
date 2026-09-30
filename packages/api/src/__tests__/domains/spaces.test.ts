@@ -41,6 +41,8 @@ function insertUser(d1: ShimD1, id: string, email: string, name: string): void {
 
 interface Ctx {
   d1: ShimD1;
+  /** The queue the runtime is wired to, so a test can see what a program asked to send. */
+  harness: ReturnType<typeof makeTestHarness>;
   provide<A, E, R>(program: Effect.Effect<A, E, R>): Effect.Effect<A, E, never>;
 }
 
@@ -48,6 +50,7 @@ function makeCtx(): Ctx {
   const harness = makeTestHarness();
   return {
     d1: harness.d1,
+    harness,
     provide: (program) =>
       Effect.provide(program as Effect.Effect<unknown, unknown, never>, harness.layer as never) as never,
   };
@@ -129,7 +132,11 @@ describe('joinSpaceProgram', () => {
 
     const joined = await run(ctx.provide(joinSpaceProgram(USER_B, created.space.inviteCode)));
     expect(joined.space.id).toBe(created.space.id);
-    expect(joined.space.partnerName).toBe('Bob');
+    // The joiner is told who they joined. `spaces.partner_name` holds the
+    // *joiner's* account name (it is written that way during the join), so
+    // reading the column here would hand Bob his own name back.
+    expect(joined.space.partnerName).toBe('Alice');
+    expect(joined.space.partnerJoined).toBe(true);
 
     const members = ctx.d1.rawDb
       .prepare('select user_id, role, state from space_members order by role')
@@ -137,6 +144,16 @@ describe('joinSpaceProgram', () => {
     expect(members).toEqual([
       { user_id: USER_B, role: 'partner', state: 'active' },
       { user_id: USER_A, role: 'you', state: 'active' },
+    ]);
+
+    // And the person who was already here is told, once. Kind only, as ever.
+    expect(ctx.harness.capturedQueue).toEqual([
+      {
+        type: 'push.deliver',
+        kind: 'partner_joined',
+        spaceId: created.space.id,
+        fromUserId: USER_B,
+      },
     ]);
 
     const invite = ctx.d1.rawDb

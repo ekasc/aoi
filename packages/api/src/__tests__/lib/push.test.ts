@@ -60,6 +60,7 @@ describe('buildPushCopy', () => {
   it('gives every kind a warm, vague title and body', () => {
     for (const kind of [
       'squeeze',
+      'partner_joined',
       'moment_added',
       'moment_edited',
       'moment_deleted',
@@ -75,6 +76,16 @@ describe('buildPushCopy', () => {
       expect(copy.title.length).toBeGreaterThan(0);
       expect(copy.body.length).toBeGreaterThan(0);
     }
+  });
+
+  it('tells the person who was already there, and says nothing else', () => {
+    // The whole point of this one: somebody who has been sitting alone in a
+    // space they made finally has company. Warm, and it carries no name and no
+    // content, like every other push here.
+    const copy = buildPushCopy('partner_joined');
+    expect(copy.title).toBe('They joined your space');
+    expect(copy.body).toBe('Your sky has two people in it now.');
+    expect(`${copy.title} ${copy.body}`).not.toContain('Alice');
   });
 
   it('calendar kinds carry a weekday at most — never a title, date, or time', () => {

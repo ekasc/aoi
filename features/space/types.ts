@@ -45,6 +45,15 @@ export type CreateSpaceInput = {
 export type JoinSpaceInput = {
   userId: string;
   inviteCode: string;
+  /**
+   * The joiner's own name.
+   *
+   * The server reads it from the account; the local stub has no account to
+   * read, and the space it is joining was written from the other person's
+   * side, so without this the joiner's copy would claim the creator's name as
+   * their own.
+   */
+  yourName?: string;
 };
 
 export type UpdateSpaceInput = Partial<
@@ -98,6 +107,14 @@ export type SpaceContextValue = {
   leaveSpace: () => Promise<void>;
   /** Refresh the invite code (creator-only remote; stub returns live code). */
   regenerateInvite: () => Promise<string>;
+  /**
+   * Re-read the space from the repository.
+   *
+   * Hydration happens once per session, so without this the app keeps
+   * believing whatever it read at launch: a partner who arrived while the app
+   * was closed would not exist until the next relaunch.
+   */
+  refreshSpace: () => Promise<void>;
   importMilestones: (
     inputs: ImportedMilestoneInput[]
   ) => Promise<ImportedMilestone[]>;

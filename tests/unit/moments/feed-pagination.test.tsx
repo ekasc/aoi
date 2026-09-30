@@ -42,6 +42,10 @@ const MOMENTS: Moment[] = [
   moment('m-3', '2026-02-02T10:00:00.000Z'),
 ];
 
+vi.mock('@/features/session/session-context', () => ({
+  useSession: () => ({ user: { id: 'user_you' } }),
+}));
+
 const loadMoreMoments = vi.fn(async () => false);
 let hasMoreMoments = true;
 /** Mirrors the context's paging failure, so the header states are testable. */
@@ -324,6 +328,8 @@ vi.mock('@/features/moments/use-resurface-notification', () => ({
 
 vi.mock('@/features/theme/theme-context', () => ({
   useAoiTheme: () => ({
+    // Both halves: a control on the night backdrop is dressed for night.
+    selectedTheme: { light: {}, dark: {} },
     colors: {
       background: '#FCF9F2',
       surface: '#FFFDF8',
@@ -345,6 +351,7 @@ vi.mock('@/features/space/space-context', () => ({
       id: 'space-1',
       name: 'Test space',
       partnerName: 'Alex',
+      partnerJoined: true,
       relationshipStartDate: '2024-01-01T00:00:00.000Z',
       inviteCode: 'ABC123',
     },
@@ -377,10 +384,15 @@ vi.mock('expo-glass-effect', () => ({
 // The screen's own chrome is out of scope here: stub everything that is not
 // a list, a row, or the fetch controls so only the paging contract is under
 // test.
-vi.mock('@/components/home/memory-sky', () => ({
-  MemorySky: () => null,
-  fabBottomOffset: (inset: number) => inset + 8,
-}));
+vi.mock('@/components/home/memory-sky', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/components/home/memory-sky')>();
+  return {
+    MemorySky: () => null,
+    compactSkyHeightForWindow: original.compactSkyHeightForWindow,
+    isDarkBackground: original.isDarkBackground,
+    fabBottomOffset: (inset: number) => inset + 8,
+  };
+});
 
 vi.mock('@/components/ui/frosted-backdrop', () => ({ FrostedBackdrop: () => null }));
 

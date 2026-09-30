@@ -39,10 +39,16 @@ const proposalsMock = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }));
 
+const spaceRefreshMock = vi.fn(async () => {});
+
 vi.mock('@/features/notifications/notifications-module', () => ({
   notificationsModule: () => notificationsMock,
 }));
 vi.mock('@/features/api-client', () => apiClientMock);
+vi.mock('@/features/space/space-context', () => ({
+  useSpace: () => ({ refreshSpace: spaceRefreshMock }),
+}));
+
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ refresh: momentsMock.refresh }),
 }));

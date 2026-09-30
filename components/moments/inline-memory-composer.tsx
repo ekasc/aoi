@@ -30,6 +30,7 @@ import { userSafeMessage, useComposer } from '@/features/composer/composer-conte
 import { MOMENT_LOCALE } from '@/features/moments/labels';
 import { haptics } from '@/features/haptics/haptics';
 import { useSubscription } from '@/features/subscription/subscription-context';
+import { useSpace } from '@/features/space/space-context';
 import { usePreventLeave } from '@/hooks/use-prevent-leave';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { MOMENT_ATTACHMENT_MAX } from '@aoi/shared';
@@ -42,6 +43,7 @@ export type InlineMemoryComposerProps = {
   onIntentConsumed?: () => void;
   /** Native form sheets become interactive after the stack transition ends. */
   presentationReady?: boolean;
+  dedication?: boolean;
 };
 
 function normalizeIntent(raw: string | string[] | null | undefined): ComposerIntent | null {
@@ -77,7 +79,7 @@ function withLocalYMD(baseIso: string, picked: Date): string {
   return next.toISOString();
 }
 
-export function InlineMemoryComposer({ intent, onIntentConsumed, presentationReady = true }: InlineMemoryComposerProps) {
+export function InlineMemoryComposer({ intent, onIntentConsumed, presentationReady = true, dedication = false }: InlineMemoryComposerProps) {
   const {
     draft,
     hydrating,
@@ -90,6 +92,9 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
     discardDraft,
   } = useComposer();
   const { refreshServerPlus } = useSubscription();
+  const { space } = useSpace();
+  const recipient = space?.partnerName?.trim() || 'you';
+  const editorTitle = dedication ? `For ${recipient}` : 'New memory';
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const muted = useThemeColor({}, 'muted');
@@ -411,7 +416,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
     <View style={styles.root}>
       {useNativeChrome ? (
         <>
-          <Stack.Screen.Title>New memory</Stack.Screen.Title>
+          <Stack.Screen.Title>{editorTitle}</Stack.Screen.Title>
           <Stack.Toolbar placement="left">
             <Stack.Toolbar.Button onPress={handleClose}>Cancel</Stack.Toolbar.Button>
           </Stack.Toolbar>
@@ -428,7 +433,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
       ) : (
         <View style={[styles.topBar, { paddingTop: insets.top + Spacing[8] }]}>
           <Button label="Cancel" variant="ghost" size="sm" onPress={handleClose} />
-          <ThemedText type="bodyEmphasis" numberOfLines={1} style={styles.headerTitle}>New memory</ThemedText>
+          <ThemedText type="bodyEmphasis" numberOfLines={1} style={styles.headerTitle}>{editorTitle}</ThemedText>
           <Button
             accessibilityHint="Save this memory"
             disabled={!canSave}
@@ -447,12 +452,18 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
         showsVerticalScrollIndicator={false}
         style={styles.scroll}
       >
+        {dedication ? (
+          <ThemedText type="caption" style={{ color: muted }}>
+            {space?.partnerJoined ? 'Kept in your shared memories.' : `${recipient === 'you' ? 'Your partner' : recipient} can see this when they join.`}
+          </ThemedText>
+        ) : null}
         <TextInput
           ref={inputRef}
           accessibilityLabel="Keep something"
           multiline
           onChangeText={handleBodyChange}
           placeholderTextColor={muted}
+          placeholder={dedication ? 'This made me think of you.' : undefined}
           scrollEnabled={false}
           style={[styles.input, { color: text }]}
           value={draft.body}
@@ -469,7 +480,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
           type="supporting"
           style={[styles.emptyHint, { color: muted, opacity: draftNonEmpty ? 0 : 1 }]}
         >
-          Something small from today — a photo, a line, a sound.
+          {dedication ? 'A photo, a few words, or your voice.' : 'Something small from today — a photo, a line, a sound.'}
         </ThemedText>
 
         {imageAssets.length > 0 ? (

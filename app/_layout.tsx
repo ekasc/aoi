@@ -8,12 +8,14 @@ import { LaunchSplash } from "@/components/launch-splash";
 import { notificationsModule } from "@/features/notifications/notifications-module";
 import { DebugHarness } from "@/components/dev/debug-harness";
 import { ensureDevSeed } from "@/features/dev/dev-seed";
+import { installGlobalCrypto } from "@/features/crypto/global-crypto";
 import { MomentsProvider } from "@/features/moments/moments-context";
 import { SessionProvider, useSession } from "@/features/session/session-context";
 import { SpaceProvider, useSpace } from "@/features/space/space-context";
 import { SubscriptionProvider } from "@/features/subscription/subscription-context";
 import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
 import { useAoiFonts } from "@/hooks/use-aoi-fonts";
+import { SkyEntryProvider } from "@/components/home/sky-entry-provider";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -31,6 +33,12 @@ if (notifications) {
 		}),
 	});
 }
+
+// Hermes has no `crypto` global, and `@noble/curves` cannot generate a key
+// without one. Installed at module scope, before any screen renders, because
+// the first thing that touches it happens inside a `useState` initializer and
+// a throw there takes down the whole tree rather than one screen.
+installGlobalCrypto();
 
 // React Navigation's own theme provider (imported via expo-router since
 // SDK 56 forbids `@react-navigation/*` imports in app code), fed from Aoi's
@@ -81,6 +89,7 @@ type RootNavigationProps = {
 function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 	const {
 		isHydrated: isSessionHydrated,
+		user,
 	} = useSession();
 	const { isHydrated: isSpaceHydrated } = useSpace();
 	const { mode, colors, isHydrated } = useAoiTheme();
@@ -144,6 +153,7 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 	return (
 		<ThemeProvider value={navigationTheme}>
 			<DebugHarness>
+				<SkyEntryProvider key={user?.id ?? 'signed-out'}>
 				<Stack
 					screenOptions={{
 						contentStyle: { backgroundColor: colors.background },
@@ -154,10 +164,14 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 						options={{ headerShown: false }}
 					/>
 					<Stack.Screen name="(auth)" options={{ headerShown: false }} />
-					<Stack.Screen name="(app)" options={{ headerShown: false }} />
+					<Stack.Screen
+						name="(app)"
+						// Memories carries the outgoing form until its sky can be revealed.
+						options={{ animation: "none", headerShown: false }}
+					/>
 					<Stack.Screen
 						name="dev-story"
-						options={{ headerShown: false }}
+						options={{ animation: "none", headerShown: false }}
 					/>
 					<Stack.Screen
 						name="dev-chapter"
@@ -167,7 +181,12 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 						name="dev-composer"
 						options={{ headerShown: false }}
 					/>
+					<Stack.Screen
+						name="dev-setup"
+						options={{ headerShown: false }}
+					/>
 				</Stack>
+				</SkyEntryProvider>
 				<StatusBar
 					style={themeName === "dark" ? "light" : "dark"}
 				/>

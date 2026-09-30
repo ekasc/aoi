@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
   AppState,
@@ -15,28 +15,38 @@ import {
   Group,
   LinearGradient,
   Path,
+  RadialGradient,
   Rect,
+  Shader,
+  Skia,
   vec,
+  type SkRuntimeEffect,
 } from '@shopify/react-native-skia';
 import Animated, {
   Easing,
   cancelAnimation,
+  runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
+  useDerivedValue,
   useReducedMotion,
   useSharedValue,
   withRepeat,
   withSequence,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import cloudABank from '@/assets/images/memory-sky-cloud-a.png';
+import { SETUP_SKY_PEAK, blendSkyUniforms, settlingSkyHeight, skyBottomFeather } from '@/components/setup/sky-handover';
 import cloudBBank from '@/assets/images/memory-sky-cloud-b.png';
 // Web note (existing, native unaffected): SkiaReady gates on CanvasKit WASM
 // loaded in-component; the parent fixture preloads WASM before main via the
 // shared bootstrap. Do not change the shared bootstrap here.
 import { SkiaReady } from '@/components/landing/skia-ready';
 import {
+  DAY_SKY_STAR_DIM,
   DAY_SKY_STAR_PARTNER,
   DAY_SKY_STAR_YOU,
   DARK_SKY_MID,
@@ -82,9 +92,26 @@ export const MEMORY_SKY_FEATHER_POSITIONS = [0, 0.35, 0.62, 0.85, 1] as const;
 // Compact (Memories/Plans) blends to TRANSPARENT, never to an opaque colour:
 // the page behind it is the accent-tinted FrostedBackdrop, not the flat
 // `background` token, so any opaque background veil paints a mismatched band.
-// The strip eases out through a five-stop alpha ramp over its whole height.
+// The strip eases out through an eight-stop ramp over its whole height.
 // (Full-size Us sits on a flat page and keeps its opaque melt + veil.)
-export const MEMORY_SKY_COMPACT_GRADIENT_POSITIONS = [0, 0.36, 0.6, 0.82, 1] as const;
+/**
+ * Where the band's dusk is at its lightest, as a fraction of the strip.
+ *
+ * A piecewise-linear ramp rounds a corner wherever it changes direction,
+ * which is invisible on a short strip and a line drawn straight across the sky
+ * on a tall band, so the ramp is built around an eased turn at this point.
+ */
+export const COMPACT_SKY_PEAK = 0.42;
+
+export function compactSkyGradientPositions(peak: number): number[] {
+  const turn = Math.min(0.9, Math.max(0.1, peak));
+  const rest = 1 - turn;
+  return [0, turn * 0.33, turn * 0.66, turn, turn + rest * 0.25, turn + rest * 0.5, turn + rest * 0.75, 1];
+}
+
+export const MEMORY_SKY_COMPACT_GRADIENT_POSITIONS = compactSkyGradientPositions(
+  COMPACT_SKY_PEAK,
+);
 // Compact star fade band (virtual sy units): stars fade to 0 at the visible
 // bottom so no glow is clipped mid-dot at the boundary.
 export const MEMORY_SKY_COMPACT_STAR_FADE_BAND = 0.25;
@@ -99,6 +126,24 @@ export const MEMORY_SKY_COMPACT_CLOUD_BOTTOM_CLEARANCE = 16;
 export const MEMORY_SKY_COMPACT_CLOUD_B_TOP = -12;
 export const MEMORY_SKY_COMPACT_CLOUD_A_OPACITY = 0.38;
 export const MEMORY_SKY_COMPACT_CLOUD_B_OPACITY = 0.32;
+/**
+ * Cloud cover for a scenery sky: three banks, all held in the upper two
+ * thirds.
+ *
+ * The banks are separate Views drawn over the gradient, so the sky's own fade
+ * never thins them. A bank low on the strip therefore shows up as a grey blob
+ * floating out past the sky, which is the "smoke" a first-run sky must not
+ * have, so every ambient bank keeps clear of the faded bottom.
+ */
+export const MEMORY_SKY_AMBIENT_CLOUD_B_OPACITY = 0.3;
+export const MEMORY_SKY_AMBIENT_CLOUD_A_OPACITY = 0.22;
+export const MEMORY_SKY_AMBIENT_CLOUD_C_OPACITY = 0.14;
+/** Top of the mid bank, as a fraction of the strip's height. */
+export const MEMORY_SKY_AMBIENT_CLOUD_A_TOP = 0.2;
+/** Top of the low wisps, as a fraction of the strip's height. */
+export const MEMORY_SKY_AMBIENT_CLOUD_C_TOP = 0.42;
+/** The low wisps are a smaller piece of the same bank, not a new one. */
+export const MEMORY_SKY_AMBIENT_CLOUD_C_SCALE = 0.45;
 
 /**
  * Same color at a given alpha (hex #RGB/#RRGGBB/#RRGGBBAA or rgb()/rgba()
@@ -195,17 +240,258 @@ export function featherVeilColors(
 ): string[] {
   return alphas.map((a) => backgroundAtAlpha(background, a));
 }
-/** Compact main gradient: dusk held, then a five-stop alpha ramp to clear.
- *  `mixHex` keeps the hue family while the alpha falls — no opaque stop, so
- *  the strip dissolves into whatever textured page sits behind it. */
-export function compactSkyGradientColors(skyTop: string, skyMid: string, background: string): string[] {
-  return [
-    skyTop,
-    skyMid,
-    backgroundAtAlpha(mixHex(skyMid, background, 0.45), 0.6),
-    backgroundAtAlpha(mixHex(skyMid, background, 0.82), 0.26),
-    backgroundAtAlpha(background, 0),
-  ];
+/** Smoothstep, so the ramp's rate of change is zero at both of its ends. */
+function easeInOut(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Compact main gradient: dusk held, then an alpha ramp to clear.
+ *
+ * `mixHex` keeps the hue family while the alpha falls — no opaque stop, so
+ * the strip dissolves into whatever textured page sits behind it. Both the
+ * colour and the alpha ride the same eased curve, so the sky brightens into
+ * the mid and fades out of it without a seam at the turn.
+ */
+/**
+ * The turn's colour, given where the turn is.
+ *
+ * The band's dusk turns at 0.42, and it is at its *lightest* there. A sky that
+ * has opened up and taken the words inside it turns much later, and it has to
+ * be darker at that point or the words cannot be read in light mode: white on
+ * the band's mid is about 4:1. So the later the turn, the deeper it goes, and
+ * the lightening that reads as dusk moves out to the horizon.
+ */
+export function skyTurnDepth(peak: number): number {
+  return Math.min(1, Math.max(0, (peak - COMPACT_SKY_PEAK) / 0.36));
+}
+
+export function compactSkyTurnColor(skyTop: string, skyMid: string, peak: number): string {
+  const depth = skyTurnDepth(peak);
+  return depth > 0 ? mixHex(skyMid, skyTop, depth * 0.45) : skyMid;
+}
+
+/**
+ * The compact ramp, turning at `peak` (0.42 is the band's dusk).
+ *
+ * The turn is a parameter because the sky is not always a band. When it opens
+ * up and the words move inside it, the turn has to travel down with them:
+ * the dusk is at its *lightest* where it turns, and words on the light half of
+ * a dusk are unreadable in light mode. Past the words it melts to the page,
+ * which is what the eye reads as the horizon.
+ */
+export function compactSkyGradientColors(
+  skyTop: string,
+  skyMid: string,
+  background: string,
+  peak: number = COMPACT_SKY_PEAK,
+): string[] {
+  const turn = Math.min(0.9, Math.max(0.1, peak));
+  const turnColor = compactSkyTurnColor(skyTop, skyMid, turn);
+  return compactSkyGradientPositions(turn).map((position, index) => {
+    if (index === 0) {
+      return skyTop;
+    }
+    if (position >= 1) {
+      return backgroundAtAlpha(background, 0);
+    }
+    if (position === turn) {
+      return turnColor;
+    }
+    if (position < turn) {
+      const eased = easeInOut(position / turn);
+      return backgroundAtAlpha(mixHex(skyTop, turnColor, eased), 1);
+    }
+    const eased = easeInOut((position - turn) / (1 - turn));
+    return backgroundAtAlpha(mixHex(turnColor, background, eased), 1 - eased);
+  });
+}
+
+/**
+ * The compact sky's dusk, as a shader.
+ *
+ * The stop-ramp above is a fallback. This computes the same dusk as a
+ * continuous function of position, which means there are no stops to
+ * interpolate between and therefore no corner, at any band height, in any
+ * theme, forever. It also carries the two lights, so one draw call replaces
+ * the gradient and both radial overlays, and it adds a 255th of noise because
+ * a gradation this wide across eight bits per channel shows its steps.
+ *
+ * Every uniform is fed from the live theme, so the shader is never told what
+ * colour the sky is: it is told what the sky's three tones are and does the
+ * rest.
+ *
+ * Two things about Skia runtime effects are easy to get wrong here. The
+ * output is **premultiplied**: returning the colour unscaled alongside
+ * `1.0 - fall` made the band far too bright and stopped it fading at all,
+ * because the compositor read the colour as already multiplied by the alpha.
+ * And the fragment coordinate is in canvas pixels, not in 0..1, so the two
+ * lights take pixel positions and the vertical ramp divides by `uSize.y`.
+ */
+export const MEMORY_SKY_DUSK_SKSL = `
+uniform float2 uSize;
+uniform float4 uTop;
+uniform float4 uMid;
+uniform float4 uHorizon;
+uniform float uPeak;
+uniform float uFeather;
+uniform float2 uLight;
+uniform float uLightRadius;
+uniform float uLightStrength;
+uniform float4 uLightColor;
+uniform float2 uGlow;
+uniform float uGlowRadius;
+uniform float uGlowStrength;
+uniform float4 uGlowColor;
+uniform float uDither;
+
+float ease(float t) { return t * t * (3.0 - 2.0 * t); }
+
+float hash(float2 p) {
+  p = fract(p * float2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+half4 main(float2 xy) {
+  float v = xy.y / uSize.y;
+  float rise = ease(clamp(v / uPeak, 0.0, 1.0));
+  float fall = ease(clamp((v - uPeak) / (1.0 - uPeak), 0.0, 1.0));
+
+  float3 col = mix(uTop.rgb, uMid.rgb, rise);
+  if (v > uPeak) {
+    col = mix(uMid.rgb, uHorizon.rgb, fall);
+  }
+
+  float light = uLightStrength * (1.0 - smoothstep(0.0, uLightRadius, distance(xy, uLight)));
+  col = mix(col, uLightColor.rgb, light);
+  float glow = uGlowStrength * (1.0 - smoothstep(0.0, uGlowRadius, distance(xy, uGlow)));
+  col = mix(col, uGlowColor.rgb, glow);
+
+  col += (hash(xy) - 0.5) * uDither;
+
+  float fadeStart = max(0.0, uPeak - uFeather);
+  float fade = ease(clamp((v - fadeStart) / (1.0 - fadeStart), 0.0, 1.0));
+  float alpha = 1.0 - fade;
+  return half4(half3(clamp(col, 0.0, 1.0) * alpha), half(alpha));
+}
+`;
+
+let duskEffect: SkRuntimeEffect | null = null;
+
+/**
+ * Compiled once per launch. Returns null (and stays null for this render) when
+ * the platform has no runtime effects, so the stop-ramp keeps the sky.
+ */
+function duskEffectOnce(): SkRuntimeEffect | null {
+  if (duskEffect) {
+    return duskEffect;
+  }
+  try {
+    duskEffect = Skia?.RuntimeEffect?.Make(MEMORY_SKY_DUSK_SKSL) ?? null;
+  } catch {
+    duskEffect = null;
+  }
+  return duskEffect;
+}
+
+/** A theme colour as the unit floats a shader uniform wants. */
+function colorToRgba(color: string): number[] {
+  const hex = color.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+  if (hex) {
+    let body = hex[1];
+    if (body.length === 3) {
+      body = body
+        .split('')
+        .map((c) => c + c)
+        .join('');
+    }
+    return [
+      parseInt(body.slice(0, 2), 16) / 255,
+      parseInt(body.slice(2, 4), 16) / 255,
+      parseInt(body.slice(4, 6), 16) / 255,
+      body.length === 8 ? parseInt(body.slice(6, 8), 16) / 255 : 1,
+    ];
+  }
+  const fn = color.match(
+    /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\)/,
+  );
+  if (fn) {
+    return [
+      Number(fn[1]) / 255,
+      Number(fn[2]) / 255,
+      Number(fn[3]) / 255,
+      fn[4] === undefined ? 1 : Number(fn[4]),
+    ];
+  }
+  return [0, 0, 0, 1];
+}
+
+export type DuskUniforms = Record<string, number | number[]>;
+
+/**
+ * The shader's uniform payload for one strip. Pure, so the geometry and the
+ * palette can be asserted without a GPU.
+ */
+function peakFor(options: { peak?: number }): number {
+  return Math.min(0.92, Math.max(0.1, options.peak ?? COMPACT_SKY_PEAK));
+}
+
+/**
+ * The horizon light, given where the sky turns.
+ *
+ * It sits just below the turn, which is where a dusk's light actually is, and
+ * it grows as the turn travels down: a sky that has opened up and taken the
+ * words inside it needs the stretch below them to be doing something, or the
+ * words sit on a flat field with nothing under them.
+ */
+function horizonLightFor(peak: number): SkyLight {
+  return {
+    ...MEMORY_SKY_HORIZON_GLOW,
+    y: peak + 0.06,
+    alpha: MEMORY_SKY_HORIZON_GLOW.alpha * (1 + skyTurnDepth(peak) * 1.6),
+  };
+}
+
+export function duskSkyUniforms(options: {
+  width: number;
+  height: number;
+  skyTop: string;
+  skyMid: string;
+  background: string;
+  /** Where the dusk turns. Moves with the sky when it opens. */
+  peak?: number;
+  /**
+   * How far the frame has pushed into the sky, 0 to 1.
+   *
+   * The field is not one flat picture: each depth travels a different
+   * distance as the camera moves, which is the whole reason a view of a star
+   * field reads as a place rather than as a texture. Far crawls, near sweeps,
+   * clouds go first because they are nearest.
+   */
+  camera?: number;
+}): DuskUniforms {
+  const light = skyGlowGeometry(options.width, options.height);
+  const glow = skyGlowGeometry(options.width, options.height, horizonLightFor(peakFor(options)));
+  const peak = peakFor(options);
+  const turn = compactSkyTurnColor(options.skyTop, options.skyMid, peak);
+  return {
+    uSize: [options.width, options.height],
+    uTop: colorToRgba(options.skyTop),
+    uMid: colorToRgba(turn),
+    uHorizon: colorToRgba(options.background),
+    uPeak: peak,
+    uFeather: 0,
+    uLight: [light.cx, light.cy],
+    uLightRadius: light.radius,
+    uLightStrength: MEMORY_SKY_GLOW.alpha,
+    uLightColor: colorToRgba(mixHex(turn, '#FFFFFF', MEMORY_SKY_GLOW.lift)),
+    uGlow: [glow.cx, glow.cy],
+    uGlowRadius: glow.radius,
+    uGlowStrength: MEMORY_SKY_HORIZON_GLOW.alpha,
+    uGlowColor: colorToRgba(mixHex(turn, '#FFFFFF', MEMORY_SKY_HORIZON_GLOW.lift)),
+    uDither: 1 / 255,
+  };
 }
 /**
  * Compact star fade to 0 at the visible bottom (virtual sy units).
@@ -369,6 +655,177 @@ export function sparkleRotationDeg(starId: string): number {
   return (hashMomentId(starId) % 25) - 12;
 }
 
+/**
+ * Ambient field size for a sky with no moments on it.
+ *
+ * The memory field is data: one star per day, one dot per memory. A sky that
+ * is scenery rather than a readout (the setup hero, whose whole point is that
+ * nobody is in it yet) still wants depth, so it gets an unnamed scatter. These
+ * stars carry no meaning, never enter the caption count, and are dim points
+ * rather than the pink and gold that belong to the two people.
+ */
+export const MEMORY_SKY_AMBIENT_COUNT = 48;
+
+/**
+ * Murmur3's 32-bit finalizer.
+ *
+ * `hashMomentId` is a rolling string hash, so seeds that differ by one
+ * character (`ambient-0`, `ambient-1`) differ by a small amount and their high
+ * bits barely move. Reading y off those bits put whole runs of ambient stars
+ * in a straight horizontal line. The finalizer avalanches every input bit
+ * across the output, so consecutive seeds land anywhere.
+ */
+function mix32(value: number): number {
+  let h = value >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/** Stable scatter for ambient star `index`, across the whole field. */
+export function ambientStarForIndex(index: number): { xPct: number; yPct: number; size: 3 | 4 } {
+  const hash = mix32(hashMomentId(`ambient-${index}`));
+  // Nothing smaller than the mid size: a 0.35pt dot is a coin toss at
+  // rasterisation time, and a scenery sky cannot afford half its field to
+  // vanish. Depth comes from the 3/4 spread instead.
+  const size: 3 | 4 = hash % 4 === 0 ? 4 : 3;
+  return { xPct: 3 + (hash % 94), yPct: 4 + ((hash >>> 8) % 86), size };
+}
+
+/** Ambient stars are fainter than memory stars, and never reach full brightness. */
+export function ambientStarOpacity(index: number): number {
+  const hash = mix32(hashMomentId(`ambient-opacity-${index}`));
+  return 0.14 + ((hash >>> 20) % 7) * 0.035;
+}
+
+/** A few ambient stars are tapered sparkles; the rest stay tiny points. */
+export function isAmbientSparkle(index: number): boolean {
+  return mix32(hashMomentId(`ambient-sparkle-${index}`)) % 9 === 0;
+}
+
+/**
+ * The sky's lights, so the dusk is lit rather than merely ramped.
+ *
+ * The gradient runs top to bottom and, on a tall band, read as exactly that: a
+ * flat vertical wash. Two wide, very low-alpha radials give the eye somewhere
+ * to land and put the sky on a diagonal without either one ever resolving into
+ * a visible object.
+ */
+export type SkyLight = {
+  /** Where the light sits, as a fraction of the strip's width and height. */
+  x: number;
+  y: number;
+  /**
+   * Radius as a fraction of the strip's height, not its width.
+   *
+   * A strip sky is clipped at the bottom of its own canvas, so any light still
+   * burning there is cut off mid-fall and leaves a hard seam across the band.
+   * Measuring the fall-off vertically is what makes it possible to guarantee
+   * that a light reaches nothing before the clip line.
+   */
+  radius: number;
+  /** Peak alpha at the centre, before the fall-off to nothing. */
+  alpha: number;
+  /** How far the light lifts the sky colour toward white. */
+  lift: number;
+};
+
+/** A cool light high on one side, like the last of the daylight. */
+export const MEMORY_SKY_GLOW: SkyLight = {
+  x: 0.82,
+  y: -0.05,
+  radius: 0.9,
+  alpha: 0.13,
+  lift: 0.28,
+};
+
+/** A broader, softer afterglow low on the other side, near the horizon. */
+export const MEMORY_SKY_HORIZON_GLOW: SkyLight = {
+  x: 0.3,
+  y: 0.6,
+  radius: 0.34,
+  alpha: 0.12,
+  lift: 0.34,
+};
+
+/** Centre and radius of one of the sky's lights, in canvas pixels. */
+export function skyGlowGeometry(
+  width: number,
+  height: number,
+  light: SkyLight = MEMORY_SKY_GLOW,
+): { cx: number; cy: number; radius: number } {
+  return {
+    cx: width * light.x,
+    cy: height * light.y,
+    radius: height * light.radius,
+  };
+}
+
+/** A light's colours: the sky's own hue lifted toward white, falling to nothing. */
+export function skyGlowColors(
+  skyMid: string,
+  light: SkyLight = MEMORY_SKY_GLOW,
+): [string, string] {
+  const lifted = mixHex(skyMid, '#FFFFFF', light.lift);
+  return [backgroundAtAlpha(lifted, light.alpha), backgroundAtAlpha(lifted, 0)];
+}
+
+/**
+ * How long the sky waits between twinkles.
+ *
+ * The memory field twinkles rarely on purpose: a star arriving is an event,
+ * and a busy sky would read as a notification badge. A scenery sky has no such
+ * claim on the reader, so its unnamed stars twinkle often enough to feel alive.
+ */
+export const MEMORY_SKY_AMBIENT_TWINKLE_GAP_MIN = 1200;
+export const MEMORY_SKY_AMBIENT_TWINKLE_GAP_MAX = 3000;
+
+/**
+ * The first light.
+ *
+ * A sky with no memories on it opens with one point of light finding its
+ * place: it falls, settles, and the unnamed field fades in behind it. One
+ * gesture, once, on the one screen whose whole subject is that nobody is in
+ * the sky yet. It is the only choreography in the app, so it is also the only
+ * thing a reduced-motion reader loses, and they lose it to the same sky with
+ * no wait.
+ */
+export const MEMORY_SKY_FIRST_LIGHT_MS = 1600;
+/** Where it comes to rest, as a fraction of the strip. */
+export const MEMORY_SKY_FIRST_LIGHT_REST = { x: 0.5, y: 0.34 } as const;
+/** How far above its resting place it starts, as a fraction of the strip. */
+export const MEMORY_SKY_FIRST_LIGHT_DROP = 0.2;
+/** Half-length of the first light's star, and half the side of its canvas. */
+export const MEMORY_SKY_FIRST_LIGHT_SIZE = 8;
+
+/**
+ * A four-point star centred where you ask. The same taper the field's bright
+ * stars are drawn with, so the first light is the brightest star in the sky
+ * rather than a new kind of object.
+ */
+export function sparklePath(cx: number, cy: number, half: number): string {
+  const w = half * 0.22;
+  return (
+    `M ${cx} ${cy - half} ` +
+    `Q ${cx + w} ${cy - w} ${cx + half} ${cy} ` +
+    `Q ${cx + w} ${cy + w} ${cx} ${cy + half} ` +
+    `Q ${cx - w} ${cy + w} ${cx - half} ${cy} ` +
+    `Q ${cx - w} ${cy - w} ${cx} ${cy - half} Z`
+  );
+}
+
+/** The landing, on the frame it lands. Device-only; never throws. */
+function landFirstLight() {
+  try {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  } catch {
+    // Device-only: ignore on web.
+  }
+}
+
 /** Base dot radius on a 390pt screen: far 0.35, mid 0.6, near 0.9. */
 function baseStarRadius(size: 2 | 3 | 4): number {
   if (size === 2) {
@@ -482,6 +939,8 @@ function CloudLayer({
   durationMs,
   reverse,
   motionAllowed,
+  travel,
+  handover,
 }: {
   source: number | string;
   testID: string;
@@ -492,7 +951,10 @@ function CloudLayer({
   amplitudePx: number;
   durationMs: number;
   reverse: boolean;
+  /** Camera travel, in pixels. The clouds are nearest, so they move most. */
+  travel: number;
   motionAllowed: boolean;
+  handover?: { progress: SharedValue<number>; top: number; opacity: number };
 }) {
   const x = useSharedValue(reverse ? amplitudePx : -amplitudePx);
 
@@ -514,7 +976,12 @@ function CloudLayer({
   }, [motionAllowed, amplitudePx, durationMs, reverse, x]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: x.value }],
+    transform: [{ translateX: x.value }, { translateY: handover
+      ? settlingSkyHeight(handover.progress.value, handover.top, top) - top
+      : travel }],
+    opacity: handover
+      ? settlingSkyHeight(handover.progress.value, handover.opacity, opacity)
+      : opacity,
   }));
 
   return (
@@ -522,7 +989,7 @@ function CloudLayer({
       testID={testID}
       pointerEvents="none"
       accessible={false}
-      style={[styles.cloudLayer, { width, height, top, opacity }, motionAllowed ? animatedStyle : null]}
+      style={[styles.cloudLayer, { width, height, top, opacity }, animatedStyle]}
     >
       <Image accessible={false} source={source} contentFit="cover" style={{ width, height }} />
     </Animated.View>
@@ -568,6 +1035,35 @@ function TwinkleOverlay({ x, y, color }: { x: number; y: number; color: string }
   );
 }
 
+function SettlingShader({ source, from, to, progress }: {
+  source: SkRuntimeEffect;
+  from: DuskUniforms;
+  to: DuskUniforms;
+  progress: SharedValue<number>;
+}) {
+  const uniforms = useDerivedValue(() => {
+    const blended = blendSkyUniforms(from, to, progress.value);
+    blended.uFeather = skyBottomFeather(progress.value);
+    return blended;
+  });
+  return <Shader source={source} uniforms={uniforms} />;
+}
+
+function SettlingStars({ progress, distance, source, children }: {
+  progress: SharedValue<number>;
+  distance: number;
+  source: ReactNode;
+  children: ReactNode;
+}) {
+  const memoryOpacity = useDerivedValue(() => Math.min(1, Math.max(0, (progress.value - 0.45) / 0.55)));
+  const ambientOpacity = useDerivedValue(() => 1 - memoryOpacity.value);
+  const travel = useDerivedValue(() => [{ translateY: settlingSkyHeight(progress.value, 0, -distance * 0.12) }]);
+  return <>
+    <Group opacity={memoryOpacity}>{children}</Group>
+    <Group opacity={ambientOpacity} transform={travel}>{source}</Group>
+  </>;
+}
+
 export function MemorySky({
   moments,
   daysTogether,
@@ -577,8 +1073,14 @@ export function MemorySky({
   compact = false,
   immersive = false,
   header = false,
+  ambient = false,
+  opening = false,
+  peak = COMPACT_SKY_PEAK,
+  camera = 0,
   glow = null,
   presentationHeight,
+  handoverProgress,
+  onSceneLayout,
   onPress,
 }: {
   moments: Moment[];
@@ -592,6 +1094,35 @@ export function MemorySky({
   /** A working screen's header band: compact, then shorter again. */
   header?: boolean;
   /**
+   * Give a sky with nothing of its own on it an unnamed ambient field, so a
+   * scenery sky (the setup hero, whose point is that nobody is in it yet)
+   * still has depth. Only takes effect while the sky is empty, and clears
+   * itself the moment a first memory lands. The stars are dim, enter no
+   * caption, and join the twinkle pool.
+   */
+  ambient?: boolean;
+  /**
+   * Open a sky with no memories on it with the first light: one point falling
+   * into place, the unnamed field fading in behind it. Runs once, on mount,
+   * and plays instantly under reduced motion.
+   */
+  opening?: boolean;
+  /**
+   * Where the dusk turns, as a fraction of the strip. The band's dusk turns at
+   * 0.42; a sky that has opened up and taken the words inside it passes a
+   * lower turn so it stays dark behind them.
+   */
+  peak?: number;
+  /**
+   * How far the frame has pushed into the sky, 0 to 1.
+   *
+   * The field is not one flat picture: each depth travels a different
+   * distance as the camera moves, which is the whole reason a view of a star
+   * field reads as a place rather than as a texture. Far crawls, near sweeps,
+   * clouds go first because they are nearest.
+   */
+  camera?: number;
+  /**
    * A tap anywhere on the sky. The whole field is one control rather than a
    * grid of tiny targets: stars are sub-pixel, so aiming at one is not
    * possible, and a miss that opens something is a far smaller failure than
@@ -601,8 +1132,20 @@ export function MemorySky({
   /** What the Us sky holds its breath for. Us-only; compact never glows. */
   glow?: SkyGlowKind | null;
   presentationHeight?: number;
+  /** The setup's sky settles into this renderer, which stays mounted at home. */
+  handoverProgress?: SharedValue<number>;
+  /** The loaded canvas is laid out. Not a GPU-paint acknowledgement. */
+  onSceneLayout?: () => void;
 }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const sceneSize = useSharedValue({ width: 0, height: 0 });
+  useAnimatedReaction(
+    () => sceneSize.value.width > 0 && sceneSize.value.height > 0,
+    (laidOut, previous) => {
+      if (laidOut && !previous && onSceneLayout) runOnJS(onSceneLayout)();
+    },
+    [onSceneLayout],
+  );
   const insets = useSafeAreaInsets();
   const compactLayout = compact && !immersive;
   const background = useThemeColor({}, 'background');
@@ -640,6 +1183,15 @@ export function MemorySky({
       : MEMORY_SKY_QUARTER;
   const skyHeight = presentationHeight ??
     (Math.round(windowHeight * skyFraction) + MEMORY_SKY_TOP_SAFETY);
+  const canvasHeight = handoverProgress ? windowHeight : skyHeight;
+  const viewportStyle = useAnimatedStyle(() => handoverProgress ? {
+    height: settlingSkyHeight(handoverProgress.value, windowHeight, skyHeight),
+    overflow: 'hidden',
+  } : {});
+  const emptyStarStyle = useAnimatedStyle(() => handoverProgress ? {
+    top: skyHeight / 2,
+    opacity: Math.min(1, Math.max(0, (handoverProgress.value - 0.45) / 0.55)),
+  } : {});
   // Us (non-compact): absolute strip covering the top ~30% including the
   // notch — starts above the safe area (negative top extends upward over
   // the toolbar padding + notch plus TOP_SAFETY so the old y8 stripe can
@@ -799,8 +1351,47 @@ export function MemorySky({
         out.near.push(entry);
       }
     }
+    // Ambient field: scenery for a sky that has nothing of its own on it yet.
+    // Gated on an empty field, so an unnamed scatter can never be mistaken for
+    // someone's memories, and so the sky clears its ambience the moment the
+    // first memory lands.
+    if (ambient && !field && visible.length === 0) {
+      for (let index = 0; index < MEMORY_SKY_AMBIENT_COUNT; index += 1) {
+        const layout = ambientStarForIndex(index);
+        const p = { cx: (layout.xPct / 100) * canvasW, cy: (layout.yPct / 100) * canvasH };
+        if (
+          p.cx < -0.02 * canvasW ||
+          p.cx > 1.02 * canvasW ||
+          p.cy < -0.02 * canvasH ||
+          p.cy > 1.02 * canvasH
+        ) {
+          continue;
+        }
+        const key = `ambient-${index}`;
+        const opacity = ambientStarOpacity(index);
+        const entry: PlottedStar = {
+          key,
+          cx: p.cx,
+          cy: p.cy,
+          size: layout.size,
+          r: starRadiusForZoom(layout.size, 1),
+          sparkleR: sparkleHalfLengthForZoom(layout.size, 1),
+          opacity: compactLayout
+            ? fadeCompactStarOpacity(opacity, layout.yPct / 100, compactVisibleBottomSy)
+            : fadeAboveQuestion(opacity, layout.yPct / 100),
+          color: DAY_SKY_STAR_DIM,
+          bright: isAmbientSparkle(index),
+          rotationDeg: sparkleRotationDeg(key),
+        };
+        if (layout.size === 3) {
+          out.mid.push(entry);
+        } else {
+          out.near.push(entry);
+        }
+      }
+    }
     return out;
-  }, [field, buckets, zoom, visible, compactLayout, compactVisibleBottomSy]);
+  }, [ambient, field, buckets, zoom, visible, compactLayout, compactVisibleBottomSy]);
 
   const starByKey = useMemo(() => {
     const map = new Map<string, PlottedStar>();
@@ -861,9 +1452,9 @@ export function MemorySky({
       if (cancelled) {
         return;
       }
-      const gap =
-        MEMORY_SKY_TWINKLE_GAP_MIN +
-        Math.random() * (MEMORY_SKY_TWINKLE_GAP_MAX - MEMORY_SKY_TWINKLE_GAP_MIN);
+      const gapMin = ambient ? MEMORY_SKY_AMBIENT_TWINKLE_GAP_MIN : MEMORY_SKY_TWINKLE_GAP_MIN;
+      const gapMax = ambient ? MEMORY_SKY_AMBIENT_TWINKLE_GAP_MAX : MEMORY_SKY_TWINKLE_GAP_MAX;
+      const gap = gapMin + Math.random() * (gapMax - gapMin);
       gapTimer = setTimeout(() => {
         if (cancelled) {
           return;
@@ -900,7 +1491,7 @@ export function MemorySky({
         clearTimeout(clearTimer);
       }
     };
-  }, [motionAllowed, twinkleIds, newestKey, count]);
+  }, [ambient, motionAllowed, twinkleIds, newestKey, count]);
 
 
   const twinkleStar = twinkleKey ? (starByKey.get(twinkleKey) ?? null) : null;
@@ -925,11 +1516,79 @@ export function MemorySky({
   // Compact main gradient fades to same-hue transparent exactly at the
   // visible strip bottom (skyHeight); Us keeps the opaque background melt.
   const skyGradientColors = compactLayout
-    ? compactSkyGradientColors(skyTop, skyMid, background)
+    ? compactSkyGradientColors(skyTop, skyMid, background, peak)
     : [moodTop, moodMid, background];
   const skyGradientPositions = compactLayout
-    ? [...MEMORY_SKY_COMPACT_GRADIENT_POSITIONS]
+    ? compactSkyGradientPositions(peak)
     : [0, 0.55, 1];
+  // The sky's two lights: one cool light high on a side, one broad afterglow
+  // near the horizon. Drawn over the gradient, under the stars, so the dusk
+  // stops reading as a single flat ramp.
+  const glowGeometry = useMemo(
+    () => skyGlowGeometry(skyCanvasW, skyHeight),
+    [skyCanvasW, skyHeight],
+  );
+  const glowColors = useMemo(() => skyGlowColors(skyMid), [skyMid]);
+  // The fallback path is told the same horizon the shader is.
+  const horizonLight = useMemo(() => horizonLightFor(peak), [peak]);
+  const horizonGeometry = useMemo(
+    () => skyGlowGeometry(skyCanvasW, skyHeight, horizonLight),
+    [skyCanvasW, skyHeight, horizonLight],
+  );
+  const horizonColors = useMemo(
+    () => skyGlowColors(skyMid, horizonLight),
+    [skyMid, horizonLight],
+  );
+  // The shader paints the compact sky; the stop-ramp above stays as the
+  // fallback for any platform without runtime effects.
+  const duskEffect = compactLayout ? duskEffectOnce() : null;
+  const duskUniforms = useMemo(
+    () =>
+      duskSkyUniforms({
+        width: skyCanvasW,
+        height: skyHeight,
+        skyTop,
+        skyMid,
+        background,
+        peak,
+      }),
+    [skyCanvasW, skyHeight, skyTop, skyMid, background, peak],
+  );
+  const sourceDuskUniforms = useMemo(() => duskSkyUniforms({
+    width: skyCanvasW,
+    height: canvasHeight,
+    skyTop,
+    skyMid,
+    background,
+    peak: SETUP_SKY_PEAK,
+  }), [skyCanvasW, canvasHeight, skyTop, skyMid, background]);
+  const sourceStars = useMemo<PlottedStar[]>(() => handoverProgress
+    ? Array.from({ length: MEMORY_SKY_AMBIENT_COUNT }, (_, index) => {
+      const layout = ambientStarForIndex(index);
+      const key = `ambient-${index}`;
+      return {
+        key,
+        cx: layout.xPct / 100 * MEMORY_SKY_CANVAS_W,
+        cy: layout.yPct / 100 * MEMORY_SKY_CANVAS_H,
+        size: layout.size,
+        r: starRadiusForZoom(layout.size, 1),
+        sparkleR: sparkleHalfLengthForZoom(layout.size, 1),
+        opacity: fadeCompactStarOpacity(ambientStarOpacity(index), layout.yPct / 100,
+          Math.min(1, windowHeight / (MEMORY_SKY_CANVAS_H * scaleX))),
+        color: DAY_SKY_STAR_DIM,
+        bright: isAmbientSparkle(index),
+        rotationDeg: sparkleRotationDeg(key),
+      };
+    }) : [], [handoverProgress, windowHeight, scaleX]);
+
+  // Depth, as travel: the same camera move, read at four distances.
+  const travel = Math.min(1, Math.max(0, camera)) * skyHeight;
+  // Kept modest: a taller strip means the same factors travel further, and a
+  // camera that empties the sky of stars is a camera that undoes the night.
+  const farTravel = -travel * 0.05;
+  const midTravel = -travel * 0.13;
+  const nearTravel = -travel * 0.24;
+  const cloudTravel = -travel * 0.34;
 
   const renderBucket = (stars: PlottedStar[]) => (
     <>
@@ -951,14 +1610,8 @@ export function MemorySky({
           const cx = star.cx * scaleX;
           const cy = star.cy * scaleY;
           const R = star.sparkleR;
-          const w = R * 0.22;
           const radians = (star.rotationDeg * Math.PI) / 180;
-          const d =
-            `M ${cx} ${cy - R} ` +
-            `Q ${cx + w} ${cy - w} ${cx + R} ${cy} ` +
-            `Q ${cx + w} ${cy + w} ${cx} ${cy + R} ` +
-            `Q ${cx - w} ${cy + w} ${cx - R} ${cy} ` +
-            `Q ${cx - w} ${cy - w} ${cx} ${cy - R} Z`;
+          const d = sparklePath(cx, cy, R);
           return (
             <Group key={star.key} origin={vec(cx, cy)} transform={[{ rotate: radians }]}>
               <Path
@@ -969,6 +1622,48 @@ export function MemorySky({
             </Group>
           );
         })}
+    </>
+  );
+
+  // The sky's own reveal: the field and the dusk come in together. The first
+  // light that used to fall here now lives with the screen that choreographs
+  // it, because it has to be able to reach the horizon and the second light.
+  const settle = useSharedValue(opening ? 0 : 1);
+  useEffect(() => {
+    if (!opening || reduceMotion) {
+      settle.value = 1;
+      return;
+    }
+    settle.value = 0;
+    settle.value = withTiming(
+      1,
+      { duration: MEMORY_SKY_FIRST_LIGHT_MS, easing: Easing.bezier(0.16, 1, 0.3, 1) },
+      (finished) => {
+        if (finished) {
+          runOnJS(landFirstLight)();
+        }
+      },
+    );
+    return () => {
+      cancelAnimation(settle);
+    };
+  }, [opening, reduceMotion, settle]);
+
+  const fieldStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(1, (settle.value - 0.45) / 0.55)),
+  }));
+
+  const starBuckets = (
+    <>
+      <Group transform={[{ translateY: farTravel }]}>
+        {renderBucket(plotted.far)}
+      </Group>
+      <Group transform={[{ translateY: midTravel }]}>
+        {renderBucket(plotted.mid)}
+      </Group>
+      <Group transform={[{ translateY: nearTravel }]}>
+        {renderBucket(plotted.near)}
+      </Group>
     </>
   );
 
@@ -996,11 +1691,38 @@ export function MemorySky({
   const cloudATop = compactLayout
     ? skyHeight - cloudHeight - MEMORY_SKY_COMPACT_CLOUD_BOTTOM_CLEARANCE
     : skyHeight - cloudHeightFull + 28;
-  const cloudBOpacity = compactLayout ? MEMORY_SKY_COMPACT_CLOUD_B_OPACITY : 0.45;
-  const cloudAOpacity = compactLayout ? MEMORY_SKY_COMPACT_CLOUD_A_OPACITY : 0.55;
+  const wispWidth = Math.round(cloudWidth * MEMORY_SKY_AMBIENT_CLOUD_C_SCALE);
+  const wispHeight = Math.round(wispWidth * MEMORY_SKY_CLOUD_ASPECT);
+  /** A bank's top, kept from hanging past the faded bottom of the strip. */
+  const bankTop = (fraction: number, height: number) =>
+    Math.min((handoverProgress ? windowHeight : skyHeight) * fraction,
+      (handoverProgress ? windowHeight : skyHeight) - height - MEMORY_SKY_COMPACT_CLOUD_BOTTOM_CLEARANCE);
+
+  type CloudLayerSpec = {
+    testID: string;
+    source: number | string;
+    width: number;
+    height: number;
+    top: number;
+    opacity: number;
+    amplitudePx: number;
+    durationMs: number;
+    reverse: boolean;
+  };
+
+  const cloudLayers: CloudLayerSpec[] = ambient || handoverProgress
+    ? [
+        { testID: 'memory-sky-cloud-b', source: cloudBBank, width: cloudWidth, height: cloudHeight, top: cloudBTop, opacity: MEMORY_SKY_AMBIENT_CLOUD_B_OPACITY, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
+        { testID: 'memory-sky-cloud-a', source: cloudABank, width: cloudWidth, height: cloudHeight, top: bankTop(MEMORY_SKY_AMBIENT_CLOUD_A_TOP, cloudHeight), opacity: MEMORY_SKY_AMBIENT_CLOUD_A_OPACITY, amplitudePx: MEMORY_SKY_CLOUD_A.amplitudePx, durationMs: MEMORY_SKY_CLOUD_A.durationMs, reverse: false },
+        { testID: 'memory-sky-cloud-c', source: cloudBBank, width: wispWidth, height: wispHeight, top: bankTop(MEMORY_SKY_AMBIENT_CLOUD_C_TOP, wispHeight), opacity: MEMORY_SKY_AMBIENT_CLOUD_C_OPACITY, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
+      ]
+    : [
+        { testID: 'memory-sky-cloud-b', source: cloudBBank, width: cloudWidth, height: cloudHeight, top: cloudBTop, opacity: compactLayout ? MEMORY_SKY_COMPACT_CLOUD_B_OPACITY : 0.45, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
+        { testID: 'memory-sky-cloud-a', source: cloudABank, width: cloudWidth, height: cloudHeight, top: cloudATop, opacity: compactLayout ? MEMORY_SKY_COMPACT_CLOUD_A_OPACITY : 0.55, amplitudePx: MEMORY_SKY_CLOUD_A.amplitudePx, durationMs: MEMORY_SKY_CLOUD_A.durationMs, reverse: false },
+      ];
 
   return (
-    <View
+    <Animated.View
       testID="memory-sky"
       pointerEvents={onPress ? 'auto' : 'none'}
       accessible={onPress ? true : false}
@@ -1011,7 +1733,7 @@ export function MemorySky({
       onResponderRelease={onPress}
       style={
         compactLayout
-          ? [styles.rootCompact, { height: skyHeight }]
+          ? [styles.rootCompact, { height: canvasHeight }, viewportStyle]
           : immersive
             ? [styles.rootImmersive, { height: Math.max(0, skyHeight + stripTop) }]
             : styles.root
@@ -1028,7 +1750,7 @@ export function MemorySky({
                 top: 0,
                 left: 0,
                 right: 0,
-                height: skyHeight,
+                height: canvasHeight,
               }
             : {
                 top: stripTop,
@@ -1038,112 +1760,144 @@ export function MemorySky({
               },
         ]}
       >
-        <View
-          testID="memory-sky-canvas"
+        {/*
+          Everything the sky is made of goes inside one view, so the opening
+          can bring the whole dusk in at once and the first light can arrive
+          before it. Animating Skia's own opacity would have saved the wrapper,
+          but that animation only runs where Skia's Reanimated recorder is
+          active, and a sky that never arrives is worse than a wrapper view.
+        */}
+        <Animated.View
+          testID="memory-sky-dusk"
           pointerEvents="none"
           accessible={false}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, opening ? fieldStyle : undefined]}
         >
-          <SkiaReady>
-            {(ready) =>
-              ready ? (
-                <Canvas style={{ width: skyCanvasW, height: skyHeight }}>
-                  <Rect x={0} y={0} width={skyCanvasW} height={skyHeight}>
-                    <LinearGradient
-                      start={vec(0, 0)}
-                      end={vec(0, skyHeight)}
-                      colors={skyGradientColors}
-                      positions={skyGradientPositions}
-                    />
-                  </Rect>
-                  <Group>
-                    {renderBucket(plotted.far)}
-                  </Group>
-                  <Group>
-                    {renderBucket(plotted.mid)}
-                  </Group>
-                  <Group>
-                    {renderBucket(plotted.near)}
-                  </Group>
-                </Canvas>
-              ) : (
-                <View style={{ width: skyCanvasW, height: skyHeight }} />
-              )
-            }
-          </SkiaReady>
-        </View>
-        <CloudLayer
-          testID="memory-sky-cloud-b"
-          source={cloudBBank}
-          width={cloudWidth}
-          height={cloudHeight}
-          top={cloudBTop}
-          opacity={cloudBOpacity}
-          amplitudePx={MEMORY_SKY_CLOUD_B.amplitudePx}
-          durationMs={MEMORY_SKY_CLOUD_B.durationMs}
-          reverse
-          motionAllowed={motionAllowed}
-        />
-        <CloudLayer
-          testID="memory-sky-cloud-a"
-          source={cloudABank}
-          width={cloudWidth}
-          height={cloudHeight}
-          top={cloudATop}
-          opacity={cloudAOpacity}
-          amplitudePx={MEMORY_SKY_CLOUD_A.amplitudePx}
-          durationMs={MEMORY_SKY_CLOUD_A.durationMs}
-          reverse={false}
-          motionAllowed={motionAllowed}
-        />
-        {motionAllowed && twinkleStar ? (
           <View
-            testID="memory-sky-twinkle"
+            testID="memory-sky-canvas"
             pointerEvents="none"
             accessible={false}
             style={StyleSheet.absoluteFill}
-            {...twinkleAttr}
           >
-            <TwinkleOverlay
-              x={twinkleStar.cx * scaleX}
-              y={twinkleStar.cy * scaleY}
-              color={twinkleStar.color}
-            />
+            <SkiaReady>
+              {(ready) =>
+                ready ? (
+                  <Canvas onSize={onSceneLayout ? sceneSize : undefined} style={{ width: skyCanvasW, height: canvasHeight }}>
+                    {compactLayout && duskEffect ? (
+                      <Rect x={0} y={0} width={skyCanvasW} height={canvasHeight}>
+                        {handoverProgress
+                          ? <SettlingShader source={duskEffect} from={sourceDuskUniforms} to={duskUniforms} progress={handoverProgress} />
+                          : <Shader source={duskEffect} uniforms={duskUniforms} />}
+                      </Rect>
+                    ) : (
+                      <>
+                        <Rect x={0} y={0} width={skyCanvasW} height={skyHeight}>
+                          <LinearGradient
+                            start={vec(0, 0)}
+                            end={vec(0, skyHeight)}
+                            colors={skyGradientColors}
+                            positions={skyGradientPositions}
+                          />
+                        </Rect>
+                        <Rect x={0} y={0} width={skyCanvasW} height={skyHeight}>
+                          <RadialGradient
+                            c={vec(glowGeometry.cx, glowGeometry.cy)}
+                            r={glowGeometry.radius}
+                            colors={glowColors}
+                            positions={[0, 1]}
+                          />
+                        </Rect>
+                        <Rect x={0} y={0} width={skyCanvasW} height={skyHeight}>
+                          <RadialGradient
+                            c={vec(horizonGeometry.cx, horizonGeometry.cy)}
+                            r={horizonGeometry.radius}
+                            colors={horizonColors}
+                            positions={[0, 1]}
+                          />
+                        </Rect>
+                      </>
+                    )}
+                    {handoverProgress ? (
+                      <SettlingStars progress={handoverProgress} distance={windowHeight - skyHeight} source={renderBucket(sourceStars)}>
+                        {starBuckets}
+                      </SettlingStars>
+                    ) : starBuckets}
+                  </Canvas>
+                ) : (
+                  <View style={{ width: skyCanvasW, height: skyHeight }} />
+                )
+              }
+            </SkiaReady>
           </View>
-        ) : null}
-        {compactLayout ? null : (
-        <View
-          testID="memory-sky-feather"
-          pointerEvents="none"
-          accessible={false}
-          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: featherHeight }}
-        >
-          <SkiaReady>
-            {(ready) =>
-              ready ? (
-                <Canvas style={{ width: skyCanvasW, height: featherHeight }}>
-                  <Rect x={0} y={0} width={skyCanvasW} height={featherHeight}>
-                    <LinearGradient
-                      start={vec(0, 0)}
-                      end={vec(0, featherHeight)}
-                      colors={featherColors}
-                      positions={featherPositions}
-                    />
-                  </Rect>
-                </Canvas>
-              ) : (
-                <View style={{ width: skyCanvasW, height: featherHeight }} />
-              )
-            }
-          </SkiaReady>
-        </View>
-        )}
-        {!isDayMode && visible.length === 0 ? (
-          <View
+          {cloudLayers.map((layer) => (
+            <CloudLayer
+              key={layer.testID}
+              testID={layer.testID}
+              source={layer.source}
+              width={layer.width}
+              height={layer.height}
+              top={handoverProgress ? (layer.testID === 'memory-sky-cloud-b' ? cloudBTop : cloudATop) : layer.top}
+              opacity={handoverProgress
+                ? (layer.testID === 'memory-sky-cloud-b' ? MEMORY_SKY_COMPACT_CLOUD_B_OPACITY
+                  : layer.testID === 'memory-sky-cloud-a' ? MEMORY_SKY_COMPACT_CLOUD_A_OPACITY : 0)
+                : layer.opacity}
+              amplitudePx={layer.amplitudePx}
+              durationMs={layer.durationMs}
+              reverse={layer.reverse}
+              motionAllowed={motionAllowed}
+              travel={cloudTravel}
+              handover={handoverProgress ? { progress: handoverProgress, top: layer.top, opacity: layer.opacity } : undefined}
+            />
+          ))}
+          {motionAllowed && twinkleStar ? (
+            <View
+              testID="memory-sky-twinkle"
+              pointerEvents="none"
+              accessible={false}
+              style={StyleSheet.absoluteFill}
+              {...twinkleAttr}
+            >
+              <TwinkleOverlay
+                x={twinkleStar.cx * scaleX}
+                y={twinkleStar.cy * scaleY}
+                color={twinkleStar.color}
+              />
+            </View>
+          ) : null}
+          {compactLayout ? null : (
+            <View
+              testID="memory-sky-feather"
+              pointerEvents="none"
+              accessible={false}
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: featherHeight }}
+            >
+              <SkiaReady>
+                {(ready) =>
+                  ready ? (
+                    <Canvas style={{ width: skyCanvasW, height: featherHeight }}>
+                      <Rect x={0} y={0} width={skyCanvasW} height={featherHeight}>
+                        <LinearGradient
+                          start={vec(0, 0)}
+                          end={vec(0, featherHeight)}
+                          colors={featherColors}
+                          positions={featherPositions}
+                        />
+                      </Rect>
+                    </Canvas>
+                  ) : (
+                    <View style={{ width: skyCanvasW, height: featherHeight }} />
+                  )
+                }
+              </SkiaReady>
+            </View>
+          )}
+        </Animated.View>
+        {!isDayMode && visible.length === 0 && !ambient ? (
+          <Animated.View
             testID="memory-sky-star-empty"
             pointerEvents="none"
             accessible={false}
-            style={[styles.emptyStar, { backgroundColor: muted }]}
+            style={[styles.emptyStar, { backgroundColor: muted }, emptyStarStyle]}
           />
         ) : null}
       </View>
@@ -1155,7 +1909,7 @@ export function MemorySky({
         {caption}
       </ThemedText>
       )}
-    </View>
+    </Animated.View>
   );
 }
 

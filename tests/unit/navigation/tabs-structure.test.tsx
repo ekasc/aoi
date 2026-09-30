@@ -395,6 +395,8 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('@/features/theme/theme-context', () => ({
   useAoiTheme: () => ({
+    // Both halves: a control on the night backdrop is dressed for night.
+    selectedTheme: { light: {}, dark: {} },
     colors: {
       background: '#FCF9F2',
       surface: '#FFFDF8',
@@ -705,18 +707,11 @@ async function renderTabsLayout() {
 }
 
 describe('P2A tab structure (system tab bar)', () => {
-  it('declares the shipped tabs in that visible order, plus any dev-only probe last', async () => {
+  it('declares the shipped tabs in that visible order', async () => {
     await renderTabsLayout();
-    // Memories, Us, Plans, Space, in that order, and nothing else that can
-    // reach a release. A dev-only probe is allowed to follow, and only
-    // because the gate below is asserted.
+    // Memories, Us, Plans, Space, in that order, and nothing else.
     const names = capturedTabTriggers.map((entry) => entry.name);
-    expect(names.filter((name) => !DEV_ONLY_TABS.includes(name))).toEqual([
-      '(memories)',
-      'together',
-      'plans',
-      'space',
-    ]);
+    expect(names).toEqual(['(memories)', 'together', 'plans', 'space']);
     expect(capturedTabTriggers.map((entry) => entry.label)).toEqual([
       'Memories',
       'Us',
@@ -936,32 +931,9 @@ describe('P2A legacy redirects', () => {
       .sort();
 
   it('tab routes are the memories group plus the Us, Plans, and Space screens', () => {
-    // A dev-only probe is allowed to sit in this directory, because it is
-    // gated on __DEV__ and cannot reach a release. The shipped set is what
-    // this is about, so the extras are filtered rather than tolerated.
-    expect(discoveredTabScreens().filter((route) => !DEV_ONLY_TABS.includes(route))).toEqual([
-      'plans',
-      'space',
-      'together',
-    ]);
+    expect(discoveredTabScreens()).toEqual(['plans', 'space', 'together']);
     const memoriesDir = join(tabsDir, '(memories)');
     expect(readdirSync(memoriesDir).sort()).toEqual(['_layout.tsx', 'index.tsx']);
-  });
-
-  it('the album probe tab is dev-gated, so it cannot ship', () => {
-    // It is a test rig for the shared-album work, not a feature. The only
-    // thing standing between it and a release is this gate, so it is asserted
-    // rather than assumed.
-    const layout = readFileSync(join(tabsDir, '_layout.tsx'), 'utf8');
-    const at = layout.indexOf('name="dev-us-album"');
-    expect(at).toBeGreaterThan(-1);
-    // Walk back to the conditional that opens this trigger and require that
-    // the gate is the thing enclosing it.
-    const before = layout.slice(0, at);
-    const gate = before.lastIndexOf('{__DEV__');
-    const close = before.lastIndexOf(') : null}');
-    expect(gate).toBeGreaterThan(-1);
-    expect(gate).toBeGreaterThan(close);
   });
 
   it('declared triggers match the route structure, Memories first', async () => {
@@ -994,10 +966,6 @@ describe('P2A legacy redirects', () => {
     expect(capturedRedirect.href).toBe('/(app)/(tabs)/space');
   });
 });
-
-/** Tabs that exist only in a dev build. Kept in one place so the two
- *  assertions about the shipped set cannot drift from each other. */
-const DEV_ONLY_TABS = ['dev-us-album'];
 
 const capturedStackScreens: Array<{ name: string; options?: Record<string, unknown> }> = [];
 const capturedStackOptions: Record<string, unknown> = {};

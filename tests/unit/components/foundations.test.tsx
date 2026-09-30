@@ -95,6 +95,8 @@ vi.mock('@/hooks/use-theme-color', () => ({
 
 vi.mock('@/features/theme/theme-context', () => ({
   useAoiTheme: () => ({
+    // Both halves: a control on the night backdrop is dressed for night.
+    selectedTheme: { light: {}, dark: {} },
     colors: {
       background: '#FCF9F2',
       backgroundSubtle: '#F3ECDD',

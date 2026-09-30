@@ -63,6 +63,23 @@ export type RelationshipCopy = {
   reflectionIntro: string;
 };
 
+/**
+ * The empty state for a space nobody else has joined yet.
+ *
+ * Deliberately not a `RelationshipTone`. How long you have been together and
+ * whether your partner has installed the app are independent facts, and a
+ * couple three years in can still be the first one here. The creator is not
+ * looking at an empty archive, they are looking at a room with one person in
+ * it, and the one thing they have to do is somewhere else: send the code.
+ */
+export const waitingForPartnerCopy = {
+  meta: 'Waiting',
+  title: 'Your sky is yours for now',
+  body: 'Send them your code when you are ready. Anything you keep is already here when they arrive.',
+  shareButton: 'Share invite code',
+  keepButton: 'Keep your first memory',
+} as const;
+
 export function relationshipCopy(tone: RelationshipTone): RelationshipCopy {
   if (tone === 'discovery') {
     return {

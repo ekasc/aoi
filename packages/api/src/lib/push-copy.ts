@@ -24,6 +24,13 @@ export function buildPushCopy(
   switch (kind) {
     case 'squeeze':
       return { title: 'A squeeze for you', body: 'Your partner is thinking of you.' };
+    case 'partner_joined':
+      // The one push here that is about the pair rather than an object. It
+      // carries no name and no content: the reader knows who they invited.
+      return {
+        title: 'They joined your space',
+        body: 'Your sky has two people in it now.',
+      };
     case 'moment_added':
       return { title: 'They kept a moment', body: 'Something new landed in your space.' };
     case 'moment_edited':

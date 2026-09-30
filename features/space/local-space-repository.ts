@@ -103,17 +103,38 @@ export const localSpaceRepository: SpaceRepository = {
       throw new Error('Invite code not found.');
     }
 
-    // Stub coherence: joining marks the partnership joined on every stored
-    // copy (joiner's, creator's, invite slot) — same device, one truth.
-    const joined: RelationshipSpace = { ...space, partnerJoined: true };
+    // Two records, because the same space reads from opposite sides: yourName
+    // is whoever is holding it and partnerName is the other one. Writing a
+    // single copy for both (as this did) handed the joiner the creator's name
+    // as their own, and left the creator's partner unnamed.
+    const now = new Date().toISOString();
+    const creatorName = space.yourName;
+    const joinerName = input.yourName?.trim() || space.partnerName?.trim() || 'You';
+
+    const joinerView: RelationshipSpace = {
+      ...space,
+      yourName: joinerName,
+      partnerName: creatorName,
+      partnerJoined: true,
+      updatedAt: now,
+    };
+    const creatorView: RelationshipSpace = {
+      ...space,
+      partnerName: joinerName,
+      partnerJoined: true,
+      updatedAt: now,
+    };
+
+    // Stub coherence: every stored copy agrees the partnership is joined —
+    // same device, one truth.
     const creatorKey = spaceUserKey(space.createdByUserId);
     const existingCreator = await readJson<RelationshipSpace>(creatorKey);
     await Promise.all([
-      writeJson(spaceUserKey(input.userId), joined),
-      writeJson(spaceInviteKey(inviteCode), joined),
-      ...(existingCreator ? [writeJson(creatorKey, joined)] : []),
+      writeJson(spaceUserKey(input.userId), joinerView),
+      writeJson(spaceInviteKey(inviteCode), creatorView),
+      ...(existingCreator ? [writeJson(creatorKey, creatorView)] : []),
     ]);
-    return joined;
+    return joinerView;
   },
 
   async regenerateInvite(userId: string): Promise<string> {

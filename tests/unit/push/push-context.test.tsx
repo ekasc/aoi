@@ -33,10 +33,16 @@ const proposalsMock = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }));
 
+const spaceRefreshMock = vi.fn(async () => {});
+
 vi.mock('@/features/notifications/notifications-module', () => ({
   notificationsModule: () => notificationsMock,
 }));
 vi.mock('@/features/api-client', () => apiClientMock);
+vi.mock('@/features/space/space-context', () => ({
+  useSpace: () => ({ refreshSpace: spaceRefreshMock }),
+}));
+
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ refresh: momentsMock.refresh }),
 }));
@@ -160,6 +166,18 @@ describe('PushProvider receive handling (remote)', () => {
     await waitFor(() =>
       expect(view.getByTestId('squeeze').textContent).toBe('incoming')
     );
+    view.unmount();
+  });
+
+  it('re-reads the space when someone joins it', async () => {
+    const view = renderProvider();
+    await waitFor(() => expect(receivedListener).not.toBeNull());
+
+    // The space is the thing that changed: the waiting empty state and the
+    // partner's name both hang off it, and moments have nothing to do with it.
+    deliver({ kind: 'partner_joined' });
+    await waitFor(() => expect(spaceRefreshMock).toHaveBeenCalledTimes(1));
+    expect(momentsMock.refresh).not.toHaveBeenCalled();
     view.unmount();
   });
 

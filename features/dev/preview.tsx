@@ -51,11 +51,16 @@ import type { SpaceContextValue } from '@/features/space/types';
  * so it shows its status error headless — expected.
  */
 
-export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed';
+export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed' | 'setup' | 'welcome';
 
 export function parsePreviewVariant(raw: string | string[] | undefined): PreviewVariant {
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (value === 'empty' || value === 'pending' || value === 'failed') {
+  if (
+    value === 'empty' ||
+    value === 'pending' ||
+    value === 'failed' ||
+    value === 'setup' || value === 'welcome'
+  ) {
     return value;
   }
   return 'full';
@@ -258,6 +263,8 @@ export const PREVIEW_SPACE: SpaceContextValue = {
   clearSpace: previewUnavailable('spaces'),
   leaveSpace: previewUnavailable('spaces'),
   regenerateInvite: previewUnavailable('invite codes'),
+  // Preview spaces are fixed; there is nothing newer to read.
+  refreshSpace: async () => {},
   importMilestones: previewUnavailable('milestone import'),
 };
 
@@ -375,8 +382,13 @@ function seedMoment(overrides: Partial<Moment> & Pick<Moment, 'id' | 'occurredAt
  * The repo's `?variant=empty` still returns nothing.
  */
 export function getPreviewSeedMoments(variant: PreviewVariant): Moment[] {
-  if (variant === 'empty') {
+  if (variant === 'empty' || variant === 'setup') {
     return [];
+  }
+  if (variant === 'welcome') {
+    return [seedMoment({ id: 'preview-welcome', type: 'trace', title: '',
+      body: 'This made me think of our walk home.', occurredAt: atMidnight(0, 18),
+      mediaPreview: previewImages.pier.uri, ...PARTNER, authorId: 'preview-june' })];
   }
   return [
     // This month: a kept set of prints, June's late note, June's voice note.

@@ -10,6 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Motion, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { NativeSheet } from '@/components/ui/native-sheet';
 
 export type NativeDateTimeFieldProps = {
   label: string;
@@ -82,6 +83,11 @@ export function NativeDateTimeField({
   const [isOpen, setIsOpen] = useState(false);
 
   const isRow = variant === 'row';
+  // iOS presents its picker in a sheet rather than in the page: a picker card
+  // rendered in place grows the field and pushes everything below it down, and
+  // on a form that is the difference between choosing a date and losing your
+  // place. Android's picker is already a dialog and needs no sheet.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const valueLabel = useMemo(() => formatFieldValue(value, mode), [mode, value]);
   // Android has no combined datetime picker — fall back to date-only there.
   const pickerMode = isAndroid && mode === 'datetime' ? 'date' : mode;
@@ -113,7 +119,9 @@ export function NativeDateTimeField({
         accessibilityLabel={accessibilityLabel ?? `Choose ${label.toLowerCase()}`}
         accessibilityRole="button"
         disabled={disabled}
-        onPress={() => setIsOpen((current) => !current)}
+        onPress={() =>
+          isIos ? setSheetOpen(true) : setIsOpen((current) => !current)
+        }
         style={[
           isRow ? styles.rowButton : styles.valueButton,
           isRow
@@ -151,7 +159,27 @@ export function NativeDateTimeField({
         )}
       </Pressable>
 
-      {isOpen ? (
+      {/* The platform's own sheet, so the OS owns the presentation, the motion
+          and the dismissal, and the page underneath never moves. */}
+      <NativeSheet onClose={() => setSheetOpen(false)} visible={sheetOpen}>
+        <View style={{ gap: Spacing[12], paddingBottom: Spacing[16], paddingHorizontal: Spacing[16] }}>
+          <DateTimePicker
+            display={pickerDisplay}
+            maximumDate={maximumDate}
+            minimumDate={minimumDate}
+            minuteInterval={minuteInterval}
+            mode={pickerMode}
+            onChange={handlePickerChange}
+            textColor={textColor}
+            value={value}
+          />
+          {hideDone ? null : (
+            <Button label="Done" onPress={() => setSheetOpen(false)} />
+          )}
+        </View>
+      </NativeSheet>
+
+      {isOpen && !isIos ? (
         isIos ? (
           <MotiView
             from={{ opacity: 0, translateY: 6 }}

@@ -8,6 +8,7 @@ export type PushTokenPlatform = z.infer<typeof pushTokenPlatformSchema>;
 
 export const PUSH_NOTIFICATION_KINDS = [
   'squeeze',
+  'partner_joined',
   'moment_added',
   'moment_edited',
   'moment_deleted',

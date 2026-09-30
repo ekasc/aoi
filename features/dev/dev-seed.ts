@@ -8,6 +8,11 @@
  * preview route, no navigation bypassed — the tab bar, back buttons, and
  * every screen behave exactly as in production.
  *
+ * `EXPO_PUBLIC_DEV_SEED=setup` is the pre-space world: a real session and NO
+ * space, so the app boots on the Space setup wizard and stays there. It clears
+ * any space a previous seed left behind, which would otherwise redirect
+ * straight past setup into the app.
+ *
  * How it works: before the session/space providers hydrate, this writes a
  * real session into SecureStore and a real space into AsyncStorage — the
  * same records a genuine sign-in would produce. The providers then restore
@@ -80,10 +85,15 @@ export function ensureDevSeed(): Promise<void> {
         SESSION_STORAGE_KEY,
         JSON.stringify(DEV_SEED_SESSION)
       );
-      await AsyncStorage.setItem(
-        `${SPACE_USER_KEY_PREFIX}${DEV_SEED_USER_ID}`,
-        JSON.stringify(DEV_SEED_SPACE)
-      );
+      const spaceKey = `${SPACE_USER_KEY_PREFIX}${DEV_SEED_USER_ID}`;
+      if (variant === 'setup') {
+        // The pre-space world. A space left by an earlier `full` seed would
+        // make the app restore straight into the tabs and skip setup, so this
+        // variant has to clear it, not merely decline to write one.
+        await AsyncStorage.removeItem(spaceKey);
+      } else {
+        await AsyncStorage.setItem(spaceKey, JSON.stringify(DEV_SEED_SPACE));
+      }
       // Pending rows (unsent/failed memories) live in the composer store,
       // which the composer provider hydrates on mount — seed it here so the
       // variant's rows are present deterministically, no race.

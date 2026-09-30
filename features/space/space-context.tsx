@@ -188,6 +188,25 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		return inviteCode;
 	}, [repository, user]);
 
+	const refreshSpace = useCallback(async () => {
+		if (!user) {
+			return;
+		}
+
+		try {
+			const [nextSpace, nextImportedMilestones] = await Promise.all([
+				repository.getSpaceForUser(user.id),
+				repository.getImportedMilestonesForUser(user.id),
+			]);
+			setSpace(nextSpace);
+			setImportedMilestones(nextImportedMilestones);
+			setStatus(nextSpace ? "ready" : "none");
+		} catch {
+			// Keep what we have. A failed re-read must not empty a space the
+			// reader is standing in.
+		}
+	}, [repository, user]);
+
 	const importMilestones = useCallback(
 		async (inputs: ImportedMilestoneInput[]) => {
 			if (!user || inputs.length === 0) {
@@ -219,6 +238,7 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			leaveSpace,
 			regenerateInvite,
 			importMilestones,
+			refreshSpace,
 		}),
 		[
 			status,
@@ -232,6 +252,7 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			leaveSpace,
 			regenerateInvite,
 			importMilestones,
+			refreshSpace,
 		],
 	);
 

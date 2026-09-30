@@ -58,3 +58,6 @@ app-example
 .pi/
 packages/api/.dev.vars
 packages/api/.wrangler/
+
+# Impeccable skill local state (critiques, live sessions)
+.impeccable/

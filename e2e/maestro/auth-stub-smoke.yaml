@@ -13,4 +13,4 @@ appId: com.ekasc.aoi
     clearState: true
 - assertVisible: "Continue to your private space"
 - tapOn: "Continue with Google"
-- assertVisible: "Save the little things"
+- assertVisible: "Create our space"

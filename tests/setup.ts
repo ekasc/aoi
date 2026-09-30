@@ -20,6 +20,11 @@ function flattenStyle(style: any): any {
 // onPress ALSO becomes onClick so fireEvent.click can tap them.
 function withAriaProps(props: Record<string, any>): Record<string, any> {
   const next: Record<string, any> = { ...props };
+  // React Native's testID is how a test addresses a view, so it has to reach
+  // the DOM under the name the queries look for.
+  if (typeof props.testID === 'string') {
+    next['data-testid'] = props.testID;
+  }
   if (typeof props.accessibilityLabel === 'string') {
     next['aria-label'] = props.accessibilityLabel;
   }
@@ -82,6 +87,17 @@ vi.mock('react-native', () => {
     return React.createElement('img', { style: flattenStyle(style), src: source?.uri, ...props });
   };
 
+  // Pressable's children and style may be functions of the press state, which
+  // React Native resolves before it renders. The mock has to do the same, or
+  // every component that draws its own press feedback renders empty here.
+  const Pressable = ({ children, style, ...rest }: any) => {
+    const pressed = false;
+    const resolvedStyle = typeof style === 'function' ? style({ pressed }) : style;
+    const resolvedChildren =
+      typeof children === 'function' ? children({ pressed }) : children;
+    return createDiv(resolvedChildren, resolvedStyle, rest);
+  };
+
   return {
     StyleSheet: {
       create: (styles: Record<string, any>) => styles,
@@ -106,7 +122,7 @@ vi.mock('react-native', () => {
     FlatList: View,
     ActivityIndicator: View,
     Modal: View,
-    Pressable: View,
+    Pressable,
     KeyboardAvoidingView: View,
     AppState: {
       currentState: 'active',
@@ -209,6 +225,70 @@ vi.mock('expo-haptics', () => ({
   selectionAsync: async () => {},
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+}));
+
+// The clipboard is a native module. Stubbed as a real little pasteboard, so a
+// test can put something on it and have the app read it back, which is what
+// the copy and paste paths actually do.
+vi.mock('expo-clipboard', () => ({
+  setStringAsync: async (value: string) => {
+    (globalThis as unknown as Record<string, unknown>).__aoiClipboard = value;
+    return true;
+  },
+  getStringAsync: async () =>
+    ((globalThis as unknown as Record<string, unknown>).__aoiClipboard as string) ??
+    '',
+}));
+
+// Safe-area is a native module whose sources cannot be transformed under
+// vitest, so any test that renders a screen importing it dies at import time.
+// Files that care about specific insets still mock this locally and win.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 47, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaFrame: () => ({ x: 0, y: 0, width: 390, height: 844 }),
+  SafeAreaProvider: ({ children }: { children: unknown }) => children,
+  SafeAreaView: ({ children }: { children: unknown }) => children,
+}));
+
+// The theme is app-level: component tests should not have to build one. A
+// stand-in with both halves is enough for anything that reads a colour; the
+// palette itself is pinned in the theme tests. Files that assert particular
+// colours still mock this locally and win.
+vi.mock('@/features/theme/theme-context', () => {
+  const colors = {
+    background: '#120D13',
+    backgroundSubtle: '#1B141E',
+    surface: '#241B26',
+    surface2: '#302230',
+    textPrimary: '#F6EDF3',
+    textSecondary: '#CBB9C9',
+    textMuted: '#BCA7B9',
+    border: '#493447',
+    borderStrong: '#72516B',
+    accentInk: '#E7A3BB',
+    partnerAccentInk: '#C1ADD7',
+    primary: '#E7A3BB',
+    primaryPressed: '#D58BA7',
+    primaryText: '#29121F',
+    destructive: '#E8A4B4',
+    disabled: '#6E5D6C',
+  };
+  return {
+    useAoiTheme: () => ({
+      selectedThemeId: 'after-hours',
+      mode: 'light',
+      colors,
+      selectedTheme: { light: colors, dark: colors },
+      hasStoredSelection: false,
+      isHydrated: true,
+      setSelectedThemeId: async () => {},
+    }),
+  };
+});
+
+// StatusBar renders nothing in a DOM test and is not a string component here.
+vi.mock('expo-status-bar', () => ({
+  StatusBar: () => null,
 }));
 
 // Deterministic per-call UUIDs: unique across drafts (so identical content
@@ -552,7 +632,17 @@ vi.mock('react-native-reanimated', () => {
     SlideInDown: enteringStub,
     SlideInUp: enteringStub,
     SlideOutDown: enteringStub,
-    useSharedValue: (initial: any) => React.useRef({ value: initial }).current,
+    useSharedValue: (initial: any) => {
+      const ref = React.useRef(null);
+      if (!ref.current) {
+        const shared = {
+          value: initial,
+          set: (next: unknown) => { shared.value = typeof next === 'function' ? next(shared.value) : next; },
+        };
+        ref.current = shared;
+      }
+      return ref.current;
+    },
     useDerivedValue: (fn: any) => React.useState(() => ({ value: fn() }))[0],
     useReducedMotion: () => false,
     useAnimatedStyle: () => ({}),
@@ -643,11 +733,25 @@ vi.mock('@shopify/react-native-skia', () => {
     RadialGradient: Nil,
     SweepGradient: Nil,
     LinearGradient: Nil,
+    Shader: shape('Shader'),
     Blur: Nil,
     Fill: Nil,
     vec: (x: number, y: number = x) => ({ x, y }),
-    Skia: { Path: { Make: () => ({ addArc: () => undefined }) } },
+    Skia: {
+      Path: { Make: () => ({ addArc: () => undefined }) },
+      // A stub effect, so the sky's shader path runs structurally in tests
+      // (the shader itself can only be judged on a GPU).
+      RuntimeEffect: { Make: () => ({}) },
+    },
   };
 });
 
 vi.stubGlobal('__DEV__', false);
+
+// The native date picker ships Flow-typed source, which the test transform
+// cannot parse at all. The field around it is a thin wrapper, so a null
+// component is enough for anything that contains one to render.
+vi.mock('@react-native-community/datetimepicker', () => ({
+  DateTimePickerAndroid: { open: () => undefined },
+  default: () => null,
+}));

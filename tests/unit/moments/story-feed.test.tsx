@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 
 import {
@@ -15,6 +15,9 @@ import {
 } from '@/features/moments/story-feed';
 
 // ── Shared fixtures ────────────────────────────────────────────────────
+
+/** Whose space the feed is being read in: alone in it, or shared. */
+const spaceState = { partnerJoined: true, createdByUserId: 'user_you' };
 
 function makeMoment(overrides: Record<string, any> = {}) {
   return {
@@ -189,7 +192,18 @@ vi.mock('@/features/composer/composer-context', () => ({
 }));
 
 vi.mock('@/features/space/space-context', () => ({
-  useSpace: () => ({ space: { id: 'space-1', relationshipStartDate: null } }),
+  useSpace: () => ({
+    space: {
+      id: 'space-1',
+      createdByUserId: spaceState.createdByUserId,
+      partnerName: 'June',
+      relationshipStartDate: null,
+      inviteCode: 'HQABD7',
+      // A space with someone else in it, which is the ordinary case and the
+      // one the generic empty state was written for.
+      partnerJoined: spaceState.partnerJoined,
+    },
+  }),
 }));
 
 vi.mock('@/features/session/session-context', () => ({
@@ -329,7 +343,16 @@ vi.mock('@/components/home/memory-sky', () => ({
 }));
 
 vi.mock('@/features/space/space-context', () => ({
-  useSpace: () => ({ space: { relationshipStartDate: null } }),
+  useSpace: () => ({
+    space: {
+      id: 'space-1',
+      relationshipStartDate: null,
+      inviteCode: 'HQABD7',
+      partnerJoined: spaceState.partnerJoined,
+      createdByUserId: spaceState.createdByUserId,
+      partnerName: 'June',
+    },
+  }),
 }));
 
 vi.mock('@/components/moments/moment-card', () => ({
@@ -571,6 +594,32 @@ describe('Memories story feed (oldest-first archive)', () => {
     expect(screen.getByTestId('moment-real-1')).toBeTruthy();
   });
 
+  it('confirms a kept dedication only after delivery and does not restart after removal', async () => {
+    spaceState.partnerJoined = false;
+    try {
+      const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+      const page = render(createElement(MemoriesScreen));
+      await act(async () => {});
+      expect(feedLayer().getByText('For June.')).toBeTruthy();
+      expect(screen.queryByText('Here for June when they arrive.')).toBeNull();
+      const kept = makeMoment({ id: 'dedication' });
+      feedMoments = [kept];
+      feedPending = [makePending({ clientId: 'dedication-draft', status: 'delivered', deliveredMoment: kept })];
+      page.rerender(createElement(MemoriesScreen));
+      await waitFor(() => expect(screen.getByText('Here for June when they arrive.')).toBeTruthy());
+      expect(feedLayer().getByTestId('moment-dedication')).toBeTruthy();
+      expect(feedLayer().getByText('Copy invite code')).toBeTruthy();
+      expect(await globalThis.__mockAsyncStorage.getItem('aoi.first-page.v1.user_you.space-1')).toBe('done');
+      feedMoments = [];
+      feedPending = [];
+      page.rerender(createElement(MemoriesScreen));
+      await act(async () => {});
+      expect(feedLayer().queryByText('For June.')).toBeNull();
+    } finally {
+      spaceState.partnerJoined = true;
+    }
+  });
+
   it('never leads the archive with an on-this-day dashboard block', async () => {
     const now = new Date();
     const past = new Date(now);
@@ -635,7 +684,31 @@ describe('Memories story feed (oldest-first archive)', () => {
     expect(refreshMoments).toHaveBeenCalledTimes(1);
   });
 
+  it('offers a dedication before asking the creator to send another invite', async () => {
+    spaceState.partnerJoined = false;
+    try {
+      const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+      render(createElement(MemoriesScreen));
+      await act(async () => {});
+
+      expect(feedLayer().getByText('For June.')).toBeTruthy();
+      expect(feedLayer().queryByText('Your first memory')).toBeNull();
+      fireEvent.click(feedLayer().getByText('Leave something'));
+      expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/moment/new', params: { dedication: 'partner' } });
+
+      fireEvent.click(feedLayer().getByText('Copy invite code'));
+      await act(async () => {});
+      expect(
+        (globalThis as unknown as Record<string, unknown>).__aoiClipboard,
+      ).toBe('HQABD7');
+      expect(feedLayer().getByText('Code copied')).toBeTruthy();
+    } finally {
+      spaceState.partnerJoined = true;
+    }
+  });
+
   it('shows the first-memory empty state and the offline retry', async () => {
+    await globalThis.__mockAsyncStorage.setItem('aoi.first-page.v1.user_you.space-1', 'done');
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     const first = render(createElement(MemoriesScreen));
     await act(async () => {});
@@ -649,6 +722,41 @@ describe('Memories story feed (oldest-first archive)', () => {
     await act(async () => {});
     fireEvent.click(feedLayer().getByText('Try again'));
     expect(refreshMoments).toHaveBeenCalled();
+  });
+
+  it('respects Not now after a restart and keeps the normal composer available', async () => {
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    const first = render(createElement(MemoriesScreen));
+    await act(async () => {});
+    fireEvent.click(feedLayer().getByText('Not now'));
+    await act(async () => {});
+    expect(feedLayer().queryByText('For June.')).toBeNull();
+    first.unmount();
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    expect(feedLayer().queryByText('For June.')).toBeNull();
+    fireEvent.click(feedLayer().getByText('Keep your first memory'));
+    expect(pushSpy).toHaveBeenCalledWith('/(app)/moment/new');
+  });
+
+  it('introduces a creator memory to the joiner inline and leaves replying optional', async () => {
+    spaceState.createdByUserId = 'user_june';
+    feedMoments = [makeMoment({ authorId: 'user_june', authorName: 'June', authorRole: 'partner', isOwn: false })];
+    try {
+      const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+      render(createElement(MemoriesScreen));
+      await act(async () => {});
+      expect(feedLayer().getByText('June left something here for you.')).toBeTruthy();
+      expect(feedLayer().getAllByTestId('moment-m-1')).toHaveLength(1);
+      fireEvent.click(feedLayer().getByText('Leave something back'));
+      expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/moment/new', params: { dedication: 'partner' } });
+      fireEvent.click(feedLayer().getByText('Not now'));
+      await act(async () => {});
+      expect(feedLayer().queryByText('June left something here for you.')).toBeNull();
+      expect(feedLayer().getByTestId('moment-m-1')).toBeTruthy();
+    } finally {
+      spaceState.createdByUserId = 'user_you';
+    }
   });
 
   it('forwards Us-tab capture intents to the editor exactly once', async () => {

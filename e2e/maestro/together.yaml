@@ -4,7 +4,7 @@ appId: com.ekasc.aoi
 - launchApp:
     clearState: true
 - tapOn: "Continue with Google"
-- tapOn: "Create a Space"
+- tapOn: "Create our space"
 - tapOn: "What should Aoi call you?"
 - inputText: "Maestro"
 - tapOn: "Create Space"

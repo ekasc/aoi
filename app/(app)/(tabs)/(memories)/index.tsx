@@ -7,6 +7,7 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Animated, {
 	FadeIn,
+	LayoutAnimationConfig,
 	FadeOut,
 	ReduceMotion,
 	useAnimatedStyle,
@@ -26,7 +27,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { MemorySky, fabBottomOffset } from "@/components/home/memory-sky";
+import { MemorySky, compactSkyHeightForWindow, fabBottomOffset } from "@/components/home/memory-sky";
+import { useSkyEntry } from '@/components/home/sky-entry-provider';
+import { SkyWelcome } from '@/components/home/sky-welcome';
 import { GalleryMonthHeader } from "@/components/moments/gallery-month-header";
 import {
 	GalleryPhotoTile,
@@ -34,6 +37,7 @@ import {
 	GalleryVoiceTile,
 } from "@/components/moments/gallery-tile";
 import { MomentCard } from "@/components/moments/moment-card";
+import { FirstPageDedication } from '@/components/moments/first-page-dedication';
 import { PhotoViewer, type ViewerPhoto } from "@/components/moments/photo-viewer";
 import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { PendingMemoryRow } from "@/components/moments/pending-memory-row";
@@ -47,6 +51,10 @@ import { Elevation, Motion, Radii, Spacing, shadow, withAlpha } from "@/constant
 import { getDaysTogether } from "@/features/time-together/time-together";
 import { useMoments } from "@/features/moments/moments-context";
 import { useStoryFeed } from "@/features/moments/use-story-feed";
+import { deriveFirstPage } from '@/features/moments/first-page';
+import { useFirstPage } from '@/features/moments/use-first-page';
+import { useSession } from '@/features/session/session-context';
+import { haptics } from '@/features/haptics/haptics';
 import {
 	GALLERY_COLUMNS,
 	buildGalleryRows,
@@ -76,7 +84,10 @@ import type { PendingRecord } from "@/features/composer/types";
 import { useSpace } from "@/features/space/space-context";
 import { useAoiTheme } from "@/features/theme/theme-context";
 import { useThemeColor } from "@/hooks/use-theme-color";
-import { relationshipCopy } from "@/features/relationship/relationship-age";
+import {
+	relationshipCopy,
+} from "@/features/relationship/relationship-age";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
 
 /** Round FAB over the feed, clear of the docked system tab bar. */
@@ -134,10 +145,20 @@ const MOMENT_MENU_ACTIONS: MenuAction[] = [
  * The compact sky stays pinned behind the header, same as Plans.
  */
 export default function MemoriesScreen() {
+  const { entry, progress: foregroundProgress, arrival, reveal, enter } = useSkyEntry();
+  const outgoingStyle = useAnimatedStyle(() => ({ opacity: 1 - (arrival?.value ?? 1) }));
+  const arrivalStyle = useAnimatedStyle(() => ({ opacity: foregroundProgress?.value ?? 1 }));
+  const invitationStyle = useAnimatedStyle(() => ({
+    opacity: 1 - (foregroundProgress?.value ?? 0),
+  }));
 	const router = useRouter();
 	const isFocused = useIsFocused();
 	const insets = useSafeAreaInsets();
-	const { width: windowWidth } = useWindowDimensions();
+	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+	const skyRevealHeight = compactSkyHeightForWindow(windowHeight);
+	const skyRevealStyle = useAnimatedStyle(() => ({
+		transform: [{ translateY: -skyRevealHeight * (1 - (foregroundProgress?.value ?? 1)) }],
+	}));
 	// `?view=gallery` opens the wall directly (and lets the dev preview route
 	// land on it). Read once, as the initial state: arriving must not re-run
 	// the switcher's scroll reset mid-session.
@@ -148,7 +169,24 @@ export default function MemoriesScreen() {
 	const feed = useStoryFeed();
 	const { moments: signalMoments, removeMoment } = useMoments();
 	const { space } = useSpace();
+	const { user } = useSession();
+	const { ready: firstPageReady, dismissed: firstPageDismissed, dismiss: dismissFirstPage,
+		remember: rememberFirstPage, error: firstPageError, retry: retryFirstPage } = useFirstPage(user?.id ?? null, space?.id);
+	const firstPage = useMemo(() => deriveFirstPage({ space, viewerId: user?.id ?? null, moments: feed.moments,
+		pendingCount: feed.pending.length, ready: firstPageReady && !feed.isLoading && !feed.error, dismissed: firstPageDismissed }),
+		[space, user?.id, feed.moments, feed.pending.length, firstPageReady, firstPageDismissed, feed.isLoading, feed.error]);
+	useEffect(() => {
+		if (firstPageReady && !firstPageDismissed && !feed.isLoading && !feed.error && feed.moments.some((moment) => isOwnMoment(moment) || moment.authorId === user?.id)) {
+			void dismissFirstPage();
+		}
+	}, [firstPageReady, firstPageDismissed, dismissFirstPage, feed.isLoading, feed.error, feed.moments, user?.id]);
 	const relationshipAge = useRelationshipAge(space?.relationshipStartDate);
+	const sharingInvite = space != null && !space.partnerJoined;
+	const { copied: copiedInvite, copy: copyInvite } = useCopyToClipboard();
+	const handleShareInvite = useCallback(() => {
+		copyInvite(space?.inviteCode ?? '');
+	}, [copyInvite, space?.inviteCode]);
+
 	const adaptiveCopy = useMemo(
 		() => relationshipCopy(relationshipAge.tone),
 		[relationshipAge.tone],
@@ -251,6 +289,11 @@ export default function MemoriesScreen() {
 	// belongs — jumped deep, or too short to jump at all. One way only;
 	// later data never re-hides a placed list.
 	const [readyView, setReadyView] = useState({ feed: false, gallery: false });
+	useEffect(() => {
+		if (firstPage.kind === 'welcome' && !entry && isFocused && view === 'feed' && readyView.feed) {
+			void rememberFirstPage();
+		}
+	}, [firstPage.kind, entry, isFocused, view, readyView.feed, rememberFirstPage]);
 	const viewportH = useRef({ feed: 0, gallery: 0 });
 	const contentH = useRef({ feed: 0, gallery: 0 });
 	const markReady = useCallback((presented: MemoriesView) => {
@@ -609,6 +652,11 @@ export default function MemoriesScreen() {
 		}
 		router.push("/(app)/moment/new");
 	}, [router]);
+	const handleLeaveSomething = useCallback(() => {
+		haptics.tap();
+		router.push({ pathname: '/(app)/moment/new', params: { dedication: 'partner' } });
+	}, [router]);
+	const handleSkipFirstPage = useCallback(() => { void dismissFirstPage(); }, [dismissFirstPage]);
 
 	// Capture intents from the Us tab land here: forward once to the
 	// dedicated editor and clear the param so a back-press never replays it.
@@ -815,6 +863,11 @@ export default function MemoriesScreen() {
 		);
 		return (
 			<View>
+				{firstPage.kind === 'welcome' && firstPage.momentId === item.moment.id ? (
+					<ThemedText type="subheading" style={styles.welcomeLine}>
+						{firstPage.authorName} left something here for you.
+					</ThemedText>
+				) : null}
 				{own && useNativeMomentMenu ? (
 					<MenuView
 						actions={MOMENT_MENU_ACTIONS}
@@ -830,6 +883,12 @@ export default function MemoriesScreen() {
 				) : (
 					card
 				)}
+				{firstPage.kind === 'welcome' && firstPage.momentId === item.moment.id ? (
+					<View style={styles.welcomeActions}>
+						<Button label="Leave something back" variant="ghost" onPress={handleLeaveSomething} />
+						<Button label="Not now" variant="ghost" onPress={handleSkipFirstPage} />
+					</View>
+				) : null}
 			</View>
 		);
 		},
@@ -843,6 +902,7 @@ export default function MemoriesScreen() {
 			border,
 			surface,
 			useNativeMomentMenu,
+			firstPage, handleLeaveSomething, handleSkipFirstPage,
 		],
 	);
 
@@ -984,7 +1044,7 @@ export default function MemoriesScreen() {
 			// The faces of the empty list are async states, so the switch
 			// between them is announced instead of silently swapping text.
 			<View accessibilityLiveRegion="polite" style={styles.emptyState}>
-				{feed.isLoading ? (
+				{feed.isLoading || (user && !firstPageReady && !firstPageError) ? (
 					<>
 						<ThemedText type="meta" style={{ color: muted }}>
 							Memories
@@ -1007,21 +1067,26 @@ export default function MemoriesScreen() {
 						</View>
 					</>
 				) : feed.totalCount === 0 && feed.pending.length === 0 ? (
-					<>
-						<ThemedText type="meta" style={{ color: muted }}>
-							Begin
-						</ThemedText>
-						<ThemedText type="title">{adaptiveCopy.memoryTitle}</ThemedText>
-						<ThemedText type="body" style={{ color: muted }}>
-							{adaptiveCopy.memoryBody}
-						</ThemedText>
-						<View style={styles.emptyCta}>
-							<Button
-								label={adaptiveCopy.memoryButton}
-								onPress={handleOpenEditor}
-							/>
-						</View>
-					</>
+					firstPage.kind === 'dedication' ? (
+						<FirstPageDedication partnerName={firstPage.partnerName} waiting={firstPage.waiting}
+							onCompose={handleLeaveSomething} onSkip={handleSkipFirstPage} />
+					) : (
+						<>
+							<ThemedText type="meta" style={{ color: muted }}>
+								Begin
+							</ThemedText>
+							<ThemedText type="title">{adaptiveCopy.memoryTitle}</ThemedText>
+							<ThemedText type="body" style={{ color: muted }}>
+								{adaptiveCopy.memoryBody}
+							</ThemedText>
+							<View style={styles.emptyCta}>
+								<Button
+									label={adaptiveCopy.memoryButton}
+									onPress={handleOpenEditor}
+								/>
+							</View>
+						</>
+					)
 				) : (
 					<>
 						<ThemedText type="meta" style={{ color: muted }}>
@@ -1036,8 +1101,27 @@ export default function MemoriesScreen() {
 				)}
 			</View>
 		),
-		[muted, handleOpenEditor, feed, adaptiveCopy],
+		[muted, handleOpenEditor, feed, adaptiveCopy, firstPage, handleLeaveSomething, handleSkipFirstPage, user, firstPageReady, firstPageError],
 	);
+	const firstPageFooter = sharingInvite || firstPageError ? (
+		<View style={styles.firstPageFooter}>
+			{sharingInvite ? (
+				<>
+					<ThemedText type="caption" style={{ color: muted }}>
+						{space?.partnerName?.trim() || 'Your partner'} hasn&apos;t joined yet.
+					</ThemedText>
+					<Button label={copiedInvite ? 'Code copied' : 'Copy invite code'} disabled={!space?.inviteCode} variant="ghost" onPress={handleShareInvite} />
+					{copiedInvite ? <ThemedText type="caption" accessibilityLiveRegion="polite" style={{ color: muted }}>Send it to them however you like.</ThemedText> : null}
+				</>
+			) : null}
+			{firstPageError ? (
+				<>
+					<ThemedText type="caption" accessibilityRole="alert">{firstPageError}</ThemedText>
+					<Button label="Try again" variant="ghost" onPress={firstPageReady ? handleSkipFirstPage : retryFirstPage} />
+				</>
+			) : null}
+		</View>
+	) : null;
 
 
 	// Older history prepends above the current rows, so the fetch control
@@ -1146,7 +1230,7 @@ export default function MemoriesScreen() {
 		<View style={rootStyle}>
 			{/* Frosted page texture + sky: the header's backdrop, pinned at the
 			    top. It is never faded or removed. */}
-			<Animated.View
+            <Animated.View
 				accessible={false}
 				accessibilityElementsHidden
 				importantForAccessibility="no-hide-descendants"
@@ -1154,10 +1238,34 @@ export default function MemoriesScreen() {
 				style={StyleSheet.absoluteFill}
 			>
 				<FrostedBackdrop />
-				<MemorySky compact moments={signalMoments} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
-			</Animated.View>
+                <View style={[styles.skyRevealClip, { height: skyRevealHeight }]}>
+                <Animated.View style={[StyleSheet.absoluteFill, skyRevealStyle]} testID="sky-top-down-reveal">
+                <MemorySky compact moments={signalMoments} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused && !entry} onSceneLayout={entry?.kind === 'arriving' ? reveal : undefined} />
+                </Animated.View>
+                </View>
+            </Animated.View>
 
-			<View pointerEvents="box-none" style={styles.header}>
+            {entry ? (
+              <Animated.View pointerEvents={entry.kind === 'welcome' ? 'auto' : 'none'}
+                accessibilityElementsHidden={entry.kind !== 'welcome'} aria-hidden={entry.kind !== 'welcome'}
+                importantForAccessibility={entry.kind === 'welcome' ? 'auto' : 'no-hide-descendants'}
+                style={[StyleSheet.absoluteFill, invitationStyle]} testID="sky-welcome">
+                <SkyWelcome details={entry.details} onEnter={enter} />
+              </Animated.View>
+            ) : null}
+
+            {entry?.kind === 'arriving' ? (
+              <Animated.View pointerEvents="none" accessible={false} accessibilityElementsHidden aria-hidden
+                importantForAccessibility="no-hide-descendants" style={[StyleSheet.absoluteFill, outgoingStyle]} testID="outgoing-setup-form">
+                <LayoutAnimationConfig skipEntering skipExiting>
+                  {entry.source}
+                </LayoutAnimationConfig>
+              </Animated.View>
+            ) : null}
+
+            {!entry || entry.kind === 'fading' ? <Animated.View pointerEvents={entry ? 'none' : 'auto'} accessibilityElementsHidden={!!entry}
+              aria-hidden={!!entry} importantForAccessibility={entry ? 'no-hide-descendants' : 'auto'} style={[{ flex: 1 }, arrivalStyle]}>
+            <View pointerEvents="box-none" style={styles.header}>
 				<View
 					style={[
 						styles.headerInner,
@@ -1224,7 +1332,7 @@ export default function MemoriesScreen() {
 					style={styles.keptLayer}
 				>
 				<Pressable
-					accessibilityLabel="Kept in your story. Dismiss."
+					accessibilityLabel={`${sharingInvite ? `Here for ${space?.partnerName || 'them'} when they arrive` : 'Kept in your story'}. Dismiss.`}
 					accessibilityLiveRegion="polite"
 					accessibilityRole="button"
 					onPress={handleDismissKeptNotice}
@@ -1238,7 +1346,7 @@ export default function MemoriesScreen() {
 					]}
 				>
 					<ThemedText type="caption" style={{ color: muted }}>
-						Kept in your story
+						{sharingInvite ? `Here for ${space?.partnerName || 'them'} when they arrive.` : 'Kept in your story'}
 					</ThemedText>
 				</Pressable>
 				</Animated.View>
@@ -1285,6 +1393,7 @@ export default function MemoriesScreen() {
 					keyboardDismissMode="on-drag"
 					keyExtractor={galleryKeyExtractor}
 					ListEmptyComponent={seenCursor === undefined ? null : emptyState}
+					ListFooterComponent={firstPageFooter}
 					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
 					refreshing={feed.isRefreshing}
@@ -1325,6 +1434,7 @@ export default function MemoriesScreen() {
 					keyboardDismissMode="on-drag"
 					keyExtractor={feedKeyExtractor}
 					ListEmptyComponent={seenCursor === undefined ? null : emptyState}
+					ListFooterComponent={firstPageFooter}
 					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
 					refreshing={feed.isRefreshing}
@@ -1366,7 +1476,8 @@ export default function MemoriesScreen() {
 				</GlassSurface>
 			</Pressable>
 
-			<ActionSheet
+            </Animated.View> : null}
+             <ActionSheet
 				actions={actionSheetActions}
 				onClose={handleCloseActionSheet}
 				title={actionMoment?.title?.trim() || "This moment"}
@@ -1397,6 +1508,16 @@ export default function MemoriesScreen() {
 }
 
 const styles = StyleSheet.create({
+	firstPageFooter: { paddingHorizontal: Spacing[24], paddingVertical: Spacing[16], alignItems: 'flex-start' },
+	welcomeLine: { paddingHorizontal: Spacing[24], paddingTop: Spacing[24], paddingBottom: Spacing[12] },
+	welcomeActions: { paddingHorizontal: Spacing[16], paddingBottom: Spacing[24], alignItems: 'flex-start' },
+	skyRevealClip: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		overflow: 'hidden',
+	},
 	root: {
 		flex: 1,
 		maxWidth: ROOT_MAX_WIDTH,

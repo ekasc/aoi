@@ -48,12 +48,22 @@ describe('local space repository partnership truth', () => {
     const joined = await localSpaceRepository.joinSpace({
       userId: 'user-2',
       inviteCode: created.inviteCode,
+      yourName: 'June',
     });
     expect(joined.partnerJoined).toBe(true);
+    // Each side reads the space from its own side of the pair: the joiner's
+    // own name is theirs, and the person they joined is named as their
+    // partner. One shared record would have made "partnerName" the joiner's
+    // own name and left the creator unnamed.
+    expect(joined.yourName).toBe('June');
+    expect(joined.partnerName).toBe('Aoi');
 
-    // The creator's copy flips too — no split-brain waiting state.
+    // The creator's copy flips too — no split-brain waiting state — and now
+    // names the person who arrived.
     const creatorCopy = await localSpaceRepository.getSpaceForUser('user-1');
     expect(creatorCopy?.partnerJoined).toBe(true);
+    expect(creatorCopy?.yourName).toBe('Aoi');
+    expect(creatorCopy?.partnerName).toBe('June');
   });
 
   it('leave clears only the leaver, regenerate returns the live code', async () => {

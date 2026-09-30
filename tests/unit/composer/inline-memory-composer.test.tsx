@@ -18,6 +18,10 @@ const setParamsSpy = vi.fn();
 
 let mockDraft: any = null;
 let mockHydrating = false;
+let partnerJoined = false;
+vi.mock('@/features/space/space-context', () => ({
+  useSpace: () => ({ space: { partnerName: 'June', partnerJoined } }),
+}));
 let mockComposerError: string | null = null;
 let mockLibraryResult: any = { canceled: true };
 let mockCameraResult: any = { canceled: true };
@@ -274,6 +278,7 @@ async function renderComposer(props: Record<string, any> = {}) {
 }
 
 beforeEach(() => {
+  partnerJoined = false;
   mockDraft = makeDraft();
   mockHydrating = false;
   mockComposerError = null;
@@ -310,6 +315,32 @@ beforeEach(() => {
 });
 
 describe('Memory editor opens directly with keyboard + controls (no collapse)', () => {
+  it('writes a dedication with the ordinary composer and explains who can see it', async () => {
+    await renderComposer({ dedication: true });
+    expect(screen.getByText('For June')).toBeTruthy();
+    expect(screen.getByText('June can see this when they join.')).toBeTruthy();
+    expect(screen.getByPlaceholderText('This made me think of you.')).toBeTruthy();
+    expect(launchLibrarySpy).not.toHaveBeenCalled();
+    expect(launchCameraSpy).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Choose photos')).toBeTruthy();
+    expect(screen.getByLabelText('Record a voice note')).toBeTruthy();
+  });
+  it('does not tell an already joined partner to wait for access', async () => {
+    partnerJoined = true;
+    await renderComposer({ dedication: true });
+    expect(screen.getByText('Kept in your shared memories.')).toBeTruthy();
+    expect(screen.queryByText('June can see this when they join.')).toBeNull();
+  });
+  it('saves a dedication through the same durable queue, with no automatic message', async () => {
+    mockDraft = makeDraft({ body: 'This made me think of you.' });
+    await renderComposer({ dedication: true });
+    fireEvent.click(screen.getByText('Save'));
+    await act(async () => {});
+    expect(saveSpy).toHaveBeenCalledOnce();
+    expect(backSpy).toHaveBeenCalledOnce();
+  });
   it('renders writing with compact icon controls immediately, no type sheet', async () => {
     await renderComposer();
     const input = screen.getByLabelText('Keep something') as HTMLElement;

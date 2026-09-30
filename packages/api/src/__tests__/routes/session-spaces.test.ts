@@ -148,7 +148,8 @@ describe('worker spaces routes (exactly-two membership over HTTP)', () => {
     });
     expect(join.status).toBe(200);
     const joinBody = await join.json();
-    expect(joinBody.space.partnerName).toBe('Partner');
+    // The joiner reads the creator's name, not the creator's guess at theirs.
+    expect(joinBody.space.partnerName).toBe('Aoi');
 
     // A third user (none exists) — the partner slot is full; simulate a
     // third member via a second join attempt by another user.
@@ -304,7 +305,7 @@ describe('optional partner name / start date (P3 nullable contract)', () => {
     expect(emptyDate.status).toBe(400);
   });
 
-  it('join after a partnerless create fills the partner name from the account', async () => {
+  it('tells each side the other name, and fills the column from the account', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     insertUser(harness.d1, USER_B, 'partner@example.com', 'Partner');
@@ -322,7 +323,17 @@ describe('optional partner name / start date (P3 nullable contract)', () => {
     });
     expect(join.status).toBe(200);
     const joinBody = await join.json();
-    expect(joinBody.space.partnerName).toBe('Partner');
+    // The joiner is told the creator's name, even though the create carried
+    // no partner name at all.
+    expect(joinBody.space.partnerName).toBe('Aoi');
     expect(joinBody.space.relationshipStartDate).toBeNull();
+
+    // And the creator is told the joiner's account name, which is what the
+    // stored column is for.
+    const current = await app.request('/v1/spaces/current', { headers: auth(TOKEN_A) });
+    expect(current.status).toBe(200);
+    const currentBody = await current.json();
+    expect(currentBody.space.partnerName).toBe('Partner');
+    expect(currentBody.space.partnerJoined).toBe(true);
   });
 });
