@@ -1,4 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
+import { useRouter } from "expo-router";
 import { Stack } from "expo-router/stack";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -12,6 +13,7 @@ import { installGlobalCrypto } from "@/features/crypto/global-crypto";
 import { MomentsProvider } from "@/features/moments/moments-context";
 import { SessionProvider, useSession } from "@/features/session/session-context";
 import { SpaceProvider, useSpace } from "@/features/space/space-context";
+import { useInviteLink } from "@/features/space/use-invite-link";
 import { SubscriptionProvider } from "@/features/subscription/subscription-context";
 import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
 import { useAoiFonts } from "@/hooks/use-aoi-fonts";
@@ -87,12 +89,17 @@ type RootNavigationProps = {
 };
 
 function RootNavigation({ fontsLoaded }: RootNavigationProps) {
+	const router = useRouter();
 	const {
 		isHydrated: isSessionHydrated,
 		user,
 	} = useSession();
 	const { isHydrated: isSpaceHydrated } = useSpace();
 	const { mode, colors, isHydrated } = useAoiTheme();
+	// An invite link can arrive before sign-in, after it, or while the app is
+	// already open. It is held here rather than acted on in the join screen so
+	// the code survives the session and space providers hydrating underneath it.
+	const pendingInvite = useInviteLink();
 	const themeName = mode === "dark" ? "dark" : "light";
 	const [showLaunchSplash, setShowLaunchSplash] = useState(true);
 
@@ -139,6 +146,16 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 			}
 		};
 	}, [fontsLoaded, isHydrated]);
+
+	// The link is only acted on once the app is actually up, and only for a
+	// signed-in reader: a link that arrives during sign-in is held by the hook
+	// and taken up here, when there is a space for it to belong to.
+	useEffect(() => {
+		if (!pendingInvite) {
+			return;
+		}
+		router.replace({ pathname: '/(auth)/space-setup', params: { code: pendingInvite } });
+	}, [pendingInvite, router]);
 
 	if (
 		!fontsLoaded ||
