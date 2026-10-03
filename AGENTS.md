@@ -256,6 +256,8 @@ finding is a genuine false positive, extend `scripts/a11y-audit.mjs` with a
 narrow exemption and a comment explaining why.
 
 ### Error handling
+- Every user-facing collection or collection section must explicitly identify an empty result and retain a next action where one exists. Do not rely on a blank list, zero counter, decorative graphic, or an invitation alone.
+- Keep successful empty reads, loading, failed reads, and filtered no-results distinct. Never seed content to hide an empty state. Cover those distinctions in the affected screen tests.
 - Don't leave `alert(...)` in production flows (starter templates use it in examples).
 - For async actions, handle loading + error states explicitly (don't swallow errors).
 - When adding API calls, surface user-safe messages and log detailed context only in dev.
