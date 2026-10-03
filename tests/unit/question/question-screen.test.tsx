@@ -196,6 +196,14 @@ beforeEach(() => {
 });
 
 describe('QuestionScreen loading and error (network behavior preserved)', () => {
+  it('identifies unanswered and unavailable reflections explicitly', async () => {
+    const page = await renderQuestion();
+    expect(screen.getByText('No answers yet.')).toBeTruthy();
+    page.unmount();
+    mockQuestion = { ...mockQuestion, state: null };
+    await renderQuestion();
+    expect(screen.getByText('No reflection available yet.')).toBeTruthy();
+  });
   it('shows a spinner while the week is loading', async () => {
     mockQuestion = { ...mockQuestion, state: null, isLoading: true };
     await renderQuestion();

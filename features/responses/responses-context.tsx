@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -19,6 +20,7 @@ import type {
   MomentResponseRepository,
 } from '@/features/responses/types';
 import { useSession } from '@/features/session/session-context';
+import { useSpace } from '@/features/space/space-context';
 
 const ResponsesContext = createContext<ResponsesContextValue | undefined>(undefined);
 
@@ -36,6 +38,10 @@ const ResponsesContext = createContext<ResponsesContextValue | undefined>(undefi
 export function ResponsesProvider({ children }: PropsWithChildren) {
   const { user } = useSession();
   const userId = user?.id;
+  const { space } = useSpace();
+  const spaceId = space?.id;
+  const scope = useRef({ userId, spaceId });
+  useLayoutEffect(() => { scope.current = { userId, spaceId }; }, [userId, spaceId]);
   const [responses, setResponses] = useState<MomentResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +63,10 @@ export function ResponsesProvider({ children }: PropsWithChildren) {
   const loadFor = useCallback(
     async (momentId: string | null) => {
       if (!repository || !momentId) {
+        ++mutationSeqRef.current;
         setResponses([]);
+        setError(null);
+        setIsLoading(false);
         loadedForRef.current = null;
         return;
       }
@@ -67,6 +76,8 @@ export function ResponsesProvider({ children }: PropsWithChildren) {
       loadedForRef.current = momentId;
       const seq = ++mutationSeqRef.current;
       setIsLoading(true);
+      setError(null);
+      setResponses([]);
       try {
         const loaded = await repository.listForMoment(momentId);
         if (mutationSeqRef.current !== seq) {
@@ -76,8 +87,9 @@ export function ResponsesProvider({ children }: PropsWithChildren) {
         setError(null);
       } catch {
         if (mutationSeqRef.current === seq) {
-          setError(null);
+          setError('Could not load responses.');
           setResponses([]);
+          loadedForRef.current = null;
         }
       } finally {
         if (mutationSeqRef.current === seq) {
@@ -95,7 +107,12 @@ export function ResponsesProvider({ children }: PropsWithChildren) {
       }
       const seq = ++mutationSeqRef.current;
       try {
-        const created = await repository.add(input);
+        const assertScope = () => {
+          if (scope.current.userId !== userId || scope.current.spaceId !== spaceId) {
+            throw new Error('The active space changed.');
+          }
+        };
+        const created = await repository.add(input, assertScope);
         if (mutationSeqRef.current === seq) {
           setResponses((current) => [created, ...current]);
         }
@@ -104,7 +121,7 @@ export function ResponsesProvider({ children }: PropsWithChildren) {
         return false;
       }
     },
-    [repository],
+    [repository, userId, spaceId],
   );
 
   // The partner's response can land while this memory is open; on return to

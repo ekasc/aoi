@@ -1,5 +1,5 @@
 import { Stack, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
 	KeyboardAvoidingView,
 	Pressable,
@@ -18,6 +18,7 @@ import { Typography } from "@/constants/typography";
 import { CALENDAR_PRESET_LABELS } from "@/features/calendar/types";
 import type { CalendarPresetLabel } from "@/features/calendar/types";
 import { useProposals } from "@/features/proposals/proposals-context";
+import { PROPOSAL_TITLE_MAX_LENGTH } from "@/features/proposals/types";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 function applyDatePart(base: Date, datePart: Date) {
@@ -71,6 +72,7 @@ export default function NewProposalScreen() {
 	const [endsAt, setEndsAt] = useState(() => datePlusOneHour(initialStart));
 	const [error, setError] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const submittingRef = useRef(false);
 
 	const isRangeInvalid = endsAt.getTime() <= startsAt.getTime();
 
@@ -105,6 +107,7 @@ export default function NewProposalScreen() {
 	);
 
 	const handleSuggest = useCallback(async () => {
+		if (submittingRef.current) return;
 		const trimmedTitle = title.trim();
 
 		if (!trimmedTitle) {
@@ -123,6 +126,7 @@ export default function NewProposalScreen() {
 			return;
 		}
 
+		submittingRef.current = true;
 		setIsSubmitting(true);
 		setError("");
 		try {
@@ -143,6 +147,7 @@ export default function NewProposalScreen() {
 				err instanceof Error ? err.message : "Your suggestion could not be sent.",
 			);
 		} finally {
+			submittingRef.current = false;
 			setIsSubmitting(false);
 		}
 	}, [
@@ -178,9 +183,10 @@ export default function NewProposalScreen() {
 					<View style={styles.titleBlock}>
 						<ThemedText type="meta">The idea</ThemedText>
 						<TextInput
+							editable={!isSubmitting}
+							maxLength={PROPOSAL_TITLE_MAX_LENGTH}
 							accessibilityLabel="Suggestion title"
 							autoCapitalize="sentences"
-							maxLength={120}
 							onChangeText={(value) => {
 								setTitle(value);
 								if (error) {
@@ -279,8 +285,10 @@ export default function NewProposalScreen() {
 								<Pressable
 									accessibilityLabel="No label"
 									accessibilityRole="radio"
-									accessibilityState={{ selected: presetLabel === null }}
-									onPress={() => setPresetLabel(null)}
+									aria-checked={presetLabel === null}
+									accessibilityState={{ checked: presetLabel === null, disabled: isSubmitting }}
+									disabled={isSubmitting}
+									onPress={() => { if (!submittingRef.current) setPresetLabel(null); }}
 									style={[
 										styles.choiceChip,
 										{
@@ -303,9 +311,11 @@ export default function NewProposalScreen() {
 										<Pressable
 											accessibilityLabel={`Set label ${label}`}
 											accessibilityRole="radio"
-											accessibilityState={{ selected }}
+											aria-checked={selected}
+												accessibilityState={{ checked: selected, disabled: isSubmitting }}
+												disabled={isSubmitting}
 											key={label}
-											onPress={() => setPresetLabel(label)}
+											onPress={() => { if (!submittingRef.current) setPresetLabel(label); }}
 											style={[
 												styles.choiceChip,
 												{
@@ -352,7 +362,7 @@ export default function NewProposalScreen() {
 						label={isSubmitting ? "Suggesting…" : "Suggest it"}
 						onPress={handleSuggest}
 					/>
-					<Button label="Cancel" variant="secondary" onPress={() => router.back()} />
+					<Button disabled={isSubmitting} label="Cancel" variant="secondary" onPress={() => { if (!submittingRef.current) router.back(); }} />
 				</View>
 			</KeyboardAvoidingView>
 		</>

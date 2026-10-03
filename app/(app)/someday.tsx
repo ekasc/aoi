@@ -342,12 +342,16 @@ export default function SomedayScreen() {
 							)}
 						</Surface>
 
-						{doneItems.length > 0 ? (
 							<>
 								<ThemedText type="meta" style={styles.sectionHeader}>
 									Done together
 								</ThemedText>
 								<Surface style={styles.listCard}>
+									{doneItems.length === 0 ? (
+										<ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
+											Nothing done together yet.
+										</ThemedText>
+										) : null}
 									{doneItems.map((item, index) => (
 										<View key={item.id}>
 											{index > 0 ? <Divider /> : null}
@@ -362,7 +366,6 @@ export default function SomedayScreen() {
 									))}
 								</Surface>
 							</>
-						) : null}
 					</>
 				)}
 			</ScrollView>

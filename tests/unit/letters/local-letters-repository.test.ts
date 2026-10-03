@@ -24,8 +24,13 @@ afterEach(() => {
 });
 
 describe('local letters repository (stub mode)', () => {
+  it('starts a normal shelf empty without creating a partner letter', async () => {
+    const repo = createLocalLettersRepository('fresh-user');
+    expect(await repo.list()).toEqual([]);
+    expect(await createLocalLettersRepository('fresh-user').list()).toEqual([]);
+  });
   it('seeds one plainly-simulated partner letter on first load', async () => {
-    const repo = createLocalLettersRepository('user-local-1');
+    const repo = createLocalLettersRepository('user-local-1', true);
     const letters = await repo.list();
 
     expect(letters).toHaveLength(1);
@@ -39,10 +44,10 @@ describe('local letters repository (stub mode)', () => {
   });
 
   it('seeds once — a second repository for the same user sees the same shelf', async () => {
-    const first = createLocalLettersRepository('user-local-2');
+    const first = createLocalLettersRepository('user-local-2', true);
     const initial = await first.list();
 
-    const second = createLocalLettersRepository('user-local-2');
+    const second = createLocalLettersRepository('user-local-2', true);
     const again = await second.list();
 
     expect(again).toHaveLength(1);
@@ -56,8 +61,7 @@ describe('local letters repository (stub mode)', () => {
     const other = createLocalLettersRepository('user-local-4');
     const theirs = await other.list();
 
-    expect(theirs).toHaveLength(1); // only the simulated partner seed
-    expect(theirs[0].authorRole).toBe('partner');
+    expect(theirs).toHaveLength(0);
   });
 
   it('seals a letter without ever handing back the words', async () => {
@@ -94,7 +98,7 @@ describe('local letters repository (stub mode)', () => {
     await repo.seal({ body: 'Second', sealedUntil: FUTURE_SEAL.toISOString() });
 
     const letters = await repo.list();
-    expect(letters).toHaveLength(3); // partner seed + two sealed
+    expect(letters).toHaveLength(2);
     expect(letters[0].authorRole).toBe('you');
     expect(letters[0].createdAt > letters[1].createdAt).toBe(true);
   });
@@ -185,7 +189,7 @@ describe('local letters repository (stub mode)', () => {
     });
 
     it('releases the words once the day arrives, and only then', async () => {
-      const repo = createLocalLettersRepository('user-local-17');
+      const repo = createLocalLettersRepository('user-local-17', true);
       const letters = await repo.list();
       const sealed = letters[0]; // the simulated partner letter: due in 15s
 

@@ -12,6 +12,7 @@ import { AppState } from 'react-native';
 
 import { isStubMode } from '@/features/api-client';
 import { createLocalProposalsRepository } from '@/features/proposals/local-proposals-repository';
+import { usePreviewVariant } from '@/features/dev/preview';
 import { remoteProposalsRepository } from '@/features/proposals/remote-proposals-repository';
 import type {
   ProposalsContextValue,
@@ -33,6 +34,8 @@ const ProposalsContext = createContext<ProposalsContextValue | undefined>(undefi
 export function ProposalsProvider({ children }: PropsWithChildren) {
   const { user } = useSession();
   const userId = user?.id;
+  const preview = usePreviewVariant();
+  const previewSeed = preview.active && preview.variant !== 'empty' && preview.variant !== 'setup';
   const [proposals, setProposals] = useState<EventProposal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,9 +46,9 @@ export function ProposalsProvider({ children }: PropsWithChildren) {
     }
 
     return isStubMode()
-      ? createLocalProposalsRepository(userId)
+      ? createLocalProposalsRepository(userId, previewSeed)
       : remoteProposalsRepository;
-  }, [userId]);
+  }, [userId, previewSeed]);
 
   useEffect(() => {
     if (!repository) {

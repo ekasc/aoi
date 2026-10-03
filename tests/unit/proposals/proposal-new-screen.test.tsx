@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const proposeSpy = vi.fn(async () => ({ id: 'proposal-1' }));
 const backSpy = vi.fn();
@@ -39,11 +39,33 @@ vi.mock('@/hooks/use-theme-color', () => ({
 }));
 
 beforeEach(() => {
-  proposeSpy.mockClear();
+  proposeSpy.mockReset().mockResolvedValue({ id: 'proposal-1' });
   backSpy.mockClear();
 });
 
 describe('NewProposalScreen validity', () => {
+  it('exposes the chosen label as a checked radio option', async () => {
+    const { default: NewProposalScreen } = await import('@/app/(app)/proposal/new');
+    render(<NewProposalScreen />);
+    expect(screen.getByLabelText('No label').getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByLabelText('Set label Date'));
+    expect(screen.getByLabelText('Set label Date').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByLabelText('No label').getAttribute('aria-checked')).toBe('false');
+  });
+  it('does not send twice or cancel while the suggestion is being submitted', async () => {
+    let finish: (value: { id: string }) => void = () => {};
+    proposeSpy.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const { default: NewProposalScreen } = await import('@/app/(app)/proposal/new');
+    render(<NewProposalScreen />);
+    fireEvent.change(screen.getByLabelText('Suggestion title'), { target: { value: 'Dinner' } });
+    fireEvent.click(screen.getByText('Suggest it'));
+    fireEvent.click(screen.getByText('Cancel'));
+    fireEvent.click(screen.getByText('Suggesting…'));
+    expect(proposeSpy).toHaveBeenCalledOnce();
+    expect(backSpy).not.toHaveBeenCalled();
+    await act(async () => finish({ id: 'sent' }));
+    expect(backSpy).toHaveBeenCalledOnce();
+  });
   it('blocks an empty title and keeps the draft open', async () => {
     const { default: NewProposalScreen } = await import(
       '@/app/(app)/proposal/new'

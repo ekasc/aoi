@@ -274,10 +274,9 @@ function assertAnswerable(stored: StoredProposal | undefined): StoredProposal {
 
 /**
  * Device-local proposals for stub mode. Storage is keyed per user, like
- * letters. The seeded partner suggestion and the delayed pretend acceptance
- * exist only so the flow can be felt offline.
+ * letters. Partner fixtures and simulated acceptance are opt-in for previews.
  */
-export function createLocalProposalsRepository(userId: string): ProposalsRepository {
+export function createLocalProposalsRepository(userId: string, previewSeed = false): ProposalsRepository {
   const key = storageKey(userId);
 
   async function loadOrCreate(): Promise<StoredProposalsPayload> {
@@ -289,7 +288,7 @@ export function createLocalProposalsRepository(userId: string): ProposalsReposit
 
     const seeded: StoredProposalsPayload = {
       seededAt: new Date().toISOString(),
-      proposals: [createPartnerSeedProposal(new Date())],
+      proposals: previewSeed ? [createPartnerSeedProposal(new Date())] : [],
     };
 
     await writePayload(key, seeded);
@@ -299,6 +298,7 @@ export function createLocalProposalsRepository(userId: string): ProposalsReposit
   /** Load, let the pretend partner answer anything that is due, persist. */
   async function loadSettled(): Promise<StoredProposalsPayload> {
     const loaded = await loadOrCreate();
+    if (!previewSeed) return loaded;
     const settled = await applySimulatedPartnerAnswers(loaded, new Date());
 
     if (settled.changed) {

@@ -10,10 +10,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PARTNER_DETAIL_TEXT_MAX_LENGTH } from '@aoi/shared';
 
 import { ThemedText } from '@/components/themed-text';
 import { Divider } from '@/components/ui/divider';
 import { Surface } from '@/components/ui/surface';
+import { Button } from '@/components/ui/button';
 import { Spacing } from '@/constants/theme';
 import { Typography } from "@/constants/typography";
 import {
@@ -83,7 +85,7 @@ function DetailRow({
 export default function LittleThingsScreen() {
   const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
-  const { details, addDetail, removeDetail } = usePartnerDetails();
+  const { details, isLoading, error, reload, addDetail, removeDetail } = usePartnerDetails();
   const { space } = useSpace();
   const accent = useThemeColor({}, 'accent');
   const border = useThemeColor({}, 'border');
@@ -98,7 +100,8 @@ export default function LittleThingsScreen() {
 
   const partnerName = space?.partnerName ?? 'them';
   const trimmedDraft = draft.trim();
-  const canSave = trimmedDraft.length > 0 && !isSaving;
+  const canSave = trimmedDraft.length > 0 && !isSaving && !isLoading && !error;
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handleSave = useCallback(async () => {
     if (!canSave) {
@@ -106,11 +109,14 @@ export default function LittleThingsScreen() {
     }
 
     setIsSaving(true);
+    setActionError(null);
 
     try {
       await addDetail({ text: trimmedDraft, category });
       setDraft('');
       setCategory('other');
+    } catch {
+      setActionError('Could not save this detail. Your words are still here.');
     } finally {
       setIsSaving(false);
     }
@@ -118,7 +124,8 @@ export default function LittleThingsScreen() {
 
   const handleRemove = useCallback(
     (detailId: string) => {
-      void removeDetail(detailId);
+      setActionError(null);
+      void removeDetail(detailId).catch(() => setActionError('Could not remove this detail. Try again.'));
     },
     [removeDetail]
   );
@@ -154,6 +161,7 @@ export default function LittleThingsScreen() {
           <TextInput
             accessibilityLabel="A small thing about them"
             multiline
+            maxLength={PARTNER_DETAIL_TEXT_MAX_LENGTH}
             onChangeText={setDraft}
             placeholder="One small thing about them…"
             placeholderTextColor={muted}
@@ -210,8 +218,29 @@ export default function LittleThingsScreen() {
           </Pressable>
         </Surface>
 
-        {details.length === 0 ? (
+        {actionError ? (
+          <ThemedText accessibilityRole="alert" type="caption" style={{ color: muted }}>
+            {actionError}
+          </ThemedText>
+        ) : null}
+        {error ? (
+          <View style={{ gap: Spacing[8] }}>
+            <ThemedText accessibilityRole="alert" type="caption" style={{ color: muted }}>
+              {error}
+            </ThemedText>
+            <Button label="Try again" onPress={reload} variant="secondary" size="sm" />
+          </View>
+        ) : null}
+        {isLoading ? (
+          <ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
+            Loading details…
+          </ThemedText>
+        ) : null}
+        {!isLoading && !error && details.length === 0 ? (
           <Surface style={styles.promptCard}>
+            <ThemedText accessibilityLiveRegion="polite" type="body" style={{ color: muted }}>
+              No details yet.
+            </ThemedText>
             <ThemedText type="meta" style={{ color: muted }}>
               Need a spark?
             </ThemedText>
@@ -229,7 +258,7 @@ export default function LittleThingsScreen() {
               </Pressable>
             ))}
           </Surface>
-        ) : (
+        ) : details.length > 0 ? (
           <Surface style={styles.listCard}>
             {details.map((detail, index) => (
               <View key={detail.id}>
@@ -243,7 +272,7 @@ export default function LittleThingsScreen() {
               </View>
             ))}
           </Surface>
-        )}
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );

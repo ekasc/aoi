@@ -24,8 +24,16 @@ afterEach(() => {
 });
 
 describe('local proposals repository (stub mode)', () => {
+  it('starts empty and never invents a partner acceptance outside previews', async () => {
+    const repo = createLocalProposalsRepository('fresh-user');
+    expect(await repo.list()).toEqual([]);
+    const created = await repo.propose({ title: 'Picnic', proposedStart: FUTURE_START.toISOString(), proposedEnd: FUTURE_END.toISOString() });
+    vi.setSystemTime(new Date(FIXED_NOW.getTime() + 60_000));
+    expect((await repo.list())[0].status).toBe('pending');
+    expect((await repo.list())[0].id).toBe(created.id);
+  });
   it('seeds one plainly-simulated partner suggestion on first load', async () => {
-    const repo = createLocalProposalsRepository('user-local-1');
+    const repo = createLocalProposalsRepository('user-local-1', true);
     const proposals = await repo.list();
 
     expect(proposals).toHaveLength(1);
@@ -38,10 +46,10 @@ describe('local proposals repository (stub mode)', () => {
   });
 
   it('seeds once — a second repository for the same user sees the same list', async () => {
-    const first = createLocalProposalsRepository('user-local-2');
+    const first = createLocalProposalsRepository('user-local-2', true);
     const initial = await first.list();
 
-    const second = createLocalProposalsRepository('user-local-2');
+    const second = createLocalProposalsRepository('user-local-2', true);
     const again = await second.list();
 
     expect(again).toHaveLength(1);
@@ -62,7 +70,7 @@ describe('local proposals repository (stub mode)', () => {
     expect(created.resolvedAt).toBeNull();
 
     const proposals = await repo.list();
-    expect(proposals).toHaveLength(2);
+    expect(proposals).toHaveLength(1);
     expect(proposals[0].id).toBe(created.id);
   });
 
@@ -147,7 +155,7 @@ describe('local proposals repository (stub mode)', () => {
 
   describe('answering the partner (proposee only)', () => {
     it('accepts the seeded partner suggestion and creates a real event', async () => {
-      const repo = createLocalProposalsRepository('user-local-9');
+      const repo = createLocalProposalsRepository('user-local-9', true);
       const [seeded] = await repo.list();
 
       const accepted = await repo.accept(seeded.id);
@@ -166,7 +174,7 @@ describe('local proposals repository (stub mode)', () => {
     });
 
     it('declines gently and creates no event', async () => {
-      const repo = createLocalProposalsRepository('user-local-10');
+      const repo = createLocalProposalsRepository('user-local-10', true);
       const [seeded] = await repo.list();
 
       const declined = await repo.decline(seeded.id);
@@ -193,7 +201,7 @@ describe('local proposals repository (stub mode)', () => {
     });
 
     it('answers only once — a second resolve is a calm no', async () => {
-      const repo = createLocalProposalsRepository('user-local-12');
+      const repo = createLocalProposalsRepository('user-local-12', true);
       const [seeded] = await repo.list();
       await repo.accept(seeded.id);
 
@@ -217,7 +225,7 @@ describe('local proposals repository (stub mode)', () => {
 
   describe('the simulated partner answers your suggestions', () => {
     it('accepts a few seconds later — checked on reads, never live timers', async () => {
-      const repo = createLocalProposalsRepository('user-local-14');
+      const repo = createLocalProposalsRepository('user-local-14', true);
       const created = await repo.propose({
         title: 'Farmers market',
         proposedStart: FUTURE_START.toISOString(),
@@ -244,7 +252,7 @@ describe('local proposals repository (stub mode)', () => {
     });
 
     it('persists the answer once — later reads never double-create the event', async () => {
-      const repo = createLocalProposalsRepository('user-local-15');
+      const repo = createLocalProposalsRepository('user-local-15', true);
       await repo.propose({
         title: 'Farmers market',
         proposedStart: FUTURE_START.toISOString(),

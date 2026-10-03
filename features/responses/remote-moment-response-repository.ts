@@ -1,4 +1,6 @@
 import { apiFetch } from '@/features/api-client';
+import { uploadMediaAsset } from '@/features/media/media-upload-service';
+import { createMomentResponseRequestSchema, momentResponseListResponseSchema, momentResponseSchema, type CreateMomentResponseRequest } from '@aoi/shared';
 import type {
   CreateMomentResponseInput,
   MomentResponse,
@@ -9,30 +11,41 @@ import type {
 /**
  * Server-backed responses, so both partners see the same exchange.
  *
- * The endpoint does not exist yet. It is written to the shape the rest of the
- * API already uses, so the client is complete and the local repository keeps
- * the feature working end to end until the route ships.
+ * Media uses the existing authorized upload pipeline. Device URIs and client
+ * author fields never cross the response API boundary.
  */
 export const remoteMomentResponseRepository: MomentResponseRepository = {
   async listForMoment(momentId) {
     const response = await apiFetch<MomentResponseListResponse>(
       `/v1/moments/${encodeURIComponent(momentId)}/responses`
     );
-    return response.responses;
+    return momentResponseListResponseSchema.parse(response).responses;
   },
 
-  async add(input: CreateMomentResponseInput): Promise<MomentResponse> {
-    return apiFetch<MomentResponse>(
+  async add(input: CreateMomentResponseInput, assertScope = () => {}): Promise<MomentResponse> {
+    assertScope();
+    let payload: CreateMomentResponseRequest;
+    if (input.kind === 'tap') {
+      payload = { kind: 'tap' };
+    } else if (input.kind === 'word') {
+      payload = createMomentResponseRequestSchema.parse({ kind: 'word', body: input.body });
+    } else {
+      const uri = input.kind === 'photo' ? input.mediaPreview : input.audioUri;
+      if (!uri) throw new Error('Choose media for this response.');
+      const uploaded = await uploadMediaAsset({ uri, mimeType: input.mimeType ?? (input.kind === 'photo' ? 'image/jpeg' : 'audio/m4a') }, undefined, assertScope);
+      assertScope();
+      if (!uploaded.mediaId) throw new Error('Media could not be uploaded.');
+      payload = { kind: input.kind, mediaId: uploaded.mediaId };
+    }
+    assertScope();
+    const response = await apiFetch<MomentResponse>(
       `/v1/moments/${encodeURIComponent(input.momentId)}/responses`,
       {
         method: 'POST',
-        body: JSON.stringify({
-          kind: input.kind,
-          body: input.body ?? null,
-          mediaPreview: input.mediaPreview ?? null,
-          audioUri: input.audioUri ?? null,
-        }),
+        body: JSON.stringify(payload),
       }
     );
+    assertScope();
+    return momentResponseSchema.parse(response);
   },
 };

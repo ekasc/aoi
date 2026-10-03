@@ -162,6 +162,11 @@ export default function QuestionScreen() {
 							<ThemedText type="title" accessibilityRole="header">
 								{state.question}
 							</ThemedText>
+							{!hasSavedAnswer && !state.partnerAnswered ? (
+								<ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
+									No answers yet.
+								</ThemedText>
+							) : null}
 						</View>
 
 						{showComposer ? (
@@ -220,7 +225,11 @@ export default function QuestionScreen() {
 							</View>
 						)}
 					</>
-				) : null}
+				) : (
+					<ThemedText accessibilityLiveRegion="polite" type="body" style={{ color: muted }}>
+						No reflection available yet.
+					</ThemedText>
+				)}
       </ScrollView>
     </KeyboardAvoidingView>
 	);

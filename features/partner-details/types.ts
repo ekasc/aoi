@@ -1,16 +1,5 @@
-export type PartnerDetailCategory =
-  | 'favorite'
-  | 'habit'
-  | 'quirk'
-  | 'words'
-  | 'other';
-
-export type PartnerDetail = {
-  id: string;
-  text: string;
-  category: PartnerDetailCategory;
-  createdAt: string;
-};
+import type { PartnerDetailCategory } from '@aoi/shared';
+export type { PartnerDetail, PartnerDetailCategory } from '@aoi/shared';
 
 export type CreatePartnerDetailInput = {
   text: string;
