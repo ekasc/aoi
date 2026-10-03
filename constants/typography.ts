@@ -9,22 +9,23 @@ import { Platform } from 'react-native';
  * See docs/design/asset-manifest.md (A8).
  *
  * Referencing OS font names redistributes nothing: iOS resolves its own
- * New York/SF, Android its Noto/sans, web its Georgia and system stacks.
+ * system sans, Android its sans, web its system stack.
  * If a licensed editorial face is ever procured, it lands here behind these
  * same keys.
  *
- * Two families only: the serif display face and the system sans. Labels and
- * metadata use the sans too — no monospace anywhere in the product.
+ * System sans throughout, with hierarchy carried by size and weight.
+ * No bundled fonts or monospace in the product.
  */
 export const FontFamilies: {
-  display: string;
+  display: string | undefined;
   body: string | undefined;
   meta: string | undefined;
 } = {
   display: Platform.select({
-    ios: 'New York',
-    android: 'serif',
-    default: 'Georgia, "Times New Roman", serif',
+    ios: undefined,
+    android: 'sans-serif',
+    default:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   }),
   // System sans everywhere: named generics where the platform has them,
   // unset (OS default) on iOS where naming the system font is fragile.
@@ -66,7 +67,7 @@ export const Typography = {
   title: {
     fontFamily: FontFamilies.display,
     fontSize: 22,
-    // Serif headings want tighter leading than body; 1.18 reads as a heading.
+    // Headings use tighter leading than body text.
     lineHeight: 26,
     letterSpacing: -0.4,
   },

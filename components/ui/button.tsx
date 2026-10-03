@@ -9,6 +9,7 @@ import {
 import { useReducedMotion } from "react-native-reanimated";
 
 import { Radii } from "@/constants/theme";
+import { FontFamilies } from "@/constants/typography";
 import { ThemedText } from "@/components/themed-text";
 import { Pressed } from "@/components/ui/pressed";
 import { useAoiTheme } from "@/features/theme/theme-context";
@@ -32,6 +33,12 @@ export type ButtonProps = Omit<PressableProps, "style"> & {
 	variant?: ButtonVariant;
 	size?: ButtonSize;
 	tone?: ButtonTone;
+	/**
+	 * Announce a label that changes in place, for a button whose label reports
+	 * state. A copy button that becomes "Code copied" is a new thing to a screen
+	 * reader, not a quiet repaint of the old one.
+	 */
+	accessibilityLiveRegion?: PressableProps["accessibilityLiveRegion"];
 };
 
 type VariantStyles = {
@@ -47,6 +54,7 @@ export function Button({
 	tone = "paper",
 	disabled,
 	accessibilityLabel,
+	accessibilityLiveRegion,
 	...rest
 }: ButtonProps) {
 	const onSky = tone === "sky";
@@ -77,7 +85,7 @@ export function Button({
 			primary: {
 				container: {
 					backgroundColor: primary,
-					borderColor: primary,
+					borderColor: "transparent",
 				},
 				label: { color: primaryText },
 				pressedContainer: { backgroundColor: primaryPressed },
@@ -126,6 +134,10 @@ export function Button({
 	return (
 		<Pressable
 			accessibilityRole="button"
+			// The label is the accessible name and it changes in place, so a
+			// button whose label reports state (a copy button becoming
+			// "Code copied") would otherwise be silent to a screen reader.
+			accessibilityLiveRegion={accessibilityLiveRegion}
 			accessibilityLabel={accessibilityLabel ?? label}
 			disabled={disabled}
 			style={({ pressed }) => [
@@ -142,8 +154,13 @@ export function Button({
 			{...rest}
 		>
 			<ThemedText
-				type="bodyEmphasis"
-				style={[currentVariant.label, isDisabled ? { color: disabledColor } : undefined]}
+				numberOfLines={1}
+				style={[
+					styles.label,
+					size === "sm" ? styles.labelSm : styles.labelMd,
+					currentVariant.label,
+					isDisabled ? { color: disabledColor } : undefined,
+				]}
 			>
 				{label}
 			</ThemedText>
@@ -156,17 +173,33 @@ const styles = StyleSheet.create({
 		minHeight: 44,
 		minWidth: 44,
 		borderWidth: StyleSheet.hairlineWidth,
-		borderRadius: Radii.md,
+		// A pill, not a rounded rectangle. Ten points of radius on a hairline
+		// border is Material's shape with aoi's colours in it; a full round
+		// reads as a stamp, which is what this app's controls should look like.
+		borderRadius: Radii.pill,
 		borderCurve: "continuous",
 		alignItems: "center",
 		justifyContent: "center",
+	},
+	label: {
+		fontFamily: FontFamilies.display,
+	},
+	labelMd: {
+		fontSize: 18,
+		lineHeight: 24,
+		letterSpacing: 0.1,
+	},
+	labelSm: {
+		fontSize: 15,
+		lineHeight: 21,
+		letterSpacing: 0.15,
 	},
 	sm: {
 		paddingHorizontal: 14,
 		paddingVertical: 10,
 	},
 	md: {
-		paddingHorizontal: 16,
+		paddingHorizontal: 20,
 		paddingVertical: 12,
 	},
 	disabled: {

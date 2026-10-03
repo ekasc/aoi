@@ -2,11 +2,14 @@ import { BottomSheetModal, type BottomSheetMethods } from '@expo/ui/community/bo
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 
+import { useThemeColor } from '@/hooks/use-theme-color';
+
 export type NativeSheetProps = {
   visible: boolean;
   onClose: () => void;
   backgroundStyle?: StyleProp<ViewStyle>;
   children: ReactNode;
+  dismissible?: boolean;
 };
 
 /**
@@ -24,7 +27,9 @@ export function NativeSheet({
   onClose,
   backgroundStyle,
   children,
+  dismissible = true,
 }: NativeSheetProps) {
+  const surface = useThemeColor({}, 'surface');
   const ref = useRef<BottomSheetMethods>(null);
   // Tracks whether the sheet is currently presented so a native-initiated
   // dismissal (drag / backdrop) does not also get a programmatic close(),
@@ -49,9 +54,9 @@ export function NativeSheet({
   return (
     <BottomSheetModal
       ref={ref}
-      backgroundStyle={backgroundStyle}
+      backgroundStyle={[{ backgroundColor: surface }, backgroundStyle]}
       enableDynamicSizing
-      enablePanDownToClose
+      enablePanDownToClose={dismissible}
       // onClose and onDismiss fire together; wiring both to the same handler
       // would call it twice on every dismissal.
       onClose={handleNativeClose}

@@ -2,13 +2,12 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import { MotiView } from 'moti';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
-import { Motion, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { NativeSheet } from '@/components/ui/native-sheet';
 
@@ -83,11 +82,17 @@ export function NativeDateTimeField({
   const [isOpen, setIsOpen] = useState(false);
 
   const isRow = variant === 'row';
-  // iOS presents its picker in a sheet rather than in the page: a picker card
-  // rendered in place grows the field and pushes everything below it down, and
-  // on a form that is the difference between choosing a date and losing your
-  // place. Android's picker is already a dialog and needs no sheet.
   const [sheetOpen, setSheetOpen] = useState(false);
+  const waitingForKeyboard = useRef(false);
+  useEffect(() => {
+    if (!isIos) return;
+    const subscription = Keyboard.addListener('keyboardDidHide', () => {
+      if (!waitingForKeyboard.current) return;
+      waitingForKeyboard.current = false;
+      setSheetOpen(true);
+    });
+    return () => subscription.remove();
+  }, [isIos]);
   const valueLabel = useMemo(() => formatFieldValue(value, mode), [mode, value]);
   // Android has no combined datetime picker — fall back to date-only there.
   const pickerMode = isAndroid && mode === 'datetime' ? 'date' : mode;
@@ -118,10 +123,22 @@ export function NativeDateTimeField({
       <Pressable
         accessibilityLabel={accessibilityLabel ?? `Choose ${label.toLowerCase()}`}
         accessibilityRole="button"
+        accessibilityState={{ disabled: Boolean(disabled), expanded: isIos ? sheetOpen : isOpen }}
         disabled={disabled}
-        onPress={() =>
-          isIos ? setSheetOpen(true) : setIsOpen((current) => !current)
-        }
+        onPress={() => {
+          if (isIos) {
+            // Avoid running the form's keyboard resize and sheet presentation together.
+            if (Keyboard.isVisible()) {
+              waitingForKeyboard.current = true;
+              Keyboard.dismiss();
+            } else {
+              setSheetOpen(true);
+            }
+          } else {
+            Keyboard.dismiss();
+            setIsOpen((current) => !current);
+          }
+        }}
         style={[
           isRow ? styles.rowButton : styles.valueButton,
           isRow
@@ -143,7 +160,7 @@ export function NativeDateTimeField({
             <ThemedText type="body">{valueLabel}</ThemedText>
             <Ionicons
               color={muted}
-              name={isOpen ? 'chevron-up' : 'chevron-down'}
+              name={(isIos ? sheetOpen : isOpen) ? 'chevron-up' : 'chevron-down'}
               size={14}
             />
           </>
@@ -152,18 +169,17 @@ export function NativeDateTimeField({
             <ThemedText type="body">{valueLabel}</ThemedText>
             {!compact ? (
               <ThemedText type="caption" style={{ color: muted }}>
-                Tap to change
+                {isOpen ? 'Tap to close' : 'Tap to change'}
               </ThemedText>
             ) : null}
           </>
         )}
       </Pressable>
 
-      {/* The platform's own sheet, so the OS owns the presentation, the motion
-          and the dismissal, and the page underneath never moves. */}
-      <NativeSheet onClose={() => setSheetOpen(false)} visible={sheetOpen}>
+      {isIos ? <NativeSheet onClose={() => setSheetOpen(false)} visible={sheetOpen}>
         <View style={{ gap: Spacing[12], paddingBottom: Spacing[16], paddingHorizontal: Spacing[16] }}>
           <DateTimePicker
+            style={styles.iosPicker}
             display={pickerDisplay}
             maximumDate={maximumDate}
             minimumDate={minimumDate}
@@ -177,36 +193,9 @@ export function NativeDateTimeField({
             <Button label="Done" onPress={() => setSheetOpen(false)} />
           )}
         </View>
-      </NativeSheet>
+      </NativeSheet> : null}
 
       {isOpen && !isIos ? (
-        isIos ? (
-          <MotiView
-            from={{ opacity: 0, translateY: 6 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ duration: Motion.fast }}
-            style={[styles.pickerCard, { borderColor: border, backgroundColor: surface2 }]}
-          >
-            <DateTimePicker
-              display={pickerDisplay}
-              maximumDate={maximumDate}
-              minimumDate={minimumDate}
-              minuteInterval={minuteInterval}
-              mode={pickerMode}
-              onChange={handlePickerChange}
-              textColor={textColor}
-              value={value}
-            />
-            {hideDone ? null : (
-              <Button
-                label="Done"
-                onPress={() => setIsOpen(false)}
-                size="sm"
-                variant="secondary"
-              />
-            )}
-          </MotiView>
-        ) : (
           <DateTimePicker
             display={pickerDisplay}
             maximumDate={maximumDate}
@@ -216,13 +205,15 @@ export function NativeDateTimeField({
             onChange={handlePickerChange}
             value={value}
           />
-        )
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  iosPicker: {
+    height: 216,
+  },
   container: {
     gap: Spacing[8],
   },
@@ -248,13 +239,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 10,
     paddingVertical: Spacing[8],
-  },
-  pickerCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingHorizontal: Spacing[8],
-    paddingVertical: Spacing[8],
-    gap: Spacing[8],
   },
   disabled: {
     opacity: 0.55,
