@@ -71,7 +71,7 @@ export default function DevSetup() {
     <SessionContext.Provider value={PREVIEW_SESSION}>
       <SpaceContext.Provider value={PREVIEW_SPACELESS}>
         <DevErrorBoundary label="OnboardingWizard">
-          <OnboardingWizard onEnter={() => router.replace('/dev-story?variant=empty')} />
+          <OnboardingWizard onEnter={() => router.replace('/dev-story?variant=empty&firstPage=create')} />
         </DevErrorBoundary>
       </SpaceContext.Provider>
     </SessionContext.Provider>

@@ -1,4 +1,4 @@
-import { Redirect } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 import PlansScreen from "@/app/(app)/(tabs)/plans";
 import { CalendarProvider } from "@/features/calendar/calendar-context";
@@ -6,6 +6,7 @@ import {
 	DevErrorBoundary,
 	PREVIEW_SESSION,
 	PREVIEW_SPACE,
+	parsePreviewVariant,
 	useApplyPreviewVariant,
 } from "@/features/dev/preview";
 import { ProposalsProvider } from "@/features/proposals/proposals-context";
@@ -40,7 +41,8 @@ export default function DevPlans() {
 }
 
 function DevPlansPreview() {
-	useApplyPreviewVariant("full");
+	const { variant } = useLocalSearchParams<{ variant?: string | string[] }>();
+	useApplyPreviewVariant(parsePreviewVariant(variant));
 	return (
 		<SessionContext.Provider value={PREVIEW_SESSION}>
 			<SpaceContext.Provider value={PREVIEW_SPACE}>

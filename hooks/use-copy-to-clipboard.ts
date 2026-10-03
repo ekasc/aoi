@@ -15,7 +15,7 @@ export const COPIED_FEEDBACK_MS = 2200;
  * screen, and the reader can select it.
  */
 export function useCopyToClipboard(resetAfterMs: number = COPIED_FEEDBACK_MS) {
-  const [copied, setCopied] = useState(false);
+  const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -34,11 +34,14 @@ export function useCopyToClipboard(resetAfterMs: number = COPIED_FEEDBACK_MS) {
       }
       void Clipboard.setStringAsync(value).then(
         () => {
-          setCopied(true);
+          // The value, not a boolean: one screen may hold several copyable
+          // things and a single flag would report the wrong one as copied. A
+          // caller asking about a value it did not copy gets `false`.
+          setCopiedValue(value);
           if (timer.current) {
             clearTimeout(timer.current);
           }
-          timer.current = setTimeout(() => setCopied(false), resetAfterMs);
+          timer.current = setTimeout(() => setCopiedValue(null), resetAfterMs);
         },
         () => {},
       );
@@ -46,5 +49,9 @@ export function useCopyToClipboard(resetAfterMs: number = COPIED_FEEDBACK_MS) {
     [resetAfterMs],
   );
 
-  return { copied, copy };
+  return {
+    /** True only for the value most recently written. */
+    copied: (value: string) => copiedValue === value,
+    copy,
+  };
 }
