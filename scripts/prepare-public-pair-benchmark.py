@@ -1,9 +1,10 @@
-"""Build a natural-photo identity-pair benchmark from Wikimedia Commons.
+"""Exploratory Wikimedia downloader with UNVERIFIED identity labels.
 
-Ground truth comes from curated Commons categories, not filenames or search
-terms. Each pair gets an isolated dataset so one pair's enrollment cannot
-contaminate another. Downloads are cached, resumable, throttled, and checked
-against the publisher's SHA-1. Nothing here is committed.
+Not used by the PIPA benchmark. Category membership failed per-image identity
+verification; this output must not be used as recognition ground truth. See
+docs/shape/public-natural-face-index-evaluation.md. Each pair has an isolated
+folder. Downloads are cached, resumable, throttled, and checked against the
+publisher's SHA-1 for originals. Downloaded data must not be committed.
 
     python3 scripts/prepare-public-pair-benchmark.py --probe
     python3 scripts/prepare-public-pair-benchmark.py --build --pairs obama-michelle
@@ -36,9 +37,8 @@ ACCEPTED_LICENSES = {
     "CC BY-SA 4.0",
 }
 
-# Category membership is the ground-truth basis. `both` must name both people,
-# `soloA`/`soloB` are curated portrait categories, `negative` is a different
-# person, and `groups` is one target with other people.
+# These category-derived roles failed identity verification. They are candidate
+# labels only, not ground truth, even after the category cross-check.
 PAIRS = [
     {
         "key": "bush-laura",
