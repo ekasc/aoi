@@ -28,6 +28,7 @@
     "face:index:evaluate": "node scripts/evaluate-face-index.mjs",
     "face:evaluate:labelled": "node scripts/evaluate-labelled-faces.mjs",
     "face:evaluate:import": "node scripts/import-private-face-eval.mjs",
+    "face:evaluate:label": "node scripts/label-private-face-eval.mjs",
     "sim-nav": "node scripts/sim-nav.mjs",
     "sim-press": "node scripts/sim-press.mjs",
     "test:unit": "vitest run",

@@ -35,7 +35,56 @@ local. It stores relative file names, category, aggregate counts, and the
 cluster evidence scores, but no absolute dataset path, image bytes, crops, or
 embeddings.
 
-Import photos with:
+## Shortest workflow
+
+1. Export or select a local directory of photos yourself.
+2. Start the labeller on it:
+
+   ```sh
+   pnpm run face:evaluate:label -- --source /path/to/exported/photos --limit 400 --spread
+   ```
+
+3. Label until the dataset is sufficient. Keys: `1` positive, `2` solo-a,
+   `3` solo-b, `4` negative, `5` groups, `a` reference A, `b` reference B,
+   `s` skip, `r` reference help, `←`/`→` previous and next. Labelling advances to
+   the next photo. Go back and press a different key to change a label.
+4. Check status:
+
+   ```sh
+   pnpm run face:evaluate:import -- --status
+   ```
+
+5. Run the held-out corpus:
+
+   ```sh
+   pnpm run face:evaluate:labelled -- --dataset .expo/face-lab/private-eval --strategy top-k --corpus references
+   ```
+
+6. Run the full corpus:
+
+   ```sh
+   pnpm run face:evaluate:labelled -- --dataset .expo/face-lab/private-eval --strategy top-k --corpus all
+   ```
+
+The labeller binds only to `127.0.0.1`, makes no outbound request, has no
+analytics, and serves only the photos you selected. It reads only the directory
+passed with `--source`. It never scans Photos or any other directory. The
+startup message prints the source, destination, and state paths. `--open` opens
+the page in the default browser.
+
+Sampling is deterministic. `--limit` caps a new session, `--seed` sets the
+shuffle, and `--spread` picks evenly across capture dates so the first test is
+not 300 adjacent photos. No model or content heuristic chooses samples.
+
+State is saved under `.expo/face-lab/label-state.json` and resumes on the next
+start for the same source. The state may hold the absolute source root so a
+session can resume; that absolute path stays in gitignored private state only,
+never in a report or this document. Use `--reset` to start a new session.
+Content-hash names make repeated labelling idempotent. Marking a photo as a
+reference removes it from the evaluation set, and validation reports any content
+that appears as both.
+
+Manual import is still available when you already have sorted folders:
 
 ```sh
 pnpm run face:evaluate:import -- --status
@@ -48,7 +97,9 @@ it refuses a source that lives inside the dataset root, it leaves originals
 untouched, and it rejects unsupported files. Names are anonymized to a content
 hash by default, so the local report does not carry original file names. Use
 `--keep-names` to keep a readable base name plus a short hash. Use `--dry-run`
-to see the plan before writing.
+to see the plan before writing. `--status` reports counts, minimums, duplicate
+content, reference/evaluation leakage, and unlabelled samples. Warnings do not
+block a smaller exploratory run.
 
 ## Dataset quality
 

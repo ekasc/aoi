@@ -28,10 +28,12 @@ import { copyFile, link, mkdir, readdir, readFile, stat, writeFile } from 'node:
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadLabellingState, scanDataset } from './face-eval-dataset.mjs';
 import { loadAppModules } from './test-face-recognition.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DATASET_ROOT = join(root, '.expo/face-lab/private-eval');
+const STATE_PATH = join(root, '.expo/face-lab/label-state.json');
 
 const USAGE = `Import explicitly supplied photos into the private face-eval dataset.
 
@@ -124,6 +126,7 @@ export async function main(args) {
   if (options.help) { console.log(USAGE); return; }
   loadAppModules();
   const { CATEGORY_PLACEMENT, PRIVATE_EVAL_CATEGORIES, allMinimumsMet, destinationName, isSupportedImage, minimumReport } = await import('../features/face-index/private-eval.ts');
+  const { parseLabellingState, validateDataset } = await import('../features/face-index/labelling.ts');
 
   await mkdir(DATASET_ROOT, { recursive: true, mode: 0o700 });
   for (const folder of new Set(Object.values(CATEGORY_PLACEMENT).map((placement) => placement.folder))) {
@@ -134,6 +137,17 @@ export async function main(args) {
     const counts = await countsFor(DATASET_ROOT, CATEGORY_PLACEMENT, isSupportedImage);
     const report = minimumReport(counts);
     printCounts(counts, report, allMinimumsMet(report));
+    const entries = await scanDataset(DATASET_ROOT, isSupportedImage);
+    const state = await loadLabellingState(STATE_PATH, parseLabellingState);
+    const validation = validateDataset({ entries, state });
+    console.log(`Unlabelled in saved session: ${validation.unlabelled}`);
+    console.log(`Duplicate content: ${validation.duplicates.length}. Reference/evaluation leakage: ${validation.leakage.length}.`);
+    if (validation.warnings.length) {
+      console.log('Warnings:');
+      for (const warning of validation.warnings) console.log(`  ${warning}`);
+    } else {
+      console.log('No validation warnings.');
+    }
     return;
   }
 
