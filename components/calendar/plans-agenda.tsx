@@ -345,11 +345,15 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
         </View>
       ) : null}
 
-      {pendingProposals.length > 0 ? (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <ThemedText type="subheading">Suggestions</ThemedText>
           </View>
+          {pendingProposals.length === 0 ? (
+            <ThemedText accessibilityLiveRegion="polite" type="supporting" style={{ color: muted }}>
+              {proposalsError ? 'Your suggestions could not be loaded.' : proposalsLoading ? 'Loading suggestions…' : 'No suggestions yet.'}
+            </ThemedText>
+          ) : null}
           {answerableProposals.map((proposal) => (
             <ProposalRow
               borderColor={border}
@@ -377,7 +381,6 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
             />
           ))}
         </View>
-      ) : null}
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
@@ -390,8 +393,8 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
           />
         </View>
         {agendaDays.length === 0 ? (
-          <ThemedText type="supporting" style={{ color: muted }}>
-            Nothing on the calendar yet.
+          <ThemedText accessibilityLiveRegion="polite" type="supporting" style={{ color: muted }}>
+            {calendarError ? 'Your plans could not be loaded.' : calendarLoading ? 'Loading upcoming plans…' : 'No upcoming plans.'}
           </ThemedText>
         ) : (
           agendaDays.map((day) => (
@@ -426,8 +429,8 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
           />
         </View>
         {upcomingGoals.length === 0 ? (
-          <ThemedText type="supporting" style={{ color: muted }}>
-            {goalsError ? 'Your goals could not be loaded.' : 'No goals yet.'}
+          <ThemedText accessibilityLiveRegion="polite" type="supporting" style={{ color: muted }}>
+            {goalsError ? 'Your goals could not be loaded.' : goals === null ? 'Loading goals…' : goals.length === 0 ? 'No goals yet.' : 'No upcoming goals.'}
           </ThemedText>
         ) : (
           upcomingGoals.map((goal) => (

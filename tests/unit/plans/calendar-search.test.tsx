@@ -124,6 +124,14 @@ beforeEach(() => {
 });
 
 describe('Calendar search screen', () => {
+  it('distinguishes an empty search range from a query with no matches', async () => {
+    eventsInRangeSpy.mockResolvedValue([]);
+    const { default: SearchScreen } = await import('@/app/(app)/calendar/search');
+    render(<SearchScreen />);
+    expect(await screen.findByText('No events in this search range.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Search events'), { target: { value: 'picnic' } });
+    expect(screen.queryByText('Nothing matches "picnic".')).toBeNull();
+  });
   it('finds an event by name and opens it', async () => {
     const { default: SearchScreen } = await import('@/app/(app)/calendar/search');
     render(<SearchScreen />);

@@ -129,9 +129,9 @@ export default function CalendarSearchScreen() {
 				<ActivityIndicator color={accentInk} style={styles.spinner} />
 			) : null}
 
-			{events !== null && trimmed.length > 0 && hits.length === 0 ? (
-				<ThemedText type="body" style={[styles.empty, { color: muted }]}>
-					{`Nothing matches "${trimmed}".`}
+			{!error && events !== null && (events.length === 0 || (trimmed.length > 0 && hits.length === 0)) ? (
+				<ThemedText accessibilityLiveRegion="polite" type="body" style={[styles.empty, { color: muted }]}>
+					{events.length === 0 ? 'No events in this search range.' : `Nothing matches "${trimmed}".`}
 				</ThemedText>
 			) : null}
 

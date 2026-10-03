@@ -228,13 +228,13 @@ function YearSection({
 		>
 			<View style={styles.yearHeader}>
 				<ThemedText type="subheading">{year}</ThemedText>
-				{failed ? (
+				{failed || planTones === null || planTones.size === 0 ? (
 					<ThemedText
 						accessibilityLiveRegion="polite"
 						type="caption"
 						style={{ color: muted }}
 					>
-						Could not load plans
+						{failed ? 'Could not load plans' : planTones === null ? 'Loading plans…' : 'No plans this year'}
 					</ThemedText>
 				) : null}
 			</View>

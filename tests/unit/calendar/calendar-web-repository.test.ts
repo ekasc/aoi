@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WEEKLY_RECURRENCE_INSTANCE_COUNT } from '@aoi/shared';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { CreateCalendarEventInput } from '@/features/calendar/types';
 
@@ -41,6 +42,20 @@ describe('calendar-repository.web (AsyncStorage backend)', () => {
     await expect(
       repo.listEventsInMonth('2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z'),
     ).resolves.toEqual([]);
+  });
+
+  it('does not retain a failed insert in the cache or duplicate it on retry', async () => {
+    const repo = await loadRepository();
+    await repo.initCalendarDb();
+    const write = vi.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('storage full'));
+    try {
+      await expect(repo.insertEvent(makeInput())).rejects.toThrow('storage full');
+      await expect(repo.countCalendarEvents()).resolves.toBe(0);
+      await repo.insertEvent(makeInput());
+      await expect(repo.countCalendarEvents()).resolves.toBe(1);
+    } finally {
+      write.mockRestore();
+    }
   });
 
   it('round-trips an event with the same mapping as SQLite', async () => {

@@ -169,6 +169,13 @@ beforeEach(() => {
 });
 
 describe('Calendar year view', () => {
+  it('labels an empty year after its plans finish loading', async () => {
+    mockRangeEvents = [];
+    const { default: YearScreen } = await import('@/app/(app)/calendar/year');
+    render(<YearScreen />);
+    expect((await screen.findAllByText('No plans this year')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Could not load plans')).toBeNull();
+  });
   it('shows a year of months at a glance and opens the one you tap', async () => {
     const { default: YearScreen } = await import('@/app/(app)/calendar/year');
     render(<YearScreen />);

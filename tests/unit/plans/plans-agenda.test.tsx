@@ -338,10 +338,10 @@ describe('Plans agenda', () => {
     renderAgenda();
 
     expect(
-      await screen.findByText('Nothing on the calendar yet.')
+      await screen.findByText('No upcoming plans.')
     ).toBeTruthy();
     expect(screen.getByText('No goals yet.')).toBeTruthy();
-    expect(screen.queryByText('Suggestions')).toBeNull();
+    expect(screen.getByText('No suggestions yet.')).toBeTruthy();
   });
 
   it('shows a loading line while the calendar is loading', () => {
@@ -350,6 +350,27 @@ describe('Plans agenda', () => {
     renderAgenda();
 
     expect(screen.getByText('Loading plans…')).toBeTruthy();
+    expect(screen.queryByText('No upcoming plans.')).toBeNull();
+  });
+
+  it('does not call past goals nonexistent when none are upcoming', async () => {
+    data.goals = [makeGoal({ targetAt: '2020-01-01T00:00:00.000Z' })];
+    renderAgenda();
+    expect(await screen.findByText('No upcoming goals.')).toBeTruthy();
+    expect(screen.queryByText('No goals yet.')).toBeNull();
+  });
+
+  it('does not call suggestions empty while loading or failed', async () => {
+    data.proposals.isLoading = true;
+    const page = renderAgenda();
+    expect(screen.getByText('Loading suggestions…')).toBeTruthy();
+    expect(screen.queryByText('No suggestions yet.')).toBeNull();
+    page.unmount();
+    data.proposals.isLoading = false;
+    data.proposals.error = 'offline';
+    renderAgenda();
+    expect(screen.getByText('Your suggestions could not be loaded.')).toBeTruthy();
+    expect(screen.queryByText('No suggestions yet.')).toBeNull();
   });
 
   it('says a failed read failed, and retries every source', async () => {

@@ -377,6 +377,32 @@ async function openDaySheet() {
 const PLANS_SOURCE = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
 
 describe('Plans calendar', () => {
+  it('identifies an empty visible month without mistaking neighbouring plans for its own', async () => {
+    mockEventsForDay = { '2025-12-31': [makeEvent()], '2026-02-01': [makeEvent()] };
+    const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
+    render(createElement(PlansScreen));
+    expect(screen.getByText('No confirmed plans this month.')).toBeTruthy();
+    act(() => {
+      mockEventsForDay = { '2026-01-15': [makeEvent()] };
+      emitCalendarChange();
+    });
+    expect(screen.queryByText('No confirmed plans this month.')).toBeNull();
+  });
+
+  it('does not call the month empty while loading or failed', async () => {
+    mockCalendarLoading = true;
+    const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
+    render(createElement(PlansScreen));
+    expect(screen.getByText('Loading plans…')).toBeTruthy();
+    expect(screen.queryByText('No confirmed plans this month.')).toBeNull();
+    act(() => {
+      mockCalendarLoading = false;
+      mockCalendarError = 'private network failure';
+      emitCalendarChange();
+    });
+    expect(screen.getByText('Your plans could not be loaded.')).toBeTruthy();
+    expect(screen.queryByText('No confirmed plans this month.')).toBeNull();
+  });
   it('shows the day events as strips in the cell, not a dot', async () => {
     mockEventsForDay = { '2026-01-15': [makeEvent()] };
     await renderPlans();
@@ -523,6 +549,7 @@ describe('Plans day view', () => {
       centerPage('Thursday – Jan 15, 2026').queryByText('No plans for this day.'),
     ).toBeNull();
 
+    expect(centerPage('Thursday – Jan 15, 2026').getByText('No confirmed plans for this day.')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('View suggestions and goals'));
 
     // The agenda takes the screen and the sheet goes away with it: the two

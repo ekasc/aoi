@@ -417,6 +417,12 @@ export default function PlansScreen() {
 	// for the header, the loaded window and the pager's anchor. A month set from
 	// outside this screen (the year view) is therefore the month it shows.
 	const currentMonth = visibleMonth;
+	const hasPlansThisMonth = useMemo(() => {
+		const monthKey = toDayKey(currentMonth).slice(0, 7);
+		return Object.entries(eventsForDay).some(([day, events]) =>
+			day.startsWith(monthKey) && events.length > 0,
+		);
+	}, [currentMonth, eventsForDay]);
 	// The window's anchor only moves when the visible month escapes it: a
 	// year jump, or a swipe reaching its edge. Rebuilding around every
 	// settled month paints the wrong month for a frame — the native offset
@@ -989,8 +995,7 @@ export default function PlansScreen() {
 						    same: say which one this is. Under an error the notice
 						    above already spoke, so this stays quiet. */}
 						{!calendarError &&
-						pageEvents.length === 0 &&
-						(calendarLoading || !pageHasSuggestions) ? (
+						pageEvents.length === 0 ? (
 							<ThemedText
 								accessibilityLiveRegion="polite"
 								type="caption"
@@ -998,6 +1003,8 @@ export default function PlansScreen() {
 							>
 								{calendarLoading
 									? 'Loading plans…'
+									: pageHasSuggestions
+										? 'No confirmed plans for this day.'
 									: pageIsToday
 										? `No plans for today. ${adaptiveCopy.planEmpty}`
 										: 'No plans for this day.'}
@@ -1038,6 +1045,11 @@ export default function PlansScreen() {
 	);
 	const monthBody = (
 		<>
+			{!calendarError && (calendarLoading || !hasPlansThisMonth) ? (
+				<ThemedText accessibilityLiveRegion="polite" type="caption" style={[styles.monthStatus, { color: muted }]}>
+					{calendarLoading ? 'Loading plans…' : 'No confirmed plans this month.'}
+				</ThemedText>
+			) : null}
 			{/* The weekday row belongs to the grid, not to the padded header, so its
 			    columns line up with the date columns instead of being inset. */}
 			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
@@ -1424,6 +1436,10 @@ const styles = StyleSheet.create({
 		paddingBottom: Spacing[4],
 		paddingHorizontal: Spacing[16],
 		paddingTop: Spacing[12],
+	},
+	monthStatus: {
+		paddingHorizontal: Spacing[24],
+		paddingBottom: Spacing[8],
 	},
 	weekdayRow: {
 		borderBottomWidth: StyleSheet.hairlineWidth,

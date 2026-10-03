@@ -18,6 +18,7 @@ import {
 	toDayKey,
 } from "@/features/calendar/calendar-date-utils";
 import { isStubMode } from "@/features/api-client";
+import { usePreviewVariant } from "@/features/dev/preview";
 import { applyCalendarSeed, getCalendarSeedMarker, setCalendarSeedMarker } from "@/features/calendar/calendar-seed";
 import { useEventReminders } from "@/features/calendar/use-event-reminders";
 import type {
@@ -74,6 +75,8 @@ function ensureCalendarSeedOnce(): Promise<void> {
 }
 
 export function CalendarProvider({ children }: PropsWithChildren) {
+  const preview = usePreviewVariant();
+  const previewSeed = preview.active && preview.variant !== 'empty' && preview.variant !== 'setup';
 	const [events, setEvents] = useState<CalendarEvent[]>([]);
 	const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]);
 	const [selectedDate, setSelectedDateState] = useState(() => new Date());
@@ -116,9 +119,8 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		async function bootstrapCalendar() {
 			try {
 				await initCalendarDb();
-				// Seeding is local-only: the remote repository reports a dummy
-				// count precisely so server data is never seeded.
-				if (!_useRemote) {
+				// Sample plans belong only to explicitly populated dev previews.
+				if (!_useRemote && previewSeed) {
 					await ensureCalendarSeedOnce();
 				}
 
@@ -141,7 +143,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		return () => {
 			isActive = false;
 		};
-	}, []);
+	}, [previewSeed]);
 
 	useEffect(() => {
 		if (!isInitialized) {
