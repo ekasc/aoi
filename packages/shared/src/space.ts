@@ -40,9 +40,20 @@ export const spaceSchema = z.object({
 
 export type Space = z.infer<typeof spaceSchema>;
 
+/**
+ * A partner's name, required when a space is created.
+ *
+ * It was `optional` with a `min(1)`, which permits both an absent name and
+ * any client that never sends one. That is how an unnamed partner reached the
+ * space: every screen that greets them had to invent a fallback, and the
+ * archive ended up saying "For you." to the person holding the phone. A create
+ * without a partner is not a degraded space, it is a different product, so the
+ * request now says so. Updating an existing space still treats it as optional:
+ * that is a different operation on a space that already exists.
+ */
 export const createSpaceRequestSchema = z.object({
   name: z.string().min(1).max(200),
-  partnerName: z.string().min(1).max(200).optional(),
+  partnerName: z.string().trim().min(1, 'Name your partner').max(200),
   relationshipStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
 });
 

@@ -24,6 +24,8 @@ import { locationRouter } from './routes/session-location';
 import { preferencesRouter } from './routes/session-preferences';
 import { milestonesRouter } from './routes/session-milestones';
 import { squeezesRouter } from './routes/session-squeezes';
+import { responsesRouter } from './routes/session-responses';
+import { partnerDetailsRouter } from './routes/session-partner-details';
 
 export interface AppEnv {
   Bindings: WorkerEnv;
@@ -190,6 +192,8 @@ export function createApp(layers: RuntimeLayer): OpenAPIHono<AppEnv> {
   app.route('/', preferencesRouter(run));
   app.route('/', milestonesRouter(run));
   app.route('/', squeezesRouter(run));
+  app.route('/', responsesRouter(run));
+  app.route('/', partnerDetailsRouter(run));
 
   // ── Per-request observability (after routing; 404s count too) ─────────
   app.use('*', async (c, next) => {

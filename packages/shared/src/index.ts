@@ -14,3 +14,5 @@ export * from './push';
 export * from './location';
 export * from './media';
 export * from './api';
+export * from './response';
+export * from './partner-detail';

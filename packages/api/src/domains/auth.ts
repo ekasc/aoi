@@ -238,6 +238,7 @@ export const deleteAccountProgram = (
       db.d1.prepare('delete from push_tokens where user_id = ?').bind(userId),
       db.d1.prepare('delete from location_shares where user_id = ?').bind(userId),
       db.d1.prepare('delete from user_preferences where user_id = ?').bind(userId),
+      db.d1.prepare('delete from partner_details where user_id = ?').bind(userId),
       // Provider linkage + tokens: without this, the next OAuth sign-in
       // would link the old account row and resurrect the deleted identity.
       db.d1.prepare('delete from auth_accounts where user_id = ?').bind(userId),

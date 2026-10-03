@@ -163,7 +163,7 @@ describe('webhook activation and shared read', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_C) },
-      body: JSON.stringify({ name: 'Other Space' }),
+      body: JSON.stringify({ name: 'Other Space', partnerName: 'Partner' }),
     });
     expect(created.status).toBe(201);
 
@@ -337,7 +337,7 @@ describe('ownership across leave, join, and delete', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ name: 'Space Y' }),
+      body: JSON.stringify({ name: 'Space Y', partnerName: 'Partner' }),
     });
     expect(created.status).toBe(201);
     expect(await readPlus(app, TOKEN_A)).toMatchObject({ isPlus: false });
@@ -394,7 +394,7 @@ describe('TRANSFER atomicity', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_D) },
-      body: JSON.stringify({ name: 'Space Y' }),
+      body: JSON.stringify({ name: 'Space Y', partnerName: 'Partner' }),
     });
     expect(created.status).toBe(201);
     // A buys in Space X.
@@ -752,7 +752,7 @@ describe('event idempotency and ordering', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_C) },
-      body: JSON.stringify({ name: 'Other Space' }),
+      body: JSON.stringify({ name: 'Other Space', partnerName: 'Partner' }),
     });
     expect(created.status).toBe(201);
 

@@ -693,3 +693,32 @@ export const processedWebhookEvents = sqliteTable('processed_webhook_events', {
   eventId: text('event_id').primaryKey(),
   receivedAt: integer('received_at', { mode: 'timestamp_ms' }).notNull(),
 });
+
+export const momentResponses = sqliteTable('moment_responses', {
+  id: text('id').primaryKey(),
+  momentId: text('moment_id').notNull().references(() => moments.id, { onDelete: 'cascade' }),
+  createdByUserId: text('created_by_user_id').notNull().references(() => users.id),
+  kind: text('kind', { enum: ['tap', 'photo', 'voice', 'word'] }).notNull(),
+  body: text('body'),
+  mediaId: text('media_id').references(() => mediaObjects.id),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, (table) => [
+  index('idx_moment_responses_moment_created').on(table.momentId, table.createdAt, table.id),
+  index('idx_moment_responses_media').on(table.mediaId),
+  check('ck_moment_response_payload', sql`
+    (${table.kind} = 'tap' and ${table.body} is null and ${table.mediaId} is null)
+    or (${table.kind} = 'word' and ${table.body} is not null and length(trim(${table.body})) between 1 and 400 and ${table.mediaId} is null)
+    or (${table.kind} in ('photo', 'voice') and ${table.body} is null and ${table.mediaId} is not null)`),
+]);
+
+export const partnerDetails = sqliteTable('partner_details', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  text: text('text').notNull(),
+  category: text('category', { enum: ['favorite', 'habit', 'quirk', 'words', 'other'] }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, (table) => [
+  index('idx_partner_details_user_created').on(table.userId, table.createdAt, table.id),
+  check('ck_partner_detail_text', sql`length(trim(${table.text})) between 1 and 400`),
+  check('ck_partner_detail_category', sql`${table.category} in ('favorite', 'habit', 'quirk', 'words', 'other')`),
+]);

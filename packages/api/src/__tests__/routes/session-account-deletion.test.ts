@@ -304,7 +304,7 @@ describe('purge lifecycle + retry', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ name: 'Solo Space' }),
+      body: JSON.stringify({ name: 'Solo Space', partnerName: 'Partner' }),
     });
     expect(created.status).toBe(201);
     const { space } = (await created.json()) as { space: { id: string } };
@@ -360,7 +360,7 @@ describe('purge lifecycle + retry', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ name: 'Solo Space' }),
+      body: JSON.stringify({ name: 'Solo Space', partnerName: 'Partner' }),
     });
     const { space, inviteCode } = (await created.json()) as { space: { id: string }; inviteCode: string };
 

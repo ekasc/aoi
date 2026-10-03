@@ -131,8 +131,11 @@ const releaseMediaIfUnreferenced = (db: DbService, mediaId: string, at: number) 
        and not exists (select 1 from moments where media_id = ? and deleted_at is null)
        and not exists (select 1 from moment_attachments ma
                        join moments m on m.id = ma.moment_id
-                       where ma.media_id = ? and m.deleted_at is null)`
-  ).bind(at, mediaId, mediaId, mediaId);
+                       where ma.media_id = ? and m.deleted_at is null)
+       and not exists (select 1 from moment_responses r
+                       join moments m on m.id = r.moment_id
+                       where r.media_id = ? and m.deleted_at is null)`
+  ).bind(at, mediaId, mediaId, mediaId, mediaId);
 
 const requireLiveSpaceMedia = (
   db: DbService,
@@ -932,8 +935,9 @@ export const deleteMomentProgram = (
     const attached = yield* Effect.tryPromise({
       try: () =>
         db.d1
-          .prepare(`select media_id from moment_attachments where moment_id = ?`)
-          .bind(momentId)
+          .prepare(`select media_id from moment_attachments where moment_id = ?
+            union select media_id from moment_responses where moment_id = ? and media_id is not null`)
+          .bind(momentId, momentId)
           .all<{ media_id: string }>(),
       catch: () => new InternalError({}),
     });
@@ -956,6 +960,7 @@ export const deleteMomentProgram = (
       // reference wins the race instead of losing its media. Both the
       // legacy `media_id` and every attachment row are releasable; the
       // `not exists` checks cover both reference paths in post-write state.
+      db.d1.prepare('delete from moment_responses where moment_id = ? and exists (select 1 from moments where id = ? and deleted_at is not null)').bind(momentId, momentId),
       ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at)),
     ]);
 

@@ -124,7 +124,7 @@ describe('export read boundary', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_C) },
-      body: JSON.stringify({ name: 'Solo' }),
+      body: JSON.stringify({ name: 'Solo', partnerName: 'Partner' }),
     });
     expect(created.status).toBe(201);
     const leave = await app.request('/v1/spaces/leave', { method: 'POST', headers: auth(TOKEN_C) });

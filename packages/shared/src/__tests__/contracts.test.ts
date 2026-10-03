@@ -64,20 +64,42 @@ describe('space contract', () => {
     }).success).toBe(false);
   });
 
-  it('accepts omitted partner name / start date, rejects empty sentinels', () => {
-    expect(createSpaceRequestSchema.safeParse({ name: 'us' }).success).toBe(true);
+  it('requires a partner name, and still treats the start date as optional', () => {
+    // A space is for two people. An omitted partner is not a degraded space,
+    // it is a different product, so the contract says no — that is what stops
+    // an unnamed partner reaching screens that have nothing to address.
+    expect(createSpaceRequestSchema.safeParse({ name: 'us' }).success).toBe(false);
     expect(
       createSpaceRequestSchema.safeParse({ name: 'us', partnerName: 'B' }).success
     ).toBe(true);
+    // The start date really is optional, in both directions.
     expect(
       createSpaceRequestSchema.safeParse({ name: 'us', relationshipStartDate: '2024-06-01' }).success
+    ).toBe(false);
+    expect(
+      createSpaceRequestSchema.safeParse({
+        name: 'us',
+        partnerName: 'B',
+        relationshipStartDate: '2024-06-01',
+      }).success
     ).toBe(true);
     // Absence is omission — never ''.
     expect(
       createSpaceRequestSchema.safeParse({ name: 'us', partnerName: '' }).success
     ).toBe(false);
+    // Whitespace is not a name either, and padding never survives the parse.
     expect(
-      createSpaceRequestSchema.safeParse({ name: 'us', relationshipStartDate: '' }).success
+      createSpaceRequestSchema.safeParse({ name: 'us', partnerName: '   ' }).success
+    ).toBe(false);
+    expect(
+      createSpaceRequestSchema.safeParse({ name: 'us', partnerName: '  B  ' }).success
+    ).toBe(true);
+    expect(
+      createSpaceRequestSchema.safeParse({
+        name: 'us',
+        partnerName: 'B',
+        relationshipStartDate: '',
+      }).success
     ).toBe(false);
   });
   it('parses the space response shape, including null absence', () => {

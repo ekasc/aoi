@@ -89,7 +89,7 @@ async function setupAdversarialHistory(
   insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
   insertSession(harness.d1, 'sess-c', USER_C, TOKEN_C);
 
-  const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+  const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
   expect(created.status).toBe(201);
   const createdBody = (await created.json()) as { space: { id: string }; inviteCode: string };
   const spaceId = createdBody.space.id;
@@ -349,7 +349,7 @@ describe('invite rotation semantics', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     expect(created.status).toBe(201);
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
 
@@ -380,7 +380,7 @@ describe('invite rotation semantics', () => {
     insertUser(harness.d1, USER_A, 'a@example.com', 'Aoi');
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
     const r2 = await app.request('/v1/spaces/current/invite', { method: 'POST', headers: auth(TOKEN_A) });
     const code2 = ((await r2.json()) as { inviteCode: string }).inviteCode;
@@ -405,7 +405,7 @@ describe('invite rotation semantics', () => {
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
     insertSession(harness.d1, 'sess-c', USER_C, TOKEN_C);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
 
     // Rotation and redemption race on the same code: exactly one wins, and
@@ -439,7 +439,7 @@ describe('invite rotation semantics', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-d', USER_D, TOKEN_D);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
 
     // Sole member leaves → archive (P7A last-member rule).
@@ -494,7 +494,7 @@ describe('pairing isolation closure gaps (findings #1/#5)', () => {
     insertSession(harness.d1, 'sess-d', USER_D, TOKEN_D);
 
     // C creates a fresh space and D joins: unrelated pairing unaffected.
-    const created = await app.request('/v1/spaces', json(TOKEN_C, { name: 'C Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_C, { name: 'C Space', partnerName: 'Partner' }));
     expect(created.status).toBe(201);
     const freshCode = ((await created.json()) as { inviteCode: string }).inviteCode;
     const joined = await app.request('/v1/spaces/join', json(TOKEN_D, { inviteCode: freshCode }));

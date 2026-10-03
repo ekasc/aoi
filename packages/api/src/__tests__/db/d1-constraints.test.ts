@@ -47,7 +47,7 @@ function insertMember(
 }
 
 describe('D1 baseline', () => {
-  it('applies the migration with all 23 tables', () => {    const d1 = createTestD1();
+  it('applies the migration with all 25 tables', () => {    const d1 = createTestD1();
     const rows = d1.rawDb
       .prepare("select name from sqlite_master where type = 'table' and name not like 'sqlite_%'")
       .all() as Array<{ name: string }>;
@@ -62,8 +62,10 @@ describe('D1 baseline', () => {
         'media_objects',
         'moment_attachments',
         'moment_reads',
+        'moment_responses',
         'moments',
         'oauth_states',
+        'partner_details',
         'processed_webhook_events',
         'push_tokens',
         'someday_items',
