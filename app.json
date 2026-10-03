@@ -58,9 +58,18 @@
       "expo-secure-store",
       "expo-sqlite",
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Aoi uses photos you choose for memories. If you enable automatic discovery, it checks the photos you allow to find pictures with both of you.",
+          "savePhotosPermission": false,
+          "preventAutomaticLimitedAccessAlert": true,
+          "granularPermissions": ["photo"]
+        }
+      ],
+      [
         "expo-image-picker",
         {
-          "photosPermission": "Aoi only sees the photos you pick, and only to keep them as memories.",
+          "photosPermission": "Aoi uses photos you choose for memories. If you enable automatic discovery, it checks the photos you allow to find pictures with both of you.",
           "cameraPermission": false,
           "microphonePermission": false
         }
@@ -79,7 +88,8 @@
       ],
       "expo-notifications",
       "expo-asset",
-      "expo-video"
+      "expo-video",
+      "onnxruntime-react-native"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,9 +1,9 @@
 /**
  * Recognising which photos are the two of you.
  *
- * This is the part that needs a dev build and a trained model, and it is
- * written as a seam rather than an implementation so the decision about the
- * model can be made deliberately instead of inherited.
+ * The identity pipeline still needs a dev build and a trained embedding
+ * model. The separate local-face-detector uses Apple Vision for iOS still
+ * photos, but boxes alone do not implement identity recognition.
  *
  * Why it is not free, stated once so it does not get forgotten: counting
  * faces is not recognising them. Two faces in a photo is your friends'
@@ -16,16 +16,8 @@
  * because a future contributor reading only the model file would otherwise
  * have no way to know.
  *
- * The tools that exist, verified rather than assumed:
- *
- *   react-native-vision-camera   active, boxes and landmarks. No identity.
- *   react-native-fast-tflite     active, runs a TFLite model on device via
- *                                NNAPI on Android and CoreML on iOS.
- *   expo-face-detector          ARCHIVED 2018, deprecated. Not an option.
- *
- * So detection comes from VisionCamera and identity from a TFLite embedding
- * model — ArcFace or MobileFaceNet, both open, both convertible — compared
- * against two stored faceprints on this device.
+ * iOS uses Vision landmarks and the pinned SFace model. Android recognition
+ * is unavailable; real-library accuracy and cutoff calibration remain open.
  */
 
 export type FaceBox = {
@@ -33,8 +25,8 @@ export type FaceBox = {
   y: number;
   width: number;
   height: number;
-  /** How turned the head is, in degrees. A high angle is a bad embedding. */
-  rollAngle: number;
+  /** Head roll in degrees; null when the detector has no estimate. */
+  rollAngle: number | null;
 };
 
 export type Faceprint = {
@@ -59,13 +51,15 @@ export type MatchResult =
   | { kind: 'unsure'; confidence: number }
   | { kind: 'no-faces' };
 
-export type FacePipeline = {
+export type FacePipeline<Face extends FaceBox = FaceBox> = {
   /** Is the underlying native model present at all? */
   isAvailable: () => Promise<boolean>;
   /** Find faces in a local file. */
-  detect: (uri: string) => Promise<FaceBox[]>;
+  detect: (uri: string) => Promise<Face[]>;
   /** Turn a detected face into a faceprint. */
-  embed: (uri: string, box: FaceBox) => Promise<Float32Array>;
+  embed: (uri: string, box: Face) => Promise<Float32Array>;
+  /** Query-only augmentation must stay comparable with the saved reference embeddings. */
+  embedQuery?: (uri: string, box: Face) => Promise<Float32Array>;
   /**
    * Compare against the two enrolled prints. Threshold is a policy
    * decision, not a modelling one, and it is deliberately not a constant
@@ -101,6 +95,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
  * is the first thing to do after the first dev build.
  */
 export const DEFAULT_MATCH_THRESHOLD = 0.72;
+export const PAIR_MATCH_POLICY_VERSION = 'pair-v2';
 
 export function matchByCosine(
   embedding: Float32Array,
@@ -120,4 +115,59 @@ export function matchByCosine(
     return { kind: 'unsure', confidence: best?.score ?? 0 };
   }
   return { kind: 'match', person: best.person, confidence: best.score };
+}
+
+type MatchedFace = { faceIndex: number; similarity: number };
+export type PairSimilarity = { you: number; partner: number };
+
+export type PairMatchResult =
+  | { kind: 'pair'; you: MatchedFace; partner: MatchedFace }
+  | { kind: 'unsure' }
+  | { kind: 'no-faces' };
+
+/** Inputs are embeddings for distinct detected faces in one photo, never across photos. */
+export function matchPairByCosine(
+  faces: Float32Array[],
+  prints: Faceprint[],
+  threshold: number = DEFAULT_MATCH_THRESHOLD,
+): PairMatchResult {
+  if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1) {
+    throw new RangeError('Face similarity threshold must be greater than zero and at most one');
+  }
+  if (faces.length === 0) return { kind: 'no-faces' };
+  const youPrints = prints.filter((print) => print.person === 'you');
+  const partnerPrints = prints.filter((print) => print.person === 'partner');
+  if (youPrints.length === 0 || partnerPrints.length === 0) return { kind: 'unsure' };
+
+  // Native model output is untrusted. Invalid vectors must not pass NaN comparisons.
+  const dimensions = faces[0].length;
+  const valid = (embedding: Float32Array) => embedding.length === dimensions
+    && dimensions > 0 && embedding.every(Number.isFinite) && embedding.some((value) => value !== 0);
+  if (!faces.every(valid) || !prints.every((print) => valid(print.embedding))) return { kind: 'unsure' };
+
+  return matchPairByScores(faces.map((face) => ({
+    you: Math.max(...youPrints.map((print) => cosineSimilarity(face, print.embedding))),
+    partner: Math.max(...partnerPrints.map((print) => cosineSimilarity(face, print.embedding))),
+  })), threshold);
+}
+
+/** Shared by runtime matching and offline evaluation of anonymized scores. */
+export function matchPairByScores(scores: PairSimilarity[], threshold: number = DEFAULT_MATCH_THRESHOLD): PairMatchResult {
+  if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1) {
+    throw new RangeError('Face similarity threshold must be greater than zero and at most one');
+  }
+  if (scores.length === 0) return { kind: 'no-faces' };
+  if (!scores.every((score) => Number.isFinite(score.you) && Number.isFinite(score.partner))) return { kind: 'unsure' };
+  let you: MatchedFace | null = null;
+  let partner: MatchedFace | null = null;
+  scores.forEach(({ you: youScore, partner: partnerScore }, faceIndex) => {
+    // A face that qualifies as both people cannot establish either identity.
+    if (youScore >= threshold && partnerScore < threshold && (!you || youScore > you.similarity)) {
+      you = { faceIndex, similarity: youScore };
+    }
+    if (partnerScore >= threshold && youScore < threshold && (!partner || partnerScore > partner.similarity)) {
+      partner = { faceIndex, similarity: partnerScore };
+    }
+  });
+  return you && partner ? { kind: 'pair', you, partner } : { kind: 'unsure' };
 }

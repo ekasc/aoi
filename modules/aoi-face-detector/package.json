@@ -1,0 +1,7 @@
+{
+  "name": "aoi-face-detector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local still-photo face detection for Aoi",
+  "license": "UNLICENSED"
+}

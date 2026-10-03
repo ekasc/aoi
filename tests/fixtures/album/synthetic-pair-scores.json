@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "samples": [
+    { "split": "calibration", "group": "synthetic-positive-a", "bothPresent": true, "faces": [{ "you": 0.65, "partner": 0.1 }, { "you": 0.12, "partner": 0.66 }] },
+    { "split": "calibration", "group": "synthetic-negative-a", "bothPresent": false, "faces": [{ "you": 0.3, "partner": 0.1 }, { "you": 0.1, "partner": 0.3 }] },
+    { "split": "calibration", "group": "synthetic-solo", "bothPresent": false, "faces": [{ "you": 0.95, "partner": 0.1 }] },
+    { "split": "validation", "group": "synthetic-positive-b", "bothPresent": true, "faces": [{ "you": 0.67, "partner": 0.1 }, { "you": 0.1, "partner": 0.68 }, { "you": 0.1, "partner": 0.1 }] },
+    { "split": "validation", "group": "synthetic-negative-b", "bothPresent": false, "faces": [{ "you": 0.4, "partner": 0.1 }, { "you": 0.1, "partner": 0.4 }] },
+    { "split": "validation", "group": "synthetic-ambiguous", "bothPresent": false, "faces": [{ "you": 0.95, "partner": 0.95 }, { "you": 0.9, "partner": 0.9 }] }
+  ]
+}
