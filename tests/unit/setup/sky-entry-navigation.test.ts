@@ -7,9 +7,11 @@ describe('destination-owned sky', () => {
     expect(home.match(/<MemorySky\b/g)).toHaveLength(1);
     expect(home).not.toContain('handoverProgress={landingProgress}');
     expect(home).not.toContain('skyArrivalStyle');
-    expect(home).toContain('opacity: foregroundProgress?.value ?? 1');
-    expect(home).toContain('opacity: 1 - (foregroundProgress?.value ?? 0)');
-    expect(home).toContain('translateY: -skyRevealHeight * (1 - (foregroundProgress?.value ?? 1))');
+    // The arrival is staged in depth: every layer reads the same master clock
+    // and takes its own window of it, rather than one dissolve of everything.
+    expect(home).toContain('ARRIVAL_WINDOWS');
+    expect(home).toContain('arrivalWindow');
+    expect(home).toContain('foregroundProgress?.value ?? 1');
     expect(home).toContain('testID="sky-top-down-reveal"');
     expect(home).toContain('<SkyWelcome details={entry.details} onEnter={enter} />');
     expect(readFileSync('components/home/sky-entry-provider.tsx', 'utf8')).not.toContain('MemorySky');

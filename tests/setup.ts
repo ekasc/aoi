@@ -128,6 +128,9 @@ vi.mock('react-native', () => {
       currentState: 'active',
       addEventListener: () => ({ remove: () => {} }),
     },
+    // Share opens a native sheet, which no test can observe. A spy, so a test
+    // can assert what would have been sent and how a refused sheet is handled.
+    Share: { share: vi.fn(async () => ({ action: 'sharedAction' })) },
     // Only the reduce-motion surface WindowRain uses. The resting
     // default is off; tests capture the change handler to simulate
     // a dynamic system-setting flip.
@@ -572,6 +575,26 @@ vi.mock('expo-sqlite', () => ({
 // JS-thread surface components under test actually use: mutable shared
 // values, one-shot derived values, static reduced-motion, and
 // pass-through animation builders.
+/**
+ * Live reactions, so a test can drive a tracked value past a threshold and
+ * flush. A reaction that exists to notice a crossing is untestable otherwise:
+ * the UI runtime is what would normally re-run it.
+ */
+const reactionRegistry = new Set<{
+  prepare: () => unknown;
+  react: (current: unknown, previous: unknown) => void;
+  previous: unknown;
+}>();
+
+/** Re-evaluate every registered reaction once, passing the real previous value. */
+(globalThis as unknown as Record<string, unknown>).__flushReactions = () => {
+  for (const reaction of Array.from(reactionRegistry)) {
+    const current = reaction.prepare();
+    reaction.react(current, reaction.previous);
+    reaction.previous = current;
+  }
+};
+
 vi.mock('react-native-reanimated', () => {
   const React = require('react');
 
@@ -637,8 +660,11 @@ vi.mock('react-native-reanimated', () => {
       if (!ref.current) {
         const shared = {
           value: initial,
+          // Reanimated 3 exposes both forms; components in this repo use
+          // either, so the test double answers to both.
           set: (next: unknown) => { shared.value = typeof next === 'function' ? next(shared.value) : next; },
         };
+
         ref.current = shared;
       }
       return ref.current;
@@ -662,10 +688,28 @@ vi.mock('react-native-reanimated', () => {
       react: (current: any, previous: any) => void,
     ) => {
       const fired = React.useRef(false);
+      // Registered as well as fired: a reaction whose whole job is to notice a
+      // value crossing a threshold cannot be tested by a one-shot call on
+      // mount, so a test can drive the tracked value and flush.
+      const entry = React.useRef<{ prepare: () => any; react: (c: any, p: any) => void; previous: any } | null>(null);
+      if (!entry.current) {
+        entry.current = { prepare, react, previous: undefined };
+      } else {
+        entry.current.prepare = prepare;
+        entry.current.react = react;
+      }
       React.useEffect(() => {
         if (fired.current) return;
         fired.current = true;
         react(prepare(), undefined);
+      }, []);
+      React.useEffect(() => {
+        const registered = entry.current;
+        if (!registered) return;
+        reactionRegistry.add(registered);
+        return () => {
+          reactionRegistry.delete(registered);
+        };
       }, []);
     },
     runOnUI: (fn: (...args: unknown[]) => unknown) => fn,

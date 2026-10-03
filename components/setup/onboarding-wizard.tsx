@@ -18,6 +18,7 @@ import { Pressed } from '@/components/ui/pressed';
 import { Reveal } from '@/components/ui/reveal';
 import { PaperTextInput } from '@/components/ui/text-input';
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
+import { PARTNER_NAME_MAX, PARTNER_NAME_MESSAGES } from '@/features/space/partner-name';
 import { useSkyEntry } from '@/components/home/sky-entry-provider';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -448,8 +449,13 @@ function IdentityStep({
           accessibilityLabel="Their name"
           autoCapitalize="words"
           autoCorrect={false}
+          error={flow.nameProblem ? PARTNER_NAME_MESSAGES[flow.nameProblem] : undefined}
+          // Reserved up front: the line has to be there before the first
+          // refusal, or the message pushes the date and the button down at the
+          // moment the reader is looking at the field.
+          reservesMessage
           label="Their name"
-          maxLength={40}
+          maxLength={PARTNER_NAME_MAX}
           onChangeText={flow.setPartnerNameDraft}
           placeholder="June"
           returnKeyType="done"
@@ -468,6 +474,9 @@ function IdentityStep({
           variant="row"
         />
         <View style={styles.actions}>
+          {/* The name is required, but the button stays live: a disabled
+              Continue that does nothing teaches nothing. Pressing it says
+              which field is missing, and the next keystroke clears that. */}
           <Button
             disabled={flow.isSubmitting}
             label={flow.isSubmitting ? 'Creating…' : 'Continue'}

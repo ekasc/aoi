@@ -13,8 +13,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 
-import { Springs } from '@/constants/theme';
-import { resolveStagedUri } from '@/features/composer/staged-uri';
+import { Spacing, Springs } from '@/constants/theme';
+import { imageSourceForUri } from '@/features/media/image-source';
+import { ThemedText } from '@/components/themed-text';
+import { Button } from '@/components/ui/button';
 
 export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 4;
@@ -457,6 +459,9 @@ export function ZoomablePhoto({
   // rectangle's far-away corners.
   const [geometry, setGeometry] = useState<ReturnType<typeof buildMorphGeometry> | null>(null);
   const readySentRef = useRef(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const imageSource = imageSourceForUri(uri);
   void locked;
 
   const frame = useMemo(
@@ -1010,9 +1015,11 @@ export function ZoomablePhoto({
                 <Animated.View style={[styles.fill, cropStyle]}>
                   <AnimatedImage
                     accessible={false}
+                    key={attempt}
                     contentFit="contain"
                     onLoad={handleLoad}
-                    source={{ uri: resolveStagedUri(uri) }}
+                    onError={() => setFailed(true)}
+                    source={imageSource}
                     style={styles.fill}
                     transition={0}
                   />
@@ -1022,6 +1029,16 @@ export function ZoomablePhoto({
           </View>
         </View>
       </GestureDetector>
+      {failed || !imageSource ? (
+        <View style={styles.photoError}>
+          <ThemedText accessibilityRole="alert">Could not load this photo.</ThemedText>
+          <Button
+            label="Retry photo"
+            variant="secondary"
+            onPress={() => { setFailed(false); setAttempt((current) => current + 1); }}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1032,6 +1049,13 @@ function releasePagerAfter(delay: number, announceLock: (locked: boolean) => voi
 }
 
 const styles = StyleSheet.create({
+  photoError: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing[24],
+    gap: Spacing[12],
+  },
   surface: {
     position: 'absolute',
     top: 0,

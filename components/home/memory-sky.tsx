@@ -65,7 +65,7 @@ import {
   type DaySkySpatialStar,
 } from '@/features/home/day-sky-spatial';
 import { formatDaySkyCaption } from '@/features/home/day-sky';
-import type { Moment } from '@/features/moments/types';
+import type { SkyItem } from '@/features/home/day-sky';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export const MEMORY_SKY_MAX_STARS = 40;
@@ -1083,7 +1083,7 @@ export function MemorySky({
   onSceneLayout,
   onPress,
 }: {
-  moments: Moment[];
+  moments: SkyItem[];
   daysTogether?: number | null;
   startDate?: string | null;
   focused?: boolean;

@@ -3,7 +3,7 @@ import {
   parseRelationshipStart,
   toDayKey,
 } from '@/features/calendar/calendar-date-utils';
-import type { Moment } from '@/features/moments/types';
+export type SkyItem = { id: string; occurredAt: string; authorRole: 'you' | 'partner' };
 
 /**
  * Day sky — one star per day together, not per memory.
@@ -42,7 +42,7 @@ export function formatDaySkyCaption(daysTogether: number): string {
  */
 export function buildDaySky(
   daysTogether: number | null | undefined,
-  moments: Moment[] | null | undefined,
+  moments: SkyItem[] | null | undefined,
   startDate: string | null | undefined,
 ): DaySkyDay[] | null {
   if (

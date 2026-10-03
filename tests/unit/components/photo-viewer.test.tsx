@@ -216,6 +216,17 @@ const MIXED: ViewerPhoto[] = [
 ];
 
 describe('PhotoViewer across media kinds', () => {
+  it('omits the memory navigation action when opened from within a memory response', () => {
+    renderViewer({ photos: PHOTOS, onOpenMemory: undefined });
+    expect(screen.queryByText('Open memory')).toBeNull();
+    expect(screen.getByLabelText('Close photo')).toBeTruthy();
+  });
+
+  it('does not invent a memory destination for a local gallery photo', () => {
+    renderViewer({ photos: [{ uri: 'file:///local.jpg', label: 'The two of you' }] });
+    expect(screen.queryByText('Open memory')).toBeNull();
+    expect(screen.getByLabelText('Close photo')).toBeTruthy();
+  });
   it('opens a clip full screen, and names it in the counter', () => {
     renderViewer({ photos: MIXED, initialIndex: 1 });
     expect(screen.getByTestId('video-page')).toBeTruthy();

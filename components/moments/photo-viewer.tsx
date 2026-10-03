@@ -59,8 +59,8 @@ export type ViewerPhoto = {
   uri: string;
   /** Announced label for this page. */
   label: string;
-  /** Owning memory id — the parent context for Open memory. */
-  momentId: string;
+  /** Owning memory, when this photo comes from Memories rather than the local sky. */
+  momentId?: string;
   /** Video still, used while the clip's page is off-screen. */
   posterUri?: string | null;
   /** Shape seed for a voice note's sound print. Defaults to the URI. */
@@ -80,7 +80,7 @@ export type PhotoViewerProps = {
   origin?: PhotoOrigin;
   onClose: () => void;
   /** Opens the owning memory of the currently visible photo. */
-  onOpenMemory: (photo: ViewerPhoto) => void;
+  onOpenMemory?: (photo: ViewerPhoto) => void;
 };
 
 /**
@@ -196,7 +196,7 @@ function ViewerSession({
   initialIndex: number;
   origin?: PhotoOrigin;
   onClose: () => void;
-  onOpenMemory: (photo: ViewerPhoto) => void;
+  onOpenMemory?: (photo: ViewerPhoto) => void;
 }) {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -347,11 +347,11 @@ function ViewerSession({
   }, [closing, closeMediaPage, currentIsPhoto, onClose, origin, reduceMotion]);
 
   const handleOpenMemory = useCallback(() => {
-    if (!current) {
+    if (!current?.momentId) {
       return;
     }
     haptics.select();
-    onOpenMemory(current);
+    onOpenMemory?.(current);
   }, [current, onOpenMemory]);
 
   const handleMomentumEnd = useCallback(
@@ -520,7 +520,7 @@ function ViewerSession({
             clip or a voice note is opened to be watched or heard, and the
             wall's tile leads back to the memory anyway.
           */}
-          {currentIsPhoto ? (
+          {currentIsPhoto && current?.momentId && onOpenMemory ? (
             <Button label="Open memory" onPress={handleOpenMemory} variant="secondary" />
           ) : null}
         </View>

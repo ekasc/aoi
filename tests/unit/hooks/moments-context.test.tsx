@@ -1,54 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
+import type { ImportedMilestone } from '@/features/space/types';
+
 vi.mock('@/features/api-client', () => ({
   isStubMode: () => true,
 }));
 
+// Mutable so a test can hand the stub space an imported milestone — the only
+// way a base (non-locally-created) moment can exist now that nothing is seeded.
+let importedMilestones: ImportedMilestone[] = [];
+
 vi.mock('@/features/space/space-context', () => ({
-  useSpace: () => ({ importedMilestones: [] }),
+  useSpace: () => ({ importedMilestones, space: null }),
 }));
 
-let mockSessionUser: { displayName: string } | null = { displayName: 'Jordan' };
+async function renderStubMoments() {
+  const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
 
-vi.mock('@/features/session/session-context', () => ({
-  useSession: () => ({ user: mockSessionUser }),
-}));
+  return renderHook(() => useMoments(), {
+    wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
+  });
+}
 
 describe('useMoments (stub)', () => {
   beforeEach(() => {
     vi.resetModules();
-    mockSessionUser = { displayName: 'Jordan' };
+    importedMilestones = [];
   });
 
-  it('returns moments from mock data', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
-    const { mockMoments } = await import('@/features/moments/mock-data');
-
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
+  it('starts empty: a space with no memories has no moments', async () => {
+    const { result } = await renderStubMoments();
 
     await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
+      expect(result.current.isLoading).toBe(false);
     });
 
-    expect(result.current.isLoading).toBe(false);
+    expect(result.current.moments).toEqual([]);
     expect(result.current.error).toBeNull();
   });
 
   it('addMoment adds to the list', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
-
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
-
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
-    });
-
-    const initialCount = result.current.moments.length;
+    const { result } = await renderStubMoments();
 
     await act(async () => {
       await result.current.addMoment({
@@ -58,41 +51,33 @@ describe('useMoments (stub)', () => {
       });
     });
 
-    expect(result.current.moments.length).toBe(initialCount + 1);
-    const added = result.current.moments.find((m: any) => m.title === 'New test moment');
-    expect(added).toBeTruthy();
+    expect(result.current.moments).toHaveLength(1);
+    expect(result.current.moments[0].title).toBe('New test moment');
   });
 
   it('removeMoment removes from the list', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
+    const { result } = await renderStubMoments();
 
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
+    await act(async () => {
+      await result.current.addMoment({ type: 'note', title: 'Keep me' });
+      await result.current.addMoment({ type: 'note', title: 'Remove me' });
     });
 
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
-    });
-
-    const idToRemove = result.current.moments[0].id;
+    const idToRemove = result.current.moments.find((m) => m.title === 'Remove me')!.id;
 
     await act(async () => {
       await result.current.removeMoment(idToRemove);
     });
 
-    const stillExists = result.current.moments.find((m: any) => m.id === idToRemove);
-    expect(stillExists).toBeUndefined();
+    expect(result.current.moments.find((m) => m.id === idToRemove)).toBeUndefined();
+    expect(result.current.moments).toHaveLength(1);
   });
 
-  it('updateMoment edits an existing moment and stamps updatedAt', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
+  it('updateMoment edits a locally created moment', async () => {
+    const { result } = await renderStubMoments();
 
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
-
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
+    await act(async () => {
+      await result.current.addMoment({ type: 'note', title: 'Original' });
     });
 
     const target = result.current.moments[0];
@@ -101,7 +86,35 @@ describe('useMoments (stub)', () => {
       await result.current.updateMoment(target.id, { title: 'Edited title' });
     });
 
-    const edited = result.current.moments.find((m: any) => m.id === target.id);
+    const edited = result.current.moments.find((m) => m.id === target.id);
+    expect(edited?.title).toBe('Edited title');
+  });
+
+  it('updateMoment stamps updatedAt beyond the edit tolerance on a base moment', async () => {
+    importedMilestones = [
+      {
+        id: 'imported_1',
+        type: 'note',
+        title: 'Imported',
+        body: 'From a milestone import',
+        occurredAt: '2024-01-01T00:00:00.000Z',
+        createdAt: '2024-01-01T00:00:00.000Z',
+      },
+    ];
+
+    const { result } = await renderStubMoments();
+
+    await waitFor(() => {
+      expect(result.current.moments).toHaveLength(1);
+    });
+
+    const target = result.current.moments[0];
+
+    await act(async () => {
+      await result.current.updateMoment(target.id, { title: 'Edited title' });
+    });
+
+    const edited = result.current.moments.find((m) => m.id === target.id);
     expect(edited?.title).toBe('Edited title');
     // Edited marker contract: updatedAt moves beyond the 1s tolerance.
     expect(new Date(edited!.updatedAt!).getTime()).toBeGreaterThan(
@@ -110,14 +123,10 @@ describe('useMoments (stub)', () => {
   });
 
   it('updateMoment applies partial patches without clobbering other fields', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
+    const { result } = await renderStubMoments();
 
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
-
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
+    await act(async () => {
+      await result.current.addMoment({ type: 'note', title: 'Kept', body: 'Original body' });
     });
 
     const target = result.current.moments[0];
@@ -126,64 +135,31 @@ describe('useMoments (stub)', () => {
       await result.current.updateMoment(target.id, { body: 'Only the body changed' });
     });
 
-    const edited = result.current.moments.find((m: any) => m.id === target.id);
+    const edited = result.current.moments.find((m) => m.id === target.id);
     expect(edited?.body).toBe('Only the body changed');
     expect(edited?.title).toBe(target.title);
     expect(edited?.type).toBe(target.type);
   });
 
-  it('falls back to "You" in the tombstone when no session user is available', async () => {
-    mockSessionUser = null;
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
-
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
-
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
-    });
-
-    const idToRemove = result.current.moments[0].id;
+  it('derives isOwn from authorRole', async () => {
+    const { result } = await renderStubMoments();
 
     await act(async () => {
-      await result.current.removeMoment(idToRemove);
-    });
-  });
-
-  it('derives isOwn from authorRole for stub moments', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
-
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
-
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
+      await result.current.addMoment({ type: 'note', title: 'Mine', authorRole: 'you' });
+      await result.current.addMoment({ type: 'note', title: 'Theirs', authorRole: 'partner' });
     });
 
     const own = result.current.moments.find((m) => m.authorRole === 'you');
     const partner = result.current.moments.find((m) => m.authorRole === 'partner');
     expect(own?.isOwn).toBe(true);
     expect(partner?.isOwn).toBe(false);
-
-    // Locally created moments are the current user's own.
-    await act(async () => {
-      await result.current.addMoment({ type: 'note', title: 'Mine' });
-    });
-    const created = result.current.moments.find((m) => m.title === 'Mine');
-    expect(created?.isOwn).toBe(true);
   });
 
   it('refresh resolves without mutating local stub data', async () => {
-    const { MomentsProvider, useMoments } = await import('@/features/moments/moments-context');
+    const { result } = await renderStubMoments();
 
-    const { result } = renderHook(() => useMoments(), {
-      wrapper: ({ children }) => <MomentsProvider>{children}</MomentsProvider>,
-    });
-
-    await waitFor(() => {
-      expect(result.current.moments.length).toBeGreaterThan(0);
+    await act(async () => {
+      await result.current.addMoment({ type: 'note', title: 'Steady' });
     });
 
     const before = result.current.moments.length;

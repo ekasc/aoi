@@ -12,6 +12,7 @@ import Animated, {
 	ReduceMotion,
 	useAnimatedStyle,
 	useSharedValue,
+	withTiming,
 } from 'react-native-reanimated';
 import {
 	AppState,
@@ -29,6 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MemorySky, compactSkyHeightForWindow, fabBottomOffset } from "@/components/home/memory-sky";
 import { useSkyEntry } from '@/components/home/sky-entry-provider';
+import { ARRIVAL_WINDOWS, arrivalWindow } from '@/components/setup/sky-handover';
 import { SkyWelcome } from '@/components/home/sky-welcome';
 import { GalleryMonthHeader } from "@/components/moments/gallery-month-header";
 import {
@@ -48,7 +50,7 @@ import { Pressed } from "@/components/ui/pressed";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Elevation, Motion, Radii, Spacing, shadow, withAlpha } from "@/constants/theme";
-import { getDaysTogether } from "@/features/time-together/time-together";
+import { getDaysTogether, formatDaysTogether } from "@/features/time-together/time-together";
 import { useMoments } from "@/features/moments/moments-context";
 import { useStoryFeed } from "@/features/moments/use-story-feed";
 import { deriveFirstPage } from '@/features/moments/first-page';
@@ -87,7 +89,6 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 import {
 	relationshipCopy,
 } from "@/features/relationship/relationship-age";
-import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
 
 /** Round FAB over the feed, clear of the docked system tab bar. */
@@ -116,6 +117,17 @@ const TOP_ARM_DISTANCE = 200;
 
 /** How long the "Kept in your story" confirmation stays up. */
 const KEPT_NOTICE_DURATION_MS = 5000;
+
+/** How long after the reader stops scrolling the add button returns. */
+const FAB_RESTORE_MS = 450;
+
+/**
+ * The floor for the empty archive's height. Centring is worth doing only while
+ * there is room to centre in; below this the block is left to stack from the
+ * top, because a squeezed dedication with its own actions crushed is worse than
+ * one that starts high.
+ */
+const EMPTY_MIN_HEIGHT = 260;
 
 /**
  * Own-moment long-press actions. On iOS these render in a native SwiftUI
@@ -147,18 +159,47 @@ const MOMENT_MENU_ACTIONS: MenuAction[] = [
 export default function MemoriesScreen() {
   const { entry, progress: foregroundProgress, arrival, reveal, enter } = useSkyEntry();
   const outgoingStyle = useAnimatedStyle(() => ({ opacity: 1 - (arrival?.value ?? 1) }));
-  const arrivalStyle = useAnimatedStyle(() => ({ opacity: foregroundProgress?.value ?? 1 }));
-  const invitationStyle = useAnimatedStyle(() => ({
-    opacity: 1 - (foregroundProgress?.value ?? 0),
-  }));
+  // The arrival into the archive, staged in depth. Each layer reads the same
+  // master clock and takes its own window of it: the sky settles and lands
+  // first, the ground follows it in, and the words come last, once there is
+  // something to read them against. Overlaps are deliberate; nothing waits for
+  // anything else to finish. See ARRIVAL_WINDOWS.
+  const arrivalStyle = useAnimatedStyle(() => {
+    const t = foregroundProgress?.value ?? 1;
+    const ground = arrivalWindow(t, ARRIVAL_WINDOWS.ground[0], ARRIVAL_WINDOWS.ground[1]);
+    return {
+      opacity: ground,
+      // A short rise, so the ground is arriving rather than appearing. Small on
+      // purpose: this is a room being entered, not a card being dealt.
+      transform: [{ translateY: (1 - ground) * 12 }],
+    };
+  });
+  const invitationStyle = useAnimatedStyle(() => {
+    const t = foregroundProgress?.value ?? 0;
+    const leaving = arrivalWindow(t, ARRIVAL_WINDOWS.invitation[0], ARRIVAL_WINDOWS.invitation[1]);
+    return { opacity: 1 - leaving };
+  });
 	const router = useRouter();
 	const isFocused = useIsFocused();
 	const insets = useSafeAreaInsets();
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const skyRevealHeight = compactSkyHeightForWindow(windowHeight);
-	const skyRevealStyle = useAnimatedStyle(() => ({
-		transform: [{ translateY: -skyRevealHeight * (1 - (foregroundProgress?.value ?? 1)) }],
-	}));
+	// The sky lands first and stops. It is the one layer that finishes before
+	// the arrival does, which is what gives the rest of the move something to
+	// land against.
+	const skyRevealStyle = useAnimatedStyle(() => {
+		const t = foregroundProgress?.value ?? 1;
+		const settled = arrivalWindow(t, ARRIVAL_WINDOWS.sky[0], ARRIVAL_WINDOWS.sky[1]);
+		return { transform: [{ translateY: -skyRevealHeight * (1 - settled) }] };
+	});
+	// The words, last. They fade up into a room that has already arrived rather
+	// than appearing with it, so the first thing the reader reads is read into
+	// a place instead of a void.
+	const wordsStyle = useAnimatedStyle(() => {
+		const t = foregroundProgress?.value ?? 1;
+		const words = arrivalWindow(t, ARRIVAL_WINDOWS.words[0], ARRIVAL_WINDOWS.words[1]);
+		return { opacity: words, transform: [{ translateY: (1 - words) * 8 }] };
+	});
 	// `?view=gallery` opens the wall directly (and lets the dev preview route
 	// land on it). Read once, as the initial state: arriving must not re-run
 	// the switcher's scroll reset mid-session.
@@ -182,10 +223,6 @@ export default function MemoriesScreen() {
 	}, [firstPageReady, firstPageDismissed, dismissFirstPage, feed.isLoading, feed.error, feed.moments, user?.id]);
 	const relationshipAge = useRelationshipAge(space?.relationshipStartDate);
 	const sharingInvite = space != null && !space.partnerJoined;
-	const { copied: copiedInvite, copy: copyInvite } = useCopyToClipboard();
-	const handleShareInvite = useCallback(() => {
-		copyInvite(space?.inviteCode ?? '');
-	}, [copyInvite, space?.inviteCode]);
 
 	const adaptiveCopy = useMemo(
 		() => relationshipCopy(relationshipAge.tone),
@@ -296,6 +333,7 @@ export default function MemoriesScreen() {
 	}, [firstPage.kind, entry, isFocused, view, readyView.feed, rememberFirstPage]);
 	const viewportH = useRef({ feed: 0, gallery: 0 });
 	const contentH = useRef({ feed: 0, gallery: 0 });
+	const lastScrollY = useRef(0);
 	const markReady = useCallback((presented: MemoriesView) => {
 		setReadyView((ready) => (ready[presented] ? ready : { ...ready, [presented]: true }));
 	}, []);
@@ -303,6 +341,42 @@ export default function MemoriesScreen() {
 		// A real drag: the reader owns the position from here.
 		readerScrolledRef.current = true;
 	}, []);
+	// The add button leaves while the reader is moving through rows and
+	// comes back when they stop. It used to be permanently reserved against in
+	// every row (actionsInset), which cost 56pt of blank space at the end of
+	// every line on a 402pt screen, so a row's own menu button sat at a 89pt
+	// margin while every other element sat at 24. A floating control that is
+	// only on screen when nothing is moving cannot need the reservation.
+	const fabVisible = useSharedValue(1);
+	const fabRestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const settleFab = useCallback(() => {
+		if (fabRestTimer.current) {
+			clearTimeout(fabRestTimer.current);
+		}
+		fabRestTimer.current = setTimeout(() => {
+			fabRestTimer.current = null;
+			fabVisible.set(withTiming(1, { duration: Motion.fast }));
+		}, FAB_RESTORE_MS);
+	}, [fabVisible]);
+	useEffect(
+		() => () => {
+			if (fabRestTimer.current) {
+				clearTimeout(fabRestTimer.current);
+			}
+		},
+		[],
+	);
+	const hideFab = useCallback(() => {
+		if (fabRestTimer.current) {
+			clearTimeout(fabRestTimer.current);
+			fabRestTimer.current = null;
+		}
+		fabVisible.set(withTiming(0, { duration: Motion.fast }));
+	}, [fabVisible]);
+	const fabStyle = useAnimatedStyle(() => ({
+		opacity: fabVisible.value,
+		transform: [{ translateY: (1 - fabVisible.value) * Spacing[16] }],
+	}));
 	// Both presentations write the same two values: the frost ramp (UI
 	// thread) and the paging arm (JS, because it decides to fetch). Only the
 	// visible list ever scrolls, so there is nothing to arbitrate.
@@ -313,10 +387,18 @@ export default function MemoriesScreen() {
 			// Frost tracks the absolute offset over a short ramp, so the sky
 			// stays crisp through the first stretch of scrolling and rows
 			// sliding underneath the fixed header dissolve into frost. A
-			// plain assignment on a shared value: the header style is a
+			// shared-value update: the header style is a
 			// UI-thread `useAnimatedStyle`, so the interpolation and the
 			// opacity write both happen off the JS thread now.
-			frost.value = Math.min(1, y / FROST_DISTANCE);
+			frost.set(Math.min(1, y / FROST_DISTANCE));
+			// Scrolling means the reader is reading, not composing. The add
+			// button steps aside and returns once they settle, so no row has to
+			// reserve space for it.
+			if (Math.abs(y - lastScrollY.current) > 2) {
+				lastScrollY.current = y;
+				hideFab();
+				settleFab();
+			}
 			// The arm is a distance travelled away from the top, but a feed
 			// that cannot travel the whole way (a short archive) must still
 			// be able to reach older history: the distance shrinks to the
@@ -331,7 +413,7 @@ export default function MemoriesScreen() {
 				feed.loadMore();
 			}
 		},
-		[feed, frost],
+		[feed, frost, hideFab, settleFab],
 	);
 	// A scroll from deep in a list proves that list has landed: reveal it
 	// and place it. Each list reports for itself, so one list's scroll can
@@ -534,39 +616,49 @@ export default function MemoriesScreen() {
 			],
 	);
 
+	// A list that fits its viewport has landed: it never scrolls, so no gesture
+	// will ever prove it. Both measurements feed this, because which one lands
+	// first is not guaranteed, and checking only the content size leaves a list
+	// that reported its height before its viewport stuck at opacity zero.
+	const settleIfShort = useCallback(
+		(presented: MemoriesView) => {
+			const height = contentH.current[presented];
+			if (height > 0 && height <= viewportH.current[presented]) {
+				markReady(presented);
+				setPlaced(true);
+			}
+		},
+		[markReady],
+	);
 	const handleFeedContentSizeChange = useCallback(
 		(_width: number, height: number) => {
 			contentH.current.feed = height;
 			landForContent('feed');
-			if (height <= viewportH.current.feed) {
-				markReady('feed');
-				setPlaced(true);
-			}
+			settleIfShort('feed');
 		},
-		[landForContent, markReady],
+		[landForContent, settleIfShort],
 	);
 	const handleGalleryContentSizeChange = useCallback(
 		(_width: number, height: number) => {
 			contentH.current.gallery = height;
 			landForContent('gallery');
-			if (height <= viewportH.current.gallery) {
-				markReady('gallery');
-				setPlaced(true);
-			}
+			settleIfShort('gallery');
 		},
-		[landForContent, markReady],
+		[landForContent, settleIfShort],
 	);
 	const handleFeedLayout = useCallback(
 		(event: LayoutChangeEvent) => {
 			viewportH.current.feed = event.nativeEvent.layout.height;
+			settleIfShort('feed');
 		},
-		[],
+		[settleIfShort],
 	);
 	const handleGalleryLayout = useCallback(
 		(event: LayoutChangeEvent) => {
 			viewportH.current.gallery = event.nativeEvent.layout.height;
+			settleIfShort('gallery');
 		},
-		[],
+		[settleIfShort],
 	);
 
 	// Dense grid, edge to edge: tiles size to the list itself, whichever is
@@ -752,6 +844,7 @@ export default function MemoriesScreen() {
 	// The memory belongs to the currently visible photo.
 	const handleOpenViewerMemory = useCallback(
 		(photo: ViewerPhoto) => {
+			if (!photo.momentId) return;
 			const moment = momentsById.get(photo.momentId);
 			setViewerPhoto(null);
 			if (moment) {
@@ -846,9 +939,9 @@ export default function MemoriesScreen() {
 		const own = isOwnMoment(item.moment);
 		const card = (
 			<MomentCard
-				actionsInset={FAB_SIZE}
 				moment={item.moment}
 				presentation="timeline"
+				rowWidth={contentWidth}
 				// The ellipsis is the explicit route to a moment's actions and
 				// is offered on every platform: it used to exist only where the
 				// long-press was not already opening a native menu, which left
@@ -902,6 +995,7 @@ export default function MemoriesScreen() {
 			border,
 			surface,
 			useNativeMomentMenu,
+			contentWidth,
 			firstPage, handleLeaveSomething, handleSkipFirstPage,
 		],
 	);
@@ -1001,6 +1095,25 @@ export default function MemoriesScreen() {
 		[handleEditMoment, handleRequestDelete],
 	);
 
+	// The room the empty archive can have, with everything the list already
+	// claims around it subtracted: the top pad that clears the pinned header,
+	// the bottom pad that clears the add button, and the system inset beneath
+	// that. Built from the same expressions the content container uses, because
+	// a disagreement between the two is what blanks the screen.
+	const showingDedication = view === 'feed' && firstPage.kind === 'dedication';
+	const listBottomPadding = showingDedication
+		? fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios")
+		: fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + FAB_SIZE + Spacing[24];
+	const emptySpacePadding = useMemo(
+		() =>
+			headerHeight +
+			Spacing[4] +
+			listBottomPadding +
+			insets.bottom,
+		[headerHeight, insets.bottom, listBottomPadding],
+	);
+	const viewportEmptyHeight = windowHeight - emptySpacePadding;
+
 	const handleCloseConfirmSheet = useCallback(() => {
 		if (isRemoving) {
 			return;
@@ -1039,15 +1152,42 @@ export default function MemoriesScreen() {
 		[handleCloseConfirmSheet, handleConfirmDelete, isRemoving],
 	);
 
-	const emptyState = useMemo(
-		() => (
-			// The faces of the empty list are async states, so the switch
-			// between them is announced instead of silently swapping text.
-			<View accessibilityLiveRegion="polite" style={styles.emptyState}>
+	// The faces of the empty list, one per presentation. Both lists stay
+	// mounted, so a shared face would put the dedication inside the Gallery and
+	// read the same invitation twice. Loading and offline are shared; the rest
+	// is each presentation's own.
+	//
+	// What the sky already knows, said once. The header draws a calendar nobody
+	// has read yet; this is the same fact in words, and it is the one piece of
+	// the space that is true before anyone has written anything.
+	const daysTogetherLabel = useMemo(() => {
+		const days = getDaysTogether(space?.relationshipStartDate, now);
+		return days === null ? null : formatDaysTogether(days);
+	}, [space?.relationshipStartDate, now]);
+
+	// The empty archive used to be a column pinned to the top with a third of
+	// the screen beneath it doing nothing. It is centred in what is left instead.
+	//
+	// The height has to be what the list's own paddings do NOT already claim,
+	// because the content container adds a top pad for the header and a bottom
+	// pad to clear the floating add button. A minHeight that ignored those made
+	// the content taller than the viewport, and the list's own "this archive is
+	// short enough to land" check then failed, so it stayed at opacity zero and
+	// the screen was blank. Derived from the same numbers the container uses, and
+	// floored so the block is never squeezed to nothing on a short window.
+	const emptyStateStyle = useMemo(
+		() => [styles.emptyState, { minHeight: Math.max(EMPTY_MIN_HEIGHT, viewportEmptyHeight) },
+			showingDedication ? { paddingBottom: 0 } : undefined],
+		[viewportEmptyHeight, showingDedication],
+	);
+
+	const emptyState = useCallback(
+		(presented: MemoriesView) => (
+			<View accessibilityLiveRegion="polite" style={emptyStateStyle}>
 				{feed.isLoading || (user && !firstPageReady && !firstPageError) ? (
 					<>
 						<ThemedText type="meta" style={{ color: muted }}>
-							Memories
+							{presented === 'gallery' ? 'Gallery' : 'Memories'}
 						</ThemedText>
 						<ThemedText type="body" style={{ color: muted }}>
 							Opening your memories…
@@ -1066,28 +1206,7 @@ export default function MemoriesScreen() {
 							<Button label="Try again" onPress={() => feed.refresh()} />
 						</View>
 					</>
-				) : feed.totalCount === 0 && feed.pending.length === 0 ? (
-					firstPage.kind === 'dedication' ? (
-						<FirstPageDedication partnerName={firstPage.partnerName} waiting={firstPage.waiting}
-							onCompose={handleLeaveSomething} onSkip={handleSkipFirstPage} />
-					) : (
-						<>
-							<ThemedText type="meta" style={{ color: muted }}>
-								Begin
-							</ThemedText>
-							<ThemedText type="title">{adaptiveCopy.memoryTitle}</ThemedText>
-							<ThemedText type="body" style={{ color: muted }}>
-								{adaptiveCopy.memoryBody}
-							</ThemedText>
-							<View style={styles.emptyCta}>
-								<Button
-									label={adaptiveCopy.memoryButton}
-									onPress={handleOpenEditor}
-								/>
-							</View>
-						</>
-					)
-				) : (
+				) : presented === 'gallery' ? (
 					<>
 						<ThemedText type="meta" style={{ color: muted }}>
 							Gallery
@@ -1098,31 +1217,55 @@ export default function MemoriesScreen() {
 							collect here.
 						</ThemedText>
 					</>
+				) : firstPage.kind === 'dedication' ? (
+					// The words arrive last, on their own window of the master
+					// clock. This is the only content on an empty archive, so it
+					// is the layer that decides whether the arrival reads as a
+					// room being entered or a screen being swapped.
+					<Animated.View style={wordsStyle} testID="arrival-words">
+						<FirstPageDedication partnerName={firstPage.partnerName} waiting={firstPage.waiting}
+							sinceLabel={daysTogetherLabel} onCompose={handleLeaveSomething} onSkip={handleSkipFirstPage} />
+					</Animated.View>
+				) : (
+					<>
+						<ThemedText type="meta" style={{ color: muted }}>
+							No memories yet
+						</ThemedText>
+						<ThemedText type="title">{adaptiveCopy.memoryTitle}</ThemedText>
+						<ThemedText type="body" style={{ color: muted }}>
+							{adaptiveCopy.memoryBody}
+						</ThemedText>
+						<View style={styles.emptyCta}>
+							<Button
+								label={adaptiveCopy.memoryButton}
+								onPress={handleOpenEditor}
+							/>
+						</View>
+					</>
 				)}
 			</View>
 		),
-		[muted, handleOpenEditor, feed, adaptiveCopy, firstPage, handleLeaveSomething, handleSkipFirstPage, user, firstPageReady, firstPageError],
+		[muted, handleOpenEditor, feed, adaptiveCopy, firstPage, handleLeaveSomething, handleSkipFirstPage, user, firstPageReady, firstPageError, emptyStateStyle, daysTogetherLabel, wordsStyle],
 	);
-	const firstPageFooter = sharingInvite || firstPageError ? (
+	// Only a failed first-read has something to say here. Whether the partner
+	// has joined is a fact about the space, and the Space tab is where the
+	// reader goes to look at it: in the feed it read as a second invitation
+	// competing with the one the screen is actually asking for, sitting in the
+	// middle of empty space with nothing around it.
+	const firstPageFooter = view === 'feed' && firstPageError ? (
 		<View style={styles.firstPageFooter}>
-			{sharingInvite ? (
-				<>
-					<ThemedText type="caption" style={{ color: muted }}>
-						{space?.partnerName?.trim() || 'Your partner'} hasn&apos;t joined yet.
-					</ThemedText>
-					<Button label={copiedInvite ? 'Code copied' : 'Copy invite code'} disabled={!space?.inviteCode} variant="ghost" onPress={handleShareInvite} />
-					{copiedInvite ? <ThemedText type="caption" accessibilityLiveRegion="polite" style={{ color: muted }}>Send it to them however you like.</ThemedText> : null}
-				</>
-			) : null}
-			{firstPageError ? (
-				<>
-					<ThemedText type="caption" accessibilityRole="alert">{firstPageError}</ThemedText>
-					<Button label="Try again" variant="ghost" onPress={firstPageReady ? handleSkipFirstPage : retryFirstPage} />
-				</>
-			) : null}
+			<ThemedText type="caption" accessibilityRole="alert">{firstPageError}</ThemedText>
+			<Button label="Try again" variant="ghost" onPress={firstPageReady ? handleSkipFirstPage : retryFirstPage} />
 		</View>
 	) : null;
 
+
+	// What the quiet confirmation says about a memory that just landed. Before
+	// the partner joins, the honest fact is that the album is theirs the moment
+	// they arrive, whoever the memory was written for.
+	const keptConfirmation = sharingInvite
+		? `Kept. ${space?.partnerName?.trim() || 'They'} will see it when they join.`
+		: 'Kept in your story';
 
 	// Older history prepends above the current rows, so the fetch control
 	// belongs at the TOP of the list. One slot, two shapes: the in-flight
@@ -1198,10 +1341,10 @@ export default function MemoriesScreen() {
 				// The end clears the floating FAB with room to spare, so the
 				// newest memory never parks underneath it.
 				paddingTop: headerHeight + Spacing[4],
-				paddingBottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + FAB_SIZE + Spacing[24],
+				paddingBottom: listBottomPadding,
 			},
 		],
-		[insets.bottom, headerHeight],
+		[listBottomPadding, headerHeight],
 	);
 
 	// FAB floats over the feed, clear of the docked system tab bar.
@@ -1264,7 +1407,7 @@ export default function MemoriesScreen() {
             ) : null}
 
             {!entry || entry.kind === 'fading' ? <Animated.View pointerEvents={entry ? 'none' : 'auto'} accessibilityElementsHidden={!!entry}
-              aria-hidden={!!entry} importantForAccessibility={entry ? 'no-hide-descendants' : 'auto'} style={[{ flex: 1 }, arrivalStyle]}>
+              aria-hidden={!!entry} importantForAccessibility={entry ? 'no-hide-descendants' : 'auto'} style={[{ flex: 1 }, arrivalStyle]} testID="arrival-ground">
             <View pointerEvents="box-none" style={styles.header}>
 				<View
 					style={[
@@ -1332,7 +1475,7 @@ export default function MemoriesScreen() {
 					style={styles.keptLayer}
 				>
 				<Pressable
-					accessibilityLabel={`${sharingInvite ? `Here for ${space?.partnerName || 'them'} when they arrive` : 'Kept in your story'}. Dismiss.`}
+					accessibilityLabel={`${keptConfirmation}. Dismiss.`}
 					accessibilityLiveRegion="polite"
 					accessibilityRole="button"
 					onPress={handleDismissKeptNotice}
@@ -1346,7 +1489,7 @@ export default function MemoriesScreen() {
 					]}
 				>
 					<ThemedText type="caption" style={{ color: muted }}>
-						{sharingInvite ? `Here for ${space?.partnerName || 'them'} when they arrive.` : 'Kept in your story'}
+						{keptConfirmation}
 					</ThemedText>
 				</Pressable>
 				</Animated.View>
@@ -1366,7 +1509,7 @@ export default function MemoriesScreen() {
 					style={[
 						styles.listLayer,
 						view !== 'gallery' && styles.listHidden,
-						!readyView.gallery && styles.listPending,
+						galleryRows.length > 0 && !readyView.gallery && styles.listPending,
 					]}
 					testID="gallery-layer"
 				>
@@ -1383,7 +1526,7 @@ export default function MemoriesScreen() {
 					scrollEventThrottle={16}
 					// Older history prepends above: hold the visible row so
 					// paging never shifts what the reader is looking at.
-					maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+					maintainVisibleContentPosition={displayGalleryRows.length > 0 ? { minIndexForVisible: 0 } : undefined}
 					data={displayGalleryRows}
 					onContentSizeChange={handleGalleryContentSizeChange}
 					onLayout={handleGalleryLayout}
@@ -1392,8 +1535,8 @@ export default function MemoriesScreen() {
 					key="gallery"
 					keyboardDismissMode="on-drag"
 					keyExtractor={galleryKeyExtractor}
-					ListEmptyComponent={seenCursor === undefined ? null : emptyState}
-					ListFooterComponent={firstPageFooter}
+					ListEmptyComponent={null}
+					ListFooterComponent={null}
 					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
 					refreshing={feed.isRefreshing}
@@ -1401,6 +1544,12 @@ export default function MemoriesScreen() {
 					showsVerticalScrollIndicator={false}
 					style={styles.list}
 				/>
+				{/* An empty gallery must not inherit the archive's previous scroll offset. */}
+				{galleryRows.length === 0 ? (
+					<View style={[styles.listLayer, contentContainerStyle]} testID="gallery-empty">
+						{emptyState('gallery')}
+					</View>
+				) : null}
 				</View>
 				<View
 					accessibilityElementsHidden={view !== 'feed'}
@@ -1410,7 +1559,7 @@ export default function MemoriesScreen() {
 					style={[
 						styles.listLayer,
 						view !== 'feed' && styles.listHidden,
-						!readyView.feed && styles.listPending,
+						rows.length > 0 && !readyView.feed && styles.listPending,
 					]}
 					testID="feed-layer"
 				>
@@ -1424,7 +1573,7 @@ export default function MemoriesScreen() {
 					scrollEventThrottle={16}
 					// Older history prepends above: hold the visible row so
 					// paging never shifts what the reader is looking at.
-					maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+					maintainVisibleContentPosition={displayRows.length > 0 ? { minIndexForVisible: 0 } : undefined}
 					data={displayRows}
 					onContentSizeChange={handleFeedContentSizeChange}
 					onLayout={handleFeedLayout}
@@ -1433,7 +1582,7 @@ export default function MemoriesScreen() {
 					key="feed"
 					keyboardDismissMode="on-drag"
 					keyExtractor={feedKeyExtractor}
-					ListEmptyComponent={seenCursor === undefined ? null : emptyState}
+					ListEmptyComponent={seenCursor === undefined ? null : () => emptyState('feed')}
 					ListFooterComponent={firstPageFooter}
 					ListHeaderComponent={listHeader}
 					onRefresh={() => feed.refresh()}
@@ -1444,6 +1593,10 @@ export default function MemoriesScreen() {
 				/>
 				</View>
 			</View>
+			{!showingDedication ? <Animated.View
+				pointerEvents="box-none"
+				style={[styles.fabAnchor, { bottom: fabBottom }, fabStyle]}
+			>
 			<Pressable
 				accessibilityLabel="Add memory"
 				accessibilityRole="button"
@@ -1451,7 +1604,6 @@ export default function MemoriesScreen() {
 				style={({ pressed }) => [
 					styles.fab,
 					{
-						bottom: fabBottom,
 						boxShadow: shadow(Elevation.floating, shadowColor),
 					},
 					pressed ? Pressed.onMedia : undefined,
@@ -1475,6 +1627,7 @@ export default function MemoriesScreen() {
 					<Ionicons color={fabIconColor} name="add" size={26} />
 				</GlassSurface>
 			</Pressable>
+			</Animated.View> : null}
 
             </Animated.View> : null}
              <ActionSheet
@@ -1600,9 +1753,14 @@ const styles = StyleSheet.create({
 		marginHorizontal: Spacing[24],
 		marginBottom: Spacing[16],
 	},
-	fab: {
+	/** The animated wrapper carries the position; the button fills it. */
+	fabAnchor: {
 		position: "absolute",
 		right: Spacing[24],
+		width: FAB_SIZE,
+		height: FAB_SIZE,
+	},
+	fab: {
 		width: FAB_SIZE,
 		height: FAB_SIZE,
 		borderRadius: FAB_SIZE / 2,
@@ -1649,9 +1807,15 @@ const styles = StyleSheet.create({
 		paddingBottom: Spacing[24],
 		paddingTop: Spacing[0],
 	},
+	/**
+	 * Centred in the space the header leaves. `justifyContent` does the work
+	 * and the `minHeight` from the screen supplies the box, so the block lands
+	 * at the reader's eye rather than at the top of a tall void.
+	 */
 	emptyState: {
-		marginTop: Spacing[40],
+		justifyContent: "center",
 		paddingHorizontal: Spacing[24],
+		paddingBottom: Spacing[40],
 		gap: Spacing[16],
 	},
 	emptyCta: {

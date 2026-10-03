@@ -4,6 +4,7 @@ import { Stack } from "expo-router/stack";
 import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
+import { AutomaticAlbumProvider } from "@/features/album/automatic-album-context";
 import { LettersProvider } from "@/features/letters/letters-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
 import { ProposalsProvider } from "@/features/proposals/proposals-context";
@@ -72,7 +73,7 @@ export default function AuthenticatedAppLayout() {
 	}
 
 	return (
-		<CalendarProvider>
+		<AutomaticAlbumProvider><CalendarProvider>
 			<PartnerDetailsProvider>
 				<SomedayProvider>
 					<QuestionProvider>
@@ -165,6 +166,7 @@ export default function AuthenticatedAppLayout() {
 											title: "Edit relationship",
 											presentation: useFormSheet ? "formSheet" : "modal",
 											...sheetOptions,
+											...(useFormSheet ? { sheetAllowedDetents: 'fitToContents' as const } : {}),
 										}}
 									/>
 									<Stack.Screen
@@ -265,6 +267,6 @@ export default function AuthenticatedAppLayout() {
 					</QuestionProvider>
 				</SomedayProvider>
 			</PartnerDetailsProvider>
-		</CalendarProvider>
+		</CalendarProvider></AutomaticAlbumProvider>
 	);
 }

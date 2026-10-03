@@ -134,10 +134,11 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
   // Unsaved content turns any exit — Cancel, native pull-down, Android back —
   // into the discard confirmation instead of a silent drop.
   const handleBlockedLeave = useCallback((leave: () => void) => {
+    if (savingRef.current) return;
     pendingLeaveRef.current = leave;
     setDiscardVisible(true);
   }, []);
-  usePreventLeave((draftNonEmpty || pickerBusy || voiceBusy) && !allowLeave, handleBlockedLeave);
+  usePreventLeave((draftNonEmpty || pickerBusy || voiceBusy || isSaving) && !allowLeave, handleBlockedLeave);
 
   const handleBodyChange = useCallback((value: string) => {
     setLocalError(null);
@@ -365,6 +366,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
   }, [allowLeave, router]);
 
   const handleClose = useCallback(() => {
+    if (savingRef.current) return;
     if (draftNonEmpty || pickerBusyRef.current || voiceBusy) {
       pendingLeaveRef.current = null;
       setDiscardVisible(true);
@@ -418,7 +420,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
         <>
           <Stack.Screen.Title>{editorTitle}</Stack.Screen.Title>
           <Stack.Toolbar placement="left">
-            <Stack.Toolbar.Button onPress={handleClose}>Cancel</Stack.Toolbar.Button>
+            <Stack.Toolbar.Button disabled={isSaving} onPress={handleClose}>Cancel</Stack.Toolbar.Button>
           </Stack.Toolbar>
           <Stack.Toolbar placement="right">
             <Stack.Toolbar.Button
@@ -432,10 +434,12 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
         </>
       ) : (
         <View style={[styles.topBar, { paddingTop: insets.top + Spacing[8] }]}>
-          <Button label="Cancel" variant="ghost" size="sm" onPress={handleClose} />
+          <Button disabled={isSaving} label="Cancel" variant="ghost" size="sm" onPress={handleClose} />
           <ThemedText type="bodyEmphasis" numberOfLines={1} style={styles.headerTitle}>{editorTitle}</ThemedText>
           <Button
             accessibilityHint="Save this memory"
+            accessibilityState={{ busy: isSaving, disabled: !canSave }}
+            accessibilityLiveRegion="polite"
             disabled={!canSave}
             label={isSaving ? 'Saving…' : 'Save'}
             size="sm"
@@ -460,6 +464,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
         <TextInput
           ref={inputRef}
           accessibilityLabel="Keep something"
+          editable={!isSaving}
           multiline
           onChangeText={handleBodyChange}
           placeholderTextColor={muted}

@@ -897,7 +897,8 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     // viewport rather than a strip of it.
     const sky = TOGETHER_SOURCE.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
     expect(sky).toMatch(/\bimmersive\b/);
-    expect(sky).toMatch(/\bonPress=/);
+    expect(TOGETHER_SOURCE).toContain('accessibilityLabel="Bring out a photo of the two of you"');
+    expect(TOGETHER_SOURCE).toContain('onPress={pullPhoto}');
     expect(sky).not.toMatch(/\bcompact\b/);
     expect(TOGETHER_SOURCE).not.toMatch(/<MemorySky[\s\S]{0,320}?\bheader\b/);
     expect(TOGETHER_SOURCE).toMatch(/presentationHeight=\{skyHeight\}/);

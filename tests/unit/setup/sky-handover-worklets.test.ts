@@ -106,6 +106,9 @@ describe('sky handover worklet closure', () => {
       'skyArrivalStyle',
       'cameraProgress',
       'skyBottomFeather',
+      // The arrival's own mapping runs on the UI thread, so it has to be a
+      // worklet like the rest of the chain.
+      'arrivalWindow',
     ]) {
       expect(defined.get(name)?.worklet, `${name} must be a worklet`).toBe(true);
     }

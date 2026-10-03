@@ -48,3 +48,48 @@ export function skyArrivalStyle(progress: number) {
     transform: [{ translateY: 28 * (1 - eased) }],
   };
 }
+
+/**
+ * The arrival into the archive, staged in depth.
+ *
+ * Entering the home screen for the first time used to be one 240ms dissolve of
+ * everything at once, which is a screen swapping rather than a place being
+ * entered. The three things that make the room arrive on separate clocks
+ * instead: the sky settles first and lands, the ground follows it in, and the
+ * words come last, once there is something to read them against.
+ *
+ * The windows are fractions of one master clock rather than three separate
+ * animations, so the whole arrival is one gesture and can be interrupted or
+ * reversed as a unit. Overlapping windows are deliberate: nothing waits for
+ * anything else to finish.
+ */
+export const SKY_ARRIVAL_MS = 420;
+
+/** Where the sky lands. The haptic fires here, not at the end. */
+export const SKY_LANDED_AT = 0.55;
+
+export const ARRIVAL_WINDOWS = {
+  /** The invitation lifts away first, clearing the room for the archive. */
+  invitation: [0, 0.35],
+  /** The sky contracts into the header and stops. */
+  sky: [0, SKY_LANDED_AT],
+  /** The ground rises to meet the header once it has landed. */
+  ground: [0.18, 0.8],
+  /** The words, last, so they are read into a room rather than a void. */
+  words: [0.5, 1],
+} as const;
+
+/**
+ * A window of the master clock, eased, clamped to 0..1.
+ *
+ * Every layer reads the same number and each takes its own slice of it, which
+ * is what keeps the staging in one place instead of scattered across the
+ * components that happen to be moving.
+ */
+export function arrivalWindow(progress: number, from: number, to: number) {
+  'worklet';
+  const t = Math.min(1, Math.max(0, progress));
+  if (to <= from) return t >= to ? 1 : 0;
+  const local = Math.min(1, Math.max(0, (t - from) / (to - from)));
+  return cameraProgress(local);
+}

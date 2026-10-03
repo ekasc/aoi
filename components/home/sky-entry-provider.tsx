@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Easing, cancelAnimation, runOnJS, useReducedMotion, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
+import { Easing, cancelAnimation, runOnJS, useAnimatedReaction, useReducedMotion, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { haptics } from '@/features/haptics/haptics';
 import { Motion } from '@/constants/theme';
+import { SKY_ARRIVAL_MS, SKY_LANDED_AT } from '@/components/setup/sky-handover';
 
 export type SkyEntry = {
   kind: 'created' | 'joined';
@@ -86,10 +87,41 @@ export function SkyEntryProvider({ children }: { children: ReactNode }) {
       return;
     }
     setEntry({ kind: 'fading', details: entry.details });
-    progress.set(withTiming(1, { duration: Motion.base, easing: Easing.bezier(0.22, 1, 0.36, 1) }, (finished) => {
+    // One master clock for the whole arrival. Each layer takes its own window
+    // of it (see ARRIVAL_WINDOWS), so the staging is one gesture rather than
+    // three animations that happen to overlap.
+    //
+    // The easing is deliberately mild. A strong ease-out (the 0.22/1/0.36/1
+    // this used to be) front-loads the value so hard that the clock is spent by
+    // 60% of its duration: the arrival measured 260ms against a 420ms request,
+    // which is a dissolve with extra steps. A gentle curve spreads the motion
+    // across the time it claims, so the duration means what it says.
+    progress.set(withTiming(1, { duration: SKY_ARRIVAL_MS, easing: Easing.bezier(0.32, 0.72, 0.4, 1) }, (finished) => {
       if (finished) runOnJS(finish)();
     }));
   }, [entry, finish, progress, reduceMotion]);
+
+  // The landing, not the end. The sky contracts into the header partway
+  // through and the ground follows it; the moment it settles is when the space
+  // becomes real, so that is where the one haptic belongs. Driven by the
+  // animation's own value rather than a parallel timer, so it cannot drift from
+  // what is on screen.
+  const landed = useRef(false);
+  useAnimatedReaction(
+    () => (progress.value ?? 0) >= SKY_LANDED_AT,
+    (crossed, previous) => {
+      // `previous === undefined` is the first observation, not a crossing: the
+      // clock starts at 1, so the very first read is already past the
+      // threshold. Only a real below-to-above transition is a landing.
+      if (crossed && previous === false && !landed.current) {
+        landed.current = true;
+        runOnJS(haptics.soft)();
+      }
+      if (!crossed) {
+        landed.current = false;
+      }
+    },
+  );
 
   useEffect(() => () => {
     cancelAnimation(progress);

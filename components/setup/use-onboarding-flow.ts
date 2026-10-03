@@ -9,6 +9,9 @@ import {
   isInviteCodeFormat,
   normalizeInviteCode,
 } from '@/features/space/invite-code';
+import { takeInvite } from '@/features/space/invite-handoff';
+import type { PartnerName, PartnerNameProblem } from '@/features/space/partner-name';
+import { checkPartnerName, spaceNameForPair } from '@/features/space/partner-name';
 import { useSpace } from '@/features/space/space-context';
 
 // Post-auth entry: the ONLY pre-Story state is a Space of your own or a
@@ -22,18 +25,33 @@ import { useSpace } from '@/features/space/space-context';
 // invitation before revealing the feed.
 export type OnboardingStep = 'welcome' | 'identity' | 'join' | 'minted' | 'joined';
 
-/** Internal default — never presented as setup homework. */
-const DEFAULT_SPACE_NAME = 'Our space';
-
 export type OnboardingFlow = {
   step: OnboardingStep;
   goWelcome: () => void;
   goJoin: () => void;
   /** The creator's title page: the pair, the date, the cover. */
   goIdentity: () => void;
-  /** What the creator calls the other person. Sent as their name on create. */
+  /**
+   * What the creator calls the other person, and the required field on the
+   * title page. The pair is named or the space is not created: an unnamed
+   * partner leaves every later screen with nothing to address.
+   */
   partnerNameDraft: string;
   setPartnerNameDraft: (value: string) => void;
+  /**
+   * The typed name parsed into a `PartnerName`, or null while the field holds
+   * something that is not a name. A branded type rather than a string, so no
+   * caller can pass an empty one onward. The create reads this and nothing
+   * else.
+   */
+  parsedPartnerName: PartnerName | null;
+  /**
+   * Why the name is not acceptable, or null when it is. Null until the reader
+   * has actually tried to continue, so an untouched field never scolds; after
+   * that it tracks every keystroke, so the message disappears the moment the
+   * input becomes valid.
+   */
+  nameProblem: PartnerNameProblem | null;
   /**
    * The day the relationship started, which is the sky's calendar.
    *
@@ -109,10 +127,22 @@ export function useOnboardingFlow(): OnboardingFlow {
   const { user, signOut } = useSession();
   const { space, createSpace, joinSpace } = useSpace();
 
-  const [step, setStep] = useState<OnboardingStep>('welcome');
+  // An invite link puts the reader on the join step with the code already in
+  // the field. Read once, as initial state, rather than in an effect: a link is
+  // a direction, not a value that should keep refilling a form the reader is
+  // using, and there is no first frame in which the flow should show the fork
+  // and then jump to join. Taking it here also consumes it, so a remount cannot
+  // resurrect an invite that has already been acted on.
+  const [invited] = useState(() => takeInvite());
+  const [step, setStep] = useState<OnboardingStep>(invited ? 'join' : 'welcome');
   // The title page, collected before the create call so the code that follows
-  // is addressed and the space is whole when it first exists.
+  // is addressed and the space is whole when it first exists. The draft is the
+  // raw field text; `partnerName` below is the only thing the create reads.
   const [partnerNameDraft, setPartnerNameDraft] = useState('');
+  // Set by a Continue pressed on a name that would not validate, and cleared by
+  // the next keystroke. It decides *when* the field speaks, never *what* it
+  // says: the reason and its wording come from checkPartnerName.
+  const [createAttempted, setCreateAttempted] = useState(false);
   const [startDate, setStartDate] = useState<Date>(() => new Date());
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   // What the space was actually made with, captured at the create rather than
@@ -122,9 +152,15 @@ export function useOnboardingFlow(): OnboardingFlow {
   const [mintedIdentity, setMintedIdentity] = useState<{
     name: string;
     photoUri: string | null;
-  }>({ name: '', photoUri: null });
+    /**
+     * The other person, captured at the create. This used to be joined-only, so
+     * a creator's own space arrived at Memories with nobody named, and the
+     * share link and the empty feed both had to fall back to "your partner".
+     */
+    partnerName: string | null;
+  }>({ name: '', photoUri: null, partnerName: null });
   const goIdentity = useCallback(() => setStep('identity'), []);
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(invited ?? '');
   const [mintedCode, setMintedCode] = useState('');
   const [joinedPartnerName, setJoinedPartnerName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -186,9 +222,39 @@ export function useOnboardingFlow(): OnboardingFlow {
     return true;
   }, [clearError]);
 
+  /**
+   * The name the create will actually use, or null when the field holds
+   * something that is not a name. This is the single gate: the submit reads
+   * this, never the raw draft, so an unnamed space cannot be created by
+   * accident and no caller has to remember to check.
+   */
+  const nameCheck = checkPartnerName(partnerNameDraft);
+  const partnerName = nameCheck.ok ? nameCheck.name : null;
+  // Silent until the reader has tried, then honest on every keystroke.
+  const nameProblem = createAttempted && !nameCheck.ok ? nameCheck.problem : null;
+
+  const setPartnerName = useCallback((value: string) => {
+    setPartnerNameDraft(value);
+    setCreateAttempted(false);
+  }, []);
+
   const submitCreate = useCallback(async () => {
     if (!user) {
       router.replace('/(public)');
+      return;
+    }
+    // Resume-safe first: a space that already exists was named on an earlier
+    // run, so the gate is about minting, never about stranding a reader who
+    // has already answered the question.
+    if (spaceCreatedRef.current || space) {
+      spaceCreatedRef.current = true;
+      enterStory();
+      return;
+    }
+    if (!partnerName) {
+      // Not a dead button and not a silent refusal: the field is told which
+      // rule it broke, so the reader knows what to do about it.
+      setCreateAttempted(true);
       return;
     }
     if (submittingRef.current) return;
@@ -197,24 +263,18 @@ export function useOnboardingFlow(): OnboardingFlow {
       setIsSubmitting(true);
       setCreating(true);
       clearError();
-      // Resume-safe: an already-present Space is never recreated, and there is
-      // nothing to mint, so it goes straight on to Story.
-      if (spaceCreatedRef.current || space) {
-        spaceCreatedRef.current = true;
-        enterStory();
-        return;
-      }
+      setCreateAttempted(false);
       const you = deriveName(user);
-      const them = partnerNameDraft.trim();
-      const spaceName = them ? `${you} & ${them}` : DEFAULT_SPACE_NAME;
-      setMintedIdentity({ name: spaceName, photoUri });
+      const spaceName = spaceNameForPair(you, partnerName);
+      setMintedIdentity({ name: spaceName, photoUri, partnerName });
       const created = await createSpace({
         // Named for the pair, which is how the app already refers to one, so
-        // naming the space costs no question of its own.
+        // naming the space costs no question of its own. `partnerName` is a
+        // PartnerName here, so it cannot be the empty string.
         name: spaceName,
         createdByUserId: user.id,
         yourName: you,
-        ...(them ? { partnerName: them } : {}),
+        partnerName,
         relationshipStartDate: toDateKey(startDate),
         ...(photoUri ? { photoUri } : {}),
       });
@@ -231,7 +291,7 @@ export function useOnboardingFlow(): OnboardingFlow {
       setCreating(false);
       setIsSubmitting(false);
     }
-  }, [user, space, clearError, createSpace, enterStory, router, partnerNameDraft, startDate, photoUri]);
+  }, [user, space, clearError, createSpace, enterStory, router, partnerName, startDate, photoUri]);
 
   const submitJoin = useCallback(async () => {
     if (!user) {
@@ -259,7 +319,13 @@ export function useOnboardingFlow(): OnboardingFlow {
       // they had never seen; the least the screen owes them is who it belongs
       // to, before it hands over the keys.
       setJoinedPartnerName(joined.partnerName ?? '');
-      setMintedIdentity({ name: joined.name, photoUri: joined.photoUri ?? null });
+      setMintedIdentity({
+        name: joined.name,
+        photoUri: joined.photoUri ?? null,
+        // For a joiner the other person is the creator, and the space is
+        // already shared, so no invite goes out from this side.
+        partnerName: null,
+      });
       setStep('joined');
     } catch (caughtError) {
       setError(getErrorMessage(caughtError, 'Unable to join with this invite code.'));
@@ -276,7 +342,10 @@ export function useOnboardingFlow(): OnboardingFlow {
     goJoin,
     goIdentity,
     partnerNameDraft,
-    setPartnerNameDraft,
+    setPartnerNameDraft: setPartnerName,
+    /** The name as typed, valid or not. `partnerName` is the parsed one. */
+    parsedPartnerName: partnerName,
+    nameProblem,
     startDate,
     setStartDate,
     photoUri,
@@ -291,7 +360,7 @@ export function useOnboardingFlow(): OnboardingFlow {
     submitCreate,
     submitJoin,
     mintedCode,
-    partnerName: joinedPartnerName,
+    partnerName: mintedIdentity.partnerName ?? joinedPartnerName,
     spaceName: mintedIdentity.name,
     spacePhotoUri: mintedIdentity.photoUri,
     pasteCode,

@@ -282,7 +282,13 @@ vi.mock('react-native', () => {
 vi.mock('react-native-reanimated', () => ({
   default: { View: ({ children }: { children?: unknown }) => createElement('div', {}, children) },
   useReducedMotion: () => false,
-  useSharedValue: (initial: unknown) => ({ value: initial }),
+  useSharedValue: (initial: unknown) => {
+    const shared = {
+      value: initial,
+      set: (next: unknown) => { shared.value = typeof next === 'function' ? next(shared.value) : next; },
+    };
+    return shared;
+  },
   useAnimatedStyle: () => ({}),
   withTiming: (value: unknown) => value,
   withSpring: (value: unknown) => value,
@@ -601,6 +607,34 @@ describe('Memories feed paging edge', () => {
     fireEvent.click(screen.getByText('Gallery'));
     expect(galleryOpacity()).toBe('0');
     scrollList(galleryList(), 3000);
+    expect(galleryOpacity()).not.toBe('0');
+  });
+
+  it('reveals a short archive whichever measurement lands first', async () => {
+    await renderMemories();
+    const feedOpacity = () =>
+      (screen.getByTestId('feed-layer') as HTMLElement).style.opacity;
+    const galleryOpacity = () =>
+      (screen.getByTestId('gallery-layer') as HTMLElement).style.opacity;
+
+    // The reverse order is what the screen hits when the list mounts during
+    // the sky handover: it reports its content before it has a viewport, and a
+    // fit test that only reads the content size leaves the layer transparent
+    // with nothing left to prove it.
+    act(() => {
+      feedList().onContentSizeChange?.(390, 400);
+      galleryList().onContentSizeChange?.(390, 400);
+    });
+    expect(feedOpacity()).toBe('0');
+    expect(galleryOpacity()).toBe('0');
+    act(() => {
+      feedList().onLayout?.({ nativeEvent: { layout: { height: 844 } } });
+      galleryList().onLayout?.({ nativeEvent: { layout: { height: 844 } } });
+    });
+    expect(feedOpacity()).not.toBe('0');
+    // The gallery layer also carries the hidden-while-inactive style, so it is
+    // only judged once it is the presented tab.
+    fireEvent.click(screen.getByText('Gallery'));
     expect(galleryOpacity()).not.toBe('0');
   });
 

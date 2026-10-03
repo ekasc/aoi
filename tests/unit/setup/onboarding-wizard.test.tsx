@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 
 import { OnboardingWizard } from '@/components/setup/onboarding-wizard';
+import { PARTNER_NAME_MESSAGES, type PartnerName } from '@/features/space/partner-name';
 
 const WIZARD_SOURCE = readFileSync('components/setup/onboarding-wizard.tsx', 'utf8');
 
@@ -88,6 +89,8 @@ function flow(overrides: Record<string, unknown> = {}) {
     goIdentity: vi.fn(),
     partnerNameDraft: 'June',
     setPartnerNameDraft: vi.fn(),
+    parsedPartnerName: 'June' as PartnerName,
+    nameProblem: null,
     startDate: new Date('2026-09-30T12:00:00'),
     setStartDate: vi.fn(),
     photoUri: null,
@@ -112,6 +115,68 @@ beforeEach(() => {
 });
 
 describe('setup wizard screen', () => {
+  it('says what is missing instead of only going red', async () => {
+    // A red underline with no sentence tells the reader they did something
+    // wrong and not what. The problem travels from the check to the field, and
+    // the wording for it lives with the check.
+    flowMock.current = flow({
+      step: 'identity',
+      partnerNameDraft: '',
+      parsedPartnerName: null,
+      nameProblem: 'empty',
+    });
+    render(createElement(OnboardingWizard));
+    expect(screen.getByText(PARTNER_NAME_MESSAGES.empty)).toBeTruthy();
+    // The field is still there to be typed into; the gate is not a dead end.
+    expect(screen.getByLabelText('Their name')).toBeTruthy();
+  });
+
+  it('says nothing about the name before the reader has tried', async () => {
+    flowMock.current = flow({ step: 'identity', partnerNameDraft: '', nameProblem: null });
+    render(createElement(OnboardingWizard));
+    expect(screen.queryByText(PARTNER_NAME_MESSAGES.empty)).toBeNull();
+  });
+
+  it('reserves the message line before there is anything to say', async () => {
+    // Mounting the message on demand grew the field by a line and pushed the
+    // date row and the submit button down at the exact moment the reader was
+    // looking at it. The line is therefore present and occupying space from the
+    // first frame, and only the words change. Layout is not measurable here, so
+    // the thing being asserted is the cause: the line exists while there is
+    // nothing to say.
+    flowMock.current = flow({ step: 'identity', nameProblem: null });
+    const quiet = render(createElement(OnboardingWizard));
+    const quietLine = screen.queryByTestId('field-message');
+    expect(quietLine).toBeTruthy();
+    // Reserved, but saying nothing: no words to read out, so it carries no
+    // alert role until there is something to alert about.
+    expect(quietLine?.textContent?.trim()).toBe('');
+    expect(quietLine?.getAttribute('role')).toBeNull();
+    quiet.unmount();
+
+    flowMock.current = flow({ step: 'identity', nameProblem: 'empty' });
+    render(createElement(OnboardingWizard));
+    const loudLine = screen.getByTestId('field-message');
+    // Same node, now with words in it. One element across both states is the
+    // whole point: a second mount is a layout shift.
+    expect(loudLine).toBeTruthy();
+    expect(loudLine.textContent).toBe(PARTNER_NAME_MESSAGES.empty);
+  });
+
+  it('does not reserve a line on a field that never reports one', async () => {
+    // The reservation is opt-in. A field with nothing to say must not carry a
+    // permanent blank line, which is its own kind of wasted space.
+    const { PaperTextInput } = await import('@/components/ui/text-input');
+    render(createElement(PaperTextInput, { label: 'Search events', value: '' }));
+    expect(screen.queryByTestId('field-message')).toBeNull();
+  });
+
+  it('words a too-long name as its own problem', async () => {
+    flowMock.current = flow({ step: 'identity', nameProblem: 'tooLong' });
+    render(createElement(OnboardingWizard));
+    expect(screen.getByText(PARTNER_NAME_MESSAGES.tooLong)).toBeTruthy();
+  });
+
   it('leaves for Story itself when the flow says setup is already done', () => {
     flowMock.current = flow({ skipToStory: true });
     render(createElement(OnboardingWizard));

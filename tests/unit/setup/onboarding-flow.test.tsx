@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 import { useOnboardingFlow } from '@/components/setup/use-onboarding-flow';
+import { PARTNER_NAME_MAX } from '@/features/space/partner-name';
+import { publishInvite, takeInvite } from '@/features/space/invite-handoff';
 
 const replaceMock = vi.hoisted(() => vi.fn());
 
@@ -103,9 +105,79 @@ describe('onboarding create path (minimum pre-Story state)', () => {
     expect(replaceMock).toHaveBeenCalledWith('/(app)/(tabs)/(memories)');
   });
 
+  it('refuses to create an unnamed space and reports why, not just that', async () => {
+    const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.goIdentity();
+    });
+    expect(result.current.parsedPartnerName).toBeNull();
+    // Silence before the reader has tried: nothing is wrong yet.
+    expect(result.current.nameProblem).toBeNull();
+
+    // Whitespace is not a name.
+    await act(async () => {
+      result.current.setPartnerNameDraft('   ');
+    });
+    expect(result.current.parsedPartnerName).toBeNull();
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+
+    // This is the bug the gate exists for: a space created with no partner
+    // leaves the sky's calendar, the first empty feed, and every later
+    // greeting with nobody to address.
+    expect(spaceMock.createSpace).not.toHaveBeenCalled();
+    // And the reader is told which rule they broke, so the field is not just
+    // red for no stated reason.
+    expect(result.current.nameProblem).toBe('empty');
+    expect(result.current.step).toBe('identity');
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it('clears the complaint the moment the name becomes valid', async () => {
+    const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.goIdentity();
+      await result.current.submitCreate();
+    });
+    expect(result.current.nameProblem).toBe('empty');
+
+    // One keystroke, still not a name, so still complaining.
+    await act(async () => {
+      result.current.setPartnerNameDraft('J');
+    });
+    expect(result.current.nameProblem).toBeNull();
+    // The parse is the gate, and it trims: a stored name never carries the
+    // trailing space a keyboard leaves behind.
+    expect(result.current.parsedPartnerName).toBe('J');
+  });
+
+  it('reports a too-long paste as its own problem, not as an empty field', async () => {
+    const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.goIdentity();
+      await result.current.submitCreate();
+    });
+
+    await act(async () => {
+      result.current.setPartnerNameDraft('J'.repeat(PARTNER_NAME_MAX + 1));
+    });
+    expect(result.current.nameProblem).toBeNull();
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+    // Distinct from 'empty', so the message can be distinct too.
+    expect(result.current.nameProblem).toBe('tooLong');
+  });
+
   it('create failure surfaces honestly, keeps the choice, and routes nothing', async () => {
     spaceMock.createSpace.mockRejectedValue(new Error('Space is full.'));
     const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.setPartnerNameDraft('June');
+    });
 
     await act(async () => {
       await result.current.submitCreate();
@@ -125,11 +197,15 @@ describe('onboarding create path (minimum pre-Story state)', () => {
 
     expect(result.current.skipToStory).toBe(true);
 
+    // A space already exists, so the title page was answered on an earlier
+    // run. The missing-name gate is for minting, not for resuming: refusing
+    // here would strand a reader who already named their partner.
     await act(async () => {
       await result.current.submitCreate();
     });
 
     expect(spaceMock.createSpace).not.toHaveBeenCalled();
+    expect(result.current.nameProblem).toBeNull();
     expect(replaceMock).toHaveBeenCalledWith('/(app)/(tabs)/(memories)');
   });
 
@@ -142,6 +218,9 @@ describe('onboarding create path (minimum pre-Story state)', () => {
         }),
     );
     const { result, rerender } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.setPartnerNameDraft('June');
+    });
 
     await act(async () => {
       void result.current.submitCreate();
@@ -168,6 +247,9 @@ describe('onboarding create path (minimum pre-Story state)', () => {
         }),
     );
     const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.setPartnerNameDraft('June');
+    });
 
     await act(async () => {
       const first = result.current.submitCreate();
@@ -190,6 +272,9 @@ describe('onboarding create path (minimum pre-Story state)', () => {
         return { id: 'space-new', inviteCode: 'MINTED1' };
       });
     const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.setPartnerNameDraft('June');
+    });
 
     await act(async () => {
       await result.current.submitCreate();
@@ -284,6 +369,28 @@ describe('onboarding join path', () => {
     expect(result.current.canJoin).toBe(false);
   });
 
+  it('lands a shared link on the join step with the code already in the field', async () => {
+    // The whole point of sending a link: the reader arrives on the right step
+    // with six characters they did not have to type.
+    publishInvite('HQABD7');
+    const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {});
+
+    expect(result.current.step).toBe('join');
+    expect(result.current.inviteCode).toBe('HQABD7');
+    expect(result.current.canJoin).toBe(true);
+    // Taken once: a second mount must not refill a field the reader has emptied.
+    expect(takeInvite()).toBeNull();
+  });
+
+  it('does not touch the fork when no link arrived', async () => {
+    takeInvite();
+    const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {});
+    expect(result.current.step).toBe('welcome');
+    expect(result.current.inviteCode).toBe('');
+  });
+
   it('join failure surfaces honestly without routing', async () => {
     spaceMock.joinSpace.mockRejectedValue(new Error('No such code.'));
     const { result } = renderHook(() => useOnboardingFlow());
@@ -324,6 +431,12 @@ describe('onboarding flow surface', () => {
       'setStartDate',
       'photoUri',
       'setPhotoUri',
+      // The parsed name gates creation: a space with nobody in it but a
+      // placeholder leaves the sky's calendar, the first empty feed and every
+      // later greeting with nothing to address. It is a PartnerName or null,
+      // so the refusal is a type, not a convention.
+      'parsedPartnerName',
+      'nameProblem',
     ]) {
       expect(flow[present], present).toBeDefined();
     }
@@ -341,7 +454,6 @@ describe('onboarding flow surface', () => {
       'setNoteBody',
       'voiceUri',
       'setVoiceUri',
-      'canCreate',
       'submitAbout',
       'publishFirstMemory',
     ]) {

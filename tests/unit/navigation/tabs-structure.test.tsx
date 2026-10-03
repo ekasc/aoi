@@ -459,6 +459,10 @@ vi.mock('@/features/squeeze/squeeze-context', () => ({
   useSqueeze: () => ({ sendSqueeze: sendSqueezeSpy, isSending: false }),
 }));
 
+vi.mock('@/features/album/use-sky-photos', () => ({
+  useSkyPhotos: () => ({ photos: [], status: 'ready', readError: null, actionError: null, operation: null, scopeKey: 'test-scope', reload: vi.fn(), choosePhotos: vi.fn(), removePhoto: vi.fn() }),
+}));
+
 const storyLoadMoreMoments = vi.fn(async () => false);
 const storyMoments = [
   {

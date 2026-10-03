@@ -2,10 +2,8 @@ import {
   daysInMonth,
   parseRelationshipStart,
 } from '@/features/calendar/calendar-date-utils';
-import type { Moment } from '@/features/moments/types';
 
-import { buildDaySky } from './day-sky';
-import type { DaySkyDay } from './day-sky';
+import { buildDaySky, type DaySkyDay, type SkyItem } from './day-sky';
 
 /**
  * Day-sky spatial model — deterministic expanding star field.
@@ -326,7 +324,7 @@ export function bucketStarsByDepth(
  */
 export function buildDaySkyField(
   daysTogether: number | null | undefined,
-  moments: Moment[] | null | undefined,
+  moments: SkyItem[] | null | undefined,
   startDate: string | null | undefined,
   now: Date = new Date(),
 ): DaySkySpatialField | null {

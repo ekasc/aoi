@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 
 import {
@@ -217,9 +218,15 @@ vi.mock('@/features/moments/use-resurface-notification', () => ({
   useResurfaceNotification: () => {},
 }));
 
+const capturedLayerStyles = new Map<string, Record<string, unknown>>();
+
 vi.mock('react-native', () => {
   const React = require('react');
-  const View = ({ children, accessibilityLabel, accessibilityRole, testID }: any) =>
+  const View = ({ children, accessibilityLabel, accessibilityRole, testID, style }: any) => {
+    if (testID === 'feed-layer' || testID === 'gallery-layer') {
+      capturedLayerStyles.set(testID, Object.assign({}, ...style.filter(Boolean)));
+    }
+    return (
     React.createElement(
       'div',
       {
@@ -228,7 +235,8 @@ vi.mock('react-native', () => {
         ...(typeof testID === 'string' ? { 'data-testid': testID } : {}),
       },
       children
-    );
+    ));
+  };
   const Pressable = ({ children, onPress, accessibilityLabel }: any) =>
     React.createElement('div', { 'aria-label': accessibilityLabel, onClick: onPress }, children);
   const TextInput = ({ onChangeText, accessibilityLabel, value, placeholder }: any) =>
@@ -356,13 +364,14 @@ vi.mock('@/features/space/space-context', () => ({
 }));
 
 vi.mock('@/components/moments/moment-card', () => ({
-  MomentCard: ({ moment, onLongPress, onActions, nativeActionsMenu, onPhotoPress }: any) =>
+  MomentCard: ({ moment, onLongPress, onActions, nativeActionsMenu, onPhotoPress, rowWidth }: any) =>
     createElement(
       'div',
       {
         'data-testid': `moment-${moment.id}`,
         'data-actions': onLongPress ? 'yes' : 'no',
         'data-native-actions': nativeActionsMenu ? 'yes' : 'no',
+        'data-row-width': rowWidth === undefined ? null : String(rowWidth),
       },
       // Mirrors the real card's contract: the ellipsis trigger rides the
       // native popover (label + action buttons) on iOS, and the sheet
@@ -436,10 +445,13 @@ vi.mock('@/components/ui/action-sheet', () => ({
 // contract needs a mock that surfaces the actions and fires onPressAction
 // with the same nativeEvent shape the native view emits.
 vi.mock('@expo/ui/community/menu', () => ({
-  MenuView: ({ actions, onPressAction, children, testID }: any) =>
+  MenuView: ({ actions, onPressAction, children, style, testID }: any) =>
     createElement(
       'div',
-      { 'data-testid': testID ?? 'native-moment-menu' },
+      {
+        'data-testid': testID ?? 'native-moment-menu',
+        'data-menu-style': style ? JSON.stringify(style) : null,
+      },
       children,
       ...(actions ?? []).map((a: any) =>
         createElement(
@@ -606,9 +618,9 @@ describe('Memories story feed (oldest-first archive)', () => {
       feedMoments = [kept];
       feedPending = [makePending({ clientId: 'dedication-draft', status: 'delivered', deliveredMoment: kept })];
       page.rerender(createElement(MemoriesScreen));
-      await waitFor(() => expect(screen.getByText('Here for June when they arrive.')).toBeTruthy());
+      await waitFor(() => expect(screen.getByText('Kept. June will see it when they join.')).toBeTruthy());
       expect(feedLayer().getByTestId('moment-dedication')).toBeTruthy();
-      expect(feedLayer().getByText('Copy invite code')).toBeTruthy();
+      expect(feedLayer().queryByText('Copy invite code')).toBeNull();
       expect(await globalThis.__mockAsyncStorage.getItem('aoi.first-page.v1.user_you.space-1')).toBe('done');
       feedMoments = [];
       feedPending = [];
@@ -684,7 +696,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     expect(refreshMoments).toHaveBeenCalledTimes(1);
   });
 
-  it('offers a dedication before asking the creator to send another invite', async () => {
+  it('offers the dedication as the only invitation on an empty archive', async () => {
     spaceState.partnerJoined = false;
     try {
       const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
@@ -692,19 +704,69 @@ describe('Memories story feed (oldest-first archive)', () => {
       await act(async () => {});
 
       expect(feedLayer().getByText('For June.')).toBeTruthy();
-      expect(feedLayer().queryByText('Your first memory')).toBeNull();
+      expect(feedLayer().getByText('No memories yet')).toBeTruthy();
+      // The mock emits no layout/scroll events: empty content must still paint.
+      expect(capturedLayerStyles.get('feed-layer')?.opacity).not.toBe(0);
       fireEvent.click(feedLayer().getByText('Leave something'));
       expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/moment/new', params: { dedication: 'partner' } });
 
-      fireEvent.click(feedLayer().getByText('Copy invite code'));
-      await act(async () => {});
-      expect(
-        (globalThis as unknown as Record<string, unknown>).__aoiClipboard,
-      ).toBe('HQABD7');
-      expect(feedLayer().getByText('Code copied')).toBeTruthy();
+      // Whether the partner has joined is a fact about the space, and the Space
+      // tab is where a reader goes looking for it. In the feed it read as a
+      // second invitation, forty points under the first.
+      expect(feedLayer().queryByText(/hasn't joined yet/)).toBeNull();
+      expect(feedLayer().queryByText('Copy invite code')).toBeNull();
     } finally {
       spaceState.partnerJoined = true;
     }
+  });
+
+  it('does not anchor changing loading or empty cells on first launch, but preserves real archive rows', async () => {
+    feedLoading = true;
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    const tree = render(createElement(MemoriesScreen));
+    await act(async () => {});
+    expect(capturedList.maintainVisibleContentPosition).toBeUndefined();
+    feedLoading = false;
+    tree.rerender(createElement(MemoriesScreen));
+    await act(async () => {});
+    expect(capturedList.maintainVisibleContentPosition).toBeUndefined();
+    expect(feedLayer().getByText('No memories yet')).toBeTruthy();
+    feedMoments = [makeMoment({ id: 'first-real-memory' })];
+    tree.rerender(createElement(MemoriesScreen));
+    await act(async () => {});
+    expect(capturedList.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 0 });
+  });
+
+  it('says how long the space has existed on the first page', async () => {
+    // The sky header already draws this calendar; the same fact in words is the
+    // one thing about the space that is true before anyone has written a word.
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    expect(feedLayer().getByTestId('first-page-dedication')).toBeTruthy();
+  });
+
+  it('centres the empty archive without making the content taller than the screen', async () => {
+    // The empty state claims a height, and the list's content container adds its
+    // own padding around it. A claim that ignored that padding made the content
+    // taller than the viewport, so the list's "short enough to land" check
+    // failed and the whole screen stayed at opacity zero. The empty state is
+    // what is left after everything the container already claims, so the block
+    // is centred without the list ever growing past the fold.
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+
+    const empty = feedLayer().queryByTestId('first-page-dedication');
+    expect(empty).toBeTruthy();
+    // Nothing in the chain may ask for more than the window has: 844 is the
+    // mocked window, and every claim below is a subtraction from it.
+    const claimed = readFileSync('app/(app)/(tabs)/(memories)/index.tsx', 'utf8');
+    expect(claimed).toContain('EMPTY_MIN_HEIGHT');
+    expect(claimed).toContain('viewportEmptyHeight');
+    // The content container's own padding must be part of what is subtracted,
+    // or the two disagree and the screen blanks.
+    expect(claimed).toMatch(/emptySpacePadding[\s\S]*?headerHeight[\s\S]*?FAB_SIZE/);
   });
 
   it('shows the first-memory empty state and the offline retry', async () => {
@@ -759,6 +821,32 @@ describe('Memories story feed (oldest-first archive)', () => {
     }
   });
 
+  it('gives the gallery its own empty face instead of the feed invitation', async () => {
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    // Both lists stay mounted, so one shared face would put the dedication in
+    // the gallery too and read the same invitation twice.
+    expect(within(screen.getByTestId('feed-layer')).getByText('For June.')).toBeTruthy();
+    expect(within(screen.getByTestId('gallery-layer')).getByText('No media yet')).toBeTruthy();
+    expect(within(screen.getByTestId('gallery-empty')).getByText('No media yet')).toBeTruthy();
+    expect(within(screen.getByTestId('gallery-empty')).queryByTestId('story-feed')).toBeNull();
+    expect(within(screen.getByTestId('gallery-layer')).queryByText('For June.')).toBeNull();
+    expect(within(screen.getByTestId('gallery-layer')).queryByText('Copy invite code')).toBeNull();
+  });
+
+  it('keeps the gallery empty indicator outside the scrolled list for text-only memories', async () => {
+    feedMoments = [makeMoment({ id: 'note-only' })];
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    fireEvent.click(screen.getByLabelText('Gallery'));
+    const gallery = within(screen.getByTestId('gallery-layer'));
+    expect(capturedLayerStyles.get('gallery-layer')?.opacity).not.toBe(0);
+    expect(gallery.getByText('No media yet')).toBeTruthy();
+    expect(within(gallery.getByTestId('story-feed')).queryByText('No media yet')).toBeNull();
+  });
+
   it('forwards Us-tab capture intents to the editor exactly once', async () => {
     feedMoments = [makeMoment({ id: 'm-1' })];
     searchParams = { compose: 'photos' };
@@ -810,6 +898,43 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     expect(screen.getByTestId('moment-theirs').closest('[data-testid="native-moment-menu"]')).toBeNull();
     // The native menu owns long-press on iOS, so no sheet handler attaches.
     expect(screen.getByTestId('moment-mine').getAttribute('data-actions')).toBe('no');
+  });
+
+  it('reserves no right-hand space for the add button on a row', async () => {
+    // The add button used to reserve 56pt on every row (actionsInset) so it
+    // could never cover a row's own menu button. On a 402pt screen that put
+    // the menu at an 89pt margin while everything else sat at 24. It now steps
+    // aside while the reader scrolls instead, so rows need no reservation.
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync('app/(app)/(tabs)/(memories)/index.tsx', 'utf8');
+    expect(source).not.toContain('actionsInset={FAB_SIZE}');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    expect(screen.getByLabelText('Add memory')).toBeTruthy();
+  });
+
+  it('gives every timeline row a definite width so a long line cannot run off screen', async () => {
+    // On iOS an own-moment row sits inside the native context menu, whose host
+    // measures its own children and reports that width back. The row's flex: 1
+    // then resolves against the measured width instead of the screen, and a
+    // long line finds no edge to wrap at. Styling the host does not help: it
+    // re-derives its size from the content. Only a number the screen already
+    // knows can bound the row.
+    (process.env as any).EXPO_OS = 'ios';
+    feedMoments = [
+      makeMoment({ id: 'mine', isOwn: true, occurredAt: '2026-03-16T10:00:00.000Z' }),
+      makeMoment({ id: 'theirs', isOwn: false, occurredAt: '2026-03-15T10:00:00.000Z' }),
+    ];
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    // The screen hands the row the window width it already measured, capped by
+    // the reading column. Both rows get it, so the native menu cannot change
+    // one row's layout and not the other's.
+    for (const id of ['mine', 'theirs']) {
+      expect(screen.getByTestId(`moment-${id}`).getAttribute('data-row-width')).toBe('390');
+    }
   });
 
   it('routes Edit from the native menu to the memory editor', async () => {

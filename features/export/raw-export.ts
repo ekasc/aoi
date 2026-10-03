@@ -1,5 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { momentResponseListResponseSchema, partnerDetailListResponseSchema, type MomentResponse } from '@aoi/shared';
 
 import { apiFetch, getApiBaseUrl, getApiTokens } from '@/features/api-client';
 import { ZipStoreWriter, type ZipAppendSink } from '@/features/export/zip-store';
@@ -66,6 +67,8 @@ export type RawExportManifest = {
     somedayItems: number;
     importedMilestones: number;
     letters: number;
+    responses: number;
+    partnerDetails: number;
     mediaFiles: number;
   };
   /** Media objects that could not be retrieved — explicit, never silent. */
@@ -102,6 +105,7 @@ type ExportMoment = {
   type: string;
   mediaId?: string | null;
   audioUri?: string | null;
+  attachments?: { mediaId: string }[];
 };
 
 function safeSegment(value: string, fallback: string): string {
@@ -321,19 +325,48 @@ export async function exportRawArchive(
     const question = (await deps.fetchJson('/v1/spaces/current/question')) as unknown;
     // Shelf shape exactly as the API authorizes it: sealed bodies absent.
     const lettersRes = (await deps.fetchJson('/v1/spaces/current/letters')) as { letters?: unknown[] };
+    const details = partnerDetailListResponseSchema.parse(await deps.fetchJson('/v1/users/me/partner-details')).details;
+    const responses: MomentResponse[] = [];
+    let responseCursor: string | undefined;
+    for (let pageIndex = 0; pageIndex < MAX_MOMENT_PAGES; pageIndex += 1) {
+      const path = '/v1/spaces/current/responses?limit=100' + (responseCursor ? `&cursor=${encodeURIComponent(responseCursor)}` : '');
+      const page = momentResponseListResponseSchema.parse(await deps.fetchJson(path));
+      responses.push(...page.responses);
+      if (!page.nextCursor) break;
+      responseCursor = page.nextCursor;
+      if (pageIndex === MAX_MOMENT_PAGES - 1) throw new Error('This Space is too large to export on this device.');
+    }
 
     const base = getApiBaseUrlSafe();
     const mediaTargets: { mediaId: string; url: string }[] = [];
     const seenMedia = new Set<string>();
     for (const moment of moments) {
       const m = moment as ExportMoment;
+      for (const attachment of m.attachments ?? []) {
+        if (!seenMedia.has(attachment.mediaId)) {
+          seenMedia.add(attachment.mediaId);
+          mediaTargets.push({ mediaId: attachment.mediaId, url: `${base}${rawMediaServePath(attachment.mediaId)}` });
+        }
+      }
       if (m.type === 'media' && typeof m.mediaId === 'string' && m.mediaId && !seenMedia.has(m.mediaId)) {
         seenMedia.add(m.mediaId);
         mediaTargets.push({ mediaId: m.mediaId, url: `${base}${rawMediaServePath(m.mediaId)}` });
       }
-      if (typeof m.audioUri === 'string' && m.audioUri.startsWith('/') && !seenMedia.has(`audio:${m.audioUri}`)) {
-        seenMedia.add(`audio:${m.audioUri}`);
-        mediaTargets.push({ mediaId: `audio-${m.id}`, url: `${base}${m.audioUri}` });
+      if (typeof m.audioUri === 'string' && m.audioUri.startsWith('/')) {
+        const audioId = m.audioUri.match(/^\/v1\/media\/([^/?]+)\/object\?variant=original$/)?.[1];
+        const key = audioId ?? `audio:${m.audioUri}`;
+        if (!seenMedia.has(key)) {
+          seenMedia.add(key);
+          mediaTargets.push({ mediaId: audioId ?? `audio-${m.id}`, url: `${base}${m.audioUri}` });
+        }
+      }
+    }
+    for (const response of responses) {
+      const url = response.mediaPreview ?? response.audioUri;
+      const match = url?.match(/^\/v1\/media\/([^/?]+)\/object\?variant=(?:display|original)$/);
+      if (match && !seenMedia.has(match[1])) {
+        seenMedia.add(match[1]);
+        mediaTargets.push({ mediaId: match[1], url: `${base}${rawMediaServePath(match[1])}` });
       }
     }
 
@@ -348,6 +381,8 @@ export async function exportRawArchive(
     await zip.addBytes('milestones.json', encode(milestones));
     await zip.addBytes('question.json', encode(question));
     await zip.addBytes('letters.json', encode(lettersRes?.letters ?? []));
+    await zip.addBytes('responses.json', encode(responses));
+    await zip.addBytes('partner-details.json', encode(details));
 
     // Media sequentially: one file on disk staged, streamed chunk-wise
     // into the archive, temp removed before the next begins.
@@ -392,6 +427,8 @@ export async function exportRawArchive(
         somedayItems: asArray(somedayRes?.items).length,
         importedMilestones: asArray(milestones).length,
         letters: asArray(lettersRes?.letters).length,
+        responses: responses.length,
+        partnerDetails: details.length,
         mediaFiles: mediaTargets.length - errors.length,
       },
       errors,

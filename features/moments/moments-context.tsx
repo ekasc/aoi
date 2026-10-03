@@ -21,7 +21,6 @@ import {
 } from '@/features/dev/simulate-partner';
 import { mediaObjectUrl } from '@aoi/shared';
 import { getPreviewSeedMoments, usePreviewVariant } from '@/features/dev/preview';
-import { mockMoments } from '@/features/moments/mock-data';
 import {
   fetchMoments,
   createMoment as remoteCreateMoment,
@@ -472,13 +471,14 @@ function useStubMoments(): MomentsContextValue {
   );
 
   const baseMoments = useMemo(
-    // Dev-preview routes swap the thin unit-test seeds for a rich visual
-    // spread (photos/voice/months) — same merging logic below. Inactive
-    // everywhere else, including all unit tests and production.
+    // Dev-preview routes render a rich visual spread (photos/voice/months).
+    // Everywhere else the feed is only what this space actually holds. Nothing
+    // is seeded, so a space with no memories shows the empty archive — the
+    // first-run screen — instead of mock content that was never written.
     () =>
       preview.active
         ? getPreviewSeedMoments(preview.variant)
-        : [...mockMoments, ...importedMoments],
+        : importedMoments,
     [preview, importedMoments]
   );
 

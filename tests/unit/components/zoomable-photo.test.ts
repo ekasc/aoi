@@ -32,6 +32,8 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
+vi.mock('@/components/themed-text', () => ({ ThemedText: () => null }));
+vi.mock('@/components/ui/button', () => ({ Button: () => null }));
 
 vi.mock('react-native-gesture-handler', () => ({
   Gesture: { Pinch: () => ({}), Pan: () => ({}), Tap: () => ({}), Simultaneous: () => ({}) },

@@ -68,6 +68,7 @@ vi.mock('@/components/themed-text', () => ({
 }));
 
 vi.mock('@/hooks/use-theme-color', () => ({ useThemeColor: () => '#000000' }));
+vi.mock('@/components/ui/button', () => ({ Button: () => null }));
 
 vi.mock('@/features/composer/staged-uri', () => ({
   resolveStagedUri: (uri: string) => `resolved:${uri}`,

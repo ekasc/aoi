@@ -595,6 +595,24 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
 });
 
 describe('Memory editor date, attachments, durable save', () => {
+  it('keeps Cancel and native exit blocked until the durable save finishes', async () => {
+    mockDraft = makeDraft({ body: 'Keep these words' });
+    let finish: (result: { clientId: string }) => void = () => {};
+    saveSpy.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await renderComposer();
+    fireEvent.click(screen.getByText('Save'));
+    expect(screen.getByText('Cancel').closest('button')?.disabled).toBe(true);
+    fireEvent.click(screen.getByText('Cancel'));
+    const leave = vi.fn();
+    act(() => {
+      (globalThis as { __preventLeave?: { prevent: boolean; onBlocked: (leave: () => void) => void } }).__preventLeave?.onBlocked(leave);
+    });
+    expect(screen.queryByTestId('sheet:Discard this memory?')).toBeNull();
+    expect(backSpy).not.toHaveBeenCalled();
+    expect(leave).not.toHaveBeenCalled();
+    await act(async () => finish({ clientId: 'saved' }));
+    expect(backSpy).toHaveBeenCalledOnce();
+  });
   it('shows short date when not today; picker opens only on chip tap with real date', async () => {
     await renderComposer();
     fireEvent.focus(screen.getByLabelText('Keep something'));

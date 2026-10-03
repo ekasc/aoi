@@ -20,6 +20,10 @@ export const DAY_SKY_STAR_DIM = '#FFF3EA';
 export const DAY_SKY_STAR_YOU = '#F2AEC2';
 export const DAY_SKY_STAR_PARTNER = '#FFD9A0';
 
+/** Opaque sky controls keep starlight text readable across both sky ramps. */
+export const SKY_CONTROL_INK = '#FFF8FA';
+export const SKY_CONTROL_FILL = '#382038';
+
 export type StarTone = 'dim' | 'you' | 'partner';
 
 export function starToneColor(tone: StarTone): string {
