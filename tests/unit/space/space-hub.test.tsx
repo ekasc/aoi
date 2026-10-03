@@ -274,6 +274,8 @@ describe('Space hub waiting state', () => {
 
     fireEvent.click(screen.getByText('Share invite'));
     expect(shareSpy).toHaveBeenCalledTimes(1);
+    expect(shareSpy).toHaveBeenCalledWith({ message: expect.stringContaining('aoi://join?code=ABC123') });
+    expect(shareSpy).toHaveBeenCalledWith({ message: expect.stringContaining('A B C 1 2 3') });
   });
 });
 
@@ -360,6 +362,33 @@ describe('Space account segment (same screen, no nested settings route)', () => 
     });
     expect(leaveSpaceSpy).toHaveBeenCalledTimes(1);
     expect(replaceSpy).toHaveBeenCalledWith('/(auth)/space-setup');
+  });
+
+  it('does not leave twice or dismiss the confirmation during an in-flight request', async () => {
+    let finish: () => void = () => {};
+    leaveSpaceSpy.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    await openAccount();
+    fireEvent.click(screen.getByText('Leave space'));
+    fireEvent.click(screen.getByText('Leave this space'));
+    fireEvent.click(screen.getByText('Leaving…'));
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.getByText('Leave this space?')).toBeTruthy();
+    expect(leaveSpaceSpy).toHaveBeenCalledOnce();
+    expect(replaceSpy).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(replaceSpy).toHaveBeenCalledWith('/(auth)/space-setup');
+  });
+
+  it('keeps a failed deletion inside its confirmation so it can be retried', async () => {
+    deleteAccountSpy.mockRejectedValueOnce(new Error('offline'));
+    await openAccount();
+    fireEvent.click(screen.getByText('Delete account'));
+    await act(async () => fireEvent.click(screen.getByText('Delete my account')));
+    expect(screen.getByText('Delete your account?')).toBeTruthy();
+    expect(screen.getByTestId('native-sheet').textContent).toContain('Failed to delete account. Please try again.');
+    expect(replaceSpy).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByText('Delete my account')));
+    expect(deleteAccountSpy).toHaveBeenCalledTimes(2);
   });
 
   it('confirms deletion with the retention contract', async () => {

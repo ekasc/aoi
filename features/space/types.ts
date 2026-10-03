@@ -1,3 +1,5 @@
+import type { PartnerName } from '@/features/space/partner-name';
+
 export type SpaceStatus = 'none' | 'ready' | 'loading' | 'error';
 export type SpaceMemberRole = 'you' | 'partner';
 
@@ -35,8 +37,13 @@ export type CreateSpaceInput = {
   name: string;
   createdByUserId: string;
   yourName: string;
-  /** Optional: omit when the user leaves it blank. */
-  partnerName?: string;
+  /**
+   * The other person, required. A branded type rather than a string so a
+   * repository cannot be handed an empty one: every screen that greets the
+   * partner needs a name, and an optional field is how a null got there.
+   * Build it with `parsePartnerName`.
+   */
+  partnerName: PartnerName;
   /** Optional: omit when unset. Never synthesize (e.g. never today). */
   relationshipStartDate?: string | null;
   photoUri?: string;

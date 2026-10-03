@@ -77,7 +77,7 @@ export const localSpaceRepository: SpaceRepository = {
       name: input.name.trim(),
       createdByUserId: input.createdByUserId,
       yourName: input.yourName?.trim() || 'You',
-      partnerName: input.partnerName?.trim() || null,
+      partnerName: input.partnerName,
       relationshipStartDate: input.relationshipStartDate ?? null,
       inviteCode,
       partnerJoined: false,

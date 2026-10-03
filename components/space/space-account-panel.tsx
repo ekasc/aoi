@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Linking, View } from 'react-native';
 
 import { ThemeSelector } from '@/components/theme/theme-selector';
@@ -35,6 +35,7 @@ export function SpaceAccountPanel() {
   const [confirming, setConfirming] = useState<'delete' | 'leave' | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
+  const destructiveInFlight = useRef(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
 
@@ -66,31 +67,39 @@ export function SpaceAccountPanel() {
     setConfirming('leave');
   }, []);
 
-  const handleCloseConfirm = useCallback(() => setConfirming(null), []);
+  const handleCloseConfirm = useCallback(() => {
+    if (!destructiveInFlight.current) setConfirming(null);
+  }, []);
 
   const handleConfirmDelete = useCallback(async () => {
+    if (destructiveInFlight.current) return;
+    destructiveInFlight.current = true;
+    setDeleteError('');
     setIsDeleting(true);
     try {
       await deleteAccount();
       router.replace('/(public)');
     } catch {
-      setConfirming(null);
       setDeleteError('Failed to delete account. Please try again.');
     } finally {
       setIsDeleting(false);
+      destructiveInFlight.current = false;
     }
   }, [deleteAccount, router]);
 
   const handleConfirmLeave = useCallback(async () => {
+    if (destructiveInFlight.current) return;
+    destructiveInFlight.current = true;
+    setLeaveError('');
     setIsLeaving(true);
     try {
       await leaveSpace();
       router.replace('/(auth)/space-setup');
     } catch {
-      setConfirming(null);
       setLeaveError('Failed to leave space. Please try again.');
     } finally {
       setIsLeaving(false);
+      destructiveInFlight.current = false;
     }
   }, [leaveSpace, router]);
 
@@ -241,6 +250,8 @@ export function SpaceAccountPanel() {
       </View>
 
       <ActionSheet
+        busy={isLeaving}
+        error={leaveError}
         actions={[
           {
             label: isLeaving ? 'Leaving…' : 'Leave this space',
@@ -256,6 +267,8 @@ export function SpaceAccountPanel() {
       />
 
       <ActionSheet
+        busy={isDeleting}
+        error={deleteError}
         actions={[
           {
             label: isDeleting ? 'Deleting…' : 'Delete my account',

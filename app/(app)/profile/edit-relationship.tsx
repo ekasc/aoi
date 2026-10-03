@@ -1,7 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -22,7 +21,6 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 export default function EditRelationshipScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const isIos = process.env.EXPO_OS === 'ios';
   const { space, updateSpace } = useSpace();
   const border = useThemeColor({}, 'border');
   const surface2 = useThemeColor({}, 'surface2');
@@ -38,6 +36,10 @@ export default function EditRelationshipScreen() {
   const [relationshipDateChanged, setRelationshipDateChanged] = useState(false);
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [contentHeight, setContentHeight] = useState<number>();
+  const handleContentSizeChange = useCallback((_width: number, height: number) => {
+    setContentHeight(height);
+  }, []);
 
   const inputStyle = useMemo(
     () => [
@@ -105,29 +107,17 @@ export default function EditRelationshipScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Edit relationship' }} />
-      <KeyboardAvoidingView
-        behavior={isIos ? 'padding' : undefined}
-        style={[styles.root, { backgroundColor: background }]}
-      >
         <ScrollView
-          style={styles.scroll}
+          testID="relationship-form"
+          style={[styles.scroll, { backgroundColor: background, height: contentHeight }]}
+          onContentSizeChange={handleContentSizeChange}
           contentContainerStyle={contentContainerStyle}
+          contentInsetAdjustmentBehavior="automatic"
+          automaticallyAdjustKeyboardInsets
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View>
-            <ThemedText type="display" style={styles.hero}>
-              Edit relationship
-            </ThemedText>
-            <ThemedText type="caption" style={{ color: muted }}>
-              Names stay exactly as you type them, nothing else changes.
-            </ThemedText>
-          </View>
-
           <View style={styles.section}>
-            <ThemedText type="meta" style={{ color: muted }}>
-              Space
-            </ThemedText>
             <ThemedText type="label">
               Space name
             </ThemedText>
@@ -167,14 +157,12 @@ export default function EditRelationshipScreen() {
           <Divider />
 
           <View style={styles.section}>
-            <ThemedText type="meta" style={{ color: muted }}>
-              Relationship start date (optional)
-            </ThemedText>
             {relationshipStartDate ? (
               <NativeDateTimeField
                 accessibilityLabel="Choose relationship start date"
-                label="Start date"
+                label="Relationship start date (optional)"
                 mode="date"
+                textColor={text}
                 onChange={(nextDate) => {
                   setRelationshipStartDate(nextDate);
                   setRelationshipDateChanged(true);
@@ -193,15 +181,11 @@ export default function EditRelationshipScreen() {
                 variant="secondary"
               />
             )}
-            <ThemedText type="caption" style={{ color: muted }} selectable>
-              {relationshipStartDate
-                ? relationshipStartDate.toLocaleDateString('en-US', {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
-                })
-                : 'Add the date you started your relationship when you want Aoi to tailor suggestions.'}
-            </ThemedText>
+            {!relationshipStartDate ? (
+              <ThemedText type="caption" style={{ color: muted }}>
+                Optional. Used for milestones and photo discovery.
+              </ThemedText>
+            ) : null}
 
             {error ? (
               <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
@@ -209,8 +193,6 @@ export default function EditRelationshipScreen() {
               </ThemedText>
             ) : null}
           </View>
-        </ScrollView>
-
         <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
           <Button
             disabled={isSaving}
@@ -219,17 +201,15 @@ export default function EditRelationshipScreen() {
           />
           <Button label="Cancel" onPress={() => router.back()} variant="secondary" />
         </View>
-      </KeyboardAvoidingView>
+        </ScrollView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
   scroll: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
   },
   centered: {
     flex: 1,
@@ -239,7 +219,6 @@ const styles = StyleSheet.create({
     gap: Spacing[12],
   },
   contentContainer: {
-    flexGrow: 1,
     paddingHorizontal: Spacing[24],
     paddingTop: Spacing[16],
     gap: Spacing[32],
@@ -262,9 +241,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: Spacing[24],
     paddingTop: Spacing[12],
     gap: Spacing[8],
-    flexWrap: 'wrap',
   },
 });

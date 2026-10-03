@@ -23,6 +23,7 @@ import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
 import { useSubscription } from "@/features/subscription/subscription-context";
 import { formatBytes } from "@/features/subscription/format";
+import { inviteMessage } from "@/features/space/invite-code";
 import {
 	formatDaysTogether,
 	getDaysTogether,
@@ -153,7 +154,7 @@ export default function SpaceScreen() {
 	const insets = useSafeAreaInsets();
 	const { user } = useSession();
 	const { space, status: spaceStatus, regenerateInvite } = useSpace();
-	const { moments } = useMoments();
+	const { moments, isLoading: momentsLoading, error: momentsError } = useMoments();
 	const { isPlus, status: plusStatus, serverPlus } = useSubscription();
 	const muted = useThemeColor({}, "muted");
 	const background = useThemeColor({}, "background");
@@ -214,12 +215,12 @@ export default function SpaceScreen() {
 		setInviteError("");
 		try {
 			await Share.share({
-				message: `Join our Aoi space with invite code ${inviteCode}`,
+				message: inviteMessage(inviteCode, user?.displayName?.trim() || "Your partner", space?.partnerName ?? null),
 			});
 		} catch {
 			setInviteError("Couldn't open sharing. Your code is shown above.");
 		}
-	}, [inviteCode]);
+	}, [inviteCode, user, space]);
 
 	const handleRegenerateInvite = useCallback(async () => {
 		setInviteError("");
@@ -316,7 +317,8 @@ export default function SpaceScreen() {
 				{space ? (
 					<ThemedText type="caption" selectable style={{ color: muted }}>
 						{daysTogether !== null ? formatDaysTogether(daysTogether) : "Together"}
-						{momentsKept > 0 ? ` · ${momentsKept} ${momentsKept === 1 ? "memory" : "memories"} kept` : ""}
+						{momentsKept > 0 ? ` · ${momentsKept} ${momentsKept === 1 ? "memory" : "memories"} kept`
+							: momentsError ? " · Could not load memories" : momentsLoading ? " · Loading memories…" : " · No memories yet"}
 					</ThemedText>
 				) : null}
 			</View>

@@ -20,21 +20,26 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 import { localSpaceRepository } from '@/features/space/local-space-repository';
+import { parsePartnerName, type PartnerName } from '@/features/space/partner-name';
 
 beforeEach(() => {
   store.clear();
 });
 
 describe('local space repository partnership truth', () => {
-  it('creates waiting spaces with no joined partner', async () => {
+  it('creates a waiting space with the partner named but nobody joined', async () => {
     const space = await localSpaceRepository.createSpace({
       name: 'Our Space',
       createdByUserId: 'user-1',
       yourName: 'Aoi',
+      partnerName: parsePartnerName('June') as PartnerName,
     });
 
+    // Named at create, waiting at create. The name is what every screen
+    // addresses, so it cannot wait for the join; `partnerJoined` is the
+    // separate, honest signal that nobody has arrived.
+    expect(space.partnerName).toBe('June');
     expect(space.partnerJoined).toBe(false);
-    expect(space.partnerName).toBeNull();
     expect(space.inviteExpiresAt).toBeNull();
   });
 
