@@ -877,34 +877,15 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
   });
 
 
-  it('gives Us the same working-screen sky band as Plans, not a hero banner', () => {
-    // Us used to opt into `immersive`, the decorative full-bleed layout that
-    // exists so a banner can take half the viewport. It is a tab now and it
-    // takes the same band every other working screen takes.
-    //
-    // `immersive` is the prop that makes the band full-bleed and feathers
-    // it into the page, and it drops the standalone "N memories lighting
-    // your sky" caption as well. It is not the old 50vh hero: the height is
-    // ours, and it is a band.
-    //
-    // `compact` was tried here and is wrong for a tab: it draws a bounded
-    // canvas, so inside the padded content the clouds clip into a visible
-    // rectangle with hard edges.
-    // This used to be the opposite instruction. The sky was decoration
-    // pinned above a screen about something else, and it was trimmed to a
-    // band so it stopped looking like a page. Now it IS the screen, so it is
-    // full-bleed, it owns the press handler, and its height is most of the
-    // viewport rather than a strip of it.
+  it('keeps the Us sky identity above shared history without a discovery gesture', () => {
     const sky = TOGETHER_SOURCE.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
     expect(sky).toMatch(/\bimmersive\b/);
-    expect(TOGETHER_SOURCE).toContain('accessibilityLabel="Bring out a photo of the two of you"');
-    expect(TOGETHER_SOURCE).toContain('onPress={pullPhoto}');
-    expect(sky).not.toMatch(/\bcompact\b/);
-    expect(TOGETHER_SOURCE).not.toMatch(/<MemorySky[\s\S]{0,320}?\bheader\b/);
-    expect(TOGETHER_SOURCE).toMatch(/presentationHeight=\{skyHeight\}/);
-    // Most of the screen, not a strip: the field has to be worth reaching
-    // into, and that means the stars have room to be apart.
-    expect(TOGETHER_SOURCE).toMatch(/Math\.max\(320, height -/);
+    expect(sky).toContain('moments={history.moments}');
+    expect(sky).toContain('daysTogether={history.daysTogether}');
+    expect(sky).toContain('presentationHeight={360}');
+    expect(sky).not.toMatch(/\bcompact\b|\bheader\b/);
+    expect(TOGETHER_SOURCE).not.toContain('onPress={pullPhoto}');
+    expect(TOGETHER_SOURCE).not.toContain('Bring out a photo of the two of you');
   });
 });
 

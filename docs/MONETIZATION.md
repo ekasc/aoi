@@ -1,71 +1,35 @@
-# Monetization + Ship Runbook — Aoi Plus via RevenueCat
+# Aoi Plus and preservation
 
-Status: code is in the repo and verified (`typecheck` clean, 403 unit tests pass).
-What remains is dashboard setup + store builds. Estimate: ~2–3 hours of clicking + build waits.
+The product contract is a private relationship home built from intentionally shared content. [Relationship home and archive](product/relationship-home-and-archive.md) explains the pivot and the deferred history systems.
 
-## 1. How it works in code
+## Implemented entitlements
 
-- `features/subscription/` — `SubscriptionProvider` (RevenueCat SDK), `limits.ts` (free limits), `config.ts` (keys).
-- `app/(app)/paywall.tsx` — paywall sheet (pulls live prices from RevenueCat, falls back to $4.99/mo · $39.99/yr).
-- Settings → "Aoi Plus" card → paywall. Letters enforce the only hard gate: free = 1 active sealed letter, then soft-redirect to paywall.
-- No keys set → dev mode: purchases simulate Plus locally via AsyncStorage. Ship-safe fallback, never crashes Expo Go (web/native-module guards built in).
+`packages/shared/src/plus.ts` defines Space-level quotas. `features/subscription/subscription-context.tsx` reconciles RevenueCat purchase state with the authoritative backend Space entitlement.
 
-## 2. RevenueCat setup (~20 min)
+| Benefit | Free | Plus |
+| --- | --- | --- |
+| Shared media storage | 250 MiB per Space | 5 GiB per Space |
+| Unopened future-sealed letters | One at a time | No application count limit |
+| PDF chapter keepsakes | Upgrade required | Existing export available with server-confirmed Plus |
+| Relationship sky and days together | Included | Included |
+| Us, Memories, gallery, existing chapters, everyday resurfacing | Included | Included |
+| Plans, responses, Little things | Included | Included |
+| Account data export and privacy controls | Included | Included |
 
-1. Create project at app.revenuecat.com → Apps → Add iOS app (bundle `com.ekasc.aoi`) + Android app (package `com.ekasc.aoi`).
-2. Entitlements → create `plus` (exact id — code default `PLUS_ENTITLEMENT_ID`; override via `EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID`).
-3. Products → create:
-   - `aoi_plus_monthly` — $4.99/mo, 1-week free trial recommended
-   - `aoi_plus_yearly` — $39.99/yr, 1-week free trial recommended
-   Wire each to App Store Connect / Play products of the same id (create those first — see §3).
-4. Offerings → `default` offering containing both packages (monthly default, yearly alternate).
-5. Copy API keys: iOS public SDK key → `EXPO_PUBLIC_REVENUECAT_IOS_KEY`, Android → `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`.
+One purchase covers both Space members. Storage is not unlimited. Reading older shared memories is not cut off on Free. Recognition is not a paid benefit.
 
-## 3. Store products
+The paywall displays live store plans and prices. It preselects no plan. Purchase, restore, pending activation, unavailable stores, and empty offerings retain their existing behavior. Missing keys and web report purchasing unavailable rather than granting simulated Plus. Backend status, not client store state alone, grants protected benefits.
 
-**Apple (App Store Connect → aoi → Subscriptions):**
-- Subscription group "Aoi Plus" → monthly + yearly, ids `aoi_plus_monthly` / `aoi_plus_yearly`.
-- Fill review notes: test account, where Plus is found (Settings → Aoi Plus), what free users keep.
-- Apple requires a restore mechanism — paywall has "Restore purchase". Also add Privacy Policy + Terms URLs (App Store Connect fields + in-app link before submit).
+## Future preservation services
 
-**Google (Play Console → aoi → Subscriptions):**
-- Same two base plans, same ids. Activate in an open/closed track before production.
+Deeper archive services, historical sky states, richer user-defined chapters, reviewed recaps, capsules, and additional keepsake formats are possible Premium additions. None is part of today's purchase promise. They require history reads, ownership and membership rules, storage and restore guarantees, and release policies before sale.
 
-## 4. Env (EAS Secrets — never commit keys)
+Everyday resurfacing stays free. The current date projection for a sky is not versioned time travel. Existing sealed letters are not a separate capsule product.
 
-```bash
-eas secret:create --scope project --name EXPO_PUBLIC_REVENUECAT_IOS_KEY --value 'appl_…'
-eas secret:create --scope project --name EXPO_PUBLIC_REVENUECAT_ANDROID_KEY --value 'goog_…'
-# optional: eas secret:create --scope project --name EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID --value plus
-```
+## Store configuration
 
-Local dev needs nothing — no keys = simulated Plus.
+RevenueCat uses entitlement `plus`, unless `EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID` overrides it. Store credentials remain outside source control. Platform public SDK keys use `EXPO_PUBLIC_REVENUECAT_IOS_KEY` and `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`.
 
-## 5. Build + submit
+Monthly and annual offerings come from the configured store. The prices in `/dev-paywall` are preview fixtures, not fallback production prices. Purchases are disabled in that preview. `/dev-paywall?state=plus` previews the active-plan screen.
 
-```bash
-# sanity first
-pnpm run lint && pnpm run typecheck && pnpm run test:unit
-
-# cloud builds (no simulator needed)
-eas build --platform ios --profile production
-eas build --platform android --profile production
-
-# submit (first time: run `eas submit` interactively to attach ASC / Play service credentials)
-eas submit --platform ios --profile production
-eas submit --platform android --profile production
-
-# after approval — OTA for JS-only fixes (never for native changes)
-eas update --channel production --message "copy tweaks"
-```
-
-Notes:
-- `eas.json` production profile already exists; `autoIncrement` is on.
-- First iOS submit needs an Apple Developer enrollment ($99/yr) + ASC API key; first Android submit needs a Play Console account ($25 once) + service-account JSON.
-- Review risk is low: core app fully usable free, Plus only lifts limits; restore + cancel paths exist.
-
-## 6. After revenue starts (do NOT block launch on these)
-
-- RevenueCat → webhook to backend (`packages/api`) to persist `isPlus` server-side and share one subscription across both partners.
-- Add "Why Plus?" education + trial analytics (paywall views → purchases).
-- Consider partner-shared Plus: purchaser's `spaceId` grants Plus to the partner via webhook.
+The existing RevenueCat webhook and Space entitlement APIs remain authoritative. This pivot changes no backend quotas, billing integration, native dependencies, encryption, or service deployment. Store purchase and backend export checks still require configured services and a device build.

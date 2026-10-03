@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { NativeSheet } from '@/components/ui/native-sheet';
 import { Radii, Spacing } from '@/constants/theme';
 import type { useSkyPhotos } from '@/features/album/use-sky-photos';
-import { useAutomaticAlbum } from '@/features/album/automatic-album-state';
 import type { SkyPhoto } from '@/features/album/sky-photo-repository';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -22,21 +21,17 @@ export function LocalPhotosSheet({ visible, onClose, album }: {
   const muted = useThemeColor({}, 'textSecondary');
   const border = useThemeColor({}, 'border');
   const busy = album.operation !== null;
-  const automatic = useAutomaticAlbum();
   return (
     <NativeSheet visible={visible} onClose={onClose} dismissible={!busy}>
-      <FlatList accessibilityViewIsModal accessibilityLabel="Photos for your sky" role="dialog" aria-modal
+      <FlatList accessibilityViewIsModal accessibilityLabel="Local photo copies" role="dialog" aria-modal
         style={{ maxHeight: height * 0.8 }} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing[32] }]}
         data={album.photos} keyExtractor={(photo) => photo.id}
         ListHeaderComponent={<View style={styles.section}>
-        <ThemedText type="title">Photos for your sky</ThemedText>
-        <ThemedText type="body">Choose photos of the two of you. Tap the sky to bring one back.</ThemedText>
+        <ThemedText type="title">Local photo copies</ThemedText>
+        <ThemedText type="body">These photos are not part of your shared archive. To share a photo with your partner, keep it in Memories.</ThemedText>
         <ThemedText type="caption" style={{ color: muted }}>
           Copies stay on this device. Aoi does not upload or share them. Removing a copy here does not delete the original from your gallery.
         </ThemedText>
-        {automatic ? <ThemedText type="caption" style={{ color: muted }}>
-          Set up automatic discovery from Us to find photos containing both of you. You can also choose photos manually here.
-        </ThemedText> : null}
         {album.status === 'loading' ? <ThemedText accessibilityLiveRegion="polite">Opening your local photos…</ThemedText> : null}
         {album.readError ? <ThemedText accessibilityRole="alert">{album.readError}</ThemedText> : null}
         {album.status === 'failed' ? <Button label="Try again" onPress={album.reload} variant="secondary" disabled={busy} /> : null}

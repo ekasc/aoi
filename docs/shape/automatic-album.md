@@ -1,5 +1,7 @@
 # Automatic album wiring
 
+Status: experimental research, inactive in the product. The authenticated app no longer mounts discovery, and Us no longer exposes enrollment or scanning. The instructions and checks below record the earlier experiment, not the current product promise. See [relationship home and archive](../product/relationship-home-and-archive.md).
+
 ## Accepted rule
 
 Include photos with both enrolled people present, including group photos. Exclude solo and uncertain matches. Setup is once per phone, not once per photo.

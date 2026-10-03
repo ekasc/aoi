@@ -1,17 +1,6 @@
-import { Redirect, Stack } from 'expo-router';
-import { useEffect } from 'react';
+import { Redirect } from 'expo-router';
 
-import { PhotoCheckScreen } from '@/components/album/photo-check-screen';
-import { useAutomaticAlbum } from '@/features/album/automatic-album-state';
-
+/** Old recognition deep links never activate the experimental scanner. */
 export default function CheckPhotoRoute() {
-  const album = useAutomaticAlbum();
-  const clear = album?.clearPhotoCheck;
-  useEffect(() => { clear?.(); return () => clear?.(); }, [clear]);
-  if (!__DEV__ || !album || (!album.enabled && album.status !== 'loading') || album.editingReferences) return <Redirect href="/" />;
-  return <>
-    <Stack.Screen options={{ title: 'Check this photo', presentation: 'card' }} />
-    <PhotoCheckScreen result={album.photoCheck} busy={album.busy} checking={album.checkingPhoto}
-      onChoose={() => { void album.checkPhoto(); }} onCancel={album.cancelPhotoCheck} />
-  </>;
+  return <Redirect href="/(app)/(tabs)/together" />;
 }

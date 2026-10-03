@@ -19,7 +19,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * is reachable, themeable and announced properly.
  */
 const PLUS_EXPLANATION =
-  'Plus raises the limits on your shared Space: more room for photos and voice, more letters for the future, and PDF chapter keepsakes. One purchase covers both of you.';
+  'Plus gives your shared archive more storage, more letters for the future, and PDF chapter keepsakes. Your sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
 
 export default function PaywallScreen() {
   const router = useRouter();
@@ -137,7 +137,7 @@ export default function PaywallScreen() {
     >
       <ThemedText type="display">Aoi Plus</ThemedText>
       <ThemedText type="body" style={styles.sub}>
-        One Plus covers your whole shared Space, both of you enjoy it.
+        More room to preserve what you share. One Plus covers your shared Space.
       </ThemedText>
 
       {storeUnavailable ? (

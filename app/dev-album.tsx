@@ -19,7 +19,7 @@ export default function DevAlbum() {
 function AlbumSetupPreview() {
   const [visible, setVisible] = useState(false);
   return <View style={styles.root}>
-    <Button label="Open automatic album setup" onPress={() => setVisible(true)} />
+    <Button label="Open experimental recognition setup" onPress={() => setVisible(true)} />
     <AutomaticAlbumSheet visible={visible} onClose={() => setVisible(false)} />
   </View>;
 }

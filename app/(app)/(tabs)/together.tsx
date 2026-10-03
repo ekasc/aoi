@@ -1,153 +1,202 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useFocusEffect, useIsFocused, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AppState, FlatList, Pressable, StyleSheet, View, type ListRenderItemInfo } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { LocalPhotosSheet } from '@/components/album/local-photos-sheet';
-import { AutomaticAlbumSheet } from '@/components/album/automatic-album-sheet';
 import { MemorySky, SYSTEM_TAB_BAR_IOS_CLEARANCE } from '@/components/home/memory-sky';
-import { SKY_CONTROL_FILL, SKY_CONTROL_INK } from '@/components/home/sky-palette';
-import { PhotoViewer, type ViewerPhoto } from '@/components/moments/photo-viewer';
-import type { PhotoOrigin } from '@/components/moments/zoomable-photo';
+import { SKY_CONTROL_INK } from '@/components/home/sky-palette';
+import { MomentCard } from '@/components/moments/moment-card';
+import { PendingMemoryRow } from '@/components/moments/pending-memory-row';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Pressed } from '@/components/ui/pressed';
-import { Radii, Spacing } from '@/constants/theme';
-import { chooseSkyPhoto, type SkyPhoto } from '@/features/album/sky-photo-repository';
-import { useSkyPhotos } from '@/features/album/use-sky-photos';
-import { useAutomaticAlbum } from '@/features/album/automatic-album-state';
-import { haptics } from '@/features/haptics/haptics';
+import { Spacing } from '@/constants/theme';
+import { useCalendar } from '@/features/calendar/calendar-context';
+import { constellationPoints, nextTogetherPlan, usHistory } from '@/features/home/us-history';
 import { findReadyLetter } from '@/features/home/us-focal';
-import type { SkyItem } from '@/features/home/day-sky';
 import { useLetters } from '@/features/letters/letters-context';
+import { galleryPhotosOf } from '@/features/moments/gallery';
+import { formatResurfaceLabel } from '@/features/moments/resurface';
+import type { Moment } from '@/features/moments/types';
+import { useStoryFeed } from '@/features/moments/use-story-feed';
 import { useSpace } from '@/features/space/space-context';
 import { useSqueeze } from '@/features/squeeze/squeeze-context';
+import { formatDaysTogether } from '@/features/time-together/time-together';
 import { useThemeColor } from '@/hooks/use-theme-color';
-
-const SQUEEZE_SENT_VISIBLE_MS = 3000;
 
 export default function UsScreen() {
   const router = useRouter();
-  const isFocused = useIsFocused();
+  const focused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const album = useSkyPhotos();
-  const automatic = useAutomaticAlbum();
-  const { letters } = useLetters();
-  const { sendSqueeze, isSending, lastSentAt } = useSqueeze();
+  const feed = useStoryFeed();
+  const calendar = useCalendar();
+  const letterState = useLetters();
   const { space } = useSpace();
+  const { sendSqueeze, isSending, lastSentAt } = useSqueeze();
+  const [now, setNow] = useState(() => new Date());
+  const [ackSentAt, setAckSentAt] = useState<string | null>(null);
   const background = useThemeColor({}, 'background');
   const muted = useThemeColor({}, 'textSecondary');
-  const star = useRef<View>(null);
-  const lastPhoto = useRef<string | null>(null);
-  const seenAutomaticRevision = useRef<{ scopeKey: string | null; revision: number } | null>(null);
-  const [now, setNow] = useState(() => new Date());
-  const [opened, setOpened] = useState<{ scopeKey: string | null; photo: SkyPhoto; origin?: PhotoOrigin } | null>(null);
-  const [managing, setManaging] = useState(false);
-  const [settingUp, setSettingUp] = useState(false);
-  const [ackSentAt, setAckSentAt] = useState<string | null>(null);
-  const squeezeSent = Boolean(lastSentAt) && ackSentAt !== lastSentAt;
-  const canDiscover = album.status === 'ready' && album.photos.some((photo) => photo.uri !== null) && album.operation === null;
-  const busy = album.operation !== null;
-  const skyHeight = Math.max(320, height - insets.top - insets.bottom - 80);
-  const skyItems = useMemo<SkyItem[]>(() => album.photos.filter((photo) => photo.uri !== null).map((photo) => ({ id: photo.id, occurredAt: photo.addedAt, authorRole: 'you' })), [album.photos]);
+  const accent = useThemeColor({}, 'accentInk');
+  const border = useThemeColor({}, 'border');
+  const history = useMemo(() => usHistory(feed.moments, space?.relationshipStartDate ?? null, now), [feed.moments, space?.relationshipStartDate, now]);
+  const readyLetter = useMemo(() => findReadyLetter(letterState.letters, now), [letterState.letters, now]);
+  const plan = useMemo(() => nextTogetherPlan(calendar.upcomingEvents, now), [calendar.upcomingEvents, now]);
+  const sent = Boolean(lastSentAt) && ackSentAt !== lastSentAt;
+  const recent = history.recent;
+  const resurface = history.resurface;
+  const resurfacePhoto = useMemo(() => resurface ? galleryPhotosOf(resurface.moment)[0] ?? null : null, [resurface]);
 
   useFocusEffect(useCallback(() => { setNow(new Date()); }, []));
-  const automaticRevision = automatic?.revision;
-  const reloadPhotos = album.reload;
   useEffect(() => {
-    if (!automaticRevision || album.operation !== null || album.status === 'loading') return;
-    if (seenAutomaticRevision.current?.scopeKey === album.scopeKey && seenAutomaticRevision.current.revision === automaticRevision) return;
-    seenAutomaticRevision.current = { scopeKey: album.scopeKey, revision: automaticRevision };
-    reloadPhotos();
-  }, [automaticRevision, reloadPhotos, album.operation, album.status, album.scopeKey]);
+    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') setNow(new Date()); });
+    return () => subscription.remove();
+  }, []);
   useEffect(() => {
-    if (!squeezeSent || !lastSentAt) return;
-    const timer = setTimeout(() => setAckSentAt(lastSentAt), SQUEEZE_SENT_VISIBLE_MS);
+    if (!sent || !lastSentAt) return;
+    const timer = setTimeout(() => setAckSentAt(lastSentAt), 3000);
     return () => clearTimeout(timer);
-  }, [lastSentAt, squeezeSent]);
+  }, [lastSentAt, sent]);
 
-  const pullPhoto = useCallback(() => {
-    if (!canDiscover) return;
-    const photo = chooseSkyPhoto(album.photos, lastPhoto.current);
-    if (!photo) return;
-    lastPhoto.current = photo.id;
-    haptics.select();
-    if (star.current) {
-      star.current.measureInWindow((x, y, width, measuredHeight) => {
-        setOpened({ scopeKey: album.scopeKey, photo, origin: { x: x + width / 2 - 2, y: y + measuredHeight / 2 - 2, width: 4, height: 4, radius: 2 } });
-      });
-    } else {
-      setOpened({ scopeKey: album.scopeKey, photo });
-    }
-  }, [album.photos, album.scopeKey, canDiscover]);
-  const closeViewer = useCallback(() => setOpened(null), []);
-  const closePhotos = useCallback(() => { if (!busy) setManaging(false); }, [busy]);
-  const readyLetter = useMemo(() => findReadyLetter(Array.isArray(letters) ? letters : [], now), [letters, now]);
-  const viewerPhotos = useMemo<ViewerPhoto[]>(() => opened?.photo.uri ? [{ uri: opened.photo.uri, label: 'A photo from your local album' }] : [], [opened]);
+  const openMemory = useCallback((id: string) => {
+    const moment = history.story.find((item) => item.id === id);
+    if (moment) router.push({ pathname: '/(app)/moment/[id]', params: { id, at: moment.occurredAt } });
+  }, [history.story, router]);
+  const renderMemory = useCallback(({ item }: ListRenderItemInfo<Moment>) => (
+    <View>
+      <MomentCard moment={item} presentation="timeline" />
+      <View style={styles.memoryLink}><Button label="Open memory" accessibilityLabel={`Open memory from ${item.authorName}, ${item.title || new Date(item.occurredAt).toLocaleDateString('en-US')}`}
+        variant="ghost" onPress={() => openMemory(item.id)} /></View>
+    </View>
+  ), [openMemory]);
 
-  return (
-    <View style={[styles.root, { backgroundColor: background }]}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Bring out a photo of the two of you" accessibilityHint="Opens one photo from your local album"
-        accessibilityState={{ disabled: !canDiscover }} disabled={!canDiscover} onPress={pullPhoto} style={StyleSheet.absoluteFill}>
-        <MemorySky immersive focused={isFocused} moments={skyItems} now={now} presentationHeight={skyHeight} startDate={space?.relationshipStartDate ?? null} />
-      </Pressable>
-      <View pointerEvents="box-none" style={styles.overlay}>
-        <View pointerEvents="box-none" style={[styles.topRow, { paddingTop: insets.top + Spacing[4] }]}>
-          <ThemedText type="title" style={styles.title}>Us</ThemedText>
-          {readyLetter ? (
-            <Pressable accessibilityHint="Opens your ready letter" accessibilityLabel="A letter is ready to open" accessibilityRole="button"
-              onPress={() => router.push({ pathname: '/(app)/letter/[id]', params: { id: readyLetter.id } })}
-              style={({ pressed }) => [styles.letterPill, pressed ? Pressed.at : undefined]}>
-              <Ionicons color={SKY_CONTROL_INK} name="mail-open-outline" size={16} />
-              <ThemedText type="label" style={styles.title}>Ready</ThemedText>
-            </Pressable>
-          ) : null}
-        </View>
-        <View ref={star} collapsable={false} pointerEvents="none" accessible={false} style={styles.star}>
-          {canDiscover ? <ThemedText accessible={false} style={styles.starGlyph}>✦</ThemedText> : null}
-        </View>
-        <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[24] + SYSTEM_TAB_BAR_IOS_CLEARANCE }]}>
-          <View accessibilityLiveRegion="polite" style={styles.discovery}>
-            {album.status === 'loading' ? <ThemedText type="caption" style={styles.hint}>Opening your local photos…</ThemedText>
-              : album.readError ? <><ThemedText accessibilityRole="alert" type="caption" style={styles.hint}>{album.readError}</ThemedText><Button label="Try again" onPress={album.reload} variant="secondary" /></>
-              : canDiscover ? <><ThemedText type="caption" style={styles.hint}>Tap the sky for a photo of the two of you.</ThemedText><Button label="Bring out a photo" onPress={pullPhoto} variant="secondary" /></>
-              : <><ThemedText type="caption" style={styles.hint}>{album.photos.length === 0 ? (automatic?.status === 'scanning' ? 'Finding photos with both of you…' : 'No photos in your album yet.') : 'Your album photos are unavailable on this device.'}</ThemedText><Button label={automatic ? (automatic.enabled ? 'Automatic discovery' : 'Find photos of us') : 'Choose photos'} onPress={() => automatic ? setSettingUp(true) : setManaging(true)} variant="secondary" disabled={busy} /></>}
-          </View>
-          <View style={styles.bottomRow}>
-            {automatic ? <Pressable accessibilityLabel="Automatic album discovery" accessibilityRole="button" onPress={() => setSettingUp(true)} style={styles.ghostLink}>
-              <ThemedText type="caption" style={{ color: muted }}>{automatic?.enabled ? 'Discovery on' : 'Find photos of us'}</ThemedText>
-            </Pressable> : null}
-            <Pressable accessibilityLabel="Manage photos for your sky" accessibilityRole="button" onPress={() => setManaging(true)} style={styles.ghostLink}>
-              <ThemedText type="caption" style={{ color: muted }}>Photos on this device</ThemedText>
-            </Pressable>
-            <Pressable accessibilityLabel="Squeeze" accessibilityRole="button" accessibilityHint="Sends your partner a thinking-of-you signal"
-              accessibilityState={{ busy: isSending, disabled: isSending }} disabled={isSending}
-              onPress={() => { if (!isSending) void sendSqueeze(); }} style={styles.ghostLink}>
-              <ThemedText type="label" style={{ color: muted }}>{squeezeSent ? 'Sent.' : isSending ? 'Sending…' : 'Squeeze'}</ThemedText>
-            </Pressable>
+  const header = (
+    <View>
+      <View style={styles.sky}>
+        <MemorySky immersive focused={focused} moments={history.moments} daysTogether={history.daysTogether}
+          now={now} presentationHeight={360} startDate={space?.relationshipStartDate ?? null} />
+        <View pointerEvents="box-none" style={[styles.skyWords, { paddingTop: insets.top + Spacing[24] }]}>
+          <ThemedText type="title" style={styles.skyInk}>Us</ThemedText>
+          <View style={styles.skyCaption}>
+            <ThemedText type="display">Our sky</ThemedText>
+            {history.daysTogether !== null ? <ThemedText type="body">{formatDaysTogether(history.daysTogether)}</ThemedText> :
+              <Button label="Set our start date" variant="secondary" onPress={() => router.push('/(app)/profile/edit-relationship')} />}
           </View>
         </View>
       </View>
-      <LocalPhotosSheet visible={managing} onClose={closePhotos} album={album} />
-      <AutomaticAlbumSheet visible={settingUp} onClose={() => setSettingUp(false)} />
-      <PhotoViewer visible={opened !== null && opened.scopeKey === album.scopeKey} photos={viewerPhotos} origin={opened?.origin} onClose={closeViewer} />
+      <View style={styles.editorial}>
+        <View style={styles.links}>
+          <Button label="Keep a memory" variant="ghost" onPress={() => router.push('/(app)/moment/new')} />
+          <Button label={sent ? 'Sent.' : isSending ? 'Sending…' : 'Squeeze'} variant="ghost"
+            accessibilityLabel="Squeeze" accessibilityHint="Sends your partner a thinking-of-you signal"
+            accessibilityState={{ busy: isSending, disabled: isSending }} disabled={isSending}
+            onPress={() => { if (!isSending) void sendSqueeze(); }} />
+        </View>
+        {readyLetter || plan || history.recent ? (
+          <View style={styles.section}>
+            <ThemedText type="subheading">Here with you</ThemedText>
+            {readyLetter ? <Button label="A letter is ready to open" variant="secondary"
+              onPress={() => router.push({ pathname: '/(app)/letter/[id]', params: { id: readyLetter.id } })} /> : null}
+            {plan ? <Pressable accessibilityRole="button" accessibilityLabel={`Open together plan: ${plan.title}`}
+              onPress={() => { calendar.setSelectedDate(new Date(plan.startsAt)); router.push('/(app)/(tabs)/plans'); }} style={styles.entry}>
+              <ThemedText type="caption" style={{ color: muted }}>{new Date(plan.startsAt).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</ThemedText>
+              <ThemedText type="bodyEmphasis">{plan.title}</ThemedText>
+            </Pressable> : null}
+            {history.recent ? <Pressable accessibilityRole="button" accessibilityLabel={`Open recent memory from ${history.recent.authorName}`}
+              onPress={() => { if (recent) openMemory(recent.id); }} style={styles.entry}>
+              <ThemedText type="caption" style={{ color: muted }}>{history.recent.authorName} kept a memory</ThemedText>
+              <ThemedText type="body">{history.recent.title || history.recent.body || 'A shared memory'}</ThemedText>
+            </Pressable> : null}
+          </View>
+        ) : null}
+        {calendar.error || letterState.error ? <View accessibilityLiveRegion="polite" style={styles.section}>
+          <ThemedText accessibilityRole="alert" type="caption">Some shared activity could not load.</ThemedText>
+          {calendar.error ? <Button label="Retry plans" variant="ghost" onPress={() => { void calendar.refresh(); }} /> : null}
+          {letterState.error ? <Button label="Retry letters" variant="ghost" onPress={() => { void letterState.reload(); }} /> : null}
+        </View> : null}
+        {history.resurface ? <View style={styles.section}>
+          <ThemedText type="subheading">On this night</ThemedText>
+          <ThemedText type="caption" style={{ color: muted }}>{formatResurfaceLabel(history.resurface.yearsAgo)}</ThemedText>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open this memory" accessibilityHint="Opens the full memory and its media"
+            onPress={() => { if (resurface) openMemory(resurface.moment.id); }} style={styles.resurface}>
+            {resurfacePhoto ? <Image accessible={false} source={{ uri: resurfacePhoto.uri }} contentFit="cover" style={styles.resurfacePhoto} /> : null}
+            <View style={styles.resurfaceText}>
+              <ThemedText type="body">{history.resurface.moment.title || history.resurface.moment.body || 'A memory we kept'}</ThemedText>
+              <ThemedText type="caption" style={{ color: accent }}>Open memory</ThemedText>
+            </View>
+          </Pressable>
+        </View> : null}
+        {history.chapters.length > 0 ? <View style={styles.section}>
+          <ThemedText type="subheading">Our constellations</ThemedText>
+          <ThemedText type="caption" style={{ color: muted }}>Years of memories kept together</ThemedText>
+          {history.chapters.map((chapter) => {
+            const points = constellationPoints(chapter.memoryIds);
+            return <Pressable key={chapter.id} accessibilityRole="button" accessibilityLabel={`Open ${chapter.title} chapter`}
+              onPress={() => router.push({ pathname: '/(app)/chapter/[id]', params: { id: chapter.id } })}
+              style={({ pressed }) => [styles.chapter, { borderColor: border }, pressed ? Pressed.at : undefined]}>
+              <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.constellation}>
+                {points.map((point, index) => {
+                  const previous = points[index - 1];
+                  const length = previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : 0;
+                  return <View key={index}>
+                    {previous ? <View style={[styles.line, { backgroundColor: accent, width: length,
+                      left: (point.x + previous.x - length) / 2, top: (point.y + previous.y) / 2,
+                      transform: [{ rotate: `${Math.atan2(point.y - previous.y, point.x - previous.x)}rad` }] }]} /> : null}
+                    <View style={[styles.point, { backgroundColor: accent, left: point.x - 2.5, top: point.y - 2.5 }]} />
+                  </View>;
+                })}
+              </View>
+              <ThemedText type="bodyEmphasis" style={styles.chapterTitle}>{chapter.title}</ThemedText>
+            </Pressable>;
+          })}
+        </View> : null}
+        <View style={styles.links}>
+          <Button label="Letters" variant="ghost" onPress={() => router.push('/(app)/letters')} />
+          <Button label="Little things" variant="ghost" onPress={() => router.push('/(app)/profile/little-things')} />
+        </View>
+        <View style={styles.section}>
+          <ThemedText type="subheading">Our story</ThemedText>
+          <ThemedText type="caption" style={{ color: muted }}>What we chose to share, in the order it happened.</ThemedText>
+          <Button label="Open Memories" variant="ghost" onPress={() => router.push('/(app)/(tabs)/(memories)')} />
+          {feed.pending.map((record) => <PendingMemoryRow key={record.clientId} record={record} isSending={feed.sendingIds.includes(record.clientId)} />)}
+          {feed.isLoading ? <ThemedText accessibilityLiveRegion="polite">Opening your shared memories…</ThemedText> :
+            feed.error ? <View accessibilityLiveRegion="polite"><ThemedText accessibilityRole="alert">Could not load your story.</ThemedText><Button label="Retry memories" onPress={feed.refresh} /></View> :
+              history.story.length === 0 && feed.pending.length === 0 ? <View style={styles.section}>
+                <ThemedText type="body">No shared memories yet.</ThemedText>
+                <ThemedText type="caption" style={{ color: muted }}>Keep a note, photo or voice memory for the two of you.</ThemedText>
+                <Button label="Keep our first memory" onPress={() => router.push('/(app)/moment/new')} />
+              </View> : null}
+          {feed.hasMore ? <Button label={feed.isPaging ? 'Loading earlier…' : feed.pagingError ? 'Retry earlier memories' : 'Load earlier memories'}
+            disabled={feed.isPaging} accessibilityState={{ busy: feed.isPaging, disabled: feed.isPaging }} variant="ghost" onPress={feed.loadMore} /> : null}
+        </View>
+      </View>
     </View>
   );
+
+  return <View style={[styles.root, { backgroundColor: background }]}>
+    <FlatList data={history.story} keyExtractor={(moment) => moment.id} renderItem={renderMemory} ListHeaderComponent={header}
+      contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingBottom: insets.bottom + Spacing[24] + SYSTEM_TAB_BAR_IOS_CLEARANCE }} />
+  </View>;
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  overlay: { ...StyleSheet.absoluteFill },
-  topRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing[24] },
-  title: { color: SKY_CONTROL_INK },
-  letterPill: { alignItems: 'center', borderRadius: Radii.pill, borderWidth: StyleSheet.hairlineWidth, borderColor: SKY_CONTROL_INK, backgroundColor: SKY_CONTROL_FILL, flexDirection: 'row', gap: Spacing[8], minHeight: 44, paddingHorizontal: Spacing[12] },
-  star: { position: 'absolute', top: '40%', left: '45%', width: '10%', alignItems: 'center', justifyContent: 'center' },
-  starGlyph: { color: SKY_CONTROL_INK, fontSize: 28, lineHeight: 36 },
-  bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: Spacing[24], gap: Spacing[16] },
-  discovery: { alignItems: 'center', gap: Spacing[12] },
-  hint: { color: SKY_CONTROL_INK, backgroundColor: SKY_CONTROL_FILL, borderRadius: Radii.card, paddingHorizontal: Spacing[12], paddingVertical: Spacing[8], textAlign: 'center' },
-  bottomRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing[8] },
-  ghostLink: { minHeight: 44, justifyContent: 'center' },
+  root: { flex: 1, maxWidth: 720, width: '100%', alignSelf: 'center' },
+  sky: { height: 360, overflow: 'hidden' },
+  skyWords: { ...StyleSheet.absoluteFill, paddingHorizontal: Spacing[24], justifyContent: 'space-between', paddingBottom: Spacing[32] },
+  skyInk: { color: SKY_CONTROL_INK },
+  skyCaption: { gap: Spacing[8] },
+  editorial: { paddingHorizontal: Spacing[24], paddingTop: Spacing[16], gap: Spacing[32] },
+  section: { gap: Spacing[12] },
+  links: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing[8] },
+  entry: { minHeight: 44, gap: Spacing[4], paddingVertical: Spacing[8] },
+  chapter: { flexDirection: 'row', alignItems: 'center', gap: Spacing[16], paddingVertical: Spacing[12], borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 44 },
+  chapterTitle: { flex: 1 },
+  resurface: { flexDirection: 'row', alignItems: 'center', gap: Spacing[16], minHeight: 44 },
+  resurfacePhoto: { width: 88, height: 88, borderRadius: 12 },
+  resurfaceText: { flex: 1, gap: Spacing[8] },
+  memoryLink: { alignItems: 'flex-start', paddingHorizontal: Spacing[24], paddingBottom: Spacing[16] },
+  constellation: { width: 100, height: 50 },
+  point: { position: 'absolute', width: 5, height: 5, borderRadius: 2.5 },
+  line: { position: 'absolute', height: 1 },
 });

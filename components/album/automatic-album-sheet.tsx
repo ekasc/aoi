@@ -44,8 +44,8 @@ export function AutomaticAlbumSheet({ visible, onClose }: { visible: boolean; on
       if (openPhotoCheck.current) { openPhotoCheck.current = false; router.push('/album/check-photo'); }
     }} dismissible={!album.busy}>
       <ScrollView ref={scroll} accessibilityViewIsModal role="dialog" aria-modal accessibilityLabel="Automatic album setup" style={{ maxHeight: height * 0.75 }} contentContainerStyle={styles.content}>
-        <ThemedText type="title">Find photos of us</ThemedText>
-        <ThemedText>Automatically find photos with both of you, including group pictures.</ThemedText>
+        <ThemedText type="title">Experimental recognition</ThemedText>
+        <ThemedText>Inactive in the product. This development-only tool tests local recognition and may miss people or match the wrong person.</ThemedText>
         {space?.relationshipStartDate ? <ThemedText type="caption">Checks photos from {space.relationshipStartDate} onward, newest first.</ThemedText> : null}
         <ThemedText type="caption">Dev build: matches stay on this phone. No uploads or partner sync. Recognition is experimental and can make mistakes.</ThemedText>
         {album.status === 'loading' ? <ThemedText accessibilityLiveRegion="polite">Opening face setup…</ThemedText> : null}

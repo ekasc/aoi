@@ -1,178 +1,110 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import * as ReactNative from 'react-native';
 
 import UsScreen from '@/app/(app)/(tabs)/together';
-import type { SkyPhoto } from '@/features/album/sky-photo-repository';
+import type { Moment } from '@/features/moments/types';
+import type { CalendarEvent } from '@/features/calendar/types';
 
 const state = vi.hoisted(() => ({
-  photos: [] as SkyPhoto[], status: 'ready' as 'ready' | 'loading' | 'failed', readError: null as string | null,
-  actionError: null as string | null, operation: null as 'importing' | 'removing' | null, scopeKey: 'scope',
-  reload: vi.fn(), choosePhotos: vi.fn(), removePhoto: vi.fn(),
-  letters: [] as Record<string, unknown>[], sendSqueeze: vi.fn(), isSending: false, lastSentAt: null as string | null,
-  push: vi.fn(),
+  moments: [] as Moment[], letters: [] as Record<string, unknown>[], upcomingEvents: [] as CalendarEvent[],
+  isLoading: false, error: null as string | null, hasMore: false, isPaging: false, pagingError: null as string | null,
+  pending: [], sendingIds: [], loadMore: vi.fn(), refresh: vi.fn(), setSelectedDate: vi.fn(),
+  sendSqueeze: vi.fn(), isSending: false, lastSentAt: null as string | null, push: vi.fn(), startDate: '2022-06-01' as string | null,
 }));
-
-
-vi.mock('@/features/album/use-sky-photos', () => ({ useSkyPhotos: () => state }));
-vi.mock('@/features/album/automatic-album-state', () => ({ useAutomaticAlbum: () => ({ enabled: false, status: 'off', revision: 0 }) }));
-vi.mock('@/components/album/automatic-album-sheet', () => ({ AutomaticAlbumSheet: ({ visible }: { visible: boolean }) => visible ? <section role="dialog" aria-label="Automatic album setup">Find photos of us</section> : null }));
-vi.mock('@/features/moments/moments-context', () => ({ useMoments: () => { throw new Error('Us must not read Memories'); } }));
-vi.mock('@/features/letters/letters-context', () => ({ useLetters: () => ({ letters: state.letters }) }));
+vi.mock('@/features/moments/use-story-feed', () => ({ useStoryFeed: () => state }));
+vi.mock('@/features/calendar/calendar-context', () => ({ useCalendar: () => ({ ...state, error: null }) }));
+vi.mock('@/features/letters/letters-context', () => ({ useLetters: () => ({ letters: state.letters, error: null }) }));
 vi.mock('@/features/squeeze/squeeze-context', () => ({ useSqueeze: () => state }));
-vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { id: 'space', relationshipStartDate: '2024-06-01' } }) }));
+vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { id: 'space', relationshipStartDate: state.startDate } }) }));
 vi.mock('@/hooks/use-theme-color', () => ({ useThemeColor: () => '#444444' }));
-vi.mock('@/features/haptics/haptics', () => ({ haptics: { select: vi.fn() } }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: state.push }), useIsFocused: () => true, useFocusEffect: () => {} }));
-vi.mock('@/components/home/memory-sky', () => ({ MemorySky: ({ moments }: { moments: { id: string }[] }) => <div data-testid="sky" data-items={moments.map((item) => item.id).join(',')} />, SYSTEM_TAB_BAR_IOS_CLEARANCE: 50 }));
-vi.mock('@/components/moments/photo-viewer', () => ({ PhotoViewer: ({ visible, photos, onClose }: { visible: boolean; photos: { uri: string; momentId?: string }[]; onClose: () => void }) => visible ? <section role="dialog" aria-label="Sky photo"><img alt="Selected pair photo" src={photos[0].uri} data-memory={photos[0].momentId ?? ''} /><button onClick={onClose}>Close photo</button></section> : null }));
-vi.mock('@/components/ui/native-sheet', () => ({ NativeSheet: ({ visible, children, dismissible }: { visible: boolean; children: ReactNode; dismissible: boolean }) => visible ? <section data-testid="photo-sheet" data-dismissible={String(dismissible)}>{children}</section> : null }));
-vi.mock('@/components/ui/button', () => ({ Button: ({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) => <button disabled={disabled} onClick={onPress}>{label}</button> }));
+vi.mock('@/features/album/use-sky-photos', () => ({ useSkyPhotos: () => { throw new Error('Us must not read device photos'); } }));
+vi.mock('@/features/album/automatic-album-state', () => ({ useAutomaticAlbum: () => { throw new Error('Us must not mount recognition'); } }));
+vi.mock('@/features/subscription/subscription-context', () => ({ useSubscription: () => { throw new Error('Us is the same for Free and Plus'); } }));
+vi.mock('@/components/home/memory-sky', () => ({ MemorySky: ({ moments, daysTogether }: { moments: { id: string }[]; daysTogether: number }) => <div data-testid="sky" data-days={daysTogether} data-items={moments.map((item) => item.id).join(',')} />, SYSTEM_TAB_BAR_IOS_CLEARANCE: 50 }));
+vi.mock('@/components/moments/pending-memory-row', () => ({ PendingMemoryRow: () => <div>Pending memory</div> }));
+vi.mock('@/components/moments/moment-card', () => ({ MomentCard: ({ moment }: { moment: Moment }) => <div>{moment.title || moment.body}</div> }));
+vi.mock('@/components/ui/button', () => ({ Button: ({ label, accessibilityLabel, disabled, onPress }: { label: string; accessibilityLabel?: string; disabled?: boolean; onPress: () => void }) => <button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{label}</button> }));
 
-const photo = (id = 'photo-a'): SkyPhoto => ({ id, uri: `file:///${id}.jpg`, addedAt: '2026-01-01T00:00:00.000Z', width: 800, height: 600 });
+const memory = (id: string, occurredAt: string): Moment => ({ id, occurredAt, type: 'note', title: id, body: 'Kept together', createdAt: occurredAt, authorId: 'june', authorRole: 'partner', authorName: 'June' });
 const press = async (element: Element) => { await act(async () => fireEvent.click(element)); };
-
 beforeEach(() => {
-  vi.spyOn(ReactNative, 'FlatList').mockImplementation(({ data, renderItem, ListHeaderComponent, ListFooterComponent }) => (
-    <div>{ListHeaderComponent as ReactNode}{data?.map((item, index) => <div key={index}>{renderItem?.({ item, index, separators: { highlight() {}, unhighlight() {}, updateProps() {} } })}</div>)}{ListFooterComponent as ReactNode}</div>
-  ));
-  Object.defineProperty(HTMLElement.prototype, 'measureInWindow', { configurable: true, value: (callback: (x: number, y: number, width: number, height: number) => void) => callback(100, 200, 40, 36) });
-  state.photos = [];
-  state.status = 'ready'; state.readError = null; state.actionError = null; state.operation = null; state.scopeKey = 'scope';
-  state.letters = []; state.isSending = false; state.lastSentAt = null;
-  state.reload.mockClear(); state.choosePhotos.mockClear(); state.removePhoto.mockClear(); state.sendSqueeze.mockClear(); state.push.mockClear();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-09-05T20:00:00'));
+  vi.spyOn(ReactNative, 'FlatList').mockImplementation(({ data, renderItem, ListHeaderComponent }) => <div>{ListHeaderComponent as ReactNode}{data?.map((item, index) => <div key={index}>{renderItem?.({ item, index, separators: { highlight() {}, unhighlight() {}, updateProps() {} } })}</div>)}</div>);
+  state.moments = []; state.letters = []; state.upcomingEvents = []; state.startDate = '2022-06-01';
+  state.isLoading = false; state.error = null; state.hasMore = false; state.isPaging = false; state.pagingError = null;
+  state.isSending = false; state.lastSentAt = null;
+  vi.clearAllMocks();
 });
-afterEach(() => { vi.restoreAllMocks(); Reflect.deleteProperty(HTMLElement.prototype, 'measureInWindow'); });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
-describe('Us gallery discovery', () => {
-  it('opens automatic discovery directly from the real Us screen', async () => {
+describe('Us shared relationship history', () => {
+  it('shows an honest empty story and no invented sections or discovery promises', async () => {
     render(<UsScreen />);
-    await press(screen.getByLabelText('Automatic album discovery'));
-    expect(screen.getByRole('dialog', { name: 'Automatic album setup' })).toBeTruthy();
-    expect(state.choosePhotos).not.toHaveBeenCalled();
+    expect(screen.getByText('No shared memories yet.')).toBeTruthy();
+    for (const label of ['Here with you', 'On this night', 'Our constellations', 'Find photos of us']) expect(screen.queryByText(label)).toBeNull();
+    await press(screen.getByText('Keep our first memory'));
+    expect(state.push).toHaveBeenCalledWith('/(app)/moment/new');
   });
-  it('shows an honest fresh sky with a direct gallery next action, not a Memories fallback', async () => {
-    render(<UsScreen />);
-    expect(screen.getByText('No photos in your album yet.')).toBeTruthy();
-    await press(screen.getByLabelText('Manage photos for your sky'));
-    expect(screen.getByText('Copies stay on this device. Aoi does not upload or share them. Removing a copy here does not delete the original from your gallery.')).toBeTruthy();
-    expect(screen.getByText('Set up automatic discovery from Us to find photos containing both of you. You can also choose photos manually here.')).toBeTruthy();
-    expect(screen.queryByText('All memories')).toBeNull();
-    expect(state.push).not.toHaveBeenCalled();
-  });
-
-  it('does not call the picker until the reader explicitly chooses photos', async () => {
-    render(<UsScreen />);
-    await press(screen.getByLabelText('Manage photos for your sky'));
-    expect(state.choosePhotos).not.toHaveBeenCalled();
-    await press(within(screen.getByTestId('photo-sheet')).getByText('Choose photos'));
-    expect(state.choosePhotos).toHaveBeenCalledOnce();
-  });
-
-  it('keeps loading, failed reads, and successful empty results distinct', async () => {
-    state.status = 'loading';
+  it('keeps read failures, loading, and empty results distinct', async () => {
+    state.isLoading = true;
     const { rerender } = render(<UsScreen />);
-    expect(screen.getByText('Opening your local photos…')).toBeTruthy();
-    expect(screen.queryByText('No photos selected yet.')).toBeNull();
-    state.status = 'failed'; state.readError = 'Could not open your local photos. Please try again.';
-    rerender(<UsScreen />);
-    await press(screen.getByText('Try again'));
-    expect(state.reload).toHaveBeenCalledOnce();
-    expect(screen.queryByText('No photos selected yet.')).toBeNull();
+    expect(screen.getByText('Opening your shared memories…')).toBeTruthy();
+    expect(screen.queryByText('No shared memories yet.')).toBeNull();
+    state.isLoading = false; state.error = 'offline'; rerender(<UsScreen />);
+    expect(screen.getByText('Could not load your story.').getAttribute('accessibilityrole')).toBe('alert');
+    await press(screen.getByText('Retry memories'));
+    expect(state.refresh).toHaveBeenCalledOnce();
+    expect(screen.queryByText('No shared memories yet.')).toBeNull();
   });
-
-  it('opens a selected local photo from the sky without a memory id or response controls', async () => {
-    state.photos = [photo()];
+  it('renders shared occurrence history oldest first and excludes goals and future dates from the sky', () => {
+    state.moments = [memory('latest', '2026-09-04T20:00:00'), memory('oldest', '2024-02-01T20:00:00'), { ...memory('goal', '2024-01-01'), type: 'goal' }, memory('future', '2027-01-01')];
     render(<UsScreen />);
-    expect(screen.getByTestId('sky').getAttribute('data-items')).toBe('photo-a');
-    await press(screen.getByLabelText('Bring out a photo of the two of you'));
-    expect(screen.getByRole('dialog', { name: 'Sky photo' })).toBeTruthy();
-    const image = screen.getByAltText('Selected pair photo');
-    expect(image.getAttribute('src')).toBe('file:///photo-a.jpg');
-    expect(image.getAttribute('data-memory')).toBe('');
-    expect(screen.queryByText('I was there')).toBeNull();
-    expect(state.push).not.toHaveBeenCalled();
+    expect(screen.getByTestId('sky').getAttribute('data-items')).toBe('oldest,latest');
+    expect(screen.getByText('Here with you')).toBeTruthy();
+    expect(screen.queryByText('goal')).toBeNull();
+    expect(screen.getByTestId('sky').getAttribute('data-days')).toBe('1558');
   });
-
-  it('retains a visible discovery action after closing and avoids the previous photo', async () => {
-    state.photos = [photo('a'), photo('b')];
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-    try {
-      render(<UsScreen />);
-      await press(screen.getByText('Bring out a photo'));
-      expect(screen.getByAltText('Selected pair photo').getAttribute('src')).toBe('file:///a.jpg');
-      await press(screen.getByText('Close photo'));
-      expect(screen.queryByRole('dialog', { name: 'Sky photo' })).toBeNull();
-      expect(screen.getByText('Tap the sky for a photo of the two of you.')).toBeTruthy();
-      await press(screen.getByText('Bring out a photo'));
-      expect(screen.getByAltText('Selected pair photo').getAttribute('src')).toBe('file:///b.jpg');
-    } finally { random.mockRestore(); }
-  });
-
-  it('never exposes an opened photo after the scope changes', async () => {
-    state.photos = [photo()];
+  it('keeps sealed contents private and links only a ready letter', async () => {
+    state.letters = [{ id: 'letter', caption: 'Private caption', body: 'SECRET', isOpened: false, sealedUntil: '2020-01-01', createdAt: '2020-01-01' }];
     const { rerender } = render(<UsScreen />);
-    await press(screen.getByText('Bring out a photo'));
-    expect(screen.getByAltText('Selected pair photo')).toBeTruthy();
-    state.scopeKey = 'different-space'; state.photos = [];
-    rerender(<UsScreen />);
-    expect(screen.queryByAltText('Selected pair photo')).toBeNull();
+    expect(screen.queryByText('SECRET')).toBeNull(); expect(screen.queryByText('Private caption')).toBeNull();
+    await press(screen.getByText('A letter is ready to open'));
+    expect(state.push).toHaveBeenCalledWith({ pathname: '/(app)/letter/[id]', params: { id: 'letter' } });
+    state.letters = [{ ...state.letters[0], sealedUntil: '2099-01-01' }]; rerender(<UsScreen />);
+    expect(screen.queryByText('A letter is ready to open')).toBeNull();
   });
-
-  it('lets a reader remove an unavailable copy instead of silently hiding it', async () => {
-    state.photos = [{ ...photo(), uri: null }];
+  it('omits no-result resurfacing but opens a real historical memory when eligible', async () => {
+    state.moments = [memory('last-year', '2025-09-05T20:00:00')];
     render(<UsScreen />);
-    expect(screen.getByText('Your album photos are unavailable on this device.')).toBeTruthy();
-    await press(screen.getByLabelText('Manage photos for your sky'));
-    expect(screen.getByText('Photo unavailable on this device')).toBeTruthy();
-    await press(screen.getByText('Remove photo 1'));
-    expect(state.removePhoto).toHaveBeenCalledWith('photo-a');
+    expect(screen.getByText('On this night')).toBeTruthy();
+    await press(screen.getByLabelText('Open this memory'));
+    expect(state.push).toHaveBeenCalledWith({ pathname: '/(app)/moment/[id]', params: { id: 'last-year', at: '2025-09-05T20:00:00' } });
   });
-
-  it('locks selection, removal, and sheet dismissal while local photos are being saved', async () => {
-    state.photos = [photo()];
+  it('opens an existing relationship-year chapter, never an invented collection', async () => {
+    state.moments = [memory('one', '2024-07-01'), memory('two', '2024-08-01')];
+    render(<UsScreen />);
+    await press(screen.getByLabelText('Open Three years together chapter'));
+    expect(state.push).toHaveBeenCalledWith({ pathname: '/(app)/chapter/[id]', params: { id: 'anniversary:3:2025' } });
+  });
+  it('retains manual paging and archive navigation', async () => {
+    state.hasMore = true; state.pagingError = 'offline'; state.moments = [memory('one', '2024-07-01')];
+    render(<UsScreen />);
+    await press(screen.getByText('Retry earlier memories')); expect(state.loadMore).toHaveBeenCalledOnce();
+    await press(screen.getByText('Open Memories')); expect(state.push).toHaveBeenCalledWith('/(app)/(tabs)/(memories)');
+  });
+  it('preserves Squeeze without a second send during delivery', async () => {
     const { rerender } = render(<UsScreen />);
-    await press(screen.getByLabelText('Manage photos for your sky'));
-    state.operation = 'importing'; rerender(<UsScreen />);
-    expect(screen.getByTestId('photo-sheet').getAttribute('data-dismissible')).toBe('false');
-    await press(screen.getByText('Done'));
-    await press(screen.getByText('Remove photo 1'));
-    expect(screen.getByTestId('photo-sheet')).toBeTruthy();
-    expect(state.removePhoto).not.toHaveBeenCalled();
-    expect((screen.getByText('Adding photos…') as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('retains local import failure feedback and permits retry', async () => {
-    state.actionError = 'Could not add these photos. Please try again.';
-    render(<UsScreen />);
-    await press(screen.getByLabelText('Manage photos for your sky'));
-    expect(screen.getByText(state.actionError)).toBeTruthy();
-    await press(within(screen.getByTestId('photo-sheet')).getByText('Choose photos'));
-    expect(state.choosePhotos).toHaveBeenCalledOnce();
-  });
-
-  it('does not reveal letter bodies or captions, even when ready', () => {
-    state.letters = [{ id: 'letter', caption: 'Private caption', body: 'SECRET', isOpened: false, sealedUntil: '2020-01-01T00:00:00.000Z', createdAt: '2020-01-01T00:00:00.000Z' }];
-    render(<UsScreen />);
-    expect(screen.getByLabelText('A letter is ready to open')).toBeTruthy();
-    expect(screen.queryByText('Private caption')).toBeNull();
-    expect(screen.queryByText('SECRET')).toBeNull();
-  });
-
-  it('never offers a letter whose seal has not broken', () => {
-    state.letters = [{ id: 'letter', isOpened: false, sealedUntil: '2099-01-01T00:00:00.000Z', createdAt: '2020-01-01T00:00:00.000Z' }];
-    render(<UsScreen />);
-    expect(screen.queryByLabelText('A letter is ready to open')).toBeNull();
-  });
-
-  it('preserves Squeeze without allowing a second send during delivery', async () => {
-    const { rerender } = render(<UsScreen />);
-    await press(screen.getByLabelText('Squeeze'));
-    expect(state.sendSqueeze).toHaveBeenCalledOnce();
+    await press(screen.getByLabelText('Squeeze')); expect(state.sendSqueeze).toHaveBeenCalledOnce();
     state.isSending = true; rerender(<UsScreen />);
-    await press(screen.getByLabelText('Squeeze'));
-    expect(state.sendSqueeze).toHaveBeenCalledOnce();
-    expect(screen.getByText('Sending…')).toBeTruthy();
+    await press(screen.getByLabelText('Squeeze')); expect(state.sendSqueeze).toHaveBeenCalledOnce();
+  });
+  it('uses existing deliberate sharing routes for letters and Little things', async () => {
+    render(<UsScreen />);
+    await press(screen.getByText('Letters')); await press(screen.getByText('Little things'));
+    expect(state.push.mock.calls).toEqual([['/(app)/letters'], ['/(app)/profile/little-things']]);
   });
 });

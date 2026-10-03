@@ -51,7 +51,7 @@ import type { SpaceContextValue } from '@/features/space/types';
  * so it shows its status error headless — expected.
  */
 
-export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed' | 'setup' | 'welcome';
+export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed' | 'setup' | 'welcome' | 'recent' | 'historical' | 'no-resurfacing';
 
 export function parsePreviewVariant(raw: string | string[] | undefined): PreviewVariant {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -59,7 +59,7 @@ export function parsePreviewVariant(raw: string | string[] | undefined): Preview
     value === 'empty' ||
     value === 'pending' ||
     value === 'failed' ||
-    value === 'setup' || value === 'welcome'
+    value === 'setup' || value === 'welcome' || value === 'recent' || value === 'historical' || value === 'no-resurfacing'
   ) {
     return value;
   }
@@ -382,6 +382,16 @@ function seedMoment(overrides: Partial<Moment> & Pick<Moment, 'id' | 'occurredAt
  * The repo's `?variant=empty` still returns nothing.
  */
 export function getPreviewSeedMoments(variant: PreviewVariant): Moment[] {
+  if (variant === 'recent' || variant === 'historical' || variant === 'no-resurfacing') {
+    const full = getPreviewSeedMoments('full');
+    if (variant === 'no-resurfacing') return full.filter((moment) => moment.id !== 'preview-resurface');
+    if (variant === 'recent') return full.filter((moment) => Date.now() - new Date(moment.occurredAt).getTime() < 7 * 86400000);
+    return full.filter((moment) => moment.type !== 'goal' && moment.id !== 'preview-resurface').map((moment) => {
+      const date = new Date(moment.occurredAt);
+      date.setFullYear(date.getFullYear() - 2);
+      return { ...moment, occurredAt: date.toISOString() };
+    });
+  }
   if (variant === 'empty' || variant === 'setup') {
     return [];
   }

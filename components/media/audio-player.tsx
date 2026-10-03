@@ -80,9 +80,9 @@ const styles = StyleSheet.create({
   playButton: {
     alignItems: 'center',
     borderRadius: 16,
-    height: 32,
+    height: 44,
     justifyContent: 'center',
-    width: 32,
+    width: 44,
   },
   progressTrack: {
     borderRadius: 2,

@@ -1,7 +1,9 @@
 ## Design Context
 
 ### Users
-Couples who want a private, shared digital space for their relationship. Used in personal/intimate contexts — evenings at home, planning dates, remembering milestones. Low-frequency creators who return to the app to add moments or check upcoming plans. Not power users; they want the app to get out of the way.
+Couples who want a private home and relationship archive built from what they intentionally share. Used during evenings at home, planning dates, and remembering milestones. Us is the living relationship home. Memories is the deliberate shared archive. Camera-roll discovery and face recognition are not part of the product promise.
+
+Free remains a complete couples app. Aoi Plus adds shared archive storage, more future letters, and PDF chapter keepsakes. Sky history, richer chapters, recaps, and capsules need future systems and are not current paid benefits. See [relationship home and archive](docs/product/relationship-home-and-archive.md) for semantics and deferred work.
 
 ### Brand Personality
 **Three words**: Playful, intimate, calm.

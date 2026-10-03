@@ -10,7 +10,7 @@
  * read); no client-side allowance helpers live here anymore.
  */
 export const PLUS_FEATURES = [
-  'More room for photos and voice memories',
+  'More storage for your shared archive',
   'More letters for the future',
   'PDF chapter keepsakes',
 ] as const;

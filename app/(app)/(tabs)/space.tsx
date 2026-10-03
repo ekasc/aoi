@@ -436,6 +436,7 @@ export default function SpaceScreen() {
 				<SectionHeading title="Yours together" muted={muted} />
 				<View style={styles.group}>
 					<NavRow label="Letters" muted={muted} onPress={handleOpenLetters} />
+					<NavRow label="Local photo copies" muted={muted} dividerColor={border} onPress={() => router.push('/(app)/album/local-photos')} />
 					<NavRow
 						dividerColor={border}
 						label="Reflection"

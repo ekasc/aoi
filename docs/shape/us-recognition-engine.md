@@ -1,5 +1,7 @@
 # Recognition engine implementation
 
+Status: experimental research, inactive in the product. The integration notes below describe earlier development builds. Current Us reads intentionally shared memories and does not mount recognition. See [relationship home and archive](../product/relationship-home-and-archive.md).
+
 ## Fence
 
 Build the engine without exposing automatic discovery. No native app build, simulator, photo-library permission, phone-data mutation, upload, sharing, enrollment UI, or deployment. Native command-line checks may execute pure image helpers without launching an app or opening windows.

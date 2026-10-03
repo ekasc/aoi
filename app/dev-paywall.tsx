@@ -18,8 +18,8 @@ function DevPaywallPreview() {
   const loading = state === 'loading' && !reloaded;
   const empty = state === 'empty' && !reloaded;
   const value: SubscriptionContextValue = {
-    status: unavailable ? 'unavailable' : loading ? 'loading' : 'free',
-    isPlus: false,
+    status: unavailable ? 'unavailable' : loading ? 'loading' : state === 'plus' ? 'plus' : 'free',
+    isPlus: state === 'plus',
     isAvailable: !unavailable && !loading,
     activationPending: state === 'pending',
     plans: unavailable || loading || empty ? [] : [

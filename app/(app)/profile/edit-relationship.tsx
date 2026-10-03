@@ -183,7 +183,7 @@ export default function EditRelationshipScreen() {
             )}
             {!relationshipStartDate ? (
               <ThemedText type="caption" style={{ color: muted }}>
-                Optional. Used for milestones and photo discovery.
+                Optional. Used for days together and relationship chapters.
               </ThemedText>
             ) : null}
 

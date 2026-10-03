@@ -6,7 +6,7 @@ import { formatBytes, formatLetterCount } from '@/features/subscription/format';
 describe('subscription benefits (v1 contract)', () => {
   it('advertises exactly the three real benefits', () => {
     expect([...PLUS_FEATURES]).toEqual([
-      'More room for photos and voice memories',
+      'More storage for your shared archive',
       'More letters for the future',
       'PDF chapter keepsakes',
     ]);

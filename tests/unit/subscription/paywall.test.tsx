@@ -184,7 +184,7 @@ describe('paywall (v1 benefit contract)', () => {
   it('advertises exactly the three real benefits', async () => {
     const { container } = await renderPaywall();
 
-    expect(screen.getByText(/More room for photos and voice memories/)).toBeTruthy();
+    expect(screen.getByText(/More storage for your shared archive/)).toBeTruthy();
     expect(screen.getByText(/More letters for the future/)).toBeTruthy();
     expect(screen.getByText(/PDF chapter keepsakes/)).toBeTruthy();
     const copy = container.textContent ?? '';
@@ -240,7 +240,7 @@ describe('paywall (v1 benefit contract)', () => {
 
     fireEvent.click(screen.getByLabelText('Why Plus?'));
     // The sheet's own copy, mounted by the platform sheet.
-    expect(await screen.findByText(/raises the limits on your shared Space/)).toBeTruthy();
+    expect(await screen.findByText(/Plus gives your shared archive more storage/)).toBeTruthy();
   });
 
   it('gives the explanation a real touch target', async () => {
