@@ -25,6 +25,7 @@
     "face:verify:phone": "node --experimental-strip-types scripts/verify-phone-face-engine.mjs",
     "face:test": "node scripts/test-face-recognition.mjs",
     "face:benchmark": "node scripts/test-face-recognition.mjs --public",
+    "face:index:evaluate": "node scripts/evaluate-face-index.mjs",
     "sim-nav": "node scripts/sim-nav.mjs",
     "sim-press": "node scripts/sim-press.mjs",
     "test:unit": "vitest run",
