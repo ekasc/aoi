@@ -5,7 +5,7 @@ import type { FaceCluster } from '@/features/face-index/types';
 import { unit } from './helpers';
 
 function cluster(clusterId: string, faceIds: string[], size = faceIds.length): FaceCluster {
-  return { clusterId, faceIds, size, centroid: unit(0) };
+  return { clusterId, faceIds, size, centroid: unit(0), memberEmbeddings: [] };
 }
 
 describe('clustering quality metrics', () => {

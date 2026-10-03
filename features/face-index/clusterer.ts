@@ -153,6 +153,7 @@ export function createFaceClusterer(options: ClustererOptions = SPIKE_CLUSTER_OP
       clusterId: cluster.clusterId,
       faceIds: [...cluster.faceIds],
       centroid: Float32Array.from(cluster.sum, (value) => value / Math.max(cluster.faceIds.length, 1)),
+      memberEmbeddings: cluster.faceIds.flatMap((faceId) => { const embedding = embeddings.get(faceId); return embedding ? [embedding] : []; }),
       size: cluster.faceIds.length,
     })),
     assignmentFor: (faceId) => assignments.get(faceId),

@@ -26,6 +26,7 @@
     "face:test": "node scripts/test-face-recognition.mjs",
     "face:benchmark": "node scripts/test-face-recognition.mjs --public",
     "face:index:evaluate": "node scripts/evaluate-face-index.mjs",
+    "face:evaluate:labelled": "node scripts/evaluate-labelled-faces.mjs",
     "sim-nav": "node scripts/sim-nav.mjs",
     "sim-press": "node scripts/sim-press.mjs",
     "test:unit": "vitest run",

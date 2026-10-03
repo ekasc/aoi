@@ -117,13 +117,22 @@ clustering API never mentions "you", "partner", or any person. It produces
 
 ## Phase 4 — seeding the two people
 
-`identify.ts` takes several enrollment embeddings per person and scores every
-anonymous cluster by the maximum cosine from any enrollment print to the cluster
-centroid. It accepts a mapping only when each person's best cluster is distinct,
-above `identificationFloor`, and separated from the runner-up by `marginFloor`.
+`identify.ts` takes several enrollment embeddings per person and attaches every
+cluster with consistent support. A person is a *set* of clusters, not one
+cluster: forcing one person to one cluster drops every face in a fragment.
+
+Each reference votes for the cluster it matches best, and a cluster also earns
+support from the share of references scoring above `memberSupportFloor`. A
+cluster attaches when its aggregate score clears `identificationFloor`, its
+support clears `supportFloor`, and it is within `attachmentMargin` of that
+person's best cluster. A cluster claimed by both people attaches to neither.
 Identification is one-shot: it maps clusters, it never pulls faces into them, so
-a weak match cannot poison a cluster. Expansion of an identified cluster is
-explicitly out of scope for this spike.
+a weak match cannot poison a cluster.
+
+Six aggregate strategies are available and evaluated separately from clustering:
+`max` (the old behaviour), `mean`, `median`, `trimmed-mean`, `majority-vote`,
+and `member-support` (each reference scored against the best cluster member).
+`max` is kept only as the comparison baseline.
 
 ## Phase 5 — the couple-photo query
 
@@ -153,59 +162,114 @@ Two modes are reported:
 The baseline is the current fixed-reference matcher on the *same* detected faces
 and embeddings, at the unchanged `0.72`.
 
+## Phase 6b — the real-photo evaluator
+
+`pnpm run face:evaluate:labelled -- --dataset <folder>` runs the same real Vision
++ SFace pipeline over a folder the user supplies:
+
+```
+references/   a.jpg, or a-1.jpg, a-2.jpg, ...; b.jpg, or b-1.jpg, b-2.jpg, ...
+positive/     both people visibly present
+solo-a/       only partner A
+solo-b/       only partner B
+negative/     neither person
+groups/       group photos with zero or one enrolled person
+```
+
+The label is the enclosing folder name; file names never imply a label. The
+report separates detector, alignment, and embedding failures from identity miss,
+cluster fragmentation, ambiguous identity, correct pair, and false pair. It
+reports positive recall and a false-pair rate for each of solo-A, solo-B,
+negative, and groups, with the sample size beside every rate. It compares the
+baseline, cluster-first at the current conservative settings, a cluster-threshold
+sweep, and all six identity strategies.
+
+`--corpus all` indexes every photo, the shape production would take.
+`--corpus references` clusters only the reference faces so query photos are held
+out. The report is written under `.expo/face-lab/` and stays local; it contains
+relative file names for debugging and no image bytes, crops, or embeddings.
+
+No real labelled dataset exists in this repo, so this path has not been run on
+real couple photos. It was smoke-tested end to end on the committed public
+synthetic images to prove the plumbing, then those files were removed. The
+synthetic strategy comparison below is the only labelled evidence available.
+
 ## Results (HyperFace subset, synthetic)
 
 16 synthetic identities × 8 portraits; 8 pair cases. Detection and embedding were
 perfect on this set: 856 faces detected, 856 embedded, 0 failures; 128/128
 identity portraits and 728/728 mosaic faces.
 
-Held-out split, cluster threshold `0.55`, identification floor `0.5`:
+Held-out split, cluster threshold `0.55`, `member-support`:
 
 | Configuration | Positive photos found | Solo-A wrong | Solo-B wrong | Negative/group wrong |
 | --- | ---: | ---: | ---: | ---: |
 | Current fixed reference, `0.72` | 8 / 64 | 0 / 32 | 0 / 32 | 0 / 96 |
 | Cluster-first, one reference | 50 / 64 | 0 / 32 | 0 / 32 | 0 / 96 |
-| Cluster-first, four references | 44 / 64 | 0 / 32 | 0 / 32 | 0 / 96 |
+| Cluster-first, four references | 58 / 64 | 0 / 32 | 0 / 32 | 0 / 96 |
+
+Indexed (production-shaped) split, same settings: baseline 13/112, cluster-first
+one reference 94/112, cluster-first four references 106/112, with zero false
+additions on 56 solos and 168 negatives per person category.
 
 Clustering quality: purity 1.0 and pairwise precision 1.0 in both modes (no two
 identities were merged); pairwise recall 0.94 (indexed) and 0.92 (held-out),
 i.e. some identities split into fragments. Partner-cluster identification found
-7 of 8 cases correctly and 0 incorrectly; one case was ambiguous
-("Two clusters are too close to assign confidently").
+8 of 8 cases correctly and 0 incorrectly.
 
-Exploratory threshold sweep on the held-out split (no threshold selected):
+The multi-cluster attachment fixed the earlier regression where four references
+performed worse than one: 58/64 against 50/64 held-out, and identification
+ambiguity fell from one case to none. Attaching the fragment as well as the main
+cluster, instead of forcing one person to one cluster, is what did it.
+
+Exploratory threshold sweep on the held-out split (`member-support`, no threshold
+selected):
 
 | Cluster threshold | Clusters | Positive found | False additions |
 | ---: | ---: | ---: | ---: |
 | 0.40 | 16 | 62 / 64 | 0 |
-| 0.50 | 18 | 45 / 64 | 0 |
-| 0.55 | 19 | 44 / 64 | 0 |
-| 0.65 | 29 | 8 / 64 | 0 |
-| 0.75 | 48 | 0 / 64 | 0 |
+| 0.50 | 18 | 60 / 64 | 0 |
+| 0.55 | 19 | 58 / 64 | 0 |
+| 0.65 | 29 | 45 / 64 | 0 |
+| 0.75 | 48 | 18 / 64 | 0 |
+
+Identity-strategy comparison at cluster threshold `0.55` on the held-out split:
+
+| Strategy | Cases identified correctly | Positive found | False additions |
+| --- | ---: | ---: | ---: |
+| `max` | 8 / 8 | 58 / 64 | 0 |
+| `mean` | 8 / 8 | 58 / 64 | 0 |
+| `median` | 8 / 8 | 58 / 64 | 0 |
+| `trimmed-mean` | 8 / 8 | 58 / 64 | 0 |
+| `majority-vote` | 8 / 8 | 58 / 64 | 0 |
+| `member-support` | 8 / 8 | 58 / 64 | 0 |
+
+All six tie on this dataset. Once several clusters attach under a support floor,
+the aggregate function stops mattering for this fragmentation pattern. The
+strategies differ in the unit tests, where `majority-vote` drops a fragment only
+one reference matches and `member-support` keeps it. Choosing between them needs
+real photos with harder fragments.
 
 Full report: `.expo/face-lab/face-index-report-<timestamp>.json` (gitignored).
 
 ## What the evidence says
 
-On this dataset, cluster-first substantially outperforms the fixed-reference
-matcher: roughly six times the positive recall at zero observed false additions.
-That is the answer to the acceptance question, with the caveats below.
+On this synthetic dataset, cluster-first substantially outperforms the
+fixed-reference matcher: roughly seven times the positive recall at zero observed
+false additions. That is the answer to the acceptance question, with the caveats
+below.
 
 Failure categories seen, in order of size:
 
-1. **Partner-identification ambiguity** — one of eight cases could not be
-   resolved, which removes up to eight positives by itself. The cause is two
-   clusters scoring within the margin floor.
-2. **Cluster fragmentation** — some identities split into two clusters, so a
-   query face can land in the fragment the enrollment key did not select.
-   Purity is perfect; recall is not.
-3. **More references made it worse, not better** — four references found 44/64
-   against 50/64 for one. With `max`-over-references scoring, a reference inside
-   a small fragment can pull the chosen cluster away from the main one. Multi-
-   reference enrollment needs a rule that does not reward fragments before it
-   can be called an improvement.
-4. **No detection or embedding failures** on this set, so it says nothing about
+1. **Cluster fragmentation** — some identities split into clusters, and a query
+   face in a fragment that never attached is missed. Purity is perfect; recall is
+   not. Attaching fragments (multi-cluster) recovered most of this, and the
+   remaining 6/64 held-out misses are fragments the support floor rejected.
+2. **No detection or embedding failures** on this set, so it says nothing about
    real-world small, blurred, or profile faces.
+3. **The strategy choice is not empirically differentiated.** All six tie here.
+   The multi-cluster attachment is what fixed the earlier multi-reference
+   regression, not the aggregate function.
 
 ## Decisions that changed the work
 
@@ -217,6 +281,9 @@ Failure categories seen, in order of size:
 - **Test rather than abstract**: query faces use a read-only `classify` against
   the corpus instead of being assigned into it, which keeps the clustering
   quality metric honest and avoids an extra layer.
+- **Redesign from first principles**: the identity model was rebuilt around
+  "a person is a set of clusters" instead of patching `max` scoring. That is
+  what turned the four-reference regression into a gain.
 
 ## Licensing and model strategy
 
@@ -235,21 +302,29 @@ meaningful comparison, and SFace provided it.
 
 ## Limitations
 
+- No real labelled dataset exists, so no real couple photo has been evaluated.
+  The synthetic results are architecture evidence, not real-world accuracy.
 - Synthetic portraits and artificial mosaics, not natural couple photos.
 - The held-out split shares one generator and one model; it is not independent
   validation data.
 - The quality score is a face-size heuristic, not a calibrated capture-quality
   model, so the low-quality merge path is barely exercised here.
-- Zero false additions on 96 negatives is not a safety proof.
+- Zero false additions on 96 negatives is not a safety proof. The negative
+  sample is small and synthetic; a real run needs a large, deliberately hard
+  negative set before anyone calls it safe.
 - Mac Vision and CPU inference are not an iPhone parity check.
 - No production threshold was selected, and no production code reads the spike.
 
 ## Verification
 
-- `npx vitest run tests/unit/face-index` — 32 tests across 6 files.
+- `npx vitest run tests/unit/face-index` — 44 tests across 7 files.
 - `pnpm run typecheck` passes; ESLint is clean on `features/face-index/` and
   `tests/unit/face-index/`.
-- `pnpm run face:index:evaluate` ran the real native pipeline; log at
-  `.expo/crit/face-index-eval.log`.
+- `pnpm run face:index:evaluate` ran the real native pipeline and the
+  identity-strategy comparison; log at `.expo/crit/face-index-strategy-eval.log`.
+- `pnpm run face:evaluate:labelled` was smoke-tested end to end on the committed
+  public synthetic images (both `--corpus all` and `--corpus references`), then
+  the temporary folder and its reports were removed. Logs at
+  `.expo/crit/labelled-smoke.log` and `.expo/crit/labelled-smoke-references.log`.
 - No app UX, production threshold, backend API, upload, or enrollment was
   changed. The spike is not imported by any app screen.

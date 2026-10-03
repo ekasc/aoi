@@ -41,6 +41,9 @@ export type FaceCluster = {
   faceIds: readonly string[];
   /** Mean of member embeddings, unnormalized; cosine normalizes at use. */
   centroid: Float32Array;
+  /** Normalized member embeddings, parallel to `faceIds`. Needed to score a
+   * reference against cluster members, not only against the centroid. */
+  memberEmbeddings: readonly Float32Array[];
   size: number;
 };
 
@@ -56,9 +59,16 @@ export type ClusterAssignment = {
 /** Which anonymous cluster (if any) an enrolled person was identified as. */
 export type PartnerLabel = 'A' | 'B';
 
+/**
+ * One anonymous cluster attached to one person. A person may own several
+ * clusters, because clustering splits one identity into fragments. `support`
+ * is the share of enrollment references that agree, not a single best match.
+ */
 export type ClusterIdentity = {
   clusterId: string;
   person: PartnerLabel;
+  /** Aggregate similarity across enrollment references. */
   score: number;
-  margin: number;
+  /** Share of references that support this cluster, in [0, 1]. */
+  support: number;
 };

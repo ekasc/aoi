@@ -73,7 +73,10 @@ function run(command, args, timeout = 120_000) {
   if (result.error || result.status !== 0) throw new Error('Local tool setup failed. Check that Python 3 and Xcode command-line tools are installed.');
 }
 
+let appModulesLoaded = false;
 export function loadAppModules() {
+  if (appModulesLoaded) return;
+  appModulesLoaded = true;
   registerHooks({
     resolve(specifier, context, next) {
       if (specifier.startsWith('@/')) specifier = pathToFileURL(resolve(root, `${specifier.slice(2)}${extname(specifier) ? '' : '.ts'}`)).href;

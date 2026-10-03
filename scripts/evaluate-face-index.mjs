@@ -85,7 +85,7 @@ export async function main(args) {
   const { DEFAULT_MATCH_THRESHOLD, matchPairByCosine } = await import('../features/album/face-pipeline.ts');
   const { createIndexedFace } = await import('../features/face-index/embedding.ts');
   const { createFaceClusterer, SPIKE_CLUSTER_OPTIONS } = await import('../features/face-index/clusterer.ts');
-  const { identifyPartnerClusters, identityByCluster, SPIKE_IDENTIFICATION_OPTIONS } = await import('../features/face-index/identify.ts');
+  const { identifyPartnerClusters, identityByCluster, IDENTITY_STRATEGIES, SPIKE_IDENTIFICATION_OPTIONS } = await import('../features/face-index/identify.ts');
   const { findCouplePhotos } = await import('../features/face-index/pair-query.ts');
   const { measureClusterQuality, summarizePairOutcomes } = await import('../features/face-index/evaluation.ts');
   const { parsePublicBenchmark } = await import('./public-face-benchmark.ts');
@@ -102,7 +102,7 @@ export async function main(args) {
     similarityThreshold: requestedThreshold,
     lowQualityThreshold: Math.max(SPIKE_CLUSTER_OPTIONS.lowQualityThreshold, requestedThreshold),
   };
-  const identificationOptions = SPIKE_IDENTIFICATION_OPTIONS;
+  const identificationOptions = { ...SPIKE_IDENTIFICATION_OPTIONS, strategy: process.env.AOI_FACE_INDEX_STRATEGY ?? SPIKE_IDENTIFICATION_OPTIONS.strategy };
 
   const workspace = join(root, '.expo/face-lab');
   await mkdir(workspace, { recursive: true, mode: 0o700 });
@@ -284,25 +284,46 @@ export async function main(args) {
 
     const evaluated = Object.fromEntries(modes.map((mode) => [mode.name, evaluateMode(mode)]));
 
-    // ── Exploratory threshold sweep on the held-out split only ──────────────
-    const sweep = [];
-    for (const threshold of [0.4, 0.5, 0.55, 0.65, 0.75]) {
-      if (abort.signal.aborted) throw new Error('Evaluation canceled. No report was saved.');
-      const mode = modes[1];
-      const corpusFiles = benchmark.identities.flatMap((identity) => identity.images.filter((image) => (imageIndex(image.file) ?? 0) <= mode.corpusIndexMax).map((image) => image.file));
-      const truthByFace = new Map();
-      for (const identity of benchmark.identities) for (const image of identity.images) for (const face of embeddings.get(image.file)?.faces ?? []) truthByFace.set(face.faceId, identity.label);
+    // ── Held-out sweeps: threshold, then identity strategy ─────────────────
+    const heldOut = modes[1];
+    const heldOutCorpusFiles = benchmark.identities.flatMap((identity) => identity.images.filter((image) => (imageIndex(image.file) ?? 0) <= heldOut.corpusIndexMax).map((image) => image.file));
+    const heldOutTruthByFace = new Map();
+    for (const identity of benchmark.identities) for (const image of identity.images) for (const face of embeddings.get(image.file)?.faces ?? []) heldOutTruthByFace.set(face.faceId, identity.label);
+
+    const buildHeldOutClusters = (threshold) => {
       const clusterer = createFaceClusterer({ ...clusterOptions, similarityThreshold: threshold, lowQualityThreshold: Math.max(clusterOptions.lowQualityThreshold, threshold) });
-      for (const face of corpusFiles.flatMap((file) => embeddings.get(file)?.faces ?? []).sort((left, right) => left.faceId.localeCompare(right.faceId))) clusterer.assign(face);
-      const clusters = clusterer.clusters();
+      for (const face of heldOutCorpusFiles.flatMap((file) => embeddings.get(file)?.faces ?? []).sort((left, right) => left.faceId.localeCompare(right.faceId))) clusterer.assign(face);
+      return { clusterer, clusters: clusterer.clusters() };
+    };
+
+    // Shared by both sweeps: pair outcomes and identification status for the held-out split.
+    const outcomesForClusters = (clusterer, clusters, strategy) => {
+      const options = { ...identificationOptions, strategy };
       const outcomes = [];
+      const identification = { cases: 0, identified: 0, ambiguous: 0, correct: 0, reasons: {} };
       for (const pair of benchmark.pairCases) {
         const youIdentity = benchmark.identities.find((identity) => identity.label === pair.you);
         const partnerIdentity = benchmark.identities.find((identity) => identity.label === pair.partner);
-        const references = (identity) => identity.images.filter((image) => (imageIndex(image.file) ?? 0) <= mode.corpusIndexMax).flatMap((image) => embeddings.get(image.file)?.faces ?? []);
-        const result = identifyPartnerClusters(clusters, { A: references(youIdentity).map((face) => face.embedding), B: references(partnerIdentity).map((face) => face.embedding) }, identificationOptions);
+        const references = (identity) => identity.images.filter((image) => (imageIndex(image.file) ?? 0) <= heldOut.corpusIndexMax).flatMap((image) => embeddings.get(image.file)?.faces ?? []);
+        const result = identifyPartnerClusters(clusters, { A: references(youIdentity).map((face) => face.embedding), B: references(partnerIdentity).map((face) => face.embedding) }, options);
+        identification.cases += 1;
+        if (result.kind === 'identified') {
+          identification.identified += 1;
+          const majority = (clusterId) => {
+            const cluster = clusters.find((item) => item.clusterId === clusterId);
+            const counts = new Map();
+            for (const faceId of cluster?.faceIds ?? []) { const label = heldOutTruthByFace.get(faceId); if (label) counts.set(label, (counts.get(label) ?? 0) + 1); }
+            return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] ?? null;
+          };
+          const identityOf = (person) => result.identities.find((identity) => identity.person === person);
+          if (majority(identityOf('A')?.clusterId) === pair.you && majority(identityOf('B')?.clusterId) === pair.partner) identification.correct += 1;
+        } else {
+          identification.ambiguous += 1;
+          const reason = result.kind === 'invalid' ? 'invalid enrollment' : result.reason;
+          identification.reasons[reason] = (identification.reasons[reason] ?? 0) + 1;
+        }
         const mapping = identityByCluster(result);
-        for (const photo of pair.photos.filter((item) => item.sourceImages.every((source) => (imageIndex(source) ?? 0) >= mode.queryIndexMin))) {
+        for (const photo of pair.photos.filter((item) => item.sourceImages.every((source) => (imageIndex(source) ?? 0) >= heldOut.queryIndexMin))) {
           const faces = embeddings.get(photo.file)?.faces ?? [];
           const assignments = new Map();
           for (const face of faces) { const classified = clusterer.classify(face); if (classified) assignments.set(face.faceId, { ...classified, assetId: photo.file }); }
@@ -310,7 +331,25 @@ export async function main(args) {
           outcomes.push({ expectation: expectation(kindOf(photo)), decision: diagnostic.decision });
         }
       }
-      sweep.push({ similarityThreshold: threshold, clusters: clusters.length, clustering: measureClusterQuality(clusters, truthByFace), pair: summarizePairOutcomes(outcomes) });
+      return { pair: summarizePairOutcomes(outcomes), identification };
+    };
+
+    const sweep = [];
+    for (const threshold of [0.4, 0.5, 0.55, 0.65, 0.75]) {
+      if (abort.signal.aborted) throw new Error('Evaluation canceled. No report was saved.');
+      const { clusterer, clusters } = buildHeldOutClusters(threshold);
+      const { pair } = outcomesForClusters(clusterer, clusters, identificationOptions.strategy);
+      sweep.push({ similarityThreshold: threshold, clusters: clusters.length, clustering: measureClusterQuality(clusters, heldOutTruthByFace), pair });
+    }
+
+    const strategySweep = [];
+    {
+      const { clusterer, clusters } = buildHeldOutClusters(clusterOptions.similarityThreshold);
+      for (const strategy of IDENTITY_STRATEGIES) {
+        if (abort.signal.aborted) throw new Error('Evaluation canceled. No report was saved.');
+        const { pair, identification } = outcomesForClusters(clusterer, clusters, strategy);
+        strategySweep.push({ strategy, clusters: clusters.length, identification, pair });
+      }
     }
 
     const report = {
@@ -320,6 +359,7 @@ export async function main(args) {
       totals: detection,
       modes: evaluated,
       thresholdSweepHeldOut: sweep,
+      strategySweepHeldOut: strategySweep,
       privacy: 'Aggregate counts and anonymous scores only. No photos, crops, embeddings, source URIs, or identity labels are written.',
       readyForProduction: false,
       limitations: [
@@ -341,6 +381,7 @@ export async function main(args) {
       heldOutClusterSingle: evaluated.heldOut.clusterSingleReference.pair,
       heldOutClusterMulti: evaluated.heldOut.clusterMultiReference.pair,
       sweep: sweep.map((entry) => ({ threshold: entry.similarityThreshold, clusters: entry.clusters, found: entry.pair.positives.found, positiveTotal: entry.pair.positives.total, falseAdditions: entry.pair.falsePairAdditions })),
+      strategySweep: strategySweep.map((entry) => ({ strategy: entry.strategy, identified: entry.identification.identified, correct: entry.identification.correct, found: entry.pair.positives.found, positiveTotal: entry.pair.positives.total, falseAdditions: entry.pair.falsePairAdditions })),
     }, null, 2));
     console.log(`Report: ${output}`);
   } finally {
