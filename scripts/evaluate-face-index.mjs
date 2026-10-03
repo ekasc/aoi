@@ -85,7 +85,7 @@ export async function main(args) {
   const { DEFAULT_MATCH_THRESHOLD, matchPairByCosine } = await import('../features/album/face-pipeline.ts');
   const { createIndexedFace } = await import('../features/face-index/embedding.ts');
   const { createFaceClusterer, SPIKE_CLUSTER_OPTIONS } = await import('../features/face-index/clusterer.ts');
-  const { identifyPartnerClusters, identityByCluster, IDENTITY_STRATEGIES, SPIKE_IDENTIFICATION_OPTIONS } = await import('../features/face-index/identify.ts');
+  const { identifyPartnerClusters, identifyPartnerClustersWithEvidence, identityByCluster, IDENTITY_STRATEGIES, SPIKE_IDENTIFICATION_OPTIONS } = await import('../features/face-index/identify.ts');
   const { findCouplePhotos } = await import('../features/face-index/pair-query.ts');
   const { measureClusterQuality, summarizePairOutcomes } = await import('../features/face-index/evaluation.ts');
   const { parsePublicBenchmark } = await import('./public-face-benchmark.ts');
@@ -301,11 +301,16 @@ export async function main(args) {
       const options = { ...identificationOptions, strategy };
       const outcomes = [];
       const identification = { cases: 0, identified: 0, ambiguous: 0, correct: 0, reasons: {} };
+      const attachment = { attachedA: 0, attachedB: 0, sharedClaimed: 0 };
       for (const pair of benchmark.pairCases) {
         const youIdentity = benchmark.identities.find((identity) => identity.label === pair.you);
         const partnerIdentity = benchmark.identities.find((identity) => identity.label === pair.partner);
         const references = (identity) => identity.images.filter((image) => (imageIndex(image.file) ?? 0) <= heldOut.corpusIndexMax).flatMap((image) => embeddings.get(image.file)?.faces ?? []);
-        const result = identifyPartnerClusters(clusters, { A: references(youIdentity).map((face) => face.embedding), B: references(partnerIdentity).map((face) => face.embedding) }, options);
+        const identified = identifyPartnerClustersWithEvidence(clusters, { A: references(youIdentity).map((face) => face.embedding), B: references(partnerIdentity).map((face) => face.embedding) }, options);
+        const result = identified.identification;
+        attachment.attachedA += identified.evidence.filter((item) => item.attachedTo === 'A').length;
+        attachment.attachedB += identified.evidence.filter((item) => item.attachedTo === 'B').length;
+        attachment.sharedClaimed += identified.evidence.filter((item) => item.sharedClaim).length;
         identification.cases += 1;
         if (result.kind === 'identified') {
           identification.identified += 1;
@@ -331,15 +336,15 @@ export async function main(args) {
           outcomes.push({ expectation: expectation(kindOf(photo)), decision: diagnostic.decision });
         }
       }
-      return { pair: summarizePairOutcomes(outcomes), identification };
+      return { pair: summarizePairOutcomes(outcomes), identification, attachment };
     };
 
     const sweep = [];
     for (const threshold of [0.4, 0.5, 0.55, 0.65, 0.75]) {
       if (abort.signal.aborted) throw new Error('Evaluation canceled. No report was saved.');
       const { clusterer, clusters } = buildHeldOutClusters(threshold);
-      const { pair } = outcomesForClusters(clusterer, clusters, identificationOptions.strategy);
-      sweep.push({ similarityThreshold: threshold, clusters: clusters.length, clustering: measureClusterQuality(clusters, heldOutTruthByFace), pair });
+      const { pair, attachment } = outcomesForClusters(clusterer, clusters, identificationOptions.strategy);
+      sweep.push({ similarityThreshold: threshold, clusters: clusters.length, clustering: measureClusterQuality(clusters, heldOutTruthByFace), pair, attachment });
     }
 
     const strategySweep = [];
@@ -347,8 +352,8 @@ export async function main(args) {
       const { clusterer, clusters } = buildHeldOutClusters(clusterOptions.similarityThreshold);
       for (const strategy of IDENTITY_STRATEGIES) {
         if (abort.signal.aborted) throw new Error('Evaluation canceled. No report was saved.');
-        const { pair, identification } = outcomesForClusters(clusterer, clusters, strategy);
-        strategySweep.push({ strategy, clusters: clusters.length, identification, pair });
+        const { pair, identification, attachment } = outcomesForClusters(clusterer, clusters, strategy);
+        strategySweep.push({ strategy, clusters: clusters.length, identification, attachment, pair });
       }
     }
 
@@ -381,7 +386,7 @@ export async function main(args) {
       heldOutClusterSingle: evaluated.heldOut.clusterSingleReference.pair,
       heldOutClusterMulti: evaluated.heldOut.clusterMultiReference.pair,
       sweep: sweep.map((entry) => ({ threshold: entry.similarityThreshold, clusters: entry.clusters, found: entry.pair.positives.found, positiveTotal: entry.pair.positives.total, falseAdditions: entry.pair.falsePairAdditions })),
-      strategySweep: strategySweep.map((entry) => ({ strategy: entry.strategy, identified: entry.identification.identified, correct: entry.identification.correct, found: entry.pair.positives.found, positiveTotal: entry.pair.positives.total, falseAdditions: entry.pair.falsePairAdditions })),
+      strategySweep: strategySweep.map((entry) => ({ strategy: entry.strategy, identified: entry.identification.identified, correct: entry.identification.correct, found: entry.pair.positives.found, positiveTotal: entry.pair.positives.total, falseAdditions: entry.pair.falsePairAdditions, attachment: entry.attachment })),
     }, null, 2));
     console.log(`Report: ${output}`);
   } finally {

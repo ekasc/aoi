@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { aggregateScore, identifyPartnerClusters, identityByCluster, referenceScore, SPIKE_IDENTIFICATION_OPTIONS } from '@/features/face-index/identify';
+import { aggregateScore, identifyPartnerClusters, identifyPartnerClustersWithEvidence, identityByCluster, referenceScore, representativeMembers, SPIKE_IDENTIFICATION_OPTIONS } from '@/features/face-index/identify';
 import type { FaceCluster, PartnerLabel } from '@/features/face-index/types';
 import { unit } from './helpers';
 
@@ -97,5 +97,93 @@ describe('multi-cluster identity assignment', () => {
     const mapping = identityByCluster({ kind: 'identified', identities });
     expect(mapping.size).toBe(3);
     expect(mapping.get('c2')).toBe('A');
+  });
+});
+
+describe('identity evidence', () => {
+  it('reports aggregate, support, and per-reference scores for both people', () => {
+    const clusters = [cluster('cluster-0', [unit(0, 0.1)]), cluster('cluster-1', [unit(1)])];
+    const { evidence } = identifyPartnerClustersWithEvidence(clusters, { A: [unit(0), unit(0, 0.2)], B: [unit(1)] }, options);
+    const a = evidence.find((item) => item.clusterId === 'cluster-0');
+    expect(a?.attachedTo).toBe('A');
+    expect(a?.reason).toBe('attached');
+    expect(a?.sharedClaim).toBe(false);
+    expect(a?.A.referenceScores).toHaveLength(2);
+    expect(a?.A.aggregate).toBeGreaterThan(0.9);
+    expect(a?.A.support).toBe(1);
+    expect(a?.B.aggregate).toBeLessThan(0.5);
+  });
+
+  it('marks a cluster claimed by both people as contested', () => {
+    const clusters = [cluster('cluster-0', [unit(0)]), cluster('cluster-1', [unit(1)])];
+    const { evidence } = identifyPartnerClustersWithEvidence(clusters, { A: [unit(0)], B: [unit(0, 0.02)] }, options);
+    const contested = evidence.find((item) => item.clusterId === 'cluster-0');
+    expect(contested).toMatchObject({ attachedTo: null, sharedClaim: true, reason: 'claimed-by-both' });
+  });
+
+  it('names below-floor as the reason when no person scores a cluster', () => {
+    const clusters = [cluster('cluster-far', [unit(5)])];
+    const { evidence } = identifyPartnerClustersWithEvidence(clusters, { A: [unit(0)], B: [unit(1)] }, options);
+    expect(evidence[0]).toMatchObject({ attachedTo: null, sharedClaim: false, reason: 'below-floor' });
+  });
+
+  it('names insufficient-support for a cluster only a minority of references pick under majority-vote', () => {
+    const clusters = [cluster('cluster-main', [unit(0, 0.05)]), cluster('cluster-frag', [unit(0, 0.6)]), cluster('cluster-b', [unit(1)])];
+    const references = [unit(0), unit(0, 0.1), unit(0, -0.1), unit(0, 0.6)];
+    const { evidence } = identifyPartnerClustersWithEvidence(clusters, { A: references, B: [unit(1)] }, { ...options, strategy: 'majority-vote' });
+    expect(evidence.find((item) => item.clusterId === 'cluster-frag')?.reason).toBe('insufficient-support');
+  });
+
+  it('names outside-attachment-margin for a supported cluster far below the best', () => {
+    const clusters = [cluster('cluster-best', [unit(0, 0.05)]), cluster('cluster-mid', [unit(0, 0.75)]), cluster('cluster-b', [unit(1)])];
+    const { evidence } = identifyPartnerClustersWithEvidence(clusters, { A: [unit(0), unit(0, 0.1)], B: [unit(1)] }, options);
+    expect(evidence.find((item) => item.clusterId === 'cluster-mid')?.reason).toBe('outside-attachment-margin');
+  });
+
+  it('attaches only the strongest cluster when a person has a single reference', () => {
+    const clusters = [cluster('cluster-best', [unit(0, 0.05)]), cluster('cluster-second', [unit(0, 0.2)]), cluster('cluster-b', [unit(1)])];
+    const { identification, evidence } = identifyPartnerClustersWithEvidence(clusters, { A: [unit(0)], B: [unit(1)] }, options);
+    const mapping = identityByCluster(identification);
+    expect(mapping.get('cluster-best')).toBe('A');
+    expect(mapping.has('cluster-second')).toBe(false);
+    expect(evidence.find((item) => item.clusterId === 'cluster-second')?.reason).toBe('single-reference-attach-limit');
+  });
+});
+
+describe('large-cluster member bias', () => {
+  const correct = cluster('cluster-correct', [unit(0, 0.75), unit(0, -0.75), unit(0, 0.7)]);
+  const largeWrong = cluster('cluster-large-wrong', [unit(0, 0.01), ...Array.from({ length: 10 }, (_, index) => unit(1, index * 0.05))]);
+
+  it('member-support prefers a large wrong cluster because one outlier member matches', () => {
+    expect(referenceScore('member-support', unit(0), largeWrong)).toBeGreaterThan(referenceScore('member-support', unit(0), correct));
+  });
+
+  it('top-k and representative do not let the outlier dominate', () => {
+    expect(referenceScore('top-k', unit(0), largeWrong)).toBeLessThan(referenceScore('top-k', unit(0), correct));
+    expect(referenceScore('representative', unit(0), largeWrong)).toBeLessThan(referenceScore('representative', unit(0), correct));
+  });
+
+  it('the bias changes the attached cluster under member-support but not under top-k', () => {
+    const clusters = [correct, largeWrong, cluster('cluster-b', [unit(5)])];
+    const enrollment = { A: [unit(0), unit(0, 0.2)], B: [unit(5)] };
+    const biased = identifyPartnerClustersWithEvidence(clusters, enrollment, options);
+    expect(biased.evidence.find((item) => item.clusterId === 'cluster-large-wrong')?.A.aggregate)
+      .toBeGreaterThan(biased.evidence.find((item) => item.clusterId === 'cluster-correct')?.A.aggregate ?? 0);
+    const robust = identifyPartnerClustersWithEvidence(clusters, enrollment, { ...options, strategy: 'top-k' });
+    expect(robust.evidence.find((item) => item.clusterId === 'cluster-large-wrong')?.attachedTo).toBeNull();
+    expect(identityByCluster(robust.identification).get('cluster-correct')).toBe('A');
+  });
+});
+
+describe('representative member selection', () => {
+  it('excludes a far-from-centroid outlier and is deterministic', () => {
+    const outlier = unit(0, 0.01);
+    const target = cluster('cluster-0', [outlier, unit(1), unit(1, 0.05), unit(1, -0.05), unit(1, 0.1)]);
+    const first = representativeMembers(target, 2);
+    const second = representativeMembers(target, 2);
+    expect(first).toHaveLength(2);
+    expect(first[0]).toBe(second[0]);
+    expect(first[1]).toBe(second[1]);
+    expect(first).not.toContain(outlier);
   });
 });

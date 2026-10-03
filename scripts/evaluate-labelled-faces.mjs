@@ -85,9 +85,9 @@ export async function main(args) {
   const { DEFAULT_MATCH_THRESHOLD, matchPairByCosine } = await import('../features/album/face-pipeline.ts');
   const { createIndexedFace } = await import('../features/face-index/embedding.ts');
   const { createFaceClusterer, SPIKE_CLUSTER_OPTIONS } = await import('../features/face-index/clusterer.ts');
-  const { identifyPartnerClusters, identityByCluster, IDENTITY_STRATEGIES, SPIKE_IDENTIFICATION_OPTIONS } = await import('../features/face-index/identify.ts');
+  const { identifyPartnerClustersWithEvidence, identityByCluster, IDENTITY_STRATEGIES, SPIKE_IDENTIFICATION_OPTIONS } = await import('../features/face-index/identify.ts');
   const { findCouplePhotos } = await import('../features/face-index/pair-query.ts');
-  const { parseLabelledPath, parseReferencePath, summarizeLabelledOutcomes } = await import('../features/face-index/labelled-dataset.ts');
+  const { datasetMetadata, parseLabelledPath, parseReferencePath, summarizeLabelledOutcomes } = await import('../features/face-index/labelled-dataset.ts');
 
   const allFiles = await walk(directory);
   const references = { A: [], B: [] };
@@ -170,8 +170,15 @@ export async function main(args) {
     const assignmentFor = (clusterer, face) => clusterer.assignmentFor(face.faceId)
       ?? (() => { const classified = clusterer.classify(face); return classified ? { ...classified, assetId: face.assetId } : null; })();
 
-    const runClusterConfig = (clusterer, identification) => {
+    const attachmentMetrics = (evidence) => ({
+      attachedA: evidence.filter((item) => item.attachedTo === 'A').length,
+      attachedB: evidence.filter((item) => item.attachedTo === 'B').length,
+      sharedClaimed: evidence.filter((item) => item.sharedClaim).length,
+    });
+
+    const runClusterConfig = (clusterer, identification, evidence) => {
       const mapping = identityByCluster(identification);
+      const evidenceByCluster = new Map(evidence.map((item) => [item.clusterId, item]));
       const rows = [];
       const diagnostics = [];
       for (const entry of labelled) {
@@ -210,7 +217,14 @@ export async function main(args) {
           embeddingFailures: result.embeddingFailures,
           faces: result.faces.map((face) => {
             const assignment = assignments.get(face.faceId);
-            return { clusterId: assignment?.clusterId ?? null, person: assignment ? mapping.get(assignment.clusterId) ?? null : null, similarity: assignment?.similarity ?? null };
+            const cluster = assignment ? evidenceByCluster.get(assignment.clusterId) : undefined;
+            return {
+              clusterId: assignment?.clusterId ?? null,
+              person: assignment ? mapping.get(assignment.clusterId) ?? null : null,
+              similarity: assignment?.similarity ?? null,
+              clusterAttachedTo: cluster?.attachedTo ?? null,
+              clusterReason: cluster?.reason ?? null,
+            };
           }),
           decision,
           reason: diagnostic.reason,
@@ -244,30 +258,32 @@ export async function main(args) {
 
     const identificationOptions = { ...SPIKE_IDENTIFICATION_OPTIONS, strategy };
     const { clusterer, clusters } = buildClusters(clusterThreshold);
-    const identification = identifyPartnerClusters(clusters, referenceEmbeddings, identificationOptions);
-    const clusterRun = runClusterConfig(clusterer, identification);
+    const identified = identifyPartnerClustersWithEvidence(clusters, referenceEmbeddings, identificationOptions);
+    const identification = identified.identification;
+    const clusterRun = runClusterConfig(clusterer, identification, identified.evidence);
 
     const thresholdSweep = [];
     for (const threshold of SWEEP_THRESHOLDS) {
       const built = buildClusters(threshold);
-      const identified = identifyPartnerClusters(built.clusters, referenceEmbeddings, identificationOptions);
-      const run = runClusterConfig(built.clusterer, identified);
-      thresholdSweep.push({ clusterThreshold: threshold, clusters: built.clusters.length, identificationKind: identified.kind, summary: summarizeLabelledOutcomes(run.rows) });
+      const swept = identifyPartnerClustersWithEvidence(built.clusters, referenceEmbeddings, identificationOptions);
+      const run = runClusterConfig(built.clusterer, swept.identification, swept.evidence);
+      thresholdSweep.push({ clusterThreshold: threshold, clusters: built.clusters.length, identificationKind: swept.identification.kind, attachment: attachmentMetrics(swept.evidence), summary: summarizeLabelledOutcomes(run.rows) });
     }
 
     const strategyComparison = [];
     for (const candidate of IDENTITY_STRATEGIES) {
-      const identified = identifyPartnerClusters(clusters, referenceEmbeddings, { ...identificationOptions, strategy: candidate });
-      const run = runClusterConfig(clusterer, identified);
-      strategyComparison.push({ strategy: candidate, identificationKind: identified.kind, clusters: clusters.length, summary: summarizeLabelledOutcomes(run.rows) });
+      const compared = identifyPartnerClustersWithEvidence(clusters, referenceEmbeddings, { ...identificationOptions, strategy: candidate });
+      const run = runClusterConfig(clusterer, compared.identification, compared.evidence);
+      strategyComparison.push({ strategy: candidate, identificationKind: compared.identification.kind, clusters: clusters.length, attachment: attachmentMetrics(compared.evidence), summary: summarizeLabelledOutcomes(run.rows) });
     }
 
     const report = {
       version: 1,
-      dataset: { directory, corpus: options.corpus, labelledPhotos: labelled.length, references: { A: references.A.length, B: references.B.length } },
+      dataset: datasetMetadata({ root: directory, entries: labelled, references, corpus: options.corpus }),
       model: { modelId: engine.modelId, clusterThreshold, clusterOptions: SPIKE_CLUSTER_OPTIONS, identificationOptions, baselineThreshold: DEFAULT_MATCH_THRESHOLD },
       detection,
       identification: { kind: identification.kind, reason: identification.kind === 'ambiguous' ? identification.reason : null, clusters: clusters.length, attached: identification.identities.length },
+      clusterEvidence: identified.evidence,
       configs: {
         baselineFixedReference: summarizeLabelledOutcomes(baselineRows),
         clusterFirst: summarizeLabelledOutcomes(clusterRun.rows),
@@ -275,7 +291,7 @@ export async function main(args) {
       thresholdSweep,
       strategyComparison,
       diagnostics: clusterRun.diagnostics,
-      privacy: 'Local report. It contains relative file names for debugging and no image bytes, crops, or embeddings. Do not share it.',
+      privacy: 'Local report. It contains relative file names for debugging and no image bytes, crops, embeddings, or absolute dataset path. Do not share it.',
       readyForProduction: false,
       limitations: [
         'Real-photo labels are the enclosing folder only; per-face identity is not labelled, so cluster purity and pairwise recall are not measurable here.',
@@ -292,8 +308,8 @@ export async function main(args) {
       identification: report.identification,
       baseline: report.configs.baselineFixedReference,
       clusterFirst: report.configs.clusterFirst,
-      thresholdSweep: thresholdSweep.map((entry) => ({ threshold: entry.clusterThreshold, recall: entry.summary.positivePairRecall, falsePairs: entry.summary.falsePairAdditions })),
-      strategyComparison: strategyComparison.map((entry) => ({ strategy: entry.strategy, recall: entry.summary.positivePairRecall, falsePairs: entry.summary.falsePairAdditions })),
+      thresholdSweep: thresholdSweep.map((entry) => ({ threshold: entry.clusterThreshold, recall: entry.summary.positivePairRecall, falsePairs: entry.summary.falsePairAdditions, attachment: entry.attachment })),
+      strategyComparison: strategyComparison.map((entry) => ({ strategy: entry.strategy, recall: entry.summary.positivePairRecall, falsePairs: entry.summary.falsePairAdditions, ambiguity: entry.summary.classification.ambiguousIdentity, attachment: entry.attachment })),
     }, null, 2));
     console.log(`Report: ${output}`);
   } finally {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { failureLabels, parseLabelledPath, parseReferencePath, summarizeLabelledOutcomes, type LabelledOutcomeRow } from '@/features/face-index/labelled-dataset';
+import { datasetMetadata, failureLabels, parseLabelledPath, parseReferencePath, summarizeLabelledOutcomes, type LabelledOutcomeRow } from '@/features/face-index/labelled-dataset';
 
 const row = (overrides: Partial<LabelledOutcomeRow>): LabelledOutcomeRow => ({
   category: 'positive',
@@ -92,5 +92,26 @@ describe('labelled summary', () => {
     expect(summary.soloAFalsePairRate).toBeNull();
     expect(summary.negativeFalsePairRate).toBeNull();
     expect(summary.groupFalsePairRate).toBeNull();
+  });
+});
+
+describe('report metadata privacy', () => {
+  it('never persists the absolute dataset root', () => {
+    const entries = [parseLabelledPath('positive/a.jpg'), parseLabelledPath('negative/b.jpg')].filter((entry) => entry !== null);
+    const metadata = datasetMetadata({
+      root: '/Users/someone/private-photos/our-couple-dataset',
+      entries,
+      references: { A: ['references/a.jpg'], B: ['references/b-1.jpg', 'references/b-2.jpg'] },
+      corpus: 'all',
+    });
+    const serialized = JSON.stringify(metadata);
+    expect(serialized).not.toContain('/Users/someone/private-photos/our-couple-dataset');
+    expect(serialized).not.toContain('/Users/');
+    expect(metadata).toEqual({
+      corpus: 'all',
+      labelledPhotos: 2,
+      references: { A: 1, B: 2 },
+      categories: { positive: 1, 'solo-a': 0, 'solo-b': 0, negative: 1, groups: 0 },
+    });
   });
 });

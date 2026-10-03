@@ -118,21 +118,35 @@ clustering API never mentions "you", "partner", or any person. It produces
 ## Phase 4 — seeding the two people
 
 `identify.ts` takes several enrollment embeddings per person and attaches every
-cluster with consistent support. A person is a *set* of clusters, not one
+cluster with consistent evidence. A person is a *set* of clusters, not one
 cluster: forcing one person to one cluster drops every face in a fragment.
 
-Each reference votes for the cluster it matches best, and a cluster also earns
-support from the share of references scoring above `memberSupportFloor`. A
-cluster attaches when its aggregate score clears `identificationFloor`, its
-support clears `supportFloor`, and it is within `attachmentMargin` of that
-person's best cluster. A cluster claimed by both people attaches to neither.
-Identification is one-shot: it maps clusters, it never pulls faces into them, so
-a weak match cannot poison a cluster.
+Scoring has two forms. Centroid-based (`max`, `mean`, `median`, `trimmed-mean`,
+`majority-vote`) scores one similarity per reference against the cluster mean.
+Member-based (`member-support`, `top-k`, `representative`) scores against cluster
+members. `member-support` takes the best member, `top-k` averages the best three,
+and `representative` takes the best of up to five members closest to the
+centroid. Member-based scoring survives fragmentation, but `member-support`
+gives a large cluster more chances to hold one unusually close member.
 
-Six aggregate strategies are available and evaluated separately from clustering:
-`max` (the old behaviour), `mean`, `median`, `trimmed-mean`, `majority-vote`,
-and `member-support` (each reference scored against the best cluster member).
-`max` is kept only as the comparison baseline.
+Support has two forms. Vote-based (`majority-vote`) counts, per reference, which
+cluster that reference matches best, and support is the share that picked this
+one. Threshold-based (every other strategy) is the share of references whose
+score for this cluster clears `memberSupportFloor`.
+
+A cluster attaches when its aggregate score clears `identificationFloor`, its
+support clears `supportFloor`, and it is within `attachmentMargin` of that
+person's best cluster. A cluster claimed by both people attaches to neither. A
+person with a single reference has no cross-reference evidence, so only the
+strongest cluster attaches and the rest report
+`single-reference-attach-limit`.
+
+Identification is one-shot: it maps clusters, it never pulls faces into them, so
+a weak match cannot poison a cluster. `identifyPartnerClustersWithEvidence`
+returns the same identification plus per-cluster evidence: A and B aggregate,
+support, per-reference scores, `attachedTo`, `sharedClaim`, and a reason. The
+evaluator writes that evidence into the report, so a face can be traced from its
+cluster to why the cluster belongs to A or B. No embeddings are emitted.
 
 ## Phase 5 — the couple-photo query
 
@@ -182,7 +196,16 @@ cluster fragmentation, ambiguous identity, correct pair, and false pair. It
 reports positive recall and a false-pair rate for each of solo-A, solo-B,
 negative, and groups, with the sample size beside every rate. It compares the
 baseline, cluster-first at the current conservative settings, a cluster-threshold
-sweep, and all six identity strategies.
+sweep, and all eight identity strategies. Each strategy reports positive recall,
+false-pair additions, identity ambiguity, clusters attached to A, clusters
+attached to B, and shared or contested clusters.
+
+The report keeps the absolute dataset root out of every field. It stores relative
+file names, category, aggregate counts, and model or configuration details only.
+It also stores `clusterEvidence` and per-face diagnostics, so each face traces
+from its cluster to why the cluster belongs to A or B to the pair decision. The
+report stays local and contains no image bytes, crops, embeddings, or absolute
+path.
 
 `--corpus all` indexes every photo, the shape production would take.
 `--corpus references` clusters only the reference faces so query photos are held
@@ -233,24 +256,57 @@ selected):
 | 0.65 | 29 | 45 / 64 | 0 |
 | 0.75 | 48 | 18 / 64 | 0 |
 
-Identity-strategy comparison at cluster threshold `0.55` on the held-out split:
+Identity-strategy comparison at cluster threshold `0.55` on the held-out split
+(attached counts are summed over the eight pair cases):
 
-| Strategy | Cases identified correctly | Positive found | False additions |
-| --- | ---: | ---: | ---: |
-| `max` | 8 / 8 | 58 / 64 | 0 |
-| `mean` | 8 / 8 | 58 / 64 | 0 |
-| `median` | 8 / 8 | 58 / 64 | 0 |
-| `trimmed-mean` | 8 / 8 | 58 / 64 | 0 |
-| `majority-vote` | 8 / 8 | 58 / 64 | 0 |
-| `member-support` | 8 / 8 | 58 / 64 | 0 |
+| Strategy | Cases identified correctly | Positive found | False additions | Attached A | Attached B | Shared |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `max` | 8 / 8 | 58 / 64 | 0 | 8 | 10 | 0 |
+| `mean` | 8 / 8 | 58 / 64 | 0 | 8 | 10 | 0 |
+| `median` | 8 / 8 | 58 / 64 | 0 | 8 | 8 | 0 |
+| `trimmed-mean` | 8 / 8 | 58 / 64 | 0 | 8 | 8 | 0 |
+| `majority-vote` | 8 / 8 | 58 / 64 | 0 | 8 | 8 | 0 |
+| `member-support` | 8 / 8 | 58 / 64 | 0 | 8 | 9 | 0 |
+| `top-k` | 8 / 8 | 58 / 64 | 0 | 8 | 10 | 0 |
+| `representative` | 8 / 8 | 58 / 64 | 0 | 8 | 9 | 0 |
 
-All six tie on this dataset. Once several clusters attach under a support floor,
-the aggregate function stops mattering for this fragmentation pattern. The
-strategies differ in the unit tests, where `majority-vote` drops a fragment only
+All eight tie on pair recall and false additions on this dataset. The attachment
+counts differ by one or two clusters, which is the fragmentation recovered or
+missed. The aggregate function stops mattering for this fragmentation pattern
+once several clusters attach under a support floor. The strategies differ in the
+unit tests, where `majority-vote` drops a fragment only
 one reference matches and `member-support` keeps it. Choosing between them needs
 real photos with harder fragments.
 
 Full report: `.expo/face-lab/face-index-report-<timestamp>.json` (gitignored).
+
+## Large-cluster member bias
+
+The concern was that `member-support` scores a reference against the single best
+member, so a larger cluster gets more chances to hold one unusually close member.
+That is reproducible. The unit test builds a correct cluster of three members
+consistently similar to the reference and a wrong cluster of eleven members
+where only one member is close and ten are unrelated. Under `member-support` the
+wrong cluster scores higher and, with two references, both attach to A. Under
+`top-k` and `representative` the outlier is diluted or excluded, the wrong
+cluster falls below the floor, and only the correct cluster attaches.
+
+This is a unit-test result on constructed vectors, not a measured real-photo
+failure. The synthetic benchmark does not exercise it: its clusters are pure, so
+no wrong cluster contains a high-scoring outlier. `top-k` and `representative`
+are therefore the safer experimental candidates for real photos. The default
+stays `member-support` until real data can separate them, and that choice is
+flagged as provisional.
+
+## One-reference enrollment
+
+With one reference, threshold support is binary, so it cannot gate anything, and
+`attachmentMargin` alone would attach lookalikes. The spike now attaches only the
+strongest cluster per person when a person has fewer than two references, and
+reports `single-reference-attach-limit` for the rest. The unit test covers one
+reference with a true cluster and a nearby plausible fragment. Multi-reference
+enrollment keeps multi-cluster attachment because cross-reference support is what
+justifies a fragment.
 
 ## What the evidence says
 
@@ -267,9 +323,10 @@ Failure categories seen, in order of size:
    remaining 6/64 held-out misses are fragments the support floor rejected.
 2. **No detection or embedding failures** on this set, so it says nothing about
    real-world small, blurred, or profile faces.
-3. **The strategy choice is not empirically differentiated.** All six tie here.
+3. **The strategy choice is not empirically differentiated.** All eight tie here.
    The multi-cluster attachment is what fixed the earlier multi-reference
-   regression, not the aggregate function.
+   regression, not the aggregate function. The member-support size bias is a
+   constructed unit-test failure, not one this dataset shows.
 
 ## Decisions that changed the work
 
@@ -312,12 +369,18 @@ meaningful comparison, and SFace provided it.
 - Zero false additions on 96 negatives is not a safety proof. The negative
   sample is small and synthetic; a real run needs a large, deliberately hard
   negative set before anyone calls it safe.
+- The default strategy is `member-support`, which a constructed unit test shows
+  can prefer a large wrong cluster that holds one close outlier. `top-k` and
+  `representative` do not, and are the safer candidates for real photos. No
+  labelled data yet separates them.
+- With one reference per person, only the strongest cluster attaches. Whether
+  that is too strict for real fragments is untested.
 - Mac Vision and CPU inference are not an iPhone parity check.
 - No production threshold was selected, and no production code reads the spike.
 
 ## Verification
 
-- `npx vitest run tests/unit/face-index` — 44 tests across 7 files.
+- `npx vitest run tests/unit/face-index` — 55 tests across 7 files.
 - `pnpm run typecheck` passes; ESLint is clean on `features/face-index/` and
   `tests/unit/face-index/`.
 - `pnpm run face:index:evaluate` ran the real native pipeline and the
@@ -326,5 +389,7 @@ meaningful comparison, and SFace provided it.
   public synthetic images (both `--corpus all` and `--corpus references`), then
   the temporary folder and its reports were removed. Logs at
   `.expo/crit/labelled-smoke.log` and `.expo/crit/labelled-smoke-references.log`.
+  The smoke report was checked for `clusterEvidence`, for per-face cluster
+  reasons, and for the absence of any `/Users/` absolute path.
 - No app UX, production threshold, backend API, upload, or enrollment was
   changed. The spike is not imported by any app screen.

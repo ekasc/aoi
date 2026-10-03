@@ -54,8 +54,35 @@ export function parseReferencePath(relativePath: string): ReferenceFile | null {
   return null;
 }
 
-export type LabelledDecision = 'pair' | 'unsure' | 'no-faces' | 'failed';
-export type LabelledFailure = 'detector' | 'alignment' | 'embedding' | 'ambiguous-identity' | 'unattached-cluster' | 'below-cluster-threshold' | 'identity-miss';
+export type LabelledDatasetMetadata = {
+  corpus: 'all' | 'references';
+  labelledPhotos: number;
+  references: { A: number; B: number };
+  categories: Record<LabelledCategory, number>;
+};
+
+/**
+ * Report metadata for a labelled dataset. The absolute dataset root is an input
+ * only so it can be deliberately dropped: reports must not persist a private
+ * folder path. Relative file names stay in the per-image diagnostics.
+ */
+export function datasetMetadata(input: {
+  root: string;
+  entries: readonly LabelledFile[];
+  references: { A: readonly string[]; B: readonly string[] };
+  corpus: 'all' | 'references';
+}): LabelledDatasetMetadata {
+  const categories = Object.fromEntries(LABELLED_FOLDER_NAMES.map((category) => [category, 0])) as Record<LabelledCategory, number>;
+  for (const entry of input.entries) categories[entry.category] += 1;
+  return {
+    corpus: input.corpus,
+    labelledPhotos: input.entries.length,
+    references: { A: input.references.A.length, B: input.references.B.length },
+    categories,
+  };
+}
+
+export type LabelledDecision = 'pair' | 'unsure' | 'no-faces' | 'failed';export type LabelledFailure = 'detector' | 'alignment' | 'embedding' | 'ambiguous-identity' | 'unattached-cluster' | 'below-cluster-threshold' | 'identity-miss';
 
 /**
  * Everything the aggregate needs from one image. Diagnostics, not a boolean.
