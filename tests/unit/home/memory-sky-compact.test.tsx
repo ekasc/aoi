@@ -877,15 +877,17 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
   });
 
 
-  it('keeps the Us sky identity above shared history without a discovery gesture', () => {
-    const sky = TOGETHER_SOURCE.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
+  it('keeps Us immersive, photo-driven, and tappable without changing compact skies', () => {
+    const viewport = TOGETHER_SOURCE.match(/<PhotoSkyViewport[\s\S]{0,320}?\/>/)?.[0] ?? '';
+    const source = readFileSync('components/home/photo-sky-viewport.tsx', 'utf8');
+    const sky = source.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
+    expect(viewport).toContain('moments={skyItems}');
+    expect(viewport).toContain('onOpenPhoto={pullPhoto}');
     expect(sky).toMatch(/\bimmersive\b/);
-    expect(sky).toContain('moments={history.moments}');
-    expect(sky).toContain('daysTogether={history.daysTogether}');
-    expect(sky).toContain('presentationHeight={360}');
+    expect(sky).toContain('starLimit={null}');
+    expect(sky).toContain('photoCamera={camera}');
+    expect(sky).not.toContain('daysTogether');
     expect(sky).not.toMatch(/\bcompact\b|\bheader\b/);
-    expect(TOGETHER_SOURCE).not.toContain('onPress={pullPhoto}');
-    expect(TOGETHER_SOURCE).not.toContain('Bring out a photo of the two of you');
   });
 });
 

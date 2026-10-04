@@ -6,7 +6,7 @@ const source = (path: string) => readFileSync(path, 'utf8');
 describe('relationship home product boundary', () => {
   it('does not mount the discovery provider, even with saved discovery preferences', () => {
     expect(source('app/(app)/_layout.tsx')).not.toMatch(/AutomaticAlbumProvider|automatic-album/);
-    expect(source('app/(app)/(tabs)/together.tsx')).not.toMatch(/useSkyPhotos|useAutomaticAlbum|features\/album|face-recognition/);
+    expect(source('app/(app)/(tabs)/together.tsx')).not.toMatch(/useAutomaticAlbum|face-recognition/);
   });
   it('neutralizes old recognition deep links without importing a scanner', () => {
     const route = source('app/(app)/album/check-photo.tsx');
@@ -18,7 +18,12 @@ describe('relationship home product boundary', () => {
     expect(source('components/album/automatic-album-sheet.tsx')).toContain('Inactive in the product.');
     expect(source('app/(app)/(tabs)/_layout.tsx')).not.toContain('/dev-album');
   });
-  it('does not branch the relationship home on a subscription', () => {
-    expect(source('app/(app)/(tabs)/together.tsx')).not.toMatch(/useSubscription|isPlus|paywall/);
+  it('gates Sky History alone, never the live relationship', () => {
+    const screen = source('app/(app)/(tabs)/together.tsx');
+    expect(screen).toContain('useSubscription');
+    expect(screen).toMatch(/<SkyHistoryControl[\s\S]*isPlus=\{plusActive\}/);
+    expect(screen).not.toMatch(/<MemorySky[^>]*plus/i);
+    expect(screen).toMatch(/paywall', params: \{ feature: 'sky-history' \} \}/);
+    expect(source('app/(app)/paywall.tsx')).toContain("feature === 'sky-history'");
   });
 });

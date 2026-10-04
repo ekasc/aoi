@@ -16,10 +16,12 @@ describe('relationship history selectors', () => {
     expect(relationshipSky([], null, now).daysTogether).toBeNull();
     expect(relationshipSky([], '2027-01-01', now).daysTogether).toBeNull();
   });
-  it('excludes goals and future content from current activity and resurfacing', () => {
+  it('excludes goals and future content from the story, recent activity and resurfacing', () => {
     const history = usHistory([memory('goal', '2025-09-05', 'goal'), memory('future', '2027-09-05')], '2024-01-01', now);
     expect(history.recent).toBeNull(); expect(history.resurface).toBeNull(); expect(history.moments).toEqual([]);
-    expect(history.story.map((moment) => moment.id)).toEqual(['future']);
+    // The story reads the same vantage as the sky: a memory dated ahead of
+    // it is not part of this relationship yet.
+    expect(history.story.map((moment) => moment.id)).toEqual([]);
   });
   it('omits recent activity after seven days and only resurfaces a matching earlier calendar date', () => {
     const history = usHistory([memory('old', '2026-08-01'), memory('different-day', '2025-09-04')], null, now);

@@ -4,11 +4,12 @@ import { PLUS_FEATURES } from '@/features/subscription/limits';
 import { formatBytes, formatLetterCount } from '@/features/subscription/format';
 
 describe('subscription benefits (v1 contract)', () => {
-  it('advertises exactly the three real benefits', () => {
+  it('adds Sky History without dropping the existing benefits', () => {
     expect([...PLUS_FEATURES]).toEqual([
       'More storage for your shared archive',
       'More letters for the future',
       'PDF chapter keepsakes',
+      'Sky History — revisit your sky at any point in time',
     ]);
   });
 

@@ -8,6 +8,8 @@ import { join } from 'node:path';
 // but tab screens compute `style={({ pressed }) => ...}`. Resolve press-state
 // styles as unpressed so the real screens render in this file.
 vi.mock('@/components/home/us-glass-backdrop', () => ({ UsGlassBackdrop: () => null }));
+// This suite checks screen ownership; camera and gesture contracts have their own tests.
+vi.mock('@/components/home/photo-sky-viewport', () => ({ PhotoSkyViewport: () => null }));
 
 vi.mock('react-native', () => {
   function flattenStyle(style: unknown): unknown {
@@ -810,14 +812,11 @@ describe('P2A Together ownership', () => {
     expect(screen.queryByText('Memory wall')).toBeNull();
   });
 
-  it('sends a squeeze from the pill in one tap', async () => {
+  it('keeps Squeeze off the photo sky', async () => {
     const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
     render(<TogetherScreen />);
-    expect(screen.getAllByText('Squeeze').length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(screen.getByText('Squeeze'));
-    // Production sends via Promise.resolve().then — flush the microtask.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sendSqueezeSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Squeeze')).toBeNull();
+    expect(sendSqueezeSpy).not.toHaveBeenCalled();
   });
 });
 

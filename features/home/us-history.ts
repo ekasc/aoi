@@ -14,6 +14,7 @@ export function relationshipSky(moments: Moment[], startDate: string | null, asO
   };
 }
 
+/** Shared-memory history at a date, separate from Us's device-local photo sky. */
 export function usHistory(moments: Moment[], startDate: string | null, now: Date) {
   const sky = relationshipSky(moments, startDate, now);
   const recent = [...sky.moments].reverse().find((moment) => now.getTime() - new Date(moment.occurredAt).getTime() <= 7 * 86400000) ?? null;
@@ -28,7 +29,13 @@ export function usHistory(moments: Moment[], startDate: string | null, now: Date
       if (members.length >= 2) chapters.push({ id, title: chapter.title, memoryIds: members.map((moment) => moment.id) });
     }
   }
-  return { ...sky, story: sortFeedOldestFirst(moments), recent, resurface: findResurfaces(sky.moments, now)[0] ?? null, chapters };
+  return {
+    ...sky,
+    story: sortFeedOldestFirst(sky.moments),
+    recent,
+    resurface: findResurfaces(sky.moments, now)[0] ?? null,
+    chapters,
+  };
 }
 
 export function nextTogetherPlan(events: CalendarEvent[], now: Date): CalendarEvent | null {

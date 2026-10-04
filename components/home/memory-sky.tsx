@@ -53,6 +53,11 @@ import {
   DARK_SKY_TOP,
   LIGHT_SKY_MID,
   LIGHT_SKY_TOP,
+  PHOTO_SKY_DEPTH,
+  PHOTO_SKY_HAZE_COOL,
+  PHOTO_SKY_HAZE_WARM,
+  PHOTO_SKY_STAR_COOL,
+  PHOTO_SKY_STAR_WARM,
   mixHex,
   starToneColor,
 } from '@/components/home/sky-palette';
@@ -64,6 +69,8 @@ import {
   projectWorldToScreen,
   type DaySkySpatialStar,
 } from '@/features/home/day-sky-spatial';
+import { buildPhotoSkyField } from '@/features/home/photo-sky';
+import { photoSkyPlane, type PhotoSkyCamera, type SkyViewport } from '@/features/home/photo-sky-camera';
 import { formatDaySkyCaption } from '@/features/home/day-sky';
 import type { SkyItem } from '@/features/home/day-sky';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -916,6 +923,8 @@ type PlottedStar = {
   color: string;
   bright: boolean;
   rotationDeg: number;
+  haloRadius?: number;
+  haloOpacity?: number;
 };
 
 function fadeAboveQuestion(opacity: number, screenY: number): number {
@@ -1004,7 +1013,19 @@ const TWINKLE_RISE_MS = 200;
 const TWINKLE_FALL_MS = 700;
 const TWINKLE_SETTLE_MS = 450;
 
-function TwinkleOverlay({ x, y, color }: { x: number; y: number; color: string }) {
+function PhotoDepthLayer({ camera, depth, viewport, children }: {
+  camera: SharedValue<PhotoSkyCamera>; depth: number; viewport: SkyViewport; children: ReactNode;
+}) {
+  const transform = useDerivedValue(() => {
+    const plane = photoSkyPlane(camera.value, depth, viewport);
+    return [{ translateX: plane.x }, { translateY: plane.y }, { scale: plane.scale }];
+  });
+  return <Group transform={transform}>{children}</Group>;
+}
+
+function TwinkleOverlay({ x, y, color, photoCamera, depth = 0, viewport }: {
+  x: number; y: number; color: string; photoCamera?: SharedValue<PhotoSkyCamera>; depth?: number; viewport?: SkyViewport;
+}) {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.7);
 
@@ -1028,10 +1049,16 @@ function TwinkleOverlay({ x, y, color }: { x: number; y: number; color: string }
     transform: [{ scale: scale.value }],
   }));
 
+  const positionStyle = useAnimatedStyle(() => {
+    if (!photoCamera || !viewport) return {};
+    const plane = photoSkyPlane(photoCamera.value, depth, viewport);
+    return { left: x * plane.scale + plane.x, top: y * plane.scale + plane.y, transform: [{ scale: plane.scale }] };
+  });
+
   return (
-    <View pointerEvents="none" accessible={false} style={[styles.twinkleBase, { left: x, top: y }]}>
+    <Animated.View pointerEvents="none" accessible={false} style={[styles.twinkleBase, { left: x, top: y }, positionStyle]}>
       <Animated.View style={[styles.twinkleDot, { backgroundColor: color }, animatedStyle]} />
-    </View>
+    </Animated.View>
   );
 }
 
@@ -1066,6 +1093,9 @@ function SettlingStars({ progress, distance, source, children }: {
 
 export function MemorySky({
   moments,
+  starLimit = MEMORY_SKY_MAX_STARS,
+  photoStars = false,
+  photoCamera,
   daysTogether,
   startDate,
   focused = true,
@@ -1084,6 +1114,11 @@ export function MemorySky({
   onPress,
 }: {
   moments: SkyItem[];
+  /** Us represents every album photo; other screens retain their existing cap. */
+  starLimit?: number | null;
+  /** Us photo stars are readable against the full-height dusk. */
+  photoStars?: boolean;
+  photoCamera?: SharedValue<PhotoSkyCamera>;
   daysTogether?: number | null;
   startDate?: string | null;
   focused?: boolean;
@@ -1203,7 +1238,7 @@ export function MemorySky({
   // FrostedBackdrop), so the internal sky is simply top0 left0 right0 with
   // no dependence on toolbar height or insets. The screen-filling root
   // parent already includes the inset, giving full bleed with no spacer.
-  const stripTop = compactLayout
+  const stripTop = compactLayout || photoStars
     ? 0
     : -(
         insets.top +
@@ -1223,7 +1258,7 @@ export function MemorySky({
     [daysTogether, moments, startDate, now],
   );
   const isDayMode = field !== null;
-  const visible = useMemo(() => moments.slice(0, MEMORY_SKY_MAX_STARS), [moments]);
+  const visible = useMemo(() => starLimit === null ? moments : moments.slice(0, starLimit), [moments, starLimit]);
   const dayCount = typeof daysTogether === 'number' ? daysTogether : 0;
   const count = isDayMode ? dayCount : moments.length;
 
@@ -1317,6 +1352,20 @@ export function MemorySky({
       }
       return out;
     }
+    if (photoStars) {
+      for (const star of buildPhotoSkyField(visible)) {
+        const size = star.depth === 'far' ? 2 : star.depth === 'mid' ? 3 : 4;
+        const entry: PlottedStar = {
+          key: star.id, cx: star.x * canvasW, cy: star.y * canvasH,
+          size, r: star.radius, sparkleR: star.radius * 2.2,
+          opacity: star.opacity, color: mixHex(PHOTO_SKY_STAR_COOL, PHOTO_SKY_STAR_WARM, star.warmth),
+          bright: star.sparkle, rotationDeg: star.rotation,
+          haloRadius: star.haloRadius, haloOpacity: star.haloOpacity,
+        };
+        out[star.depth].push(entry);
+      }
+      return out;
+    }
     for (const moment of visible) {
       const layout = starForMoment(moment.id);
       const p = { cx: (layout.leftPct / 100) * canvasW, cy: (layout.topPct / 100) * canvasH };
@@ -1391,7 +1440,7 @@ export function MemorySky({
       }
     }
     return out;
-  }, [ambient, field, buckets, zoom, visible, compactLayout, compactVisibleBottomSy]);
+  }, [ambient, field, buckets, zoom, visible, compactLayout, compactVisibleBottomSy, photoStars]);
 
   const starByKey = useMemo(() => {
     const map = new Map<string, PlottedStar>();
@@ -1503,7 +1552,7 @@ export function MemorySky({
   // window-wide canvas anchored at the strip's left edge stops 16pt short
   // of the right edge and leaves a dark seam. Compact strips are exactly
   // window-wide, so the width is unchanged there.
-  const skyCanvasW = compactLayout ? windowWidth : windowWidth + Spacing[16] * 2;
+  const skyCanvasW = compactLayout || photoStars ? windowWidth : windowWidth + Spacing[16] * 2;
   const scaleX = skyCanvasW / MEMORY_SKY_CANVAS_W;
   // Compact keeps the approved star shapes (uniform scale, lower half clips
   // via overflow hidden) instead of squashing the field vertically.
@@ -1517,7 +1566,9 @@ export function MemorySky({
   // visible strip bottom (skyHeight); Us keeps the opaque background melt.
   const skyGradientColors = compactLayout
     ? compactSkyGradientColors(skyTop, skyMid, background, peak)
-    : [moodTop, moodMid, background];
+    : photoStars
+      ? [mixHex(moodTop, PHOTO_SKY_DEPTH, 0.32), mixHex(moodMid, moodTop, 0.24), background]
+      : [moodTop, moodMid, background];
   const skyGradientPositions = compactLayout
     ? compactSkyGradientPositions(peak)
     : [0, 0.55, 1];
@@ -1592,6 +1643,14 @@ export function MemorySky({
 
   const renderBucket = (stars: PlottedStar[]) => (
     <>
+      {photoStars ? stars.filter((star) => photoCamera || (star.haloRadius ?? 0) > 0).map((star) => {
+        const radius = photoCamera ? Math.max(star.haloRadius ?? 0, star.r * 4) : star.haloRadius ?? 0;
+        const cx = star.cx * scaleX;
+        const cy = star.cy * scaleY;
+        return <Rect key={`halo-${star.key}`} x={cx - radius} y={cy - radius} width={radius * 2} height={radius * 2} opacity={star.haloOpacity}>
+          <RadialGradient c={vec(cx, cy)} r={radius} colors={[star.color, `${star.color}00`]} positions={[0, 1]} />
+        </Rect>;
+      }) : null}
       {stars
         .filter((star) => !star.bright)
         .map((star) => (
@@ -1602,7 +1661,11 @@ export function MemorySky({
             r={star.r}
             color={star.color}
             opacity={star.opacity}
-          />
+          >
+            {photoStars && photoCamera ? <RadialGradient
+              c={vec(star.cx * scaleX - star.r * 0.2, star.cy * scaleY - star.r * 0.2)} r={star.r * 1.4}
+              colors={['#FFF8FA', star.color, `${star.color}66`]} positions={[0, 0.4, 1]} /> : null}
+          </Circle>
         ))}
       {stars
         .filter((star) => star.bright)
@@ -1653,7 +1716,13 @@ export function MemorySky({
     opacity: Math.max(0, Math.min(1, (settle.value - 0.45) / 0.55)),
   }));
 
-  const starBuckets = (
+  const starBuckets = photoStars && photoCamera ? (
+    <>
+      <PhotoDepthLayer camera={photoCamera} depth={1.1} viewport={{ width: skyCanvasW, height: skyHeight }}>{renderBucket(plotted.far)}</PhotoDepthLayer>
+      <PhotoDepthLayer camera={photoCamera} depth={0.45} viewport={{ width: skyCanvasW, height: skyHeight }}>{renderBucket(plotted.mid)}</PhotoDepthLayer>
+      <PhotoDepthLayer camera={photoCamera} depth={0} viewport={{ width: skyCanvasW, height: skyHeight }}>{renderBucket(plotted.near)}</PhotoDepthLayer>
+    </>
+  ) : (
     <>
       <Group transform={[{ translateY: farTravel }]}>
         {renderBucket(plotted.far)}
@@ -1745,7 +1814,7 @@ export function MemorySky({
         accessible={false}
         style={[
           styles.sky,
-          compactLayout
+          compactLayout || photoStars
             ? {
                 top: 0,
                 left: 0,
@@ -1817,6 +1886,16 @@ export function MemorySky({
                         </Rect>
                       </>
                     )}
+                    {photoStars ? <>
+                      <Rect x={0} y={0} width={skyCanvasW} height={skyHeight} opacity={isDark ? 0.16 : 0.1}>
+                        <RadialGradient c={vec(skyCanvasW * 0.32, skyHeight * 0.28)} r={skyCanvasW * 0.65}
+                          colors={[PHOTO_SKY_HAZE_COOL, `${PHOTO_SKY_HAZE_COOL}00`]} positions={[0, 1]} />
+                      </Rect>
+                      <Rect x={0} y={0} width={skyCanvasW} height={skyHeight} opacity={isDark ? 0.12 : 0.08}>
+                        <RadialGradient c={vec(skyCanvasW * 0.74, skyHeight * 0.52)} r={skyCanvasW * 0.5}
+                          colors={[PHOTO_SKY_HAZE_WARM, `${PHOTO_SKY_HAZE_WARM}00`]} positions={[0, 1]} />
+                      </Rect>
+                    </> : null}
                     {handoverProgress ? (
                       <SettlingStars progress={handoverProgress} distance={windowHeight - skyHeight} source={renderBucket(sourceStars)}>
                         {starBuckets}
@@ -1861,6 +1940,9 @@ export function MemorySky({
                 x={twinkleStar.cx * scaleX}
                 y={twinkleStar.cy * scaleY}
                 color={twinkleStar.color}
+                photoCamera={photoStars ? photoCamera : undefined}
+                depth={twinkleStar.size === 2 ? 1.1 : twinkleStar.size === 3 ? 0.45 : 0}
+                viewport={{ width: skyCanvasW, height: skyHeight }}
               />
             </View>
           ) : null}
@@ -1892,7 +1974,7 @@ export function MemorySky({
             </View>
           )}
         </Animated.View>
-        {!isDayMode && visible.length === 0 && !ambient ? (
+        {!photoStars && !isDayMode && visible.length === 0 && !ambient ? (
           <Animated.View
             testID="memory-sky-star-empty"
             pointerEvents="none"

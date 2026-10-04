@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { NativeSheet } from '@/components/ui/native-sheet';
 import { Surface } from '@/components/ui/surface';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
 import { PLUS_FEATURES } from '@/features/subscription/limits';
+import { SKY_HISTORY_PLUS } from '@/features/home/sky-history';
 import { useSubscription } from '@/features/subscription/subscription-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -19,10 +20,14 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * is reachable, themeable and announced properly.
  */
 const PLUS_EXPLANATION =
-  'Plus gives your shared archive more storage, more letters for the future, and PDF chapter keepsakes. Your sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
+  'Plus gives your shared archive more storage, more letters for the future, PDF chapter keepsakes, and Sky History — the ability to rewind your sky to any month you have been together. Your live sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
 
 export default function PaywallScreen() {
   const router = useRouter();
+  // Which lock sent the reader here. One line about the feature they were
+  // trying to use, above the unchanged plan shelf — not a second paywall.
+  const { feature } = useLocalSearchParams<{ feature?: string }>();
+  const soughtFeature = feature === 'sky-history' ? SKY_HISTORY_PLUS : null;
   const insets = useSafeAreaInsets();
   const { status, isPlus, isAvailable, plans, purchase, restore, refresh, activationPending } = useSubscription();
   const [selected, setSelected] = useState<string | null>(null);
@@ -158,6 +163,15 @@ export default function PaywallScreen() {
           </View>
         ))}
       </Surface>
+
+      {soughtFeature ? (
+        <Surface style={styles.sought}>
+          <ThemedText type="subheading">{soughtFeature.title}</ThemedText>
+          <ThemedText type="caption" style={{ color: textSecondary }}>
+            {soughtFeature.body}
+          </ThemedText>
+        </Surface>
+      ) : null}
 
       {plans.length > 0 ? (
         <View accessibilityRole="radiogroup" style={styles.plans}>
@@ -315,6 +329,9 @@ const styles = StyleSheet.create({
   },
   featureText: {
     flex: 1,
+  },
+  sought: {
+    gap: Spacing[4],
   },
   plans: {
     flexDirection: 'row',

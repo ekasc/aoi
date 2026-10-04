@@ -1,7 +1,8 @@
 import { Redirect, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 
-import TogetherScreen from "@/app/(app)/(tabs)/together";
+import { UsPhotoSky } from "@/app/(app)/(tabs)/together";
+import { usePreviewSkyPhotos } from "@/features/dev/sky-photo-preview";
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { ComposerProvider } from "@/features/composer/composer-context";
 import {
@@ -37,6 +38,11 @@ export default function DevTogether() {
 		return <Redirect href="/" />;
 	}
 	return <DevTogetherPreview />;
+}
+
+function PreviewSky({ variant }: { variant: PreviewVariant }) {
+	const album = usePreviewSkyPhotos(variant);
+	return <UsPhotoSky album={album} />;
 }
 
 function DevTogetherPreview() {
@@ -82,7 +88,7 @@ function DevTogetherPreview() {
 												<ResponsesProvider>
 													<ComposerProvider>
 														<DevErrorBoundary label="TogetherScreen">
-															<TogetherScreen />
+															<PreviewSky key={selected} variant={selected} />
 														</DevErrorBoundary>
 													</ComposerProvider>
 												</ResponsesProvider>

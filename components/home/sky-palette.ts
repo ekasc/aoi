@@ -20,6 +20,12 @@ export const DAY_SKY_STAR_DIM = '#FFF3EA';
 export const DAY_SKY_STAR_YOU = '#F2AEC2';
 export const DAY_SKY_STAR_PARTNER = '#FFD9A0';
 
+export const PHOTO_SKY_STAR_COOL = '#E5E6FF';
+export const PHOTO_SKY_STAR_WARM = '#FFE2B8';
+export const PHOTO_SKY_DEPTH = '#201B38';
+export const PHOTO_SKY_HAZE_COOL = '#AAA0DF';
+export const PHOTO_SKY_HAZE_WARM = '#EFC6B6';
+
 /** Opaque sky controls keep starlight text readable across both sky ramps. */
 export const SKY_CONTROL_INK = '#FFF8FA';
 export const SKY_CONTROL_FILL = '#382038';

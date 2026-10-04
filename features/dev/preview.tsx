@@ -51,7 +51,28 @@ import type { SpaceContextValue } from '@/features/space/types';
  * so it shows its status error headless — expected.
  */
 
-export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed' | 'setup' | 'welcome' | 'recent' | 'historical' | 'no-resurfacing';
+export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed' | 'setup' | 'welcome' | 'recent' | 'historical' | 'no-resurfacing'
+  | 'sky-one'
+  | 'sky-few'
+  | 'sky-many'
+  | 'sky-today'
+  | 'sky-six-months-ago'
+  | 'sky-relationship-start'
+  | 'sky-with-content'
+  | 'sky-empty'
+  | 'sky-free';
+
+const SKY_VARIANTS: readonly PreviewVariant[] = [
+  'sky-one',
+  'sky-few',
+  'sky-many',
+  'sky-today',
+  'sky-six-months-ago',
+  'sky-relationship-start',
+  'sky-with-content',
+  'sky-empty',
+  'sky-free',
+];
 
 export function parsePreviewVariant(raw: string | string[] | undefined): PreviewVariant {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -63,7 +84,40 @@ export function parsePreviewVariant(raw: string | string[] | undefined): Preview
   ) {
     return value;
   }
+  if (value && (SKY_VARIANTS as readonly string[]).includes(value)) {
+    return value as PreviewVariant;
+  }
   return 'full';
+}
+
+/** Initial date and entitlement for dev previews; the control remains interactive. */
+export function skyPreviewStart(variant: PreviewVariant): {
+  /** Months back from today, or the relationship's first day. */
+  monthsBack: number | 'start';
+  /**
+   * Local dev has no store, so a sky variant that is not the Free one
+   * renders as Plus to make the scrubber inspectable. Null elsewhere.
+   */
+  entitlement: 'plus' | 'free' | null;
+} {
+  switch (variant) {
+    case 'sky-one':
+    case 'sky-few':
+    case 'sky-many':
+    case 'sky-today':
+      return { monthsBack: 0, entitlement: 'plus' };
+    case 'sky-six-months-ago':
+      return { monthsBack: 6, entitlement: 'plus' };
+    case 'sky-relationship-start':
+    case 'sky-empty':
+      return { monthsBack: 'start', entitlement: 'plus' };
+    case 'sky-with-content':
+      return { monthsBack: 6, entitlement: 'plus' };
+    case 'sky-free':
+      return { monthsBack: 0, entitlement: 'free' };
+    default:
+      return { monthsBack: 0, entitlement: null };
+  }
 }
 
 type PreviewState = {
@@ -382,6 +436,11 @@ function seedMoment(overrides: Partial<Moment> & Pick<Moment, 'id' | 'occurredAt
  * The repo's `?variant=empty` still returns nothing.
  */
 export function getPreviewSeedMoments(variant: PreviewVariant): Moment[] {
+  if (variant === 'sky-with-content') {
+    // Same shift as `historical`: Sky History's "a month full of memories"
+    // variant needs memories that actually predate the vantage.
+    return getPreviewSeedMoments('historical');
+  }
   if (variant === 'recent' || variant === 'historical' || variant === 'no-resurfacing') {
     const full = getPreviewSeedMoments('full');
     if (variant === 'no-resurfacing') return full.filter((moment) => moment.id !== 'preview-resurface');

@@ -139,6 +139,27 @@ describe('MemorySky star count capping (memory fallback)', () => {
     unmount();
   });
 
+  it('renders every photo when Us opts out of the cap, with stable star positions', () => {
+    const moments = Array.from({ length: 80 }, (_, index) => makeMoment(`photo-${index}`));
+    const firstPosition = starForMoment(moments[0].id);
+    const view = render(createElement(MemorySky, { moments, starLimit: null, photoStars: true, immersive: true, focused: false }));
+    expect(starCounts(skyCanvas(view.container)!).total).toBe(80);
+    expect(skyStrip(view.container)?.style.top).toBe('0px');
+    expect(skyStrip(view.container)?.style.left).toBe('0px');
+    expect(skyCanvas(view.container)?.style.width).toBe('390px');
+    view.rerender(createElement(MemorySky, { moments: [...moments, makeMoment('added')], starLimit: null, photoStars: true, immersive: true, focused: false }));
+    expect(starCounts(skyCanvas(view.container)!).total).toBe(81);
+    expect(starForMoment(moments[0].id)).toEqual(firstPosition);
+    view.unmount();
+  });
+
+  it('does not invent a placeholder star for an empty Us photo sky', () => {
+    const view = render(createElement(MemorySky, { moments: [], photoStars: true, starLimit: null, immersive: true, focused: false }));
+    expect(emptyStar(view.container)).toBeNull();
+    expect(starCounts(skyCanvas(view.container)!).total).toBe(0);
+    view.unmount();
+  });
+
   it('uses singular copy for one memory and plural otherwise', () => {
     const one = render(createElement(MemorySky, { moments: [makeMoment('solo')] }));
     expect(one.container.textContent).toContain('1 memory lighting your sky');

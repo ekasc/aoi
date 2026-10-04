@@ -12,19 +12,36 @@ The product contract is a private relationship home built from intentionally sha
 | Unopened future-sealed letters | One at a time | No application count limit |
 | PDF chapter keepsakes | Upgrade required | Existing export available with server-confirmed Plus |
 | Relationship sky and days together | Included | Included |
+| Sky History — rewind the sky to any month | Upgrade required | Available |
 | Us, Memories, gallery, existing chapters, everyday resurfacing | Included | Included |
 | Plans, responses, Little things | Included | Included |
 | Account data export and privacy controls | Included | Included |
 
 One purchase covers both Space members. Storage is not unlimited. Reading older shared memories is not cut off on Free. Recognition is not a paid benefit.
 
+Free: the live relationship. Plus: the complete relationship across time.
+
+The live photo sky, random photo viewing, Memories, and everyday resurfacing are not paid benefits and never open the paywall. Sky History is a Plus benefit. On Free the affordance stays visible and locked, so the reader can see what it is; tapping it opens the existing paywall with a line about this feature and nothing else changed about the shelf.
+
 The paywall displays live store plans and prices. It preselects no plan. Purchase, restore, pending activation, unavailable stores, and empty offerings retain their existing behavior. Missing keys and web report purchasing unavailable rather than granting simulated Plus. Backend status, not client store state alone, grants protected benefits.
+
+## Sky History
+
+Us is a full-screen perspective photo sky. Each available local album photo adds one star, without a 40-star cap. Pinching zooms around the fingers; swiping traverses stars at different depths. Double-tapping a star brings it close. At close range, the focused star shows its album addition date beneath it, and tapping that star opens its photo. Dates disappear at overview, where a sky tap still opens a random photo and avoids the previous pick when another is available. Screen-reader actions offer zoom, next/previous star, photo opening, and a return to overview. Web also supports wheel zoom and keyboard navigation (plus/minus, arrows, brackets, Enter, Home). Photos can be chosen manually; automatic recognition remains inactive.
+
+A Plus reader opens **Revisit your sky** at the bottom of Us. The track supports dragging, screen-reader adjustments, and Earlier/Later buttons. It includes the relationship's first day, month-end stops, and today. The control is collapsed on a normal launch.
+
+Historical stars and random photo picks include only photos added to the local album by the selected date. This uses the album's `addedAt`, not a claimed camera capture date. The relationship age uses calendar days and months. Letter readiness uses the selected date and never reveals sealed content.
+
+A date with no photos shows an explicit empty message and a return-to-today action. Opening and closing a photo preserves the selection; a fresh launch defaults to today. Memories and Plans keep their own layouts and live data.
+
+Development previews use `/dev-together?variant=sky-free`, `sky-today`, `sky-six-months-ago`, `sky-relationship-start`, `sky-with-content`, or `sky-empty`. Fixture photos are separate from the device album.
 
 ## Future preservation services
 
-Deeper archive services, historical sky states, richer user-defined chapters, reviewed recaps, capsules, and additional keepsake formats are possible Premium additions. None is part of today's purchase promise. They require history reads, ownership and membership rules, storage and restore guarantees, and release policies before sale.
+Richer user-defined chapters, reviewed recaps, capsules, additional keepsake formats, and other archive services are possible Premium additions. None is part of today's purchase promise. They require history reads, ownership and membership rules, storage and restore guarantees, and release policies before sale. Do not invent further premium features to fill this list.
 
-Everyday resurfacing stays free. The current date projection for a sky is not versioned time travel. Existing sealed letters are not a separate capsule product.
+Everyday resurfacing stays free. Sky History moves through months that already happened; it is not a projection of a future date, and it does not version or restore historical sky states. Existing sealed letters are not a separate capsule product.
 
 ## Store configuration
 
