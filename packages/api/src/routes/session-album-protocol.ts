@@ -11,6 +11,8 @@ import {
   wireAlbumRecoveryEnvelopeResponseSchema,
   wireAlbumSpaceKeyEnvelopeResponseSchema,
   wireAlbumTrustAnchorResponseSchema,
+  wireDeviceClaimRequestSchema,
+  wireDeviceClaimResponseSchema,
   wireDeviceRecordSchema,
   wireDeviceTombstoneSchema,
   wireRecoveryEnvelopeSchema,
@@ -24,6 +26,7 @@ import { makeRateLimitMiddleware } from '../middleware/session-rate-limit';
 import {
   getAlbumProtocolSnapshotProgram,
   postAlbumDeviceTombstoneProgram,
+  putAlbumDeviceClaimProgram,
   putAlbumDeviceRecordProgram,
   putAlbumRecoveryEnvelopeProgram,
   putAlbumSpaceKeyEnvelopeProgram,
@@ -70,6 +73,17 @@ export function albumProtocolRouter(run: RunProgram): Hono {
     async (c) => {
       const result = await run(putAlbumTrustAnchorProgram(c.var.userId, c.req.valid('json')));
       return c.json(wireAlbumTrustAnchorResponseSchema.parse({ anchor: result }), 201);
+    }
+  );
+
+  router.post(
+    '/v1/spaces/current/album/protocol/device-claims',
+    requireAuth,
+    rateLimit,
+    zValidator('json', wireDeviceClaimRequestSchema),
+    async (c) => {
+      const result = await run(putAlbumDeviceClaimProgram(c.var.userId, c.req.valid('json')));
+      return c.json(wireDeviceClaimResponseSchema.parse({ claim: result }), 201);
     }
   );
 

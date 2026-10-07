@@ -686,27 +686,42 @@ and does not try. What it can do is decide who owns a row, whether a revision
 moved forward, and whether the caller may write at all, and those are the three
 things the shared backup blob got wrong.
 
-Five tables, because their mutation rules differ too much to share one:
+Six tables, because their mutation rules differ too much to share one:
 
 ```
-album_trust_anchors        space_id PK              one row, create-only
-album_device_records       (space_id, device_id) PK monotonic revision
-album_space_key_envelopes  (space_id, generation,   immutable at that key
+album_trust_anchors        space_id PK               one row, create-only
+album_device_claims        (space_id, device_id) PK  claimed once, by the device
+album_device_records       (space_id, device_id) PK  monotonic revision
+album_space_key_envelopes  (space_id, generation,    immutable at that key
                             recipient_device_id,
-                            recipient_revision) PK
-album_recovery_envelopes   (space_id, generation) PK one row, create-only
-album_device_tombstones    id PK                    append-only
+                            recipient_revision,
+                            authoriser_device_id) PK
+album_recovery_envelopes   (space_id, generation) PK one row, generation 1 only
+album_device_tombstones    id PK                     append-only
 ```
 
 Each row keeps the signed object as the output of its own wire schema, and reads
 parse it again. One representation of a signed object, not two that can drift.
 
 Ownership runs in a different direction per object, deliberately. A device record
-belongs to the account that first wrote it, so a partner's account cannot rewrite
-it. An envelope belongs to the account that owns the authorising device, because
-the authoriser is who produced it. The anchor and the generation-1 recovery
-envelope belong to the Space's creator, which stops an ordinary client from
-racing them. None of that makes anything cryptographically trustworthy.
+belongs to the account that claimed it. An envelope belongs to the account that
+owns the authorising device, because the authoriser is who produced it. The
+anchor and the recovery envelope belong to the Space's creator, which stops an
+ordinary client from racing them. None of that makes anything cryptographically
+trustworthy.
+
+A device claim is what makes the device rule true rather than nearly true.
+Without it, "the first writer owns the row" is a race: the authorising device
+necessarily learns the recipient's id and keys in order to sign for it, so it
+could write the recipient's record first, and the row would be cryptographically
+the recipient's phone and administratively the authoriser's account, with the
+recipient never able to revise it. The device claims its own id and keys before
+anything is signed, and the final record has to match the claim on owner and both
+keys.
+
+A claim that is never enrolled is still a row, so claims are bounded too. The
+cost of losing the race is small: a device id claimed by someone else is worth
+nothing, and the real device generates a fresh keypair and a new id.
 
 Enrolment follows from that. A device receives its signed record and writes its
 own row; the authoriser never writes it on the recipient's behalf. Reparenting is
@@ -727,13 +742,38 @@ success, and the client can fetch on conflict.
 Tombstones are append-only, one row per tombstone rather than one per target. A
 single row per target with last-write-wins would let an untrusted tombstone
 displace a valid one, and the client has logic specifically to evaluate each
-tombstone's authority. It gets all of them.
+tombstone's authority. It gets all of them. An exact retry lands on a unique
+payload key and changes nothing, so a retry is idempotent rather than a second
+row.
+
+The envelope key includes the authoriser for the same reason. Without it, any
+member could occupy a recipient's slot with an envelope the client will reject,
+and the real authoriser could then never store the legitimate one, because the
+row is immutable. All candidates are kept and the client accepts only the
+envelope whose authoriser matches the record it already trusts.
+
+Every kind of state has a ceiling: 32 devices and 32 claims, 256 tombstones, 256
+envelopes, 16 recovery envelopes. A two-person Space needs a handful of each, so
+these are generous; they exist because tombstones are append-only, envelopes
+accumulate by revision, and the server deliberately accepts tombstones the client
+will reject. Without a ceiling a legitimate but hostile member grows the snapshot
+without limit.
+
+The ceilings are enforced on write, not by truncating on read. Truncating a read
+could drop a valid revocation and make a revoked device look trusted, which is
+the one direction that must never happen.
+
+Only generation 1 has a recovery envelope. Rotation is not implemented, and a
+create-only slot that any member may claim is a slot any member can permanently
+waste, so the speculative later-generation behaviour is gone until there is an
+answer to who may publish recovery material.
 
 The read is one snapshot, so starting up is not a pile of round trips:
 
 ```
 GET  /v1/spaces/current/album/protocol
 PUT  /v1/spaces/current/album/protocol/anchor
+POST /v1/spaces/current/album/protocol/device-claims
 PUT  /v1/spaces/current/album/protocol/devices/:deviceId
 POST /v1/spaces/current/album/protocol/device-tombstones
 PUT  /v1/spaces/current/album/protocol/envelopes

@@ -479,6 +479,23 @@ export const PROTOCOL_MAX_ID_LENGTH = 128;
 export const PROTOCOL_MAX_MIME_TYPE_LENGTH = 255;
 export const PROTOCOL_MAX_MEDIA_BYTES = 100 * 1024 * 1024;
 
+/**
+ * Ceilings on how much of each kind of state one Space can hold.
+ *
+ * A two-person Space needs a handful of each, so these are generous. They exist
+ * because the server enforces them on write: without a ceiling a legitimate but
+ * hostile member can grow a snapshot without limit, and tombstones in particular
+ * are append-only and deliberately accept rows the client will reject.
+ *
+ * Enforcing on write rather than truncating on read is deliberate. Truncating a
+ * read could drop a valid revocation and make a revoked device look trusted,
+ * which is the one direction that must never happen.
+ */
+export const PROTOCOL_MAX_DEVICES = 32;
+export const PROTOCOL_MAX_TOMBSTONES = 256;
+export const PROTOCOL_MAX_ENVELOPES = 256;
+export const PROTOCOL_MAX_RECOVERY_ENVELOPES = 16;
+
 export const ED25519_PUBLIC_KEY_BYTES = 32;
 export const X25519_PUBLIC_KEY_BYTES = 32;
 export const ED25519_SIGNATURE_BYTES = 64;

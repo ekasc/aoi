@@ -5,9 +5,13 @@ import {
   ED25519_PUBLIC_KEY_BYTES,
   ED25519_SIGNATURE_BYTES,
   PROTOCOL_MAX_COUNTER,
+  PROTOCOL_MAX_DEVICES,
+  PROTOCOL_MAX_ENVELOPES,
   PROTOCOL_MAX_ID_LENGTH,
   PROTOCOL_MAX_MEDIA_BYTES,
   PROTOCOL_MAX_MIME_TYPE_LENGTH,
+  PROTOCOL_MAX_RECOVERY_ENVELOPES,
+  PROTOCOL_MAX_TOMBSTONES,
   PROTOCOL_MIN_COUNTER,
   PROTOCOL_PERSON_TAGS,
   WRAPPED_KEY_BYTES,
@@ -274,10 +278,10 @@ export type WireMediaTombstone = z.infer<typeof wireMediaTombstoneSchema>;
 export const wireAlbumProtocolSnapshotSchema = z
   .object({
     anchor: wireSpaceTrustAnchorSchema.nullable(),
-    records: z.array(wireDeviceRecordSchema),
-    tombstones: z.array(wireDeviceTombstoneSchema),
-    envelopes: z.array(wireSpaceKeyEnvelopeSchema),
-    recoveryEnvelopes: z.array(wireRecoveryEnvelopeSchema),
+    records: z.array(wireDeviceRecordSchema).max(PROTOCOL_MAX_DEVICES),
+    tombstones: z.array(wireDeviceTombstoneSchema).max(PROTOCOL_MAX_TOMBSTONES),
+    envelopes: z.array(wireSpaceKeyEnvelopeSchema).max(PROTOCOL_MAX_ENVELOPES),
+    recoveryEnvelopes: z.array(wireRecoveryEnvelopeSchema).max(PROTOCOL_MAX_RECOVERY_ENVELOPES),
   })
   .strict();
 
@@ -298,6 +302,32 @@ export const wireAlbumSpaceKeyEnvelopeResponseSchema = z
 export const wireAlbumRecoveryEnvelopeResponseSchema = z
   .object({ recoveryEnvelope: wireRecoveryEnvelopeSchema })
   .strict();
+
+/**
+ * A device's claim on its own id and keys, made by the device itself before
+ * anything is signed. The final record has to match it on owner and both keys.
+ */
+export const wireDeviceClaimRequestSchema = z
+  .object({
+    deviceId: idSchema,
+    signingPublicKey: bytesSchema(ED25519_PUBLIC_KEY_BYTES, 'signingPublicKey'),
+    agreementPublicKey: bytesSchema(X25519_PUBLIC_KEY_BYTES, 'agreementPublicKey'),
+  })
+  .strict();
+
+export const wireDeviceClaimSchema = z
+  .object({
+    spaceId: idSchema,
+    deviceId: idSchema,
+    signingPublicKey: bytesSchema(ED25519_PUBLIC_KEY_BYTES, 'signingPublicKey'),
+    agreementPublicKey: bytesSchema(X25519_PUBLIC_KEY_BYTES, 'agreementPublicKey'),
+    createdAt: timestampSchema,
+  })
+  .strict();
+
+export const wireDeviceClaimResponseSchema = z.object({ claim: wireDeviceClaimSchema }).strict();
+
+export type WireDeviceClaim = z.infer<typeof wireDeviceClaimSchema>;
 
 // ── the boundary ─────────────────────────────────────────────────────────
 

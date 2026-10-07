@@ -116,6 +116,19 @@ async function put(app: ReturnType<typeof makeApp>['app'], path: string, token: 
   });
 }
 
+/** A device claims its id and keys before anything is signed for it. */
+async function claim(
+  app: ReturnType<typeof makeApp>['app'],
+  token: string,
+  deviceId: string
+) {
+  return app.request(`${BASE}/device-claims`, {
+    method: 'POST',
+    headers: { ...auth(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId, signingPublicKey: KEY, agreementPublicKey: KEY }),
+  });
+}
+
 describe('the protocol snapshot route', () => {
   it('returns the empty shape for a Space with nothing written', async () => {
     const { app } = makeApp();
@@ -180,22 +193,64 @@ describe('the anchor route', () => {
   });
 });
 
+describe('the device claim route', () => {
+  it('claims an id and returns the wire shape', async () => {
+    const { app } = makeApp();
+    const response = await claim(app, TOKEN_A, 'device-a');
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({
+      claim: {
+        spaceId: SPACE_1,
+        deviceId: 'device-a',
+        signingPublicKey: KEY,
+        agreementPublicKey: KEY,
+        createdAt: expect.any(String),
+      },
+    });
+  });
+
+  it('refuses the partner claiming the same id', async () => {
+    const { app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
+    expect((await claim(app, TOKEN_B, 'device-a')).status).toBe(403);
+  });
+
+  it('requires a session', async () => {
+    const { app } = makeApp();
+    const response = await app.request(`${BASE}/device-claims`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: 'device-a', signingPublicKey: KEY, agreementPublicKey: KEY }),
+    });
+    expect(response.status).toBe(401);
+  });
+});
+
 describe('the device route', () => {
   it('creates a record and returns the wire shape', async () => {
     const { app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
     const response = await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'));
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ record: record('device-a') });
   });
 
+  it('refuses a record for a device that has not claimed its id', async () => {
+    const { app } = makeApp();
+    expect((await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'))).status).toBe(400);
+  });
+
   it('lets the partner own their own device', async () => {
     const { app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
+    await claim(app, TOKEN_B, 'device-b');
     expect((await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'))).status).toBe(201);
     expect((await put(app, `${BASE}/devices/device-b`, TOKEN_B, record('device-b'))).status).toBe(201);
   });
 
   it('refuses the partner writing someone else’s device', async () => {
     const { app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
     await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'));
     const theirs = await put(app, `${BASE}/devices/device-a`, TOKEN_B, record('device-a', { revision: 2 }));
     expect(theirs.status).toBe(403);
@@ -203,6 +258,7 @@ describe('the device route', () => {
 
   it('refuses a revision that does not move forward', async () => {
     const { app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
     await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a', { revision: 2 }));
     expect((await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a', { revision: 2 }))).status).toBe(409);
     expect((await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a', { revision: 1 }))).status).toBe(409);
@@ -212,6 +268,7 @@ describe('the device route', () => {
 describe('the tombstone route', () => {
   it('accepts one from the owner of the revoking device', async () => {
     const { app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
     await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'));
 
     const response = await app.request(`${BASE}/device-tombstones`, {
@@ -243,6 +300,8 @@ describe('the tombstone route', () => {
 describe('the envelope routes', () => {
   it('seals for a registered recipient', async () => {
     const { app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
+    await claim(app, TOKEN_B, 'device-b');
     await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'));
     await put(app, `${BASE}/devices/device-b`, TOKEN_B, record('device-b'));
 
@@ -277,6 +336,17 @@ describe('the envelope routes', () => {
     const response = await put(app, `${BASE}/recovery-envelopes/2`, TOKEN_A, {
       spaceId: SPACE_1,
       generation: 1,
+      nonce: NONCE,
+      ciphertext: WRAPPED,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('refuses a later generation outright, because rotation does not exist', async () => {
+    const { app } = makeApp();
+    const response = await put(app, `${BASE}/recovery-envelopes/2`, TOKEN_A, {
+      spaceId: SPACE_1,
+      generation: 2,
       nonce: NONCE,
       ciphertext: WRAPPED,
     });

@@ -1,12 +1,17 @@
 import { Effect } from 'effect';
 
 import {
+  PROTOCOL_MAX_DEVICES,
+  PROTOCOL_MAX_ENVELOPES,
+  PROTOCOL_MAX_TOMBSTONES,
+  wireDeviceClaimRequestSchema,
   wireDeviceRecordSchema,
   wireDeviceTombstoneSchema,
   wireRecoveryEnvelopeSchema,
   wireSpaceKeyEnvelopeSchema,
   wireSpaceTrustAnchorSchema,
   type WireAlbumProtocolSnapshot,
+  type WireDeviceClaim,
   type WireDeviceRecord,
   type WireDeviceTombstone,
   type WireRecoveryEnvelope,
@@ -118,6 +123,13 @@ const deviceOwner = (
     (row) => row?.owner_user_id ?? null
   );
 
+/** The table name is a literal at every call site, never input. */
+const countIn = (table: string, spaceId: string): Effect.Effect<number, InternalError, DbService> =>
+  Effect.map(
+    one<{ total: number }>(`select count(*) as total from ${table} where space_id = ?`, spaceId),
+    (row) => row?.total ?? 0
+  );
+
 const EMPTY_SNAPSHOT: WireAlbumProtocolSnapshot = {
   anchor: null,
   records: [],
@@ -141,17 +153,23 @@ export const getAlbumProtocolSnapshotProgram = (
       'select payload from album_trust_anchors where space_id = ?',
       spaceId
     );
+    // The limits are defensive. Writes enforce the same ceilings, so a read
+    // should never reach them; if one ever does, truncating here would be the
+    // wrong answer and this is a bug rather than a policy.
     const recordRows = yield* all<{ payload: string }>(
-      'select payload from album_device_records where space_id = ? order by device_id asc',
+      `select payload from album_device_records where space_id = ?
+        order by device_id asc limit ${PROTOCOL_MAX_DEVICES}`,
       spaceId
     );
     const tombstoneRows = yield* all<{ payload: string }>(
-      'select payload from album_device_tombstones where space_id = ? order by created_at asc, id asc',
+      `select payload from album_device_tombstones where space_id = ?
+        order by created_at asc, id asc limit ${PROTOCOL_MAX_TOMBSTONES}`,
       spaceId
     );
     const envelopeRows = yield* all<{ payload: string }>(
       `select payload from album_space_key_envelopes where space_id = ?
-        order by generation asc, recipient_device_id asc, recipient_revision asc`,
+        order by generation asc, recipient_device_id asc, recipient_revision asc
+        limit ${PROTOCOL_MAX_ENVELOPES}`,
       spaceId
     );
     const recoveryRows = yield* all<{ payload: string }>(
@@ -236,6 +254,99 @@ export const putAlbumTrustAnchorProgram = (
     return persisted;
   });
 
+// ── device claims ────────────────────────────────────────────────────────
+
+/**
+ * A device claims its own id and keys before anything is signed.
+ *
+ * Without this step, ownership is decided by whoever wins the first request
+ * rather than by whose device it is. The authorising device necessarily learns
+ * the recipient's id and keys in order to sign for it, so it could otherwise
+ * claim the row by writing first, and the recipient's account would never be
+ * able to revise its own device.
+ *
+ * A claim is not a trust decision and the server does not read it as one. It
+ * only fixes who the row belongs to.
+ */
+export const putAlbumDeviceClaimProgram = (
+  userId: string,
+  input: unknown
+): Effect.Effect<
+  WireDeviceClaim,
+  BadRequestError | ForbiddenError | ConflictError | InternalError,
+  DbService | ClockService
+> =>
+  Effect.gen(function* () {
+    const parsed = wireDeviceClaimRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      return yield* Effect.fail(badRequest('Invalid device claim'));
+    }
+    const claim = parsed.data;
+
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return yield* Effect.fail(badRequest('You must have an active space to claim a device'));
+    }
+
+    const existing = yield* one<{
+      owner_user_id: string;
+      signing_public_key: string;
+      agreement_public_key: string;
+      created_at: number;
+    }>(
+      `select owner_user_id, signing_public_key, agreement_public_key, created_at
+         from album_device_claims where space_id = ? and device_id = ?`,
+      spaceId,
+      claim.deviceId
+    );
+    if (existing) {
+      if (existing.owner_user_id !== userId) {
+        return yield* Effect.fail(forbidden('That device has already been claimed'));
+      }
+      if (
+        existing.signing_public_key !== claim.signingPublicKey ||
+        existing.agreement_public_key !== claim.agreementPublicKey
+      ) {
+        return yield* Effect.fail(conflict('That device is claimed with different keys'));
+      }
+      return {
+        spaceId,
+        deviceId: claim.deviceId,
+        signingPublicKey: claim.signingPublicKey,
+        agreementPublicKey: claim.agreementPublicKey,
+        createdAt: new Date(existing.created_at).toISOString(),
+      };
+    }
+
+    // Claims are bounded too: an id that is claimed and never enrolled is still
+    // a row, and without a ceiling that is an unbounded write.
+    if ((yield* countIn('album_device_claims', spaceId)) >= PROTOCOL_MAX_DEVICES) {
+      return yield* Effect.fail(conflict('This Space has reached its device limit'));
+    }
+
+    const at = yield* nowMs;
+    yield* execute(
+      `insert into album_device_claims
+         (space_id, device_id, owner_user_id, signing_public_key, agreement_public_key, created_at)
+       values (?, ?, ?, ?, ?, ?)
+       on conflict(space_id, device_id) do nothing`,
+      spaceId,
+      claim.deviceId,
+      userId,
+      claim.signingPublicKey,
+      claim.agreementPublicKey,
+      at
+    );
+
+    return {
+      spaceId,
+      deviceId: claim.deviceId,
+      signingPublicKey: claim.signingPublicKey,
+      agreementPublicKey: claim.agreementPublicKey,
+      createdAt: new Date(at).toISOString(),
+    };
+  });
+
 // ── device records ───────────────────────────────────────────────────────
 
 /**
@@ -283,6 +394,31 @@ export const putAlbumDeviceRecordProgram = (
       return yield* Effect.fail(forbidden('That device belongs to your partner'));
     }
 
+    // The claim decides who owns the row and which keys it may carry, so the
+    // authorising device cannot enrol the recipient's device for it.
+    const claim = yield* one<{
+      owner_user_id: string;
+      signing_public_key: string;
+      agreement_public_key: string;
+    }>(
+      `select owner_user_id, signing_public_key, agreement_public_key
+         from album_device_claims where space_id = ? and device_id = ?`,
+      spaceId,
+      deviceId
+    );
+    if (!claim) {
+      return yield* Effect.fail(badRequest('That device has not claimed its id yet'));
+    }
+    if (claim.owner_user_id !== userId) {
+      return yield* Effect.fail(forbidden('That device has been claimed by your partner'));
+    }
+    if (
+      claim.signing_public_key !== record.signingPublicKey ||
+      claim.agreement_public_key !== record.agreementPublicKey
+    ) {
+      return yield* Effect.fail(badRequest('That record does not match the claimed device keys'));
+    }
+
     const at = yield* nowMs;
     const written = yield* execute(
       `insert into album_device_records (space_id, device_id, owner_user_id, revision, payload, updated_at)
@@ -322,7 +458,7 @@ export const postAlbumDeviceTombstoneProgram = (
   input: unknown
 ): Effect.Effect<
   WireDeviceTombstone,
-  BadRequestError | ForbiddenError | InternalError,
+  BadRequestError | ForbiddenError | ConflictError | InternalError,
   DbService | ClockService | IdService
 > =>
   Effect.gen(function* () {
@@ -359,9 +495,21 @@ export const postAlbumDeviceTombstoneProgram = (
 
     const id = yield* newId;
     const at = yield* nowMs;
+
+    // Bounded on write rather than truncated on read: dropping a tombstone from
+    // a read could hide a valid revocation and make a revoked device look
+    // trusted, which is the one direction that must never happen.
+    if ((yield* countIn('album_device_tombstones', spaceId)) >= PROTOCOL_MAX_TOMBSTONES) {
+      return yield* Effect.fail(conflict('This Space has reached its tombstone limit'));
+    }
+
+    // An exact retry lands on the unique payload index and changes nothing.
+    // Distinct tombstones still accumulate, which is the point of keeping them
+    // all: the client decides which authority is real.
     yield* execute(
       `insert into album_device_tombstones (id, space_id, target_device_id, payload, created_at)
-       values (?, ?, ?, ?, ?)`,
+       values (?, ?, ?, ?, ?)
+       on conflict(space_id, payload) do nothing`,
       id,
       spaceId,
       tombstone.targetDeviceId,
@@ -420,12 +568,16 @@ export const putAlbumSpaceKeyEnvelopeProgram = (
       return yield* Effect.fail(badRequest('The recipient device is not registered in this Space'));
     }
 
+    if ((yield* countIn('album_space_key_envelopes', spaceId)) >= PROTOCOL_MAX_ENVELOPES) {
+      return yield* Effect.fail(conflict('This Space has reached its envelope limit'));
+    }
+
     const at = yield* nowMs;
     yield* execute(
       `insert into album_space_key_envelopes
          (space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id, payload, created_at)
        values (?, ?, ?, ?, ?, ?, ?)
-       on conflict(space_id, generation, recipient_device_id, recipient_revision) do nothing`,
+       on conflict(space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id) do nothing`,
       spaceId,
       envelope.generation,
       envelope.recipientDeviceId,
@@ -437,11 +589,13 @@ export const putAlbumSpaceKeyEnvelopeProgram = (
 
     const stored = yield* one<{ payload: string }>(
       `select payload from album_space_key_envelopes
-        where space_id = ? and generation = ? and recipient_device_id = ? and recipient_revision = ?`,
+        where space_id = ? and generation = ? and recipient_device_id = ?
+          and recipient_revision = ? and authoriser_device_id = ?`,
       spaceId,
       envelope.generation,
       envelope.recipientDeviceId,
-      envelope.recipientRevision
+      envelope.recipientRevision,
+      envelope.authoriserDeviceId
     );
     if (!stored) {
       return yield* Effect.fail(new InternalError({}));
@@ -456,12 +610,13 @@ export const putAlbumSpaceKeyEnvelopeProgram = (
 // ── recovery envelopes ───────────────────────────────────────────────────
 
 /**
- * One immutable row per (space, generation).
+ * One immutable row, and only generation 1.
  *
- * Generation 1 is cut when the Space is created, so only the creator may write
- * it: otherwise a member could race the creator and occupy the row with
- * something the phrase does not open. Later generations have no such owner, and
- * active membership is all the server can fairly require.
+ * It is cut when the Space is created, so only the creator may write it:
+ * otherwise a member could race the creator and occupy the row with something
+ * the phrase does not open. Later generations are refused outright until
+ * rotation exists, because a create-only slot that any member may claim is a
+ * slot any member can permanently waste.
  */
 export const putAlbumRecoveryEnvelopeProgram = (
   userId: string,
@@ -490,8 +645,16 @@ export const putAlbumRecoveryEnvelopeProgram = (
     if (envelope.spaceId !== spaceId) {
       return yield* Effect.fail(forbidden('That envelope belongs to another Space'));
     }
-    if (generation === 1 && !(yield* isSpaceCreator(spaceId, userId))) {
-      return yield* Effect.fail(forbidden('Only the Space creator can cut the first recovery envelope'));
+    // Only generation 1 exists. Rotation is not implemented, and allowing a
+    // later generation now would let any member occupy the sole slot for a
+    // generation they have no authority over, permanently, because the row is
+    // create-only. The rule comes back with rotation, along with an answer to
+    // who may publish recovery material.
+    if (generation !== 1) {
+      return yield* Effect.fail(badRequest('Only generation 1 has a recovery envelope'));
+    }
+    if (!(yield* isSpaceCreator(spaceId, userId))) {
+      return yield* Effect.fail(forbidden('Only the Space creator can cut the recovery envelope'));
     }
 
     const at = yield* nowMs;
