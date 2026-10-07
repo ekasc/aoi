@@ -42,8 +42,15 @@ that the protocol was written after the primitives rather than before them.
 ## Trust model
 
 The server is a storage provider that may be compromised, curious, or
-compelled. It is not trusted to see plaintext, to decide who is in the Space,
-or to be the only witness to the Space's history.
+compelled. It is not trusted to see plaintext, to decide which devices are
+cryptographically authorised to decrypt the Space, or to be the only witness to
+the Space's history.
+
+Those are different authorities and the document keeps them apart. The server
+still owns AOI accounts and Space membership at the application layer: who can
+sign in, whose rows exist, what the app renders. That is ordinary product
+authority. What it must not hold is the cryptographic authority to admit a
+device to the archive.
 
 Two things are trusted:
 
@@ -97,8 +104,11 @@ reuse is what allowed the degenerate envelope above.
 
 ## Device records
 
-The Space's authority is an append-only set of device records, each written by
-the device it describes and authorised by a trusted device or by recovery.
+The Space's authority is a set of device records carrying a monotonic revision
+each, written by the device it describes and authorised by a trusted device or
+by recovery. It is not an append-only log: a record is mutable and the revision
+is what orders writes. Keeping every historical revision would buy real
+rollback detection and cost real storage, and v1 takes the cheaper side.
 
 ```
 deviceRecord {
@@ -129,6 +139,57 @@ no device can rewrite another's history. The current single-blob backup is what
 lets a stale snapshot overwrite a partner's entry, and no amount of merging on
 the server fixes that, because the server cannot tell a stale snapshot from a
 fresh one.
+
+## The envelope
+
+The object that carries the space key to one device. Pinned here before any
+code is written, because this is where an implementation and its tests drift
+apart:
+
+```
+spaceKeyEnvelope {
+  spaceId
+  generation
+  recipientDeviceId
+  authoriserDeviceId
+  recipientRevision      // the recipient record revision this was cut for
+  nonce                  // 96-bit, random per envelope
+  ciphertext             // spaceKey, sealed
+}
+```
+
+Wrapping key:
+
+```
+wrappingKey = HKDF-SHA256(
+  ikm    = X25519(authoriser.agreement.private, recipient.agreement.public),
+  salt   = none,
+  info   = 'aoi/envelope/v1' || spaceId || generation
+                         || recipientDeviceId || recipientRevision,
+  length = 32,
+)
+```
+
+AEAD:
+
+```
+AES-256-GCM(
+  key       = wrappingKey,
+  nonce     = the envelope's nonce,
+  plaintext = spaceKey,
+  aad       = 'aoi/envelope/v1' || spaceId || generation
+              || recipientDeviceId || authoriserDeviceId || recipientRevision,
+)
+```
+
+The info string and the AAD carry the same binding, and both name the purpose.
+Reusing one HKDF info string for the archive key and for envelope wrapping is
+what produced the degenerate envelope in the current code, so the purpose
+belongs in the derivation rather than in a comment beside it.
+
+Binding `recipientRevision` makes an envelope valid for exactly one revision of
+the recipient's record. When the recipient rewrites its record, the authoriser
+cuts a new envelope. Slightly more work, and it removes a class of replay.
 
 ## Enrolling a device
 
@@ -195,10 +256,20 @@ Removal writes a signed tombstone. It does not revoke access to anything the
 removed device already holds, because the space key is shared and unrotated.
 Say so in the UI rather than implying otherwise.
 
-Real revocation means a new generation: generate a new random space key, rewrap
-every media key under it, publish a `minGeneration` marker, and refuse to serve
-upper-generation media to a device whose record is below it. That is expensive
-and rare, so v1 ships the tombstone and the generation field, and does not
+Real revocation means a new generation: generate a new random space key and
+rewrap every media key under it. A removed device is then excluded because it
+never receives a generation-2 envelope, not because the API declines to serve
+it objects. The server sits outside the trust boundary, so a rule the server
+enforces is not a guarantee.
+
+The honest limit: rotation cannot revoke knowledge. A device that already held
+generation 1 still holds generation 1's key, and rewrapping old media does not
+make it forget. If a malicious server kept the old wrapped material, that device
+can still open everything sealed under generation 1.
+
+So the guarantee is exactly this and no stronger: rotation excludes a removed
+device from future generations. It does not revoke plaintext or keys the device
+already possessed. v1 ships the tombstone and the generation field and does not
 implement the rewrap.
 
 Version the key format now even though rotation is not implemented. `generation`
@@ -215,7 +286,28 @@ wrapped-key association in the clear, all unauthenticated, so it can remix the
 archive without reading a pixel: swap two records' wrapped keys to produce
 wrong-key failures, reorder time, reassign whose photo it is.
 
-Two changes:
+The record becomes:
+
+```
+mediaRecord {
+  mediaId
+  spaceId
+  generation
+  revision
+  state                 // live | deleted
+  wrappedKey
+  sealedNonce
+  byteLength
+  mimeType
+  width, height
+  personTag
+  uploaderDeviceId
+  createdAt
+  signature             // by uploaderDeviceId over the canonical bytes above
+}
+```
+
+Three changes, each doing one job.
 
 The media ciphertext's AAD covers `mediaId` and `generation`, so a ciphertext
 cannot be moved to another record and still decrypt.
@@ -223,21 +315,32 @@ cannot be moved to another record and still decrypt.
 The uploader signs a manifest over the canonical record bytes. Any device can
 then verify the metadata instead of trusting the server's list. Detection beats
 failure here: a bad AAD gives an indistinguishable decrypt error, and the whole
-point of signing is to be able to say what went wrong.
+point of signing is to be able to say what went wrong. Signing buys
+authenticity, not freshness, which is why `revision` is inside the signed bytes.
+
+Deletion is a signed tombstone, not an absence. A row that is simply missing is
+indistinguishable from a row the server chose not to send.
 
 ## Rollback
 
 Two protections, and they are not the same.
 
-Writes: the server rejects `revision <= stored`, so no device can roll another
-backward. This is enforceable server-side.
+Writes: the server rejects `revision <= stored`, for device records and for
+media records alike, so nothing rolls a row backward through the API.
 
 Reads: the server can still serve an old revision, and no server-side rule
 prevents that. A client detects it by persisting the highest revision it has
-observed per device and rejecting a lower one. A freshly restored device cannot
-detect it, because it has no memory and no second witness. That limitation is
-part of the threat model, not an oversight, and the alternative is a
-transparency log this product does not need.
+observed, per `deviceId` and per `mediaId`, and rejecting a lower one. A delete
+is a signed tombstone at a higher revision than the live record, so a
+resurrected row is a lower revision and fails the same check.
+
+The limit, stated plainly. This catches rollback of a record the client has
+already seen. It does not catch omission, which is the server dropping a
+`mediaId` from the list entirely, because there is no authenticated head over
+the whole set. Detecting omission needs a transparency structure this product
+does not need. A freshly restored device can detect neither, because it has no
+memory and no second witness. Both are accepted for v1, and both belong in the
+threat model rather than in a footnote.
 
 ## What the server can and cannot do
 
