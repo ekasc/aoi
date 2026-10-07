@@ -15,11 +15,13 @@ import {
   signMediaManifest,
   signMediaTombstone,
   signSpaceTrustAnchor,
+  signSpaceTrustAnchorRecovery,
   verifyDeviceRecord,
   verifyDeviceTombstone,
   verifyMediaManifest,
   verifyMediaTombstone,
   verifySpaceTrustAnchor,
+  verifySpaceTrustAnchorRecovery,
 } from '@/features/album/protocol-crypto';
 import { generateRecoveryPhrase, recoveryEntropyFromPhrase } from '@/features/album/recovery';
 import type { SpaceKeyEnvelope } from '@aoi/shared';
@@ -339,18 +341,31 @@ describe('signatures', () => {
 });
 
 describe('the Space trust anchor', () => {
-  const anchorInput = (root: Device) => ({
+  const recoveryEntropy = recoveryEntropyFromPhrase(generateRecoveryPhrase());
+  const recoveryPrivateKey = deriveRecoverySigningKey(recoveryEntropy);
+  const recoveryPublicKey = recoverySigningPublicKey(recoveryEntropy);
+
+  const anchorInput = (root: Device, overrides: Record<string, unknown> = {}) => ({
     spaceId: SPACE,
     rootDeviceId: 'device-root',
     rootSigningPublicKey: root.signing.publicKey,
-    recoverySigningPublicKey: device().signing.publicKey,
+    recoverySigningPublicKey: recoveryPublicKey,
     createdAt: AT,
+    ...overrides,
   });
 
-  it('verifies against the root key, and nothing else', () => {
-    const root = device();
+  const anchorFor = (root: Device) => {
     const input = anchorInput(root);
-    const anchor = { ...input, signature: signSpaceTrustAnchor(input, root.signing.privateKey) };
+    return {
+      ...input,
+      rootSignature: signSpaceTrustAnchor(input, root.signing.privateKey),
+      recoverySignature: signSpaceTrustAnchorRecovery(input, recoveryPrivateKey),
+    };
+  };
+
+  it('carries a root signature that verifies against the root key, and nothing else', () => {
+    const root = device();
+    const anchor = anchorFor(root);
 
     expect(verifySpaceTrustAnchor(anchor, root.signing.publicKey)).toBe(true);
     expect(verifySpaceTrustAnchor(anchor, device().signing.publicKey)).toBe(false);
@@ -361,5 +376,46 @@ describe('the Space trust anchor', () => {
         root.signing.publicKey
       )
     ).toBe(false);
+  });
+
+  it('carries a recovery signature that verifies against the derived key, and nothing else', () => {
+    const anchor = anchorFor(device());
+
+    expect(verifySpaceTrustAnchorRecovery(anchor, recoveryPublicKey)).toBe(true);
+    expect(verifySpaceTrustAnchorRecovery(anchor, device().signing.publicKey)).toBe(false);
+    expect(verifySpaceTrustAnchorRecovery({ ...anchor, rootDeviceId: 'device-other' }, recoveryPublicKey)).toBe(false);
+
+    const otherPhrase = recoverySigningPublicKey(recoveryEntropyFromPhrase(generateRecoveryPhrase()));
+    expect(verifySpaceTrustAnchorRecovery(anchor, otherPhrase)).toBe(false);
+  });
+
+  /**
+   * The attack the second signature exists for. The server knows the legitimate
+   * recovery public key, because it is public, so an anchor that only had to
+   * agree with that field could have its root swapped for one the server holds
+   * the key to. The root signature would still verify, against the server's own
+   * fake root. Only a signature the phrase produces closes it.
+   */
+  it('refuses an anchor whose root was swapped while the recovery key was kept', () => {
+    const legitimate = anchorFor(device());
+    const attackerRoot = device();
+    const swappedInput = anchorInput(attackerRoot, {
+      rootDeviceId: 'device-attacker',
+      rootSigningPublicKey: attackerRoot.signing.publicKey,
+    });
+    const swapped = {
+      ...swappedInput,
+      rootSignature: signSpaceTrustAnchor(swappedInput, attackerRoot.signing.privateKey),
+      recoverySignature: legitimate.recoverySignature,
+    };
+
+    // The field the naive check compares still matches the phrase.
+    expect(swapped.recoverySigningPublicKey).toEqual(recoveryPublicKey);
+    // The root signature verifies, against the attacker's key, which is why it
+    // cannot be the recovery path's check.
+    expect(verifySpaceTrustAnchor(swapped, attackerRoot.signing.publicKey)).toBe(true);
+    // The recovery signature does not, because the attacker does not hold the
+    // phrase.
+    expect(verifySpaceTrustAnchorRecovery(swapped, recoveryPublicKey)).toBe(false);
   });
 });

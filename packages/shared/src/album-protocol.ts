@@ -323,12 +323,24 @@ export function encodeDeviceRecord(input: DeviceRecordInput): Uint8Array {
  * against: which device is the root, and which key the recovery phrase
  * authorises. Those are the two facts this object carries.
  *
- * It is signed by the root device, but the signature is not what makes it
+ * It carries two signatures over the same bytes, and neither is what makes it
  * trusted. The creator pins it locally when it creates the Space; a device
  * enrolled later accepts it only after trusting the device it verified out of
  * band; and a recovery bootstrap derives the recovery signing key from the
- * phrase and checks that the anchor agrees. Verifying the signature proves the
- * object was not mangled in transit, and nothing more.
+ * phrase, checks it against this anchor, and then verifies the recovery
+ * signature.
+ *
+ * Two signatures rather than one because there are two ways to obtain the key
+ * that makes the anchor authentic. The root signature covers the normal path.
+ * The recovery signature exists because the server already knows the recovery
+ * public key, so a check that only compared that field would accept an anchor
+ * whose root id and root key the server had swapped. A recovery-only client has
+ * nothing else to compare the root against, so the phrase has to sign the whole
+ * object rather than agree with one field of it.
+ *
+ * Verifying either signature establishes authenticity relative to a key. Trust
+ * still comes from how that key was obtained: a local pin, an out-of-band
+ * device verification, or possession of the recovery secret.
  */
 export type SpaceTrustAnchorInput = {
   spaceId: string;
@@ -339,7 +351,10 @@ export type SpaceTrustAnchorInput = {
 };
 
 export type SpaceTrustAnchor = SpaceTrustAnchorInput & {
-  signature: Uint8Array;
+  /** By the root device. */
+  rootSignature: Uint8Array;
+  /** By the key the recovery phrase derives. */
+  recoverySignature: Uint8Array;
 };
 
 export function encodeSpaceTrustAnchor(input: SpaceTrustAnchorInput): Uint8Array {

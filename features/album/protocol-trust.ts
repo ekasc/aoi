@@ -1,6 +1,6 @@
 import type { DeviceRecord, DeviceTombstone, SpaceTrustAnchor } from '@aoi/shared';
 
-import { verifyDeviceRecord } from '@/features/album/protocol-crypto';
+import { verifyDeviceRecord, verifyDeviceTombstone } from '@/features/album/protocol-crypto';
 
 /**
  * Is this device currently trusted?
@@ -19,15 +19,17 @@ import { verifyDeviceRecord } from '@/features/album/protocol-crypto';
  * their authoriser.
  *
  * A signature being mathematically valid is never sufficient on its own. The
- * signer has to be reachable from an anchor.
+ * signer has to be reachable from an anchor, and that applies to a revocation
+ * as much as to an authorisation: a tombstone nobody trusted signed is not a
+ * revocation, it is a row the server made up.
  */
 
 export type DeviceTrustFailure =
   /** The authoriser, or the target, has no record at all. */
   | 'unknown-device'
-  /** A record or an applicable tombstone belongs to a different Space. */
+  /** A record belongs to a different Space. */
   | 'wrong-space'
-  /** An applicable tombstone names this device. */
+  /** A validly signed, applicable tombstone names this device. */
   | 'revoked'
   /** The chain returns to a device it has already visited. */
   | 'cycle'
@@ -56,80 +58,170 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   return true;
 }
 
+type RecordIndex = Map<string, DeviceRecord>;
+
+/**
+ * The highest revision wins per device, so a server that serves an older record
+ * alongside a newer one cannot make the older one the one that counts.
+ */
+function indexByHighestRevision(records: readonly DeviceRecord[]): RecordIndex {
+  const index: RecordIndex = new Map();
+  for (const record of records) {
+    const existing = index.get(record.deviceId);
+    if (!existing || record.revision > existing.revision) {
+      index.set(record.deviceId, record);
+    }
+  }
+  return index;
+}
+
+function walk(
+  deviceId: string,
+  anchor: SpaceTrustAnchor,
+  records: RecordIndex,
+  revoked: ReadonlySet<string>,
+  path: ReadonlySet<string>
+): DeviceTrust {
+  if (path.has(deviceId)) {
+    return fail('cycle');
+  }
+  const record = records.get(deviceId);
+  if (!record) {
+    return fail('unknown-device');
+  }
+  if (record.spaceId !== anchor.spaceId) {
+    return fail('wrong-space');
+  }
+  if (revoked.has(deviceId)) {
+    return fail('revoked');
+  }
+
+  const authoriser = record.authorisedBy;
+
+  if (authoriser.kind === 'self') {
+    if (deviceId !== anchor.rootDeviceId) {
+      return fail('self-not-root');
+    }
+    if (!sameBytes(record.signingPublicKey, anchor.rootSigningPublicKey)) {
+      return fail('anchor-mismatch');
+    }
+    return verifyDeviceRecord(record, anchor.rootSigningPublicKey)
+      ? TRUSTED
+      : fail('bad-signature');
+  }
+
+  if (authoriser.kind === 'recovery') {
+    return verifyDeviceRecord(record, anchor.recoverySigningPublicKey)
+      ? TRUSTED
+      : fail('bad-signature');
+  }
+
+  const upstream = walk(authoriser.deviceId, anchor, records, revoked, new Set([...path, deviceId]));
+  if (!upstream.trusted) {
+    // The upstream reason is propagated rather than flattened, because "your
+    // authoriser is revoked" and "your authoriser is unknown" want different
+    // things said to whoever is looking at it.
+    return upstream;
+  }
+  const signer = records.get(authoriser.deviceId);
+  if (!signer) {
+    return fail('unknown-device');
+  }
+  return verifyDeviceRecord(record, signer.signingPublicKey)
+    ? TRUSTED
+    : fail('bad-signature');
+}
+
+/**
+ * Is this tombstone a revocation, or a row the server made up?
+ *
+ * A tombstone counts only if the authority that issued it is itself valid. The
+ * signature is checked against the key that authority implies, and for a device
+ * that means the device has to be currently trusted under the revocations
+ * already accepted.
+ */
+function revocationIsValid(
+  tombstone: DeviceTombstone,
+  anchor: SpaceTrustAnchor,
+  records: RecordIndex,
+  revoked: ReadonlySet<string>
+): boolean {
+  if (tombstone.spaceId !== anchor.spaceId) {
+    return false;
+  }
+
+  const revoker = tombstone.revokedBy;
+
+  if (revoker.kind === 'recovery') {
+    return verifyDeviceTombstone(tombstone, anchor.recoverySigningPublicKey);
+  }
+
+  // A device cannot authorise its own removal. The type says a revoker is never
+  // the target in the intended flow, but "intended" is not an invariant, and a
+  // self-signed tombstone is the cheapest forgery to attempt.
+  if (revoker.deviceId === tombstone.targetDeviceId) {
+    return false;
+  }
+
+  const signer = records.get(revoker.deviceId);
+  if (!signer) {
+    return false;
+  }
+  if (!walk(revoker.deviceId, anchor, records, revoked, new Set()).trusted) {
+    return false;
+  }
+  return verifyDeviceTombstone(tombstone, signer.signingPublicKey);
+}
+
+/**
+ * The set of devices that have been validly revoked.
+ *
+ * Device trust depends on revocations and a revocation's validity depends on
+ * device trust, so this grows a set rather than resolving it in one pass: start
+ * trusting everyone, accept the tombstones whose authority is trusted, and
+ * repeat. Each round evaluates every tombstone against the same set, so the
+ * result does not depend on the order the server listed them in.
+ *
+ * Growing rather than shrinking is the safe direction. A forged tombstone
+ * cannot enter, because its signer is not trusted; and in the pathological case
+ * where two devices revoke each other, both are revoked, which is the
+ * conservative outcome rather than letting a pair of compromised devices hold
+ * the Space.
+ */
+function computeRevokedDeviceIds(
+  anchor: SpaceTrustAnchor,
+  records: RecordIndex,
+  tombstones: readonly DeviceTombstone[]
+): Set<string> {
+  const revoked = new Set<string>();
+  const applicable = tombstones.filter((tombstone) => tombstone.spaceId === anchor.spaceId);
+
+  for (;;) {
+    const accepted: string[] = [];
+    for (const tombstone of applicable) {
+      if (revoked.has(tombstone.targetDeviceId)) {
+        continue;
+      }
+      if (revocationIsValid(tombstone, anchor, records, revoked)) {
+        accepted.push(tombstone.targetDeviceId);
+      }
+    }
+    if (accepted.length === 0) {
+      return revoked;
+    }
+    for (const deviceId of accepted) {
+      revoked.add(deviceId);
+    }
+  }
+}
+
 export function verifyDeviceTrust(
   targetDeviceId: string,
   anchor: SpaceTrustAnchor,
   records: readonly DeviceRecord[],
   tombstones: readonly DeviceTombstone[] = []
 ): DeviceTrust {
-  // The highest revision wins per device, so a server that serves an older
-  // record alongside a newer one cannot make the older one the one that counts.
-  const byDeviceId = new Map<string, DeviceRecord>();
-  for (const record of records) {
-    const existing = byDeviceId.get(record.deviceId);
-    if (!existing || record.revision > existing.revision) {
-      byDeviceId.set(record.deviceId, record);
-    }
-  }
-
-  // Applicable means it belongs to this Space. A tombstone from somewhere else
-  // that happens to name the same id revokes nothing here.
-  const revokedIds = new Set(
-    tombstones
-      .filter((tombstone) => tombstone.spaceId === anchor.spaceId)
-      .map((tombstone) => tombstone.targetDeviceId)
-  );
-
-  const walk = (deviceId: string, path: ReadonlySet<string>): DeviceTrust => {
-    if (path.has(deviceId)) {
-      return fail('cycle');
-    }
-    const record = byDeviceId.get(deviceId);
-    if (!record) {
-      return fail('unknown-device');
-    }
-    if (record.spaceId !== anchor.spaceId) {
-      return fail('wrong-space');
-    }
-    if (revokedIds.has(deviceId)) {
-      return fail('revoked');
-    }
-
-    const authoriser = record.authorisedBy;
-
-    if (authoriser.kind === 'self') {
-      if (deviceId !== anchor.rootDeviceId) {
-        return fail('self-not-root');
-      }
-      if (!sameBytes(record.signingPublicKey, anchor.rootSigningPublicKey)) {
-        return fail('anchor-mismatch');
-      }
-      return verifyDeviceRecord(record, anchor.rootSigningPublicKey)
-        ? TRUSTED
-        : fail('bad-signature');
-    }
-
-    if (authoriser.kind === 'recovery') {
-      return verifyDeviceRecord(record, anchor.recoverySigningPublicKey)
-        ? TRUSTED
-        : fail('bad-signature');
-    }
-
-    const upstream = walk(authoriser.deviceId, new Set([...path, deviceId]));
-    if (!upstream.trusted) {
-      // The upstream reason is propagated rather than flattened, because "your
-      // authoriser is revoked" and "your authoriser is unknown" want different
-      // things said to whoever is looking at it.
-      return upstream;
-    }
-    const signer = byDeviceId.get(authoriser.deviceId);
-    if (!signer) {
-      return fail('unknown-device');
-    }
-    return verifyDeviceRecord(record, signer.signingPublicKey)
-      ? TRUSTED
-      : fail('bad-signature');
-  };
-
-  return walk(targetDeviceId, new Set());
+  const index = indexByHighestRevision(records);
+  const revoked = computeRevokedDeviceIds(anchor, index, tombstones);
+  return walk(targetDeviceId, anchor, index, revoked, new Set());
 }

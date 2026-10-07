@@ -184,7 +184,8 @@ export const wireSpaceTrustAnchorSchema = z
     rootSigningPublicKey: bytesSchema(ED25519_PUBLIC_KEY_BYTES, 'rootSigningPublicKey'),
     recoverySigningPublicKey: bytesSchema(ED25519_PUBLIC_KEY_BYTES, 'recoverySigningPublicKey'),
     createdAt: timestampSchema,
-    signature: bytesSchema(ED25519_SIGNATURE_BYTES, 'signature'),
+    rootSignature: bytesSchema(ED25519_SIGNATURE_BYTES, 'rootSignature'),
+    recoverySignature: bytesSchema(ED25519_SIGNATURE_BYTES, 'recoverySignature'),
   })
   .strict();
 
@@ -313,7 +314,8 @@ export function parseWireSpaceTrustAnchor(input: unknown): SpaceTrustAnchor {
     rootSigningPublicKey: bytes(wire.rootSigningPublicKey),
     recoverySigningPublicKey: bytes(wire.recoverySigningPublicKey),
     createdAt: wire.createdAt,
-    signature: bytes(wire.signature),
+    rootSignature: bytes(wire.rootSignature),
+    recoverySignature: bytes(wire.recoverySignature),
   };
 }
 
@@ -324,7 +326,8 @@ export function toWireSpaceTrustAnchor(anchor: SpaceTrustAnchor): WireSpaceTrust
     rootSigningPublicKey: encodeBase64(anchor.rootSigningPublicKey),
     recoverySigningPublicKey: encodeBase64(anchor.recoverySigningPublicKey),
     createdAt: anchor.createdAt,
-    signature: encodeBase64(anchor.signature),
+    rootSignature: encodeBase64(anchor.rootSignature),
+    recoverySignature: encodeBase64(anchor.recoverySignature),
   });
 }
 

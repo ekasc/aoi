@@ -332,18 +332,43 @@ export function signSpaceTrustAnchor(
   return sign(encodeSpaceTrustAnchor(input), rootSigningPrivateKey);
 }
 
+/** The key the recovery phrase derives signs the same bytes. */
+export function signSpaceTrustAnchorRecovery(
+  input: SpaceTrustAnchorInput,
+  recoverySigningPrivateKey: Uint8Array
+): Uint8Array {
+  return sign(encodeSpaceTrustAnchor(input), recoverySigningPrivateKey);
+}
+
 /**
- * Check that an anchor was not mangled in transit.
+ * Check the root's signature over an anchor.
  *
- * This is not a trust decision. The anchor is trusted because the creator
- * pinned it, or because a device verified out of band agreed to it, or because
- * a recovery bootstrap derived the recovery key and found it matched. The
- * signature only says the bytes are the bytes.
+ * Not a trust decision on its own. The root key is trusted because the creator
+ * pinned it or because a device verified it out of band.
  */
 export function verifySpaceTrustAnchor(
   anchor: SpaceTrustAnchor,
   rootSigningPublicKey: Uint8Array
 ): boolean {
-  const { signature, ...input } = anchor;
-  return verify(signature, encodeSpaceTrustAnchor(input), rootSigningPublicKey);
+  const { rootSignature, recoverySignature, ...input } = anchor;
+  void recoverySignature;
+  return verify(rootSignature, encodeSpaceTrustAnchor(input), rootSigningPublicKey);
+}
+
+/**
+ * Check the recovery signature over an anchor.
+ *
+ * This is the check a recovery-only client has, and it is the reason the anchor
+ * carries a second signature. Comparing the recovery public key field alone
+ * would accept an anchor whose root id and root key the server had swapped,
+ * because the server already knows that public key. A signature over the whole
+ * object cannot be produced by anyone who does not hold the phrase.
+ */
+export function verifySpaceTrustAnchorRecovery(
+  anchor: SpaceTrustAnchor,
+  recoverySigningPublicKey: Uint8Array
+): boolean {
+  const { rootSignature, recoverySignature, ...input } = anchor;
+  void rootSignature;
+  return verify(recoverySignature, encodeSpaceTrustAnchor(input), recoverySigningPublicKey);
 }

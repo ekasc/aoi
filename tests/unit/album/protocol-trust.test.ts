@@ -7,6 +7,7 @@ import {
   signDeviceRecord,
   signDeviceTombstone,
   signSpaceTrustAnchor,
+  signSpaceTrustAnchorRecovery,
 } from '@/features/album/protocol-crypto';
 import { verifyDeviceTrust } from '@/features/album/protocol-trust';
 import { generateRecoveryPhrase, recoveryEntropyFromPhrase } from '@/features/album/recovery';
@@ -41,7 +42,12 @@ function anchorFor(root: Keys, overrides: Partial<SpaceTrustAnchor> = {}): Space
     recoverySigningPublicKey: recoveryPublicKey,
     createdAt: AT,
   };
-  return { ...input, signature: signSpaceTrustAnchor(input, root.signingPrivateKey), ...overrides };
+  return {
+    ...input,
+    rootSignature: signSpaceTrustAnchor(input, root.signingPrivateKey),
+    recoverySignature: signSpaceTrustAnchorRecovery(input, recoveryPrivateKey),
+    ...overrides,
+  };
 }
 
 function record(
@@ -232,6 +238,85 @@ describe('revocation cascades', () => {
     expect(verifyDeviceTrust('device-middle', anchor, [rootRecord, middleRecord], [elsewhere])).toEqual({
       trusted: true,
     });
+  });
+});
+
+/**
+ * A tombstone is a claim, not a fact. Only a revocation whose authority is
+ * itself valid counts, or a server can revoke anything it likes by writing a
+ * row with the right spaceId and a garbage signature.
+ */
+describe('a tombstone counts only if its authority is valid', () => {
+  function base() {
+    const { anchor, rootRecord, middleRecord, root } = tree();
+    return { anchor, rootRecord, middleRecord, root };
+  }
+
+  it('ignores a forged tombstone', () => {
+    const { anchor, rootRecord, middleRecord, root } = base();
+    const forged = tombstone('device-middle', 2, { kind: 'device', deviceId: ROOT }, root.signingPrivateKey);
+    const garbage = { ...forged, signature: new Uint8Array(64) };
+    expect(verifyDeviceTrust('device-middle', anchor, [rootRecord, middleRecord], [garbage])).toEqual({ trusted: true });
+  });
+
+  it('ignores a tombstone from an unknown device', () => {
+    const { anchor, rootRecord, middleRecord } = base();
+    const ghost = keys();
+    const forged = tombstone('device-middle', 2, { kind: 'device', deviceId: 'device-ghost' }, ghost.signingPrivateKey);
+    expect(verifyDeviceTrust('device-middle', anchor, [rootRecord, middleRecord], [forged])).toEqual({ trusted: true });
+  });
+
+  it('ignores a tombstone from a device that is not itself trusted', () => {
+    const { anchor, rootRecord, middleRecord } = base();
+    const outsider = keys();
+    // The outsider has a record, but its authoriser does not exist, so the
+    // signature is real and the authority is not.
+    const outsiderRecord = record('device-outsider', outsider, { kind: 'device', deviceId: 'device-ghost' }, 1, outsider.signingPrivateKey);
+    const forged = tombstone('device-middle', 2, { kind: 'device', deviceId: 'device-outsider' }, outsider.signingPrivateKey);
+    expect(
+      verifyDeviceTrust('device-middle', anchor, [rootRecord, middleRecord, outsiderRecord], [forged])
+    ).toEqual({ trusted: true });
+  });
+
+  it('ignores a device revoking itself', () => {
+    const { anchor, rootRecord, middleRecord, middle } = tree();
+    const selfRevoked = tombstone('device-middle', 2, { kind: 'device', deviceId: 'device-middle' }, middle.signingPrivateKey);
+    expect(verifyDeviceTrust('device-middle', anchor, [rootRecord, middleRecord], [selfRevoked])).toEqual({
+      trusted: true,
+    });
+  });
+
+  it('honours a tombstone the recovery key signed', () => {
+    const { anchor, rootRecord, middleRecord } = base();
+    const revoked = tombstone('device-middle', 2, { kind: 'recovery' }, recoveryPrivateKey);
+    expect(verifyDeviceTrust('device-middle', anchor, [rootRecord, middleRecord], [revoked])).toEqual({
+      trusted: false,
+      reason: 'revoked',
+    });
+  });
+
+  it('honours a tombstone a trusted device signed, including for the root', () => {
+    const { anchor, rootRecord, middleRecord, middle } = tree();
+    const revokeRoot = tombstone(ROOT, 2, { kind: 'device', deviceId: 'device-middle' }, middle.signingPrivateKey);
+    expect(verifyDeviceTrust(ROOT, anchor, [rootRecord, middleRecord], [revokeRoot])).toEqual({
+      trusted: false,
+      reason: 'revoked',
+    });
+  });
+
+  it('lets two devices revoke each other rather than letting the pair stand', () => {
+    const { anchor, root, rootRecord } = tree();
+    const a = keys();
+    const b = keys();
+    const aRecord = record('device-a', a, { kind: 'device', deviceId: ROOT }, 1, root.signingPrivateKey);
+    const bRecord = record('device-b', b, { kind: 'device', deviceId: ROOT }, 1, root.signingPrivateKey);
+    const aRevokesB = tombstone('device-b', 2, { kind: 'device', deviceId: 'device-a' }, a.signingPrivateKey);
+    const bRevokesA = tombstone('device-a', 2, { kind: 'device', deviceId: 'device-b' }, b.signingPrivateKey);
+
+    const records = [rootRecord, aRecord, bRecord];
+    const tombstones = [aRevokesB, bRevokesA];
+    expect(verifyDeviceTrust('device-a', anchor, records, tombstones)).toEqual({ trusted: false, reason: 'revoked' });
+    expect(verifyDeviceTrust('device-b', anchor, records, tombstones)).toEqual({ trusted: false, reason: 'revoked' });
   });
 });
 

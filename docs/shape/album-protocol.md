@@ -207,17 +207,31 @@ spaceTrustAnchor {
   rootSigningPublicKey
   recoverySigningPublicKey
   createdAt
-  signature             // by the root device over the fields above
+  rootSignature         // by the root device over the fields above
+  recoverySignature     // by the key the phrase derives, over the same bytes
 }
 ```
 
-It is signed, but the signature is not what makes it trusted, and that
-distinction matters because a self-signed root is exactly what a hostile server
-would offer. The creator pins it when it creates the Space. A device enrolled
-later accepts it only after trusting, out of band, the device that authorised
-it. A recovery bootstrap derives `recoverySigningPublicKey` from the phrase and
-checks that the anchor agrees. Verifying the signature proves the object was not
-mangled in transit, and nothing more.
+Two signatures over the same bytes, because there are two ways to obtain the key
+that makes an anchor authentic, and neither signature is what makes it trusted.
+
+The root signature covers the ordinary path: the anchor was pinned when the
+Space was created, or a device accepted it after trusting out of band the device
+that authorised it.
+
+The recovery signature covers the path where a device holds only the phrase. It
+exists because the server already knows the recovery public key, since that key
+is public. An anchor that only had to agree with that field could have its
+`rootDeviceId` and `rootSigningPublicKey` swapped for ones the server holds the
+key to, and its root signature would still verify, against the server's own fake
+root. A signature the phrase produces cannot be forged, so the recovery path
+authenticates the whole object rather than one field of it.
+
+Verifying either signature establishes authenticity relative to a key. Trust
+still comes from how that key was obtained: a local pin, an out-of-band device
+verification, or possession of the recovery secret. A self-signed root is
+exactly what a hostile server would offer, which is why the pin, and not the
+signature, is the trust.
 
 ## Device records
 
@@ -412,6 +426,13 @@ record, so every device can verify a recovery-bootstrapped record. Without it,
 a recovered device could hold the key but could not prove to anyone else that
 it was allowed to.
 
+Recovery bootstrap is the same check in the other direction, and it has to cover
+the whole anchor rather than one field of it: derive the signing key from the
+phrase, confirm it matches `recoverySigningPublicKey`, and then verify
+`recoverySignature` over the rest. Confirming the match alone would accept an
+anchor whose root the server had swapped, because the recovery public key is
+public and the server can keep it while replacing everything around it.
+
 This is the honest cost, and it should be written on the screen that shows the
 phrase: whoever holds the phrase can read the archive and can add devices to
 it. That is already true of any recovery scheme for a shared key. Pretending
@@ -522,6 +543,25 @@ device that authors itself can sign a new record at a higher revision and
 resurrect itself, and a compromised device is exactly the one that would try. A
 device that should be trusted again is enrolled again, with fresh keys and a new
 id, which is what a compromise calls for anyway.
+
+A tombstone is also a claim rather than a fact, so it counts only when the
+authority that issued it is itself valid: a recovery tombstone has to verify
+against the recovery key, and a device tombstone has to verify against a device
+that is currently trusted. Without that check a server can revoke any device it
+likes by writing a row with the right `spaceId` and a garbage signature, which
+does not hand it plaintext but does let it reshape what the client believes. A
+device cannot revoke itself, and a device that is not itself trusted cannot
+revoke anything.
+
+That leaves a circularity, because device trust depends on revocations and a
+revocation's validity depends on device trust. The resolver grows a set rather
+than resolving it in one pass: start with no revocations, accept the tombstones
+whose authority is trusted, and repeat until nothing new is accepted. Every
+round evaluates each tombstone against the same set, so the answer does not
+depend on the order the server listed them in. Growing is also the safe
+direction. A forged tombstone cannot enter, because its signer is not trusted,
+and two devices that revoke each other both end up revoked rather than both
+standing.
 
 ## Authenticating media metadata
 
