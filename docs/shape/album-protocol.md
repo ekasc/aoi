@@ -95,14 +95,15 @@ with no boundaries lets two different inputs produce one byte string, which is
 exactly the ambiguity this section removes.
 
 The purpose label is the first field of the structure it protects, never a
-separate concatenation:
+separate concatenation, and the encoder writes it rather than accepting it, so
+a structure cannot be built with the wrong label:
 
 ```
-envelopeContext = encode({
-  label: 'aoi/envelope/v1',
+envelopeContext = encodeEnvelopeContext({
   spaceId,
   generation,
   recipientDeviceId,
+  authoriserDeviceId,
   recipientRevision,
 })
 ```
@@ -110,6 +111,11 @@ envelopeContext = encode({
 That one value is both the HKDF `info` and the AEAD `aad`. The derivation and
 the authentication then bind the same bytes by construction, rather than by two
 expressions that happen to agree today.
+
+The encoder lives in `packages/shared/src/album-protocol.ts`, with frozen byte
+vectors in `packages/shared/src/__tests__/album-protocol.test.ts`. Those vectors
+are the format's real test: a round trip proves two copies of the same wrong
+encoder agree, and a frozen vector proves the wire format did not move.
 
 ## The Space key
 
@@ -297,12 +303,14 @@ two derivations with separate labels:
 
 ```
 entropy(24 words)
-  -> HKDF-SHA256(ikm = entropy, salt = none, info = 'aoi/recovery-wrap/v1',    32 bytes) = recoveryWrapKey
-  -> HKDF-SHA256(ikm = entropy, salt = none, info = 'aoi/recovery-signing/v1', 32 bytes) = recoverySigningKey
+  -> HKDF-SHA256(ikm = entropy, salt = none, info = encodeRecoveryWrapContext(),    32 bytes) = recoveryWrapKey
+  -> HKDF-SHA256(ikm = entropy, salt = none, info = encodeRecoverySigningContext(), 32 bytes) = recoverySigningKey
 ```
 
 Two labels rather than one, because one key encrypts and the other authorises,
-and a shared label would let either be used where the other belongs.
+and a shared label would let either be used where the other belongs. Each
+context is the encoded label alone, which is what keeps the rule true that
+every HKDF context goes through the encoder rather than being a raw string.
 
 The recovery envelope has the same discipline as the device envelope and one
 fewer field, because it is addressed to whoever holds the phrase rather than to
@@ -318,7 +326,7 @@ recoveryEnvelope {
 ```
 
 ```
-context = encode({ label: 'aoi/recovery-envelope/v1', spaceId, generation })
+context = encodeRecoveryEnvelopeContext({ spaceId, generation })
 
 key   = recoveryWrapKey
 nonce = the envelope's nonce
@@ -431,8 +439,8 @@ resurrection as a lower revision and refuses it.
 Three changes, each doing one job.
 
 The media ciphertext's AAD is an encoded context,
-`encode({ label: 'aoi/media/v1', mediaId, generation })`, so a ciphertext
-cannot be moved to another record and still decrypt.
+`encodeMediaContext({ mediaId, generation })`, so a ciphertext cannot be moved
+to another record and still decrypt.
 
 The uploader signs the encoded manifest. Any device can then verify the
 metadata instead of trusting the server's list. Detection beats
