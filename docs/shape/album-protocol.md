@@ -1,8 +1,8 @@
 # The shared album's key protocol
 
-Status: proposed. The code at `457168f` does not implement this. It implements
-a different and smaller thing, described in the first section, and that gap is
-the reason this document exists.
+Status: proposed. The code on `feature/shared-album-encryption` does not
+implement this. It implements a different and smaller thing, described in the
+first section, and that gap is the reason this document exists.
 
 An audit of the branch found the primitives sound and the protocol unfinished.
 AES-GCM with fresh 96-bit nonces, independent random media keys, degenerate
@@ -69,6 +69,48 @@ move the replacement problem one level up without solving it. The principle:
 model what you can actually verify, which is devices plus a recovery secret,
 rather than an identity that has to survive hardware you do not control.
 
+## Canonical bytes
+
+Every signature, every HKDF context, and every AAD in this document is a byte
+string. Two implementations that produce different bytes from the same inputs
+will disagree about what was signed, so the encoding is part of the contract
+rather than an implementation detail.
+
+One encoder feeds all three, with these rules.
+
+- A one-byte format version, `0x01`, leads every structure.
+- Fields are written in the order the structure declares them. Nothing is
+  sorted, and nothing iterates a dictionary.
+- A string is a uint32 big-endian byte length, then its UTF-8 bytes.
+- An integer is uint64 big-endian.
+- A byte string is a uint32 big-endian length, then the bytes.
+- An optional field is a presence byte, `0x00` or `0x01`, followed by the field
+  only when it is present.
+- A list is a uint32 big-endian count, then each element in order.
+- A label is itself a length-prefixed string, so a label can never be read as
+  data.
+
+The length prefixes are the point. Concatenating a `spaceId` and a `generation`
+with no boundaries lets two different inputs produce one byte string, which is
+exactly the ambiguity this section removes.
+
+The purpose label is the first field of the structure it protects, never a
+separate concatenation:
+
+```
+envelopeContext = encode({
+  label: 'aoi/envelope/v1',
+  spaceId,
+  generation,
+  recipientDeviceId,
+  recipientRevision,
+})
+```
+
+That one value is both the HKDF `info` and the AEAD `aad`. The derivation and
+the authentication then bind the same bytes by construction, rather than by two
+expressions that happen to agree today.
+
 ## The Space key
 
 The Space has one random 32-byte `spaceKey`, generated once by the device that
@@ -96,11 +138,13 @@ archive key and becomes only a way to seal the archive key for one device at a
 time. That single change is what makes replacement, enrolment, and recovery
 possible at all.
 
-Every derivation gets its own HKDF info string. One string per purpose:
-`aoi/space-key/v1` is now only ever the Space key's own name, `aoi/envelope/v1`
-for envelope wrapping, `aoi/recovery/v1` for the recovery secret. The current
-code reuses one string for the archive key and for envelope wrapping, and that
-reuse is what allowed the degenerate envelope above.
+Every derivation gets its own label. The Space key has none, because it is
+random and never derived, and a label named after it would only invite someone
+to derive it later. The labels that exist are `aoi/envelope/v1` for envelope
+wrapping, `aoi/recovery-wrap/v1` and `aoi/recovery-signing/v1` for the two
+recovery derivations, and `aoi/recovery-envelope/v1` for the recovery
+envelope's AAD. The current code reuses one string for the archive key and for
+envelope wrapping, and that reuse is what allowed the degenerate envelope above.
 
 ## Device records
 
@@ -114,7 +158,6 @@ rollback detection and cost real storage, and v1 takes the cheaper side.
 deviceRecord {
   deviceId
   spaceId
-  generation
   signingPublicKey
   agreementPublicKey
   authorisedBy        // a deviceId, or 'recovery'
@@ -124,8 +167,19 @@ deviceRecord {
 }
 ```
 
-The server stores records and serves them. It cannot mint one, because it
-cannot produce the authorising signature.
+`generation` is deliberately absent. Device trust and key generation are
+different axes. When generation 2 is created, an already-authorised device does
+not need a new identity record or a second authorisation signature; it needs an
+envelope at generation 2. Generation belongs on the objects that carry key
+material, which is space-key envelopes, wrapped media keys, and media records.
+
+The server stores records and serves them. What it cannot do is make one
+acceptable. It can invent a self-signed record for a client that has pinned no
+trust yet, and on a fresh install there is nothing to check it against. Once a
+device has been authorised by a trusted device or by the recovery secret, the
+client accepts only records carrying a signature from a key it already trusts,
+and a record the server invents afterwards is not one of them. The guarantee is
+about acceptance, not creation.
 
 The API becomes per-device rather than one shared bag:
 
@@ -134,11 +188,12 @@ PUT /v1/spaces/current/album/devices/:deviceId
 ```
 
 The server binds the record to the authenticated user and rejects a write
-whose `revision` is not greater than the stored one. One row, one writer, so
-no device can rewrite another's history. The current single-blob backup is what
-lets a stale snapshot overwrite a partner's entry, and no amount of merging on
-the server fixes that, because the server cannot tell a stale snapshot from a
-fresh one.
+whose `revision` is not greater than the stored one. One row, one writer, so no
+device can rewrite another device's identity. Removal is not a rewrite of this
+row; it is a separate tombstone, described below. The current single-blob
+backup is what lets a stale snapshot overwrite a partner's entry, and no amount
+of merging on the server fixes that, because the server cannot tell a stale
+snapshot from a fresh one.
 
 ## The envelope
 
@@ -158,34 +213,38 @@ spaceKeyEnvelope {
 }
 ```
 
-Wrapping key:
+Both the derivation and the authentication bind one encoded context, built by
+the encoder above:
 
 ```
+context = encode({
+  label: 'aoi/envelope/v1',
+  spaceId,
+  generation,
+  recipientDeviceId,
+  authoriserDeviceId,
+  recipientRevision,
+})
+
 wrappingKey = HKDF-SHA256(
   ikm    = X25519(authoriser.agreement.private, recipient.agreement.public),
   salt   = none,
-  info   = 'aoi/envelope/v1' || spaceId || generation
-                         || recipientDeviceId || recipientRevision,
+  info   = context,
   length = 32,
 )
-```
 
-AEAD:
-
-```
 AES-256-GCM(
   key       = wrappingKey,
   nonce     = the envelope's nonce,
   plaintext = spaceKey,
-  aad       = 'aoi/envelope/v1' || spaceId || generation
-              || recipientDeviceId || authoriserDeviceId || recipientRevision,
+  aad       = context,
 )
 ```
 
-The info string and the AAD carry the same binding, and both name the purpose.
-Reusing one HKDF info string for the archive key and for envelope wrapping is
-what produced the degenerate envelope in the current code, so the purpose
-belongs in the derivation rather than in a comment beside it.
+One context for both, so the two cannot drift apart by editing one expression
+and not the other. Reusing one HKDF label for the archive key and for envelope
+wrapping is what produced the degenerate envelope in the current code, so the
+purpose belongs in the derivation rather than in a comment beside it.
 
 Binding `recipientRevision` makes an envelope valid for exactly one revision of
 the recipient's record. When the recipient rewrites its record, the authoriser
@@ -218,8 +277,10 @@ both screens show the same string, which is the property that makes reading it
 aloud work.
 
 The envelope is sealed under `HKDF(X25519(trusted.agreement, new.agreement))`
-with AAD covering the canonical record bytes. A server that swaps the envelope
-onto a different device record breaks the AAD and the unwrap fails.
+with the encoded context from the section above as both its info and its AAD,
+and that context names the recipient's revision. A server that moves the
+envelope onto a different device record, or onto a different revision of the
+same one, breaks the AAD and the unwrap fails.
 
 The new device verifies the authorising signature against the key the human
 just confirmed, not against whatever the server listed. This is the step the
@@ -231,12 +292,38 @@ same time. A Space with one device is a normal state, not an incomplete one.
 
 ## Recovery
 
-The phrase is a key-encryption key, never an archive key. Two derivations,
-domain separated:
+The phrase is a key-encryption key, never an archive key. One entropy value,
+two derivations with separate labels:
 
 ```
-entropy(24 words) -> recoveryWrapKey  -> seals spaceKey in the recovery envelope
-                  -> recoverySigningKey -> signs records authorisedBy: 'recovery'
+entropy(24 words)
+  -> HKDF-SHA256(ikm = entropy, salt = none, info = 'aoi/recovery-wrap/v1',    32 bytes) = recoveryWrapKey
+  -> HKDF-SHA256(ikm = entropy, salt = none, info = 'aoi/recovery-signing/v1', 32 bytes) = recoverySigningKey
+```
+
+Two labels rather than one, because one key encrypts and the other authorises,
+and a shared label would let either be used where the other belongs.
+
+The recovery envelope has the same discipline as the device envelope and one
+fewer field, because it is addressed to whoever holds the phrase rather than to
+a device:
+
+```
+recoveryEnvelope {
+  spaceId
+  generation
+  nonce                  // 96-bit, random
+  ciphertext             // spaceKey, sealed
+}
+```
+
+```
+context = encode({ label: 'aoi/recovery-envelope/v1', spaceId, generation })
+
+key   = recoveryWrapKey
+nonce = the envelope's nonce
+plain = spaceKey
+aad   = context
 ```
 
 The `recoverySigningKey` has a public half published in the Space's creation
@@ -256,6 +343,23 @@ Removal writes a signed tombstone. It does not revoke access to anything the
 removed device already holds, because the space key is shared and unrotated.
 Say so in the UI rather than implying otherwise.
 
+A lost phone cannot sign its own tombstone, which is the first thing to notice
+about this object, so the signature comes from somewhere else:
+
+```
+deviceTombstone {
+  targetDeviceId
+  revision              // higher than the target record it revokes
+  revokedByDeviceId
+  revokedAt
+  signature             // by another trusted device, or by the recovery root
+}
+```
+
+The rule, stated once: a device record is authorised by another trusted device
+or by recovery, and a device tombstone is signed the same way, because the
+device being revoked is exactly the one that cannot be trusted to cooperate.
+
 Real revocation means a new generation: generate a new random space key and
 rewrap every media key under it. A removed device is then excluded because it
 never receives a generation-2 envelope, not because the API declines to serve
@@ -273,10 +377,10 @@ already possessed. v1 ships the tombstone and the generation field and does not
 implement the rewrap.
 
 Version the key format now even though rotation is not implemented. `generation`
-belongs in the wrapped key and in the media record from the first release. The
-principle: no routine rotation for an archive, because opening a five-year-old
-photo matters more than forward secrecy, but a version field costs nothing and
-retrofitting one costs a migration.
+belongs on the wrapped key, the media record, and the space-key envelope from
+the first release. The principle: no routine rotation for an archive, because
+opening a five-year-old photo matters more than forward secrecy, but a version
+field costs nothing and retrofitting one costs a migration.
 
 ## Authenticating media metadata
 
@@ -286,15 +390,14 @@ wrapped-key association in the clear, all unauthenticated, so it can remix the
 archive without reading a pixel: swap two records' wrapped keys to produce
 wrong-key failures, reorder time, reassign whose photo it is.
 
-The record becomes:
+Two objects, because two different devices may be the author.
 
 ```
-mediaRecord {
+mediaManifest {
   mediaId
   spaceId
   generation
-  revision
-  state                 // live | deleted
+  revision              // the uploader's sequence for this media
   wrappedKey
   sealedNonce
   byteLength
@@ -305,28 +408,49 @@ mediaRecord {
   createdAt
   signature             // by uploaderDeviceId over the canonical bytes above
 }
+
+mediaTombstone {
+  mediaId
+  revision              // higher than the manifest it removes
+  deletedAt
+  deletedByDeviceId
+  signature             // by any authorised device
+}
 ```
+
+The manifest is immutable once written. A delete does not rewrite it, because
+the device deleting is usually not the device that uploaded: the product rule
+is that either member may remove shared media, and Bob cannot produce Alice's
+signature. Removal is therefore its own signed object, signed by whichever
+authorised device asked for it, and the pair is what a client reads.
+
+`revision` orders the two against each other. A tombstone's revision is higher
+than the manifest's, so a client that has seen the manifest reads a
+resurrection as a lower revision and refuses it.
 
 Three changes, each doing one job.
 
-The media ciphertext's AAD covers `mediaId` and `generation`, so a ciphertext
+The media ciphertext's AAD is an encoded context,
+`encode({ label: 'aoi/media/v1', mediaId, generation })`, so a ciphertext
 cannot be moved to another record and still decrypt.
 
-The uploader signs a manifest over the canonical record bytes. Any device can
-then verify the metadata instead of trusting the server's list. Detection beats
+The uploader signs the encoded manifest. Any device can then verify the
+metadata instead of trusting the server's list. Detection beats
 failure here: a bad AAD gives an indistinguishable decrypt error, and the whole
 point of signing is to be able to say what went wrong. Signing buys
 authenticity, not freshness, which is why `revision` is inside the signed bytes.
 
 Deletion is a signed tombstone, not an absence. A row that is simply missing is
-indistinguishable from a row the server chose not to send.
+indistinguishable from a row the server chose not to send, and a row the server
+deleted is indistinguishable from one it never had.
 
 ## Rollback
 
 Two protections, and they are not the same.
 
-Writes: the server rejects `revision <= stored`, for device records and for
-media records alike, so nothing rolls a row backward through the API.
+Writes: the server rejects `revision <= stored`, for device records, media
+manifests and media tombstones alike, so nothing rolls a row backward through
+the API.
 
 Reads: the server can still serve an old revision, and no server-side rule
 prevents that. A client detects it by persisting the highest revision it has
@@ -345,8 +469,9 @@ threat model rather than in a footnote.
 ## What the server can and cannot do
 
 Cannot: read photos, media keys, the space key, or the phrase. Cannot forge a
-device signature or a recovery signature. Cannot add a device that a human has
-not confirmed.
+device signature or a recovery signature. Cannot make a device acceptable to a
+client that has pinned trust, which is a different claim from being unable to
+invent one.
 
 Can: deny service; drop or withhold rows; serve stale records, detectable only
 by a device that remembers a higher revision; learn that photos exist, when
