@@ -94,6 +94,27 @@ export function generateSpaceKey(): Uint8Array {
   return randomBytes(SPACE_KEY_BYTES);
 }
 
+// ── device keys ──────────────────────────────────────────────────────────
+
+export type DeviceKeyMaterial = {
+  signingPrivateKey: Uint8Array;
+  signingPublicKey: Uint8Array;
+  agreementPrivateKey: Uint8Array;
+  agreementPublicKey: Uint8Array;
+};
+
+/** A fresh device's keys. Ed25519 signs, X25519 agrees. */
+export function generateDeviceKeyMaterial(): DeviceKeyMaterial {
+  const signingPrivateKey = ed25519.utils.randomSecretKey();
+  const agreementPrivateKey = x25519.utils.randomSecretKey();
+  return {
+    signingPrivateKey,
+    signingPublicKey: new Uint8Array(ed25519.getPublicKey(signingPrivateKey)),
+    agreementPrivateKey,
+    agreementPublicKey: new Uint8Array(x25519.getPublicKey(agreementPrivateKey)),
+  };
+}
+
 // ── the device envelope ──────────────────────────────────────────────────
 
 export type SealSpaceKeyForDeviceInput = {

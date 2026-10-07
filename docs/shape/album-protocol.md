@@ -433,6 +433,37 @@ phrase, confirm it matches `recoverySigningPublicKey`, and then verify
 anchor whose root the server had swapped, because the recovery public key is
 public and the server can keep it while replacing everything around it.
 
+The whole bootstrap, in the order the checks have to happen:
+
+```
+phrase                  the entropy everything else derives from
+expected Space id       the client's own idea of which Space it is joining
+recovery public key     the phrase holds the key the anchor names
+recovery signature      the phrase signed this whole object
+root signature          the object is internally consistent
+envelope Space id       the envelope is for this Space
+open                    the stable key
+enrol                   a record the trust walker will accept
+```
+
+The root-signature step is not a second trust source. Recovery has already
+established the anchor's trusted fields; this one checks the object is
+internally consistent, because `recoverySignature` does not cover
+`rootSignature` itself and a server could otherwise replace that single field
+with garbage.
+
+Each step fails with its own reason rather than one message, because "your
+phrase is wrong" and "the server gave us an invalid anchor" are different things
+to say to a person and must never collapse into the same sentence:
+`invalid-phrase`, `wrong-space`, `anchor-recovery-key-mismatch`,
+`invalid-recovery-signature`, `invalid-root-signature`,
+`recovery-envelope-invalid`, `untrusted-enrollment`.
+
+Nothing is written until every step has passed. A failed recovery must not leave
+a half-enrolled device behind, so the bootstrap is a pure function that returns
+the new device's material only on success, and storing it is the caller's act
+afterwards.
+
 This is the honest cost, and it should be written on the screen that shows the
 phrase: whoever holds the phrase can read the archive and can add devices to
 it. That is already true of any recovery scheme for a shared key. Pretending
