@@ -104,7 +104,6 @@ const manifestInput = () => ({
   mimeType: 'image/jpeg',
   width: 640,
   height: 480,
-  personTag: 'you' as const,
   uploaderDeviceId: 'device-a',
   createdAt: AT,
 });
@@ -313,7 +312,7 @@ describe('signatures', () => {
     const manifest = { ...input, signature: signMediaManifest(input, signer.signing.privateKey) };
 
     expect(verifyMediaManifest(manifest, signer.signing.publicKey)).toBe(true);
-    expect(verifyMediaManifest({ ...manifest, personTag: 'partner' }, signer.signing.publicKey)).toBe(false);
+    expect(verifyMediaManifest({ ...manifest, width: 100 }, signer.signing.publicKey)).toBe(false);
     expect(verifyMediaManifest({ ...manifest, byteLength: 2048 }, signer.signing.publicKey)).toBe(false);
     expect(verifyMediaManifest({ ...manifest, uploaderDeviceId: 'device-b' }, signer.signing.publicKey)).toBe(false);
     expect(verifyMediaManifest({ ...manifest, sealedNonce: new Uint8Array(12).fill(9) }, signer.signing.publicKey)).toBe(false);

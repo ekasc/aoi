@@ -410,7 +410,19 @@ export type MediaManifestInput = {
   mimeType: string;
   width?: number | null;
   height?: number | null;
-  personTag?: ProtocolPersonTag | null;
+  /**
+   * No `personTag`.
+   *
+   * `'you' | 'partner'` is viewer-relative, which was harmless as loose server
+   * metadata and becomes a protocol bug once it is signed: Alice signs `you`,
+   * Bob receives the same immutable manifest, and `you` now means Bob. The
+   * cryptographic device graph deliberately has no per-person identity, so the
+   * uploader alone cannot tell a client which human was meant.
+   *
+   * If it returns it needs stable semantics, a subject identifier that means the
+   * same thing to both readers, and it must not be frozen into signed history
+   * before that exists.
+   */
   uploaderDeviceId: string;
   createdAt: string;
 };
@@ -435,7 +447,6 @@ export function encodeMediaManifest(input: MediaManifestInput): Uint8Array {
     .string(input.mimeType)
     .optional(input.width ?? null, (writer, value) => writer.uint64(value))
     .optional(input.height ?? null, (writer, value) => writer.uint64(value))
-    .optional(input.personTag ?? null, (writer, value) => writer.string(value))
     .string(input.uploaderDeviceId)
     .string(input.createdAt)
     .toBytes();
@@ -477,7 +488,14 @@ export const PROTOCOL_MIN_COUNTER = 1;
 export const PROTOCOL_MAX_COUNTER = 2 ** 31 - 1;
 export const PROTOCOL_MAX_ID_LENGTH = 128;
 export const PROTOCOL_MAX_MIME_TYPE_LENGTH = 255;
-export const PROTOCOL_MAX_MEDIA_BYTES = 100 * 1024 * 1024;
+/**
+ * The ceiling on one media object, in ciphertext bytes.
+ *
+ * Named for ciphertext on purpose. The number is the exact number of bytes
+ * uploaded to object storage, which is the unit quota accounts in, and calling
+ * it plaintext bytes is how the two got confused in the first place.
+ */
+export const PROTOCOL_MAX_MEDIA_CIPHERTEXT_BYTES = 100 * 1024 * 1024;
 
 /**
  * Ceilings on how much of each kind of state one Space can hold.
@@ -506,8 +524,8 @@ export const MEDIA_KEY_BYTES = 32;
 /** A wrapped key is the key plus the GCM tag the seal appends. */
 export const WRAPPED_KEY_BYTES = SPACE_KEY_BYTES + AES_GCM_TAG_BYTES;
 
-export const PROTOCOL_PERSON_TAGS = ['you', 'partner'] as const;
-export type ProtocolPersonTag = (typeof PROTOCOL_PERSON_TAGS)[number];
+// There is deliberately no person tag here. See `MediaManifestInput` for why a
+// viewer-relative `you | partner` cannot be frozen into signed history.
 
 // ── envelopes ────────────────────────────────────────────────────────────
 //

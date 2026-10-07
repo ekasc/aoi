@@ -150,8 +150,10 @@ unauthenticated one.
 
 Counters are bounded to 1 through 2^31-1. Each is a monotonic counter that
 moves once per event, so the ceiling is unreachable in a lifetime and a value
-beyond it is a bug or an attack rather than data. Media byte length is bounded
-to 100 MiB, matching the media contract the API already enforces.
+beyond it is a bug or an attack rather than data. Media ciphertext is bounded to
+100 MiB, and it is named for ciphertext on purpose: the number is the exact
+number of bytes uploaded to object storage, which is the unit quota accounts in,
+and calling it plaintext bytes is how the two got confused in the first place.
 
 The encoding lives in `packages/shared/src/album-protocol.ts` and the wire
 boundary in `packages/shared/src/album-protocol-wire.ts`, with tests beside
@@ -640,10 +642,9 @@ mediaManifest {
   revision              // the uploader's sequence for this media
   wrappedKey
   sealedNonce
-  byteLength
+  byteLength            // exact ciphertext object bytes, not plaintext
   mimeType
   width, height
-  personTag
   uploaderDeviceId
   createdAt
   signature             // by uploaderDeviceId over the canonical bytes above
@@ -664,6 +665,21 @@ the device deleting is usually not the device that uploaded: the product rule
 is that either member may remove shared media, and Bob cannot produce Alice's
 signature. Removal is therefore its own signed object, signed by whichever
 authorised device asked for it, and the pair is what a client reads.
+
+There is no `personTag`, and that is a decision rather than an omission.
+`'you' | 'partner'` is viewer-relative, which was harmless as loose server
+metadata and becomes a protocol bug the moment it is signed: Alice signs `you`,
+Bob receives the same immutable manifest, and `you` now means Bob. The device
+graph deliberately has no per-person identity, so the uploader alone cannot tell
+a client which human was meant. If a tag returns it needs a subject identifier
+that means the same thing to both readers, and it must not be frozen into signed
+history before that exists.
+
+A tombstone is an append-only candidate rather than one row per media, for the
+reason the device tombstones are: the server cannot verify the signature, so a
+single last-write-wins row would let a bogus tombstone displace a valid one, and
+tracking only the highest revision would let a bogus huge revision block a
+legitimate one forever.
 
 `revision` orders the two against each other. A tombstone's revision is higher
 than the manifest's, so a client that has seen the manifest reads a
@@ -689,9 +705,22 @@ deleted is indistinguishable from one it never had.
 
 Two protections, and they are not the same.
 
-Writes: the server rejects `revision <= stored`, for device records, media
-manifests and media tombstones alike, so nothing rolls a row backward through
-the API.
+Writes: the three kinds have deliberately different mutation rules, because the
+server can enforce different things about each.
+
+A device record is monotonic: one row per device, and a revision that is not
+greater than the stored one is rejected.
+
+A media manifest is one immutable row per `mediaId`. There is no second revision
+of a manifest, so there is nothing to compare.
+
+A media tombstone is an append-only candidate, treated the same way as a device
+tombstone: exact retries are idempotent, the count is bounded, and no
+monotonicity is applied at all. The server cannot apply it, because it cannot
+verify the signature, and a member could otherwise submit a bogus tombstone at a
+huge revision and permanently block a legitimate one from ever being stored. The
+client considers the highest revision it has *authenticated*, not the highest
+value the server happened to keep.
 
 Reads: the server can still serve an old revision, and no server-side rule
 prevents that. A client detects it by persisting the highest revision it has

@@ -206,7 +206,6 @@ describe('the wire schemas', () => {
       mimeType: 'image/jpeg',
       width: 640,
       height: 480,
-      personTag: 'you',
       uploaderDeviceId: 'device-a',
       createdAt: '2026-01-01T00:00:00.000Z',
       signature: encodeBase64(bytesOf(64, 6)),
@@ -284,16 +283,14 @@ describe('the wire to protocol boundary', () => {
       mimeType: 'image/jpeg',
       width: 640,
       height: 480,
-      personTag: 'partner',
       uploaderDeviceId: 'device-a',
       createdAt: '2026-01-01T00:00:00.000Z',
       signature: encodeBase64(bytesOf(64, 6)),
     });
     expect(present.width).toBe(640);
-    expect(present.personTag).toBe('partner');
     expect(parseWireMediaManifest(toWireMediaManifest(present))).toEqual(present);
 
-    const absent: MediaManifest = { ...present, width: null, height: null, personTag: null };
+    const absent: MediaManifest = { ...present, width: null, height: null };
     expect(parseWireMediaManifest(toWireMediaManifest(absent))).toEqual(absent);
   });
 });
