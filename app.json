@@ -58,15 +58,6 @@
       "expo-secure-store",
       "expo-sqlite",
       [
-        "expo-media-library",
-        {
-          "photosPermission": "Aoi uses the photos you choose for memories. Photos you add to your shared album are encrypted on your device before they are uploaded.",
-          "savePhotosPermission": false,
-          "preventAutomaticLimitedAccessAlert": true,
-          "granularPermissions": ["photo"]
-        }
-      ],
-      [
         "expo-image-picker",
         {
           "photosPermission": "Aoi uses the photos you choose for memories. Photos you add to your shared album are encrypted on your device before they are uploaded.",
