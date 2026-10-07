@@ -763,6 +763,17 @@ The ceilings are enforced on write, not by truncating on read. Truncating a read
 could drop a valid revocation and make a revoked device look trusted, which is
 the one direction that must never happen.
 
+The ceiling is also part of the insert rather than a count before it, for the
+same reason the device revision check lives in its own write: two concurrent
+requests one below the limit would both pass a separate count and both insert.
+The insert carries the count as a subquery, and the row that is actually stored
+decides the answer. That settles the response when two members claim the same
+device at the same moment as well, since the read-back reports the owner that won
+rather than the caller who asked.
+
+An existing object is still a success at the ceiling. A retry is not a new
+object, so an identical repeat succeeds even when nothing further may be created.
+
 Only generation 1 has a recovery envelope. Rotation is not implemented, and a
 create-only slot that any member may claim is a slot any member can permanently
 waste, so the speculative later-generation behaviour is gone until there is an

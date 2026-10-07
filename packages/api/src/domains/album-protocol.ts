@@ -123,11 +123,32 @@ const deviceOwner = (
     (row) => row?.owner_user_id ?? null
   );
 
-/** The table name is a literal at every call site, never input. */
-const countIn = (table: string, spaceId: string): Effect.Effect<number, InternalError, DbService> =>
-  Effect.map(
-    one<{ total: number }>(`select count(*) as total from ${table} where space_id = ?`, spaceId),
-    (row) => row?.total ?? 0
+/**
+ * A conditional insert: the ceiling is part of the statement, not a read before
+ * it.
+ *
+ * Two concurrent requests at one below the limit would both pass a separate
+ * count and both insert, which is the same race the device revision check had
+ * before it moved into its own write. Here the count is a subquery in the
+ * statement that inserts.
+ */
+const insertWithinCeiling = (
+  table: string,
+  columns: string,
+  values: string,
+  conflict: string,
+  spaceId: string,
+  ceiling: number,
+  ...params: unknown[]
+): Effect.Effect<{ changes: number }, InternalError, DbService> =>
+  execute(
+    `insert into ${table} (${columns})
+     select ${values}
+     where (select count(*) from ${table} where space_id = ?) < ?
+     ${conflict}`,
+    ...params,
+    spaceId,
+    ceiling
   );
 
 const EMPTY_SNAPSHOT: WireAlbumProtocolSnapshot = {
@@ -288,7 +309,26 @@ export const putAlbumDeviceClaimProgram = (
       return yield* Effect.fail(badRequest('You must have an active space to claim a device'));
     }
 
-    const existing = yield* one<{
+    // No pre-read. The insert carries the ceiling, and the row that is actually
+    // stored decides the answer, so a simultaneous claim by the other member
+    // cannot be reported as this caller's success.
+    const at = yield* nowMs;
+    yield* insertWithinCeiling(
+      'album_device_claims',
+      'space_id, device_id, owner_user_id, signing_public_key, agreement_public_key, created_at',
+      '?, ?, ?, ?, ?, ?',
+      'on conflict(space_id, device_id) do nothing',
+      spaceId,
+      PROTOCOL_MAX_DEVICES,
+      spaceId,
+      claim.deviceId,
+      userId,
+      claim.signingPublicKey,
+      claim.agreementPublicKey,
+      at
+    );
+
+    const stored = yield* one<{
       owner_user_id: string;
       signing_public_key: string;
       agreement_public_key: string;
@@ -299,51 +339,28 @@ export const putAlbumDeviceClaimProgram = (
       spaceId,
       claim.deviceId
     );
-    if (existing) {
-      if (existing.owner_user_id !== userId) {
-        return yield* Effect.fail(forbidden('That device has already been claimed'));
-      }
-      if (
-        existing.signing_public_key !== claim.signingPublicKey ||
-        existing.agreement_public_key !== claim.agreementPublicKey
-      ) {
-        return yield* Effect.fail(conflict('That device is claimed with different keys'));
-      }
-      return {
-        spaceId,
-        deviceId: claim.deviceId,
-        signingPublicKey: claim.signingPublicKey,
-        agreementPublicKey: claim.agreementPublicKey,
-        createdAt: new Date(existing.created_at).toISOString(),
-      };
-    }
-
-    // Claims are bounded too: an id that is claimed and never enrolled is still
-    // a row, and without a ceiling that is an unbounded write.
-    if ((yield* countIn('album_device_claims', spaceId)) >= PROTOCOL_MAX_DEVICES) {
+    if (!stored) {
+      // Nothing was inserted and nothing is stored, so the ceiling refused it.
       return yield* Effect.fail(conflict('This Space has reached its device limit'));
     }
+    if (stored.owner_user_id !== userId) {
+      return yield* Effect.fail(forbidden('That device has already been claimed'));
+    }
+    if (
+      stored.signing_public_key !== claim.signingPublicKey ||
+      stored.agreement_public_key !== claim.agreementPublicKey
+    ) {
+      return yield* Effect.fail(conflict('That device is claimed with different keys'));
+    }
 
-    const at = yield* nowMs;
-    yield* execute(
-      `insert into album_device_claims
-         (space_id, device_id, owner_user_id, signing_public_key, agreement_public_key, created_at)
-       values (?, ?, ?, ?, ?, ?)
-       on conflict(space_id, device_id) do nothing`,
-      spaceId,
-      claim.deviceId,
-      userId,
-      claim.signingPublicKey,
-      claim.agreementPublicKey,
-      at
-    );
-
+    // Identical to what is stored, so this is a retry rather than a new claim,
+    // and it succeeds even at the ceiling.
     return {
       spaceId,
       deviceId: claim.deviceId,
       signingPublicKey: claim.signingPublicKey,
       agreementPublicKey: claim.agreementPublicKey,
-      createdAt: new Date(at).toISOString(),
+      createdAt: new Date(stored.created_at).toISOString(),
     };
   });
 
@@ -495,27 +512,32 @@ export const postAlbumDeviceTombstoneProgram = (
 
     const id = yield* newId;
     const at = yield* nowMs;
+    const payload = JSON.stringify(tombstone);
 
-    // Bounded on write rather than truncated on read: dropping a tombstone from
-    // a read could hide a valid revocation and make a revoked device look
-    // trusted, which is the one direction that must never happen.
-    if ((yield* countIn('album_device_tombstones', spaceId)) >= PROTOCOL_MAX_TOMBSTONES) {
-      return yield* Effect.fail(conflict('This Space has reached its tombstone limit'));
-    }
-
-    // An exact retry lands on the unique payload index and changes nothing.
-    // Distinct tombstones still accumulate, which is the point of keeping them
-    // all: the client decides which authority is real.
-    yield* execute(
-      `insert into album_device_tombstones (id, space_id, target_device_id, payload, created_at)
-       values (?, ?, ?, ?, ?)
-       on conflict(space_id, payload) do nothing`,
+    // The ceiling is in the insert, and the read-back decides the answer, so an
+    // exact retry still succeeds when nothing new may be created.
+    yield* insertWithinCeiling(
+      'album_device_tombstones',
+      'id, space_id, target_device_id, payload, created_at',
+      '?, ?, ?, ?, ?',
+      'on conflict(space_id, payload) do nothing',
+      spaceId,
+      PROTOCOL_MAX_TOMBSTONES,
       id,
       spaceId,
       tombstone.targetDeviceId,
-      JSON.stringify(tombstone),
+      payload,
       at
     );
+
+    const stored = yield* one<{ id: string }>(
+      'select id from album_device_tombstones where space_id = ? and payload = ?',
+      spaceId,
+      payload
+    );
+    if (!stored) {
+      return yield* Effect.fail(conflict('This Space has reached its tombstone limit'));
+    }
     return tombstone;
   });
 
@@ -568,16 +590,14 @@ export const putAlbumSpaceKeyEnvelopeProgram = (
       return yield* Effect.fail(badRequest('The recipient device is not registered in this Space'));
     }
 
-    if ((yield* countIn('album_space_key_envelopes', spaceId)) >= PROTOCOL_MAX_ENVELOPES) {
-      return yield* Effect.fail(conflict('This Space has reached its envelope limit'));
-    }
-
     const at = yield* nowMs;
-    yield* execute(
-      `insert into album_space_key_envelopes
-         (space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id, payload, created_at)
-       values (?, ?, ?, ?, ?, ?, ?)
-       on conflict(space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id) do nothing`,
+    yield* insertWithinCeiling(
+      'album_space_key_envelopes',
+      `space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id, payload, created_at`,
+      '?, ?, ?, ?, ?, ?, ?',
+      `on conflict(space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id) do nothing`,
+      spaceId,
+      PROTOCOL_MAX_ENVELOPES,
       spaceId,
       envelope.generation,
       envelope.recipientDeviceId,
@@ -598,7 +618,7 @@ export const putAlbumSpaceKeyEnvelopeProgram = (
       envelope.authoriserDeviceId
     );
     if (!stored) {
-      return yield* Effect.fail(new InternalError({}));
+      return yield* Effect.fail(conflict('This Space has reached its envelope limit'));
     }
     const persisted = yield* readPayload(wireSpaceKeyEnvelopeSchema, stored.payload);
     if (!samePayload(persisted, envelope)) {

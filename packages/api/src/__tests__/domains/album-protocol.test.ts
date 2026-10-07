@@ -670,3 +670,98 @@ describe('the ceilings', () => {
     expect(snapshot.tombstones).toHaveLength(1);
   });
 });
+
+/**
+ * The ceiling and the answer both live in the write, so what is stored decides
+ * what the caller is told. These are the cases a separate count would get
+ * wrong.
+ */
+describe('the write is the check', () => {
+  it('tells the truth when the other member won the claim insert race', async () => {
+    const ctx = couple();
+    // Alice's row is already there, as though she inserted it a moment before
+    // Bob's request arrived. A pre-read would have seen nothing and reported
+    // success for a claim Bob does not own.
+    ctx.harness.d1.runSync(
+      `insert into album_device_claims
+         (space_id, device_id, owner_user_id, signing_public_key, agreement_public_key, created_at)
+       values (?, ?, ?, ?, ?, ?)`,
+      SPACE_1,
+      'device-b',
+      USER_A,
+      KEY,
+      KEY,
+      T0
+    );
+
+    const err = await failureOf(
+      ctx.provide(
+        putAlbumDeviceClaimProgram(USER_B, { deviceId: 'device-b', signingPublicKey: KEY, agreementPublicKey: KEY })
+      )
+    );
+    expect(err).toBeInstanceOf(ForbiddenError);
+  });
+
+  it('still succeeds for an exact tombstone retry at the ceiling', async () => {
+    const ctx = couple();
+    const body = tombstone('device-b', { revokedBy: { kind: 'recovery' } });
+    for (let index = 0; index < 255; index += 1) {
+      ctx.harness.d1.runSync(
+        `insert into album_device_tombstones (id, space_id, target_device_id, payload, created_at)
+         values (?, ?, ?, ?, ?)`,
+        `t-${index}`,
+        SPACE_1,
+        `target-${index}`,
+        `payload-${index}`,
+        T0
+      );
+    }
+    // The 256th row is the one this request is about to repeat.
+    ctx.harness.d1.runSync(
+      `insert into album_device_tombstones (id, space_id, target_device_id, payload, created_at)
+       values (?, ?, ?, ?, ?)`,
+      't-existing',
+      SPACE_1,
+      'device-b',
+      JSON.stringify(body),
+      T0
+    );
+
+    // No new object may be created, and this request creates none.
+    expect(await run(ctx.provide(postAlbumDeviceTombstoneProgram(USER_A, body)))).toEqual(body);
+  });
+
+  it('still succeeds for an existing envelope at the ceiling', async () => {
+    const ctx = couple();
+    await run(ctx.provide(enrolProgram(USER_A, 'device-a', record('device-a'))));
+    await run(ctx.provide(enrolProgram(USER_B, 'device-b', record('device-b'))));
+
+    const body = envelope();
+    for (let index = 0; index < 255; index += 1) {
+      ctx.harness.d1.runSync(
+        `insert into album_space_key_envelopes
+           (space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id, payload, created_at)
+         values (?, 1, ?, ?, ?, ?, ?)`,
+        SPACE_1,
+        'device-b',
+        index + 100,
+        'device-a',
+        `payload-${index}`,
+        T0
+      );
+    }
+    ctx.harness.d1.runSync(
+      `insert into album_space_key_envelopes
+         (space_id, generation, recipient_device_id, recipient_revision, authoriser_device_id, payload, created_at)
+       values (?, 1, ?, ?, ?, ?, ?)`,
+      SPACE_1,
+      'device-b',
+      1,
+      'device-a',
+      JSON.stringify(body),
+      T0
+    );
+
+    expect(await run(ctx.provide(putAlbumSpaceKeyEnvelopeProgram(USER_A, body)))).toEqual(body);
+  });
+});
