@@ -85,6 +85,18 @@ describe('shared sky photos', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
   });
 
+  it('reports an unreadable archive instead of an empty sky', async () => {
+    // Records exist, but none could be opened: the wrong key, or every fetch
+    // failing. Presenting that as "you have no photos" hides a full archive
+    // that this device cannot read.
+    state.list.mockResolvedValueOnce([{ id: 'shared-photo' }]);
+    state.storeList.mockRejectedValueOnce(new Error('none of the 1 album records could be opened'));
+    const { result } = renderHook(useSkyPhotos);
+    await waitFor(() => expect(result.current.status).toBe('failed'));
+    expect(result.current.readError).toBeTruthy();
+    expect(result.current.readError).not.toContain('records could be opened');
+  });
+
   it('uses a selected-only picker and does nothing on cancellation', async () => {
     const { result } = renderHook(useSkyPhotos);
     await waitFor(() => expect(result.current.status).toBe('ready'));

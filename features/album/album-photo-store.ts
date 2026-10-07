@@ -12,8 +12,10 @@ import type { SkyPhoto } from '@/features/album/sky-photo-repository';
  * in memory at the moment of decryption anyway. `dispose` revokes what it
  * created so a scope change does not leak every object URL.
  *
- * One unreadable photo must not empty the sky, so a failure is skipped, not
- * thrown: the alternative is that a single corrupt row hides every other one.
+ * One unreadable photo must not empty the sky, so a single failure is skipped,
+ * not thrown. Every failure is a different thing: a list that comes back empty
+ * when records were handed in is a read failure wearing the shape of an empty
+ * album, so it throws and the screen can say so instead of showing nothing.
  */
 export type AlbumPhotoStore = {
   list: (records: AlbumMediaRecord[]) => Promise<SkyPhoto[]>;
@@ -55,6 +57,9 @@ export function createAlbumPhotoStore({
         } catch {
           // A photo that cannot be fetched or opened is left out of the sky.
         }
+      }
+      if (records.length > 0 && photos.length === 0) {
+        throw new Error(`none of the ${records.length} album records could be opened`);
       }
       return photos;
     },

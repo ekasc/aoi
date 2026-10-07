@@ -14,8 +14,10 @@ import type { AlbumPhotoStore, AlbumPhotoStoreInput } from '@/features/album/alb
  * that stutters. The cache is device-local plaintext, which is the same trust
  * boundary as the rest of the app sandbox.
  *
- * One unreadable photo must not empty the sky, so a failure is skipped, not
- * thrown.
+ * One unreadable photo must not empty the sky, so a single failure is skipped,
+ * not thrown. A list that comes back empty when records were handed in is a
+ * read failure wearing the shape of an empty album, and it throws so the
+ * screen can say that instead of showing nothing.
  */
 export function createAlbumPhotoStore({
   spaceId,
@@ -47,6 +49,9 @@ export function createAlbumPhotoStore({
         } catch {
           // A photo that cannot be fetched or opened is left out of the sky.
         }
+      }
+      if (records.length > 0 && photos.length === 0) {
+        throw new Error(`none of the ${records.length} album records could be opened`);
       }
       return photos;
     },

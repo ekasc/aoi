@@ -68,3 +68,25 @@ jobs:
       # Non-publishing Worker bundle. No masking: any build failure fails
       # this step (and the job) so a broken Worker build is always red.
       - run: pnpm --filter @aoi/api build:cloudflare
+
+  # The marketing site is its own project with its own lockfile, so the app's
+  # typecheck does not compile it and this job does. Without the job the site
+  # would be checked by nobody.
+  marketing-site:
+    name: Marketing Site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: marketing-site/package-lock.json
+
+      - run: npm ci
+        working-directory: marketing-site
+
+      - run: npm run check
+        working-directory: marketing-site

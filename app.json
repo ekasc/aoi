@@ -8,7 +8,7 @@
     "scheme": "aoi",
     "userInterfaceStyle": "automatic",
     "ios": {
-		"NSPhotoLibraryUsageDescription": "Aoi reads your photo library on this device to find photos of the two of you. They are matched on device and never uploaded.",
+		"NSPhotoLibraryUsageDescription": "Aoi uses the photos you choose from your library for your shared memories. Photos you add to your shared album are encrypted on your device before they are uploaded.",
 		"NSPhotoLibraryAddUsageDescription": "Aoi saves photos you choose to keep as memories.",
 
       "supportsTablet": true,
@@ -60,7 +60,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Aoi uses photos you choose for memories. If you enable automatic discovery, it checks the photos you allow to find pictures with both of you.",
+          "photosPermission": "Aoi uses the photos you choose for memories. Photos you add to your shared album are encrypted on your device before they are uploaded.",
           "savePhotosPermission": false,
           "preventAutomaticLimitedAccessAlert": true,
           "granularPermissions": ["photo"]
@@ -69,7 +69,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Aoi uses photos you choose for memories. If you enable automatic discovery, it checks the photos you allow to find pictures with both of you.",
+          "photosPermission": "Aoi uses the photos you choose for memories. Photos you add to your shared album are encrypted on your device before they are uploaded.",
           "cameraPermission": false,
           "microphonePermission": false
         }

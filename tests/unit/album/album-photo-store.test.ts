@@ -45,6 +45,29 @@ describe('the album photo store', () => {
     expect(photos.map((photo) => photo.id)).toEqual(['good']);
   });
 
+  it('throws when records exist but none could be opened', async () => {
+    // An unreadable archive and an empty one must not look the same. The screen
+    // turns this throw into a visible failure with a retry; a returned empty
+    // list would show "no photos" over an archive it could not decrypt.
+    const store = createAlbumPhotoStore({
+      spaceId: 'space-1',
+      fetchObject: async () => { throw new Error('unreachable'); },
+      open: () => new Uint8Array([2]),
+    });
+
+    await expect(store.list([record('p1')])).rejects.toThrow();
+  });
+
+  it('stays an empty list for a genuinely empty album', async () => {
+    const store = createAlbumPhotoStore({
+      spaceId: 'space-1',
+      fetchObject: async () => new Uint8Array([1]),
+      open: () => new Uint8Array([2]),
+    });
+
+    expect(await store.list([])).toEqual([]);
+  });
+
   it('revokes the cached URL on removal and on dispose', async () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
     const store = createAlbumPhotoStore({ spaceId: 'space-1', fetchObject: async () => new Uint8Array([1]), open: () => new Uint8Array([2]) });
