@@ -18,6 +18,7 @@ import {
   type MediaTombstone,
   type RecoveryEnvelope,
   type SpaceKeyEnvelope,
+  type SpaceTrustAnchor,
 } from './album-protocol';
 
 /**
@@ -176,6 +177,17 @@ export const wireDeviceRecordSchema = z
   })
   .strict();
 
+export const wireSpaceTrustAnchorSchema = z
+  .object({
+    spaceId: idSchema,
+    rootDeviceId: idSchema,
+    rootSigningPublicKey: bytesSchema(ED25519_PUBLIC_KEY_BYTES, 'rootSigningPublicKey'),
+    recoverySigningPublicKey: bytesSchema(ED25519_PUBLIC_KEY_BYTES, 'recoverySigningPublicKey'),
+    createdAt: timestampSchema,
+    signature: bytesSchema(ED25519_SIGNATURE_BYTES, 'signature'),
+  })
+  .strict();
+
 export const wireDeviceTombstoneSchema = z
   .object({
     spaceId: idSchema,
@@ -244,6 +256,7 @@ export const wireMediaTombstoneSchema = z
   .strict();
 
 export type WireDeviceRecord = z.infer<typeof wireDeviceRecordSchema>;
+export type WireSpaceTrustAnchor = z.infer<typeof wireSpaceTrustAnchorSchema>;
 export type WireDeviceTombstone = z.infer<typeof wireDeviceTombstoneSchema>;
 export type WireSpaceKeyEnvelope = z.infer<typeof wireSpaceKeyEnvelopeSchema>;
 export type WireRecoveryEnvelope = z.infer<typeof wireRecoveryEnvelopeSchema>;
@@ -289,6 +302,29 @@ export function toWireDeviceRecord(record: DeviceRecord): WireDeviceRecord {
     revision: record.revision,
     createdAt: record.createdAt,
     authorisation: encodeBase64(record.authorisation),
+  });
+}
+
+export function parseWireSpaceTrustAnchor(input: unknown): SpaceTrustAnchor {
+  const wire = wireSpaceTrustAnchorSchema.parse(input);
+  return {
+    spaceId: wire.spaceId,
+    rootDeviceId: wire.rootDeviceId,
+    rootSigningPublicKey: bytes(wire.rootSigningPublicKey),
+    recoverySigningPublicKey: bytes(wire.recoverySigningPublicKey),
+    createdAt: wire.createdAt,
+    signature: bytes(wire.signature),
+  };
+}
+
+export function toWireSpaceTrustAnchor(anchor: SpaceTrustAnchor): WireSpaceTrustAnchor {
+  return wireSpaceTrustAnchorSchema.parse({
+    spaceId: anchor.spaceId,
+    rootDeviceId: anchor.rootDeviceId,
+    rootSigningPublicKey: encodeBase64(anchor.rootSigningPublicKey),
+    recoverySigningPublicKey: encodeBase64(anchor.recoverySigningPublicKey),
+    createdAt: anchor.createdAt,
+    signature: encodeBase64(anchor.signature),
   });
 }
 

@@ -59,7 +59,10 @@ Two things are trusted:
 2. The recovery secret, which bootstraps a device when no trusted device
    remains.
 
-Nothing else. A device is never trusted because the server said so.
+Nothing else. A device is never trusted because the server said so. Both roots
+are anchored by a pinned `spaceTrustAnchor`, which names the root device's key
+and the phrase's signing key. The pin is the act that makes either one real:
+without it there is nothing to compare an authoriser against.
 
 Each device holds an Ed25519 signing key and an X25519 agreement key,
 generated on device, stored in SecureStore, never uploaded. There is no
@@ -190,6 +193,31 @@ wrapping, `aoi/recovery-wrap/v1` and `aoi/recovery-signing/v1` for the two
 recovery derivations, and `aoi/recovery-envelope/v1` for the recovery
 envelope's AAD. The current code reuses one string for the archive key and for
 envelope wrapping, and that reuse is what allowed the degenerate envelope above.
+
+## The trust anchor
+
+Two facts cannot come from an arbitrary server response, or the two root
+variants of `authorisedBy` have nothing to verify against: which device is the
+root, and which key the phrase authorises. They travel together.
+
+```
+spaceTrustAnchor {
+  spaceId
+  rootDeviceId
+  rootSigningPublicKey
+  recoverySigningPublicKey
+  createdAt
+  signature             // by the root device over the fields above
+}
+```
+
+It is signed, but the signature is not what makes it trusted, and that
+distinction matters because a self-signed root is exactly what a hostile server
+would offer. The creator pins it when it creates the Space. A device enrolled
+later accepts it only after trusting, out of band, the device that authorised
+it. A recovery bootstrap derives `recoverySigningPublicKey` from the phrase and
+checks that the anchor agrees. Verifying the signature proves the object was not
+mangled in transit, and nothing more.
 
 ## Device records
 
@@ -441,6 +469,59 @@ belongs on the wrapped key, the media record, and the space-key envelope from
 the first release. The principle: no routine rotation for an archive, because
 opening a five-year-old photo matters more than forward secrecy, but a version
 field costs nothing and retrofitting one costs a migration.
+
+## Revocation and descendants
+
+Revocation cascades, and the protocol chooses that deliberately.
+
+The rule: a device is currently trusted only if its authorisation chain reaches
+the pinned root or the recovery root entirely through currently non-revoked
+devices. Revoke a device and everything it authorised stops being trusted with
+it.
+
+The alternative is "trusted at the time it signed", which needs to know when a
+signature was made relative to a revocation, and nothing here can establish
+that. `createdAt` is written by the signer, so a compromised device signs
+tomorrow and dates it yesterday, and any verifier reasoning from that timestamp
+is reasoning from the attacker's data.
+
+Cascading has one consequence that lands on the ordinary case rather than an
+exotic one. Replacing a phone looks like this:
+
+```
+old phone A --authorises--> new phone B
+```
+
+Revoke A without thinking about it and B goes with it, which is the opposite of
+what the person doing it intends. So removal is two steps, and the second is not
+optional:
+
+```
+before          C --> A --> B
+
+step 1          re-authorise B from C, at a higher revision
+                C --> B
+
+step 2          tombstone A
+
+after           C --> B
+                A revoked
+```
+
+`DeviceRecord` already carries a revision and `authorisedBy` is signed, so
+reparenting is an ordinary record write rather than a new mechanism. What it is
+not is automatic: the flow that removes a device has to offer it. When no other
+trusted device exists, recovery is the reparenting authority, which is a real
+operational consequence of the model and belongs in the removal flow rather than
+in a footnote.
+
+One detail of the rule. An applicable tombstone revokes the device outright,
+rather than revoking it only while the tombstone's revision is the higher one.
+The revision-comparison version reads as stricter and is actually weaker: a
+device that authors itself can sign a new record at a higher revision and
+resurrect itself, and a compromised device is exactly the one that would try. A
+device that should be trusted again is enrolled again, with fresh keys and a new
+id, which is what a compromise calls for anyway.
 
 ## Authenticating media metadata
 

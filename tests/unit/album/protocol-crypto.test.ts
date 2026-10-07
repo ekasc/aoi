@@ -14,10 +14,12 @@ import {
   signDeviceTombstone,
   signMediaManifest,
   signMediaTombstone,
+  signSpaceTrustAnchor,
   verifyDeviceRecord,
   verifyDeviceTombstone,
   verifyMediaManifest,
   verifyMediaTombstone,
+  verifySpaceTrustAnchor,
 } from '@/features/album/protocol-crypto';
 import { generateRecoveryPhrase, recoveryEntropyFromPhrase } from '@/features/album/recovery';
 import type { SpaceKeyEnvelope } from '@aoi/shared';
@@ -239,6 +241,14 @@ describe('recovery', () => {
     expect(deriveRecoveryWrapKey(other)).not.toEqual(deriveRecoveryWrapKey(entropy));
   });
 
+  it('refuses entropy that is not 32 bytes', () => {
+    // The phrase layer guarantees this, but these are exported and anyone can
+    // call them. A short value would derive a key and fail later, ambiguously.
+    expect(() => deriveRecoveryWrapKey(new Uint8Array(31))).toThrow(/32 bytes/);
+    expect(() => deriveRecoverySigningKey(new Uint8Array(31))).toThrow(/32 bytes/);
+    expect(() => deriveRecoveryWrapKey(new Uint8Array(0))).toThrow(/32 bytes/);
+  });
+
   it('publishes the signing half of the phrase', () => {
     const entropy = recoveryEntropyFromPhrase(generateRecoveryPhrase());
     expect(recoverySigningPublicKey(entropy)).toHaveLength(32);
@@ -325,5 +335,31 @@ describe('signatures', () => {
     for (const bad of [new Uint8Array(0), new Uint8Array(3), new Uint8Array(64)]) {
       expect(verifyDeviceRecord({ ...input, authorisation: bad }, signer.signing.publicKey)).toBe(false);
     }
+  });
+});
+
+describe('the Space trust anchor', () => {
+  const anchorInput = (root: Device) => ({
+    spaceId: SPACE,
+    rootDeviceId: 'device-root',
+    rootSigningPublicKey: root.signing.publicKey,
+    recoverySigningPublicKey: device().signing.publicKey,
+    createdAt: AT,
+  });
+
+  it('verifies against the root key, and nothing else', () => {
+    const root = device();
+    const input = anchorInput(root);
+    const anchor = { ...input, signature: signSpaceTrustAnchor(input, root.signing.privateKey) };
+
+    expect(verifySpaceTrustAnchor(anchor, root.signing.publicKey)).toBe(true);
+    expect(verifySpaceTrustAnchor(anchor, device().signing.publicKey)).toBe(false);
+    expect(verifySpaceTrustAnchor({ ...anchor, rootDeviceId: 'device-other' }, root.signing.publicKey)).toBe(false);
+    expect(
+      verifySpaceTrustAnchor(
+        { ...anchor, recoverySigningPublicKey: device().signing.publicKey },
+        root.signing.publicKey
+      )
+    ).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import {
   encodeRecoveryEnvelopeContext,
   encodeRecoverySigningContext,
   encodeRecoveryWrapContext,
+  encodeSpaceTrustAnchor,
 } from '../album-protocol';
 
 const hex = (bytes: Uint8Array) =>
@@ -39,6 +40,7 @@ describe('canonical protocol encoding', () => {
       encodeRecoveryEnvelopeContext({ spaceId: 's', generation: 0 }),
       encodeMediaContext({ mediaId: 'm', generation: 0 }),
       encodeDeviceRecord({ deviceId: 'd', spaceId: 's', signingPublicKey: new Uint8Array(0), agreementPublicKey: new Uint8Array(0), authorisedBy: { kind: 'self' }, revision: 0, createdAt: 't' }),
+      encodeSpaceTrustAnchor({ spaceId: 's', rootDeviceId: 'd', rootSigningPublicKey: new Uint8Array(0), recoverySigningPublicKey: new Uint8Array(0), createdAt: 't' }),
       encodeDeviceTombstone({ spaceId: 's', targetDeviceId: 'd', revision: 1, revokedBy: { kind: 'device', deviceId: 'a' }, revokedAt: 't' }),
       encodeMediaManifest({ mediaId: 'm', spaceId: 's', generation: 0, revision: 0, wrappedKey: { nonce: new Uint8Array(0), ciphertext: new Uint8Array(0) }, sealedNonce: new Uint8Array(0), byteLength: 0, mimeType: 'x', uploaderDeviceId: 'd', createdAt: 't' }),
       encodeMediaTombstone({ spaceId: 's', mediaId: 'm', revision: 1, deletedAt: 't', deletedByDeviceId: 'd' }),
@@ -96,6 +98,22 @@ describe('canonical protocol encoding', () => {
       )
     ).toBe(
       '0100000014616f692f6465766963652d7265636f72642f7631000000086465766963652d610000000773706163652d3100000020010101010101010101010101010101010101010101010101010101010101010100000020020202020202020202020202020202020202020202020202020202020202020201000000000000000100000018323032362d30312d30315430303a30303a30302e3030305a'
+    );
+  });
+
+  it('encodes the Space trust anchor', () => {
+    expect(
+      hex(
+        encodeSpaceTrustAnchor({
+          spaceId: 'space-1',
+          rootDeviceId: 'device-root',
+          rootSigningPublicKey: new Uint8Array(32).fill(1),
+          recoverySigningPublicKey: new Uint8Array(32).fill(2),
+          createdAt: '2026-01-01T00:00:00.000Z',
+        })
+      )
+    ).toBe(
+      '0100000019616f692f73706163652d74727573742d616e63686f722f76310000000773706163652d310000000b6465766963652d726f6f7400000020010101010101010101010101010101010101010101010101010101010101010100000020020202020202020202020202020202020202020202020202020202020202020200000018323032362d30312d30315430303a30303a30302e3030305a'
     );
   });
 

@@ -14,6 +14,7 @@ import {
   encodeRecoveryEnvelopeContext,
   encodeRecoverySigningContext,
   encodeRecoveryWrapContext,
+  encodeSpaceTrustAnchor,
   type DeviceRecord,
   type DeviceRecordInput,
   type DeviceTombstone,
@@ -24,6 +25,8 @@ import {
   type MediaTombstoneInput,
   type RecoveryEnvelope,
   type SpaceKeyEnvelope,
+  type SpaceTrustAnchor,
+  type SpaceTrustAnchorInput,
 } from '@aoi/shared';
 
 /**
@@ -167,11 +170,24 @@ export function openSpaceKeyFromEnvelope(input: OpenSpaceKeyFromEnvelopeInput): 
  * They are different jobs, so they are different keys; a shared label would let
  * either be used where the other belongs.
  */
+const RECOVERY_ENTROPY_BYTES = 32;
+
+/**
+ * The phrase layer guarantees 32 bytes, but these are exported and anyone can
+ * call them. A short entropy value would derive a short-lived key and fail
+ * later, ambiguously, which is the worst place to find out.
+ */
+function assertEntropy(entropy: Uint8Array): void {
+  assertLength(entropy, RECOVERY_ENTROPY_BYTES, 'recovery entropy');
+}
+
 export function deriveRecoveryWrapKey(entropy: Uint8Array): Uint8Array {
+  assertEntropy(entropy);
   return hkdf(sha256, entropy, undefined, encodeRecoveryWrapContext(), SPACE_KEY_BYTES);
 }
 
 export function deriveRecoverySigningKey(entropy: Uint8Array): Uint8Array {
+  assertEntropy(entropy);
   return hkdf(sha256, entropy, undefined, encodeRecoverySigningContext(), SPACE_KEY_BYTES);
 }
 
@@ -304,4 +320,30 @@ export function verifyMediaTombstone(
 ): boolean {
   const { signature, ...input } = tombstone;
   return verify(signature, encodeMediaTombstone(input), signerPublicKey);
+}
+
+// ── the trust anchor ─────────────────────────────────────────────────────
+
+/** The root device signs the anchor it publishes. */
+export function signSpaceTrustAnchor(
+  input: SpaceTrustAnchorInput,
+  rootSigningPrivateKey: Uint8Array
+): Uint8Array {
+  return sign(encodeSpaceTrustAnchor(input), rootSigningPrivateKey);
+}
+
+/**
+ * Check that an anchor was not mangled in transit.
+ *
+ * This is not a trust decision. The anchor is trusted because the creator
+ * pinned it, or because a device verified out of band agreed to it, or because
+ * a recovery bootstrap derived the recovery key and found it matched. The
+ * signature only says the bytes are the bytes.
+ */
+export function verifySpaceTrustAnchor(
+  anchor: SpaceTrustAnchor,
+  rootSigningPublicKey: Uint8Array
+): boolean {
+  const { signature, ...input } = anchor;
+  return verify(signature, encodeSpaceTrustAnchor(input), rootSigningPublicKey);
 }

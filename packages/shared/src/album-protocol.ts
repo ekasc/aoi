@@ -49,6 +49,7 @@ export const RECOVERY_SIGNING_LABEL = 'aoi/recovery-signing/v1';
 export const RECOVERY_ENVELOPE_LABEL = 'aoi/recovery-envelope/v1';
 export const MEDIA_LABEL = 'aoi/media/v1';
 export const DEVICE_RECORD_LABEL = 'aoi/device-record/v1';
+export const SPACE_TRUST_ANCHOR_LABEL = 'aoi/space-trust-anchor/v1';
 export const DEVICE_TOMBSTONE_LABEL = 'aoi/device-tombstone/v1';
 export const MEDIA_MANIFEST_LABEL = 'aoi/media-manifest/v1';
 export const MEDIA_TOMBSTONE_LABEL = 'aoi/media-tombstone/v1';
@@ -312,6 +313,45 @@ export function encodeDeviceRecord(input: DeviceRecordInput): Uint8Array {
     .bytes(input.agreementPublicKey);
   writeAuthoriser(writer, input.authorisedBy);
   return writer.uint64(input.revision).string(input.createdAt).toBytes();
+}
+
+/**
+ * The Space's trust anchor.
+ *
+ * Two facts have to come from somewhere other than an arbitrary server
+ * response, or the two root variants of `authorisedBy` have nothing to verify
+ * against: which device is the root, and which key the recovery phrase
+ * authorises. Those are the two facts this object carries.
+ *
+ * It is signed by the root device, but the signature is not what makes it
+ * trusted. The creator pins it locally when it creates the Space; a device
+ * enrolled later accepts it only after trusting the device it verified out of
+ * band; and a recovery bootstrap derives the recovery signing key from the
+ * phrase and checks that the anchor agrees. Verifying the signature proves the
+ * object was not mangled in transit, and nothing more.
+ */
+export type SpaceTrustAnchorInput = {
+  spaceId: string;
+  rootDeviceId: string;
+  rootSigningPublicKey: Uint8Array;
+  recoverySigningPublicKey: Uint8Array;
+  createdAt: string;
+};
+
+export type SpaceTrustAnchor = SpaceTrustAnchorInput & {
+  signature: Uint8Array;
+};
+
+export function encodeSpaceTrustAnchor(input: SpaceTrustAnchorInput): Uint8Array {
+  return new ProtocolWriter()
+    .version()
+    .string(SPACE_TRUST_ANCHOR_LABEL)
+    .string(input.spaceId)
+    .string(input.rootDeviceId)
+    .bytes(input.rootSigningPublicKey)
+    .bytes(input.recoverySigningPublicKey)
+    .string(input.createdAt)
+    .toBytes();
 }
 
 export type DeviceTombstoneInput = {
