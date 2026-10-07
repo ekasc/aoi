@@ -32,14 +32,14 @@ export function generateRecoveryPhrase(): string {
 }
 
 /**
- * Turn a typed phrase into a space key.
+ * The 32 bytes behind a typed phrase.
  *
  * Rejects anything that is not exactly a valid 24-word phrase rather than
  * coercing it, because a near-miss here produces a *different but valid*
- * space key, and the symptom would be an empty archive with no error
+ * entropy value, and the symptom would be an empty archive with no error
  * anywhere — indistinguishable from data loss.
  */
-export function spaceKeyFromPhrase(phrase: string): Uint8Array {
+export function recoveryEntropyFromPhrase(phrase: string): Uint8Array {
   const normalised = phrase.trim().toLowerCase().replace(/\s+/g, ' ');
   const words = normalised.split(' ');
   if (words.length !== RECOVERY_WORDS) {
@@ -56,7 +56,19 @@ export function spaceKeyFromPhrase(phrase: string): Uint8Array {
   if (entropy.length !== 32) {
     throw new Error('That recovery phrase is the wrong length for this album.');
   }
-  return spaceKeyFromRecoverySeed(entropy);
+  return entropy;
+}
+
+/**
+ * Turn a typed phrase into a space key.
+ *
+ * The old derivation, kept because the old protocol still uses it. The new
+ * protocol treats the phrase as a key-encryption key instead: it derives a wrap
+ * key and a signing key from the same entropy and uses them against the stable
+ * Space key, so recovery restores an archive rather than starting a new one.
+ */
+export function spaceKeyFromPhrase(phrase: string): Uint8Array {
+  return spaceKeyFromRecoverySeed(recoveryEntropyFromPhrase(phrase));
 }
 
 /** Group the words so a phrase can be written down, and read back reliably. */
