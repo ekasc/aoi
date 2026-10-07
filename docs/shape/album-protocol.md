@@ -679,6 +679,76 @@ does not need. A freshly restored device can detect neither, because it has no
 memory and no second witness. Both are accepted for v1, and both belong in the
 threat model rather than in a footnote.
 
+## What the server stores, and what it enforces
+
+The server is storage and authority. It cannot tell whether a signature is good
+and does not try. What it can do is decide who owns a row, whether a revision
+moved forward, and whether the caller may write at all, and those are the three
+things the shared backup blob got wrong.
+
+Five tables, because their mutation rules differ too much to share one:
+
+```
+album_trust_anchors        space_id PK              one row, create-only
+album_device_records       (space_id, device_id) PK monotonic revision
+album_space_key_envelopes  (space_id, generation,   immutable at that key
+                            recipient_device_id,
+                            recipient_revision) PK
+album_recovery_envelopes   (space_id, generation) PK one row, create-only
+album_device_tombstones    id PK                    append-only
+```
+
+Each row keeps the signed object as the output of its own wire schema, and reads
+parse it again. One representation of a signed object, not two that can drift.
+
+Ownership runs in a different direction per object, deliberately. A device record
+belongs to the account that first wrote it, so a partner's account cannot rewrite
+it. An envelope belongs to the account that owns the authorising device, because
+the authoriser is who produced it. The anchor and the generation-1 recovery
+envelope belong to the Space's creator, which stops an ordinary client from
+racing them. None of that makes anything cryptographically trustworthy.
+
+Enrolment follows from that. A device receives its signed record and writes its
+own row; the authoriser never writes it on the recipient's behalf. Reparenting is
+the same, which means an offline descendant cannot be silently reparented, and so
+its ancestor cannot be safely revoked until the descendant takes part.
+
+Monotonicity lives in the write rather than in a read followed by a check:
+
+```
+on conflict(space_id, device_id) do update set revision = ..., payload = ...
+where album_device_records.owner_user_id = excluded.owner_user_id
+  and album_device_records.revision < excluded.revision
+```
+
+A read-then-write is a race. An equal revision is rejected rather than treated as
+success, and the client can fetch on conflict.
+
+Tombstones are append-only, one row per tombstone rather than one per target. A
+single row per target with last-write-wins would let an untrusted tombstone
+displace a valid one, and the client has logic specifically to evaluate each
+tombstone's authority. It gets all of them.
+
+The read is one snapshot, so starting up is not a pile of round trips:
+
+```
+GET  /v1/spaces/current/album/protocol
+PUT  /v1/spaces/current/album/protocol/anchor
+PUT  /v1/spaces/current/album/protocol/devices/:deviceId
+POST /v1/spaces/current/album/protocol/device-tombstones
+PUT  /v1/spaces/current/album/protocol/envelopes
+PUT  /v1/spaces/current/album/protocol/recovery-envelopes/:generation
+```
+
+The snapshot is not a trusted snapshot. The server may omit rows or serve old
+ones, and the client still applies the trust walker and the revisions it
+remembers locally.
+
+The old `/album/backup` endpoint and the `album_backups` table stay as they are
+until the session path switches over. They are dead architecture and a live
+runtime dependency at the same time, and removing them before the cutover would
+break the app.
+
 ## What the server can and cannot do
 
 Cannot: read photos, media keys, the space key, or the phrase. Cannot forge a

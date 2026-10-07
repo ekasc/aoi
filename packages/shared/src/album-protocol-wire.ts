@@ -257,12 +257,47 @@ export const wireMediaTombstoneSchema = z
   .strict();
 
 export type WireDeviceRecord = z.infer<typeof wireDeviceRecordSchema>;
-export type WireSpaceTrustAnchor = z.infer<typeof wireSpaceTrustAnchorSchema>;
-export type WireDeviceTombstone = z.infer<typeof wireDeviceTombstoneSchema>;
+export type WireSpaceTrustAnchor = z.infer<typeof wireSpaceTrustAnchorSchema>;export type WireDeviceTombstone = z.infer<typeof wireDeviceTombstoneSchema>;
 export type WireSpaceKeyEnvelope = z.infer<typeof wireSpaceKeyEnvelopeSchema>;
 export type WireRecoveryEnvelope = z.infer<typeof wireRecoveryEnvelopeSchema>;
 export type WireMediaManifest = z.infer<typeof wireMediaManifestSchema>;
 export type WireMediaTombstone = z.infer<typeof wireMediaTombstoneSchema>;
+
+/**
+ * The whole protocol state for a Space, in one read.
+ *
+ * One snapshot rather than a request per object, so starting up is not a pile
+ * of round trips. The snapshot is not trusted: the server may omit rows or serve
+ * old ones, and the client still applies the trust walker and the revisions it
+ * remembers locally.
+ */
+export const wireAlbumProtocolSnapshotSchema = z
+  .object({
+    anchor: wireSpaceTrustAnchorSchema.nullable(),
+    records: z.array(wireDeviceRecordSchema),
+    tombstones: z.array(wireDeviceTombstoneSchema),
+    envelopes: z.array(wireSpaceKeyEnvelopeSchema),
+    recoveryEnvelopes: z.array(wireRecoveryEnvelopeSchema),
+  })
+  .strict();
+
+export type WireAlbumProtocolSnapshot = z.infer<typeof wireAlbumProtocolSnapshotSchema>;
+
+export const wireAlbumTrustAnchorResponseSchema = z
+  .object({ anchor: wireSpaceTrustAnchorSchema })
+  .strict();
+export const wireAlbumDeviceRecordResponseSchema = z
+  .object({ record: wireDeviceRecordSchema })
+  .strict();
+export const wireAlbumDeviceTombstoneResponseSchema = z
+  .object({ tombstone: wireDeviceTombstoneSchema })
+  .strict();
+export const wireAlbumSpaceKeyEnvelopeResponseSchema = z
+  .object({ envelope: wireSpaceKeyEnvelopeSchema })
+  .strict();
+export const wireAlbumRecoveryEnvelopeResponseSchema = z
+  .object({ recoveryEnvelope: wireRecoveryEnvelopeSchema })
+  .strict();
 
 // ── the boundary ─────────────────────────────────────────────────────────
 
