@@ -43,12 +43,15 @@ export default function ChapterDetailScreen() {
     () => (chapterId ? describeChapter(chapterId, space?.relationshipStartDate ?? null) : null),
     [chapterId, space?.relationshipStartDate]
   );
-  const [state, setState] = useState<DetailState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const requestKey = `${chapterId ?? ''}:${attempt}`;
+  const [stored, setStored] = useState<{ key: string; state: DetailState } | null>(null);
+  // A new chapter, or a retry, reads as loading without a synchronous setState
+  // inside the effect.
+  const state: DetailState = stored?.key === requestKey ? stored.state : { status: 'loading' };
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: 'loading' });
     (async () => {
       if (!described) {
         return null;
@@ -60,16 +63,22 @@ export default function ChapterDetailScreen() {
           return;
         }
         if (!described || !chapterId) {
-          setState({ status: 'missing', error: null });
+          setStored({ key: requestKey, state: { status: 'missing', error: null } });
         } else {
-          setState({ status: 'ready', chapterId, title: described.title, members: members ?? [] });
+          setStored({
+            key: requestKey,
+            state: { status: 'ready', chapterId, title: described.title, members: members ?? [] },
+          });
         }
       },
       (error: unknown) => {
         if (!cancelled) {
-          setState({
-            status: 'missing',
-            error: error instanceof Error ? error.message : 'Could not load this chapter.',
+          setStored({
+            key: requestKey,
+            state: {
+              status: 'missing',
+              error: error instanceof Error ? error.message : 'Could not load this chapter.',
+            },
           });
         }
       }
@@ -77,7 +86,7 @@ export default function ChapterDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [chapterId, described, loadChapterRange, attempt]);
+  }, [chapterId, described, loadChapterRange, requestKey]);
 
   const handleRetry = () => {
     setAttempt((value) => value + 1);

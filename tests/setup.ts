@@ -738,8 +738,9 @@ vi.mock('react-native-reanimated', () => {
       if (!ref.current) {
         const shared = {
           value: initial,
-          // Reanimated 3 exposes both forms; components in this repo use
-          // either, so the test double answers to both.
+          // Components use the Reanimated 4 accessors, so the double answers
+          // to both forms.
+          get: () => shared.value,
           set: (next: unknown) => { shared.value = typeof next === 'function' ? next(shared.value) : next; },
         };
 

@@ -484,29 +484,29 @@ export function ZoomablePhoto({
       if (!(width > 0) || !(height > 0)) {
         return;
       }
-      sourceWidth.value = width;
-      sourceHeight.value = height;
+      sourceWidth.set(width);
+      sourceHeight.set(height);
       setGeometry(
         buildMorphGeometry(
           width,
           height,
           windowWidth,
           windowHeight,
-          home.width.value,
-          home.height.value,
+          home.width.get(),
+          home.height.get(),
         ),
       );
       if (active) {
         // The visible photo tells the viewer its intrinsic size, which is
         // what the morph needs to interpolate the image's rect, and the
         // viewer will not present until it has it.
-        morph.sourceWidth.value = width;
-        morph.sourceHeight.value = height;
+        morph.sourceWidth.set(width);
+        morph.sourceHeight.set(height);
         onImageReady?.();
       }
-      const bounds = panBoundsForScale(width, height, zoom.value, windowWidth, windowHeight);
-      panX.value = clampPanOffset(panX.value, bounds.x);
-      panY.value = clampPanOffset(panY.value, bounds.y);
+      const bounds = panBoundsForScale(width, height, zoom.get(), windowWidth, windowHeight);
+      panX.set(clampPanOffset(panX.get(), bounds.x));
+      panY.set(clampPanOffset(panY.get(), bounds.y));
     },
     [
       active,
@@ -531,20 +531,20 @@ export function ZoomablePhoto({
     onDismissStart?.();
     const duration = reduceMotion ? 0 : 180;
     if (reduceMotion) {
-      morph.t.value = 1;
-      morph.residualX.value = 0;
-      morph.residualY.value = 0;
+      morph.t.set(1);
+      morph.residualX.set(0);
+      morph.residualY.set(0);
       onDismiss();
       return;
     }
-    morph.t.value = withSpring(1, CLOSE_SPRING, (finished) => {
+    morph.t.set(withSpring(1, CLOSE_SPRING, (finished) => {
       'worklet';
       if (finished) {
         runOnJS(onDismiss)();
       }
-    });
-    morph.residualX.value = withSpring(0, CLOSE_SPRING);
-    morph.residualY.value = withSpring(0, CLOSE_SPRING);
+    }));
+    morph.residualX.set(withSpring(0, CLOSE_SPRING));
+    morph.residualY.set(withSpring(0, CLOSE_SPRING));
     void duration;
   }, [morph, onDismiss, onDismissStart, reduceMotion]);
 
@@ -560,79 +560,79 @@ export function ZoomablePhoto({
       Gesture.Pinch()
         .onStart((event) => {
           'worklet';
-          startZoom.value = zoom.value;
-          startPanX.value = panX.value;
-          startPanY.value = panY.value;
-          startFocalX.value = event.focalX - windowWidth / 2;
-          startFocalY.value = event.focalY - windowHeight / 2;
+          startZoom.set(zoom.get());
+          startPanX.set(panX.get());
+          startPanY.set(panY.get());
+          startFocalX.set(event.focalX - windowWidth / 2);
+          startFocalY.set(event.focalY - windowHeight / 2);
           // Lock the pager the moment a pinch begins: one that stays live
           // through the first frames competes with the pinch.
-          if (!zoomedFlag.value) {
-            zoomedFlag.value = true;
+          if (!zoomedFlag.get()) {
+            zoomedFlag.set(true);
             runOnJS(announceLock)(true);
           }
         })
         .onUpdate((event) => {
           'worklet';
-          const next = clampZoom(startZoom.value * event.scale);
-          const ratio = startZoom.value === 0 ? 1 : next / startZoom.value;
+          const next = clampZoom(startZoom.get() * event.scale);
+          const ratio = startZoom.get() === 0 ? 1 : next / startZoom.get();
           const bounds = panBoundsForScale(
-            sourceWidth.value,
-            sourceHeight.value,
+            sourceWidth.get(),
+            sourceHeight.get(),
             next,
             windowWidth,
             windowHeight,
           );
-          zoom.value = next;
-          panX.value = focalZoomOffset(
-            startFocalX.value,
+          zoom.set(next);
+          panX.set(focalZoomOffset(
+            startFocalX.get(),
             event.focalX - windowWidth / 2,
-            startPanX.value,
+            startPanX.get(),
             ratio,
             bounds.x,
-          );
-          panY.value = focalZoomOffset(
-            startFocalY.value,
+          ));
+          panY.set(focalZoomOffset(
+            startFocalY.get(),
             event.focalY - windowHeight / 2,
-            startPanY.value,
+            startPanY.get(),
             ratio,
             bounds.y,
-          );
+          ));
         })
         .onEnd(() => {
           'worklet';
-          if (isZoomedScale(zoom.value)) {
+          if (isZoomedScale(zoom.get())) {
             const bounds = panBoundsForScale(
-              sourceWidth.value,
-              sourceHeight.value,
-              zoom.value,
+              sourceWidth.get(),
+              sourceHeight.get(),
+              zoom.get(),
               windowWidth,
               windowHeight,
             );
-            panX.value = clampPanOffset(panX.value, bounds.x);
-            panY.value = clampPanOffset(panY.value, bounds.y);
+            panX.set(clampPanOffset(panX.get(), bounds.x));
+            panY.set(clampPanOffset(panY.get(), bounds.y));
             return;
           }
           const duration = reduceMotion ? 0 : ZOOM_DURATION;
-          zoom.value = withTiming(ZOOM_MIN, { duration });
-          panX.value = withTiming(0, { duration });
-          panY.value = withTiming(0, { duration });
-          if (zoomedFlag.value) {
-            zoomedFlag.value = false;
+          zoom.set(withTiming(ZOOM_MIN, { duration }));
+          panX.set(withTiming(0, { duration }));
+          panY.set(withTiming(0, { duration }));
+          if (zoomedFlag.get()) {
+            zoomedFlag.set(false);
             runOnJS(announceLock)(false);
           }
         })
         .onFinalize((_, success) => {
           'worklet';
-          if (success || isZoomedScale(zoom.value)) {
+          if (success || isZoomedScale(zoom.get())) {
             return;
           }
           // Cancelled mid-pinch: never leave a half-applied zoom behind.
-          zoom.value = ZOOM_MIN;
-          panX.value = 0;
-          panY.value = 0;
-          if (zoomedFlag.value) {
-            zoomedFlag.value = false;
+          zoom.set(ZOOM_MIN);
+          panX.set(0);
+          panY.set(0);
+          if (zoomedFlag.get()) {
+            zoomedFlag.set(false);
             runOnJS(announceLock)(false);
           }
         }),
@@ -674,8 +674,8 @@ export function ZoomablePhoto({
           'worklet';
           const touch = event.allTouches[0];
           if (touch) {
-            touchX.value = touch.absoluteX;
-            touchY.value = touch.absoluteY;
+            touchX.set(touch.absoluteX);
+            touchY.set(touch.absoluteY);
           }
         })
         .onTouchesMove((event, manager) => {
@@ -684,9 +684,9 @@ export function ZoomablePhoto({
           if (!touch) {
             return;
           }
-          const dx = touch.absoluteX - touchX.value;
-          const dy = touch.absoluteY - touchY.value;
-          if (isZoomedScale(zoom.value)) {
+          const dx = touch.absoluteX - touchX.get();
+          const dy = touch.absoluteY - touchY.get();
+          if (isZoomedScale(zoom.get())) {
             if (Math.abs(dx) > PAN_ACTIVATION || Math.abs(dy) > PAN_ACTIVATION) {
               manager.activate();
             }
@@ -703,21 +703,21 @@ export function ZoomablePhoto({
         })
         .onStart(() => {
           'worklet';
-          startPanX.value = panX.value;
-          startPanY.value = panY.value;
+          startPanX.set(panX.get());
+          startPanY.set(panY.get());
         })
         .onUpdate((event) => {
           'worklet';
-          if (isZoomedScale(zoom.value)) {
+          if (isZoomedScale(zoom.get())) {
             const bounds = panBoundsForScale(
-              sourceWidth.value,
-              sourceHeight.value,
-              zoom.value,
+              sourceWidth.get(),
+              sourceHeight.get(),
+              zoom.get(),
               windowWidth,
               windowHeight,
             );
-            panX.value = clampPanOffset(startPanX.value + event.translationX, bounds.x);
-            panY.value = clampPanOffset(startPanY.value + event.translationY, bounds.y);
+            panX.set(clampPanOffset(startPanX.get() + event.translationX, bounds.x));
+            panY.set(clampPanOffset(startPanY.get() + event.translationY, bounds.y));
             return;
           }
           if (!active) {
@@ -728,13 +728,13 @@ export function ZoomablePhoto({
           // rides along, damped, so the photo follows with weight.
           const t = scrubProgress(event.translationX, event.translationY, windowHeight);
           const resistance = Math.min(DRAG_RESISTANCE_RANGE, windowHeight * 0.2);
-          morph.t.value = t;
-          morph.residualX.value = dampedDragOffset(event.translationX, resistance) * (1 - t * 0.5);
-          morph.residualY.value = dampedDragOffset(event.translationY, resistance) * (1 - t * 0.5);
+          morph.t.set(t);
+          morph.residualX.set(dampedDragOffset(event.translationX, resistance) * (1 - t * 0.5));
+          morph.residualY.set(dampedDragOffset(event.translationY, resistance) * (1 - t * 0.5));
         })
         .onEnd((event) => {
           'worklet';
-          if (!active || isZoomedScale(zoom.value)) {
+          if (!active || isZoomedScale(zoom.get())) {
             return;
           }
           const distance = Math.hypot(event.translationX, event.translationY);
@@ -745,7 +745,7 @@ export function ZoomablePhoto({
             // Continue the motion the hand started, at the hand's own pace, and
             // settle into the tile: a spring carries that velocity, a timing
             // curve would restart from zero and stall first.
-            morph.t.value = withSpring(
+            morph.t.set(withSpring(
               1,
               {
                 ...CLOSE_SPRING,
@@ -757,24 +757,24 @@ export function ZoomablePhoto({
                   runOnJS(onDismiss)();
                 }
               },
-            );
-            morph.residualX.value = withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityX });
-            morph.residualY.value = withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityY });
+            ));
+            morph.residualX.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityX }));
+            morph.residualY.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityY }));
             return;
           }
-          morph.t.value = withSpring(0, DRAG_SPRING);
-          morph.residualX.value = withSpring(0, DRAG_SPRING);
-          morph.residualY.value = withSpring(0, DRAG_SPRING);
+          morph.t.set(withSpring(0, DRAG_SPRING));
+          morph.residualX.set(withSpring(0, DRAG_SPRING));
+          morph.residualY.set(withSpring(0, DRAG_SPRING));
         })
         .onFinalize((_, success) => {
           'worklet';
-          if (success || !active || isZoomedScale(zoom.value)) {
+          if (success || !active || isZoomedScale(zoom.get())) {
             return;
           }
           // Cancelled mid-drag: never park the photo away from fullscreen.
-          morph.t.value = withSpring(0, DRAG_SPRING);
-          morph.residualX.value = withSpring(0, DRAG_SPRING);
-          morph.residualY.value = withSpring(0, DRAG_SPRING);
+          morph.t.set(withSpring(0, DRAG_SPRING));
+          morph.residualX.set(withSpring(0, DRAG_SPRING));
+          morph.residualY.set(withSpring(0, DRAG_SPRING));
         }),
     [
       active,
@@ -798,30 +798,30 @@ export function ZoomablePhoto({
   /** Zoom without fingers: the same maths, from the accessibility actions. */
   const zoomTo = useCallback(
     (target: number, focusX: number, focusY: number) => {
-      const startFrom = zoom.value;
+      const startFrom = zoom.get();
       const ratio = startFrom === 0 ? 1 : target / startFrom;
       const bounds = panBoundsForScale(
-        sourceWidth.value,
-        sourceHeight.value,
+        sourceWidth.get(),
+        sourceHeight.get(),
         target,
         windowWidth,
         windowHeight,
       );
       const atRest = !isZoomedScale(target);
-      const nextX = atRest ? 0 : focalZoomOffset(focusX, focusX, panX.value, ratio, bounds.x);
-      const nextY = atRest ? 0 : focalZoomOffset(focusY, focusY, panY.value, ratio, bounds.y);
+      const nextX = atRest ? 0 : focalZoomOffset(focusX, focusX, panX.get(), ratio, bounds.x);
+      const nextY = atRest ? 0 : focalZoomOffset(focusY, focusY, panY.get(), ratio, bounds.y);
       const duration = reduceMotion ? 0 : ZOOM_DURATION;
-      if (!zoomedFlag.value) {
-        zoomedFlag.value = true;
+      if (!zoomedFlag.get()) {
+        zoomedFlag.set(true);
         announceLock(true);
       }
-      zoom.value = withTiming(target, { duration });
-      panX.value = withTiming(nextX, { duration });
-      panY.value = withTiming(nextY, { duration });
+      zoom.set(withTiming(target, { duration }));
+      panX.set(withTiming(nextX, { duration }));
+      panY.set(withTiming(nextY, { duration }));
       if (atRest) {
         const release = () => {
-          if (zoomedFlag.value) {
-            zoomedFlag.value = false;
+          if (zoomedFlag.get()) {
+            zoomedFlag.set(false);
             announceLock(false);
           }
         };
@@ -852,27 +852,27 @@ export function ZoomablePhoto({
           if (!success) {
             return;
           }
-          const target = zoomTargetOnDoubleTap(zoom.value);
+          const target = zoomTargetOnDoubleTap(zoom.get());
           const focusX = event.x - windowWidth / 2;
           const focusY = event.y - windowHeight / 2;
-          const startFrom = zoom.value;
+          const startFrom = zoom.get();
           const ratio = startFrom === 0 ? 1 : target / startFrom;
           const bounds = panBoundsForScale(
-            sourceWidth.value,
-            sourceHeight.value,
+            sourceWidth.get(),
+            sourceHeight.get(),
             target,
             windowWidth,
             windowHeight,
           );
           const atRest = !isZoomedScale(target);
-          const nextX = atRest ? 0 : focalZoomOffset(focusX, focusX, panX.value, ratio, bounds.x);
-          const nextY = atRest ? 0 : focalZoomOffset(focusY, focusY, panY.value, ratio, bounds.y);
+          const nextX = atRest ? 0 : focalZoomOffset(focusX, focusX, panX.get(), ratio, bounds.x);
+          const nextY = atRest ? 0 : focalZoomOffset(focusY, focusY, panY.get(), ratio, bounds.y);
           const duration = reduceMotion ? 0 : ZOOM_DURATION;
-          zoom.value = withTiming(target, { duration });
-          panX.value = withTiming(nextX, { duration });
-          panY.value = withTiming(nextY, { duration });
-          if (!zoomedFlag.value) {
-            zoomedFlag.value = true;
+          zoom.set(withTiming(target, { duration }));
+          panX.set(withTiming(nextX, { duration }));
+          panY.set(withTiming(nextY, { duration }));
+          if (!zoomedFlag.get()) {
+            zoomedFlag.set(true);
             runOnJS(announceLock)(true);
           }
           if (atRest) {
@@ -899,11 +899,11 @@ export function ZoomablePhoto({
     (event: { nativeEvent: { actionName: string } }) => {
       const action = event.nativeEvent.actionName;
       if (action === 'zoomIn') {
-        zoomTo(Math.min(ZOOM_MAX, zoom.value * DOUBLE_TAP_ZOOM), 0, 0);
+        zoomTo(Math.min(ZOOM_MAX, zoom.get() * DOUBLE_TAP_ZOOM), 0, 0);
         return;
       }
       if (action === 'zoomOut') {
-        zoomTo(Math.max(ZOOM_MIN, zoom.value / DOUBLE_TAP_ZOOM), 0, 0);
+        zoomTo(Math.max(ZOOM_MIN, zoom.get() / DOUBLE_TAP_ZOOM), 0, 0);
         return;
       }
       if (action === 'resetZoom') {
@@ -919,16 +919,16 @@ export function ZoomablePhoto({
   // per-frame width/height animation inside a Modal froze the app.
   const shellStyle = useAnimatedStyle(
     () => {
-      const t = morph.t.value;
-      const hasHome = home.valid.value;
+      const t = morph.t.get();
+      const hasHome = home.valid.get();
       const baseWidth = geometry?.baseWidth ?? frame.width;
       const baseHeight = geometry?.baseHeight ?? frame.height;
       const target = hasHome
         ? {
-            x: home.x.value,
-            y: home.y.value,
-            width: home.width.value,
-            height: home.height.value,
+            x: home.x.get(),
+            y: home.y.get(),
+            width: home.width.get(),
+            height: home.height.get(),
           }
         : frame;
       const cover = hasHome
@@ -941,16 +941,16 @@ export function ZoomablePhoto({
       const targetCenterY = hasHome ? target.y + target.height / 2 : centerY;
       return {
         transform: [
-          { translateX: morph.residualX.value },
-          { translateY: morph.residualY.value },
+          { translateX: morph.residualX.get() },
+          { translateY: morph.residualY.get() },
           { translateX: (targetCenterX - centerX) * t },
           { translateY: (targetCenterY - centerY) * t },
           { scale },
         ],
         // Exact: the box's aspect IS the thumbnail's, so at t = 1 its corners
         // land on the thumbnail's corners at the thumbnail's radius.
-        borderRadius: shellRadiusFor(t, home.radius.value, scale),
-        opacity: morph.overlay.value,
+        borderRadius: shellRadiusFor(t, home.radius.get(), scale),
+        opacity: morph.overlay.get(),
       };
     },
     [geometry, frame, home, morph],
@@ -960,7 +960,7 @@ export function ZoomablePhoto({
   // fills the clip box by the time it lands: one uniform scale, because both
   // rects keep the source aspect.
   const cropStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.value }],
+    transform: [{ scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.get() }],
   }));
 
   /** Once the clip box has laid out, the session may present. */
@@ -976,7 +976,7 @@ export function ZoomablePhoto({
   }, [active, geometry, onImageReady]);
 
   const zoomStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: panX.value }, { translateY: panY.value }, { scale: zoom.value }],
+    transform: [{ translateX: panX.get() }, { translateY: panY.get() }, { scale: zoom.get() }],
   }));
 
   return (

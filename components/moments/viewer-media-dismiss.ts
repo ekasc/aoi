@@ -53,11 +53,9 @@ export function useMediaDismiss({
           'worklet';
           const t = scrubProgress(event.translationX, event.translationY, windowHeight);
           const resistance = Math.min(DRAG_RESISTANCE_RANGE, windowHeight * 0.2);
-          morph.t.value = t;
-          morph.residualX.value =
-            dampedDragOffset(event.translationX, resistance) * (1 - t * 0.5);
-          morph.residualY.value =
-            dampedDragOffset(event.translationY, resistance) * (1 - t * 0.5);
+          morph.t.set(t);
+          morph.residualX.set(dampedDragOffset(event.translationX, resistance) * (1 - t * 0.5));
+          morph.residualY.set(dampedDragOffset(event.translationY, resistance) * (1 - t * 0.5));
         })
         .onEnd((event) => {
           'worklet';
@@ -65,19 +63,19 @@ export function useMediaDismiss({
           const speed = Math.hypot(event.velocityX, event.velocityY);
           const t = scrubProgress(event.translationX, event.translationY, windowHeight);
           if (!shouldDismissOnRelease(t, speed)) {
-            morph.t.value = reduceMotion ? 0 : withSpring(0, DRAG_SPRING);
-            morph.residualX.value = reduceMotion ? 0 : withSpring(0, DRAG_SPRING);
-            morph.residualY.value = reduceMotion ? 0 : withSpring(0, DRAG_SPRING);
+            morph.t.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+            morph.residualX.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+            morph.residualY.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
             return;
           }
           runOnJS(onDismissStart)();
           if (reduceMotion) {
-            morph.t.value = 1;
+            morph.t.set(1);
             runOnJS(onClose)();
             return;
           }
           // Carry the hand's own pace out, the way the photo path does.
-          morph.t.value = withSpring(
+          morph.t.set(withSpring(
             1,
             { ...CLOSE_SPRING, velocity: progressVelocityFor(distance, speed, windowHeight) },
             (finished) => {
@@ -86,9 +84,9 @@ export function useMediaDismiss({
                 runOnJS(onClose)();
               }
             },
-          );
-          morph.residualX.value = withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityX });
-          morph.residualY.value = withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityY });
+          ));
+          morph.residualX.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityX }));
+          morph.residualY.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityY }));
         })
         .onFinalize((_, success) => {
           'worklet';
@@ -96,9 +94,9 @@ export function useMediaDismiss({
             return;
           }
           // Cancelled mid-pull: nothing may be left off fullscreen.
-          morph.t.value = reduceMotion ? 0 : withSpring(0, DRAG_SPRING);
-          morph.residualX.value = reduceMotion ? 0 : withSpring(0, DRAG_SPRING);
-          morph.residualY.value = reduceMotion ? 0 : withSpring(0, DRAG_SPRING);
+          morph.t.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+          morph.residualX.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+          morph.residualY.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
         }),
     [active, morph, onClose, onDismissStart, reduceMotion, windowHeight],
   );
@@ -123,15 +121,15 @@ export function useMediaCloseAnimation({
   return useCallback(() => {
     onDismissStart();
     if (reduceMotion) {
-      morph.t.value = 1;
+      morph.t.set(1);
       onClose();
       return;
     }
-    morph.t.value = withSpring(1, CLOSE_SPRING, (finished) => {
+    morph.t.set(withSpring(1, CLOSE_SPRING, (finished) => {
       'worklet';
       if (finished) {
         runOnJS(onClose)();
       }
-    });
+    }));
   }, [morph, onClose, onDismissStart, reduceMotion]);
 }

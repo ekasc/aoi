@@ -249,12 +249,12 @@ function ViewerSession({
     [homeHeight, homeRadius, homeValid, homeWidth, homeX, homeY],
   );
   useEffect(() => {
-    homeX.value = origin?.x ?? 0;
-    homeY.value = origin?.y ?? 0;
-    homeWidth.value = origin?.width ?? 0;
-    homeHeight.value = origin?.height ?? 0;
-    homeRadius.value = origin?.radius ?? 0;
-    homeValid.value = !!origin;
+    homeX.set(origin?.x ?? 0);
+    homeY.set(origin?.y ?? 0);
+    homeWidth.set(origin?.width ?? 0);
+    homeHeight.set(origin?.height ?? 0);
+    homeRadius.set(origin?.radius ?? 0);
+    homeValid.set(!!origin);
   }, [homeHeight, homeRadius, homeValid, homeWidth, homeX, homeY, origin]);
 
   // The overlay presents once the viewer has laid out AND the visible photo's
@@ -294,22 +294,22 @@ function ViewerSession({
     }
     if (!origin || reduceMotion || !geometryReady) {
       // Nothing to morph out of: the page arrives on its own fade.
-      t.value = 0;
-      residualX.value = 0;
-      residualY.value = 0;
-      overlay.value = withTiming(1, { duration: FADE_DURATION, easing: OPEN_EASING });
+      t.set(0);
+      residualX.set(0);
+      residualY.set(0);
+      overlay.set(withTiming(1, { duration: FADE_DURATION, easing: OPEN_EASING }));
       return;
     }
-    overlay.value = 1;
+    overlay.set(1);
     // From the thumbnail to fit the screen. The delay lets the first frame
     // land before the animation starts, so nothing jumps on the way in.
-    t.value = 1;
-    residualX.value = 0;
-    residualY.value = 0;
-    t.value = withDelay(
+    t.set(1);
+    residualX.set(0);
+    residualY.set(0);
+    t.set(withDelay(
       OPEN_MORPH_DELAY,
       withTiming(0, { duration: OPEN_MORPH_DURATION, easing: OPEN_EASING }),
-    );
+    ));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presented, geometryReady, openingIsPhoto, origin, reduceMotion]);
 
@@ -347,10 +347,10 @@ function ViewerSession({
         // No thumbnail to land in: retain the current fit and zoom while fading.
         // Reanimated shared values are mutable animation state, not React state.
         // eslint-disable-next-line react-hooks/immutability
-        overlay.value = withTiming(0, { duration: FADE_DURATION }, (finished) => {
+        overlay.set(withTiming(0, { duration: FADE_DURATION }, (finished) => {
           'worklet';
           if (finished) runOnJS(onClose)();
-        });
+        }));
       }
       return;
     }
@@ -470,11 +470,11 @@ function ViewerSession({
   // The viewer ground IS the scrim (the modal is transparent over the live
   // screen), so it fades with the drag and comes back with the spring.
   const scrimStyle = useAnimatedStyle(() => ({
-    opacity: overlay.value * backdropFor(t.value),
+    opacity: overlay.get() * backdropFor(t.get()),
   }));
   // Controls leave with the drag; they never sit over the revealed screen.
   const chromeStyle = useAnimatedStyle(() => ({
-    opacity: overlay.value * backdropFor(t.value),
+    opacity: overlay.get() * backdropFor(t.get()),
   }));
 
   return (

@@ -36,12 +36,14 @@ function parseScreen(raw: string | string[] | undefined): PreviewScreen {
  * Not linked from any navigation. Production builds redirect home.
  */
 export default function DevCalendar() {
+	// The hook runs before the dev-only early return. A conditional hook is a
+	// hook-order bug even in a preview route.
+	const { screen } = useLocalSearchParams<{ screen?: string | string[] }>();
+	const selected = parseScreen(screen);
+
 	if (!__DEV__) {
 		return <Redirect href="/" />;
 	}
-
-	const { screen } = useLocalSearchParams<{ screen?: string | string[] }>();
-	const selected = parseScreen(screen);
 
 	return (
 		<SessionContext.Provider value={PREVIEW_SESSION}>

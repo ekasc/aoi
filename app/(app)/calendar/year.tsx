@@ -169,17 +169,20 @@ function YearSection({
 	const muted = useThemeColor({}, 'muted');
 	const accent = useThemeColor({}, 'accent');
 	const partnerAccent = useThemeColor({}, 'partnerAccent');
-	const [planTones, setPlanTones] = useState<Map<string, EventOwnershipTone> | null>(
-		null,
-	);
-	const [failed, setFailed] = useState(false);
+	// Density is stored against the year it describes, so a year change reads
+	// as loading without a synchronous setState inside the effect.
+	const [loaded, setLoaded] = useState<{
+		year: number;
+		tones: Map<string, EventOwnershipTone> | null;
+		failed: boolean;
+	} | null>(null);
+	const planTones = loaded?.year === year ? loaded.tones : null;
+	const failed = loaded?.year === year ? loaded.failed : false;
 
 	// Each year reads its own density as it mounts, so scrolling costs nothing
 	// for years nobody is looking at.
 	useEffect(() => {
 		let live = true;
-		setFailed(false);
-		setPlanTones(null);
 		eventsInRange(new Date(year, 0, 1), new Date(year + 1, 0, 1))
 			.then((events) => {
 				if (!live) {
@@ -203,11 +206,11 @@ function YearSection({
 						tones.set(key, tone);
 					}
 				}
-				setPlanTones(tones);
+				setLoaded({ year, tones, failed: false });
 			})
 			.catch(() => {
 				if (live) {
-					setFailed(true);
+					setLoaded({ year, tones: null, failed: true });
 				}
 			});
 			return () => {
