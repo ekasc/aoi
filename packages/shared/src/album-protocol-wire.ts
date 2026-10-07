@@ -178,6 +178,7 @@ export const wireDeviceRecordSchema = z
 
 export const wireDeviceTombstoneSchema = z
   .object({
+    spaceId: idSchema,
     targetDeviceId: idSchema,
     revision: counterSchema,
     revokedBy: wireDeviceRevokerSchema,
@@ -233,6 +234,7 @@ export const wireMediaManifestSchema = z
 
 export const wireMediaTombstoneSchema = z
   .object({
+    spaceId: idSchema,
     mediaId: idSchema,
     revision: counterSchema,
     deletedAt: timestampSchema,
@@ -274,7 +276,11 @@ export function parseWireDeviceRecord(input: unknown): DeviceRecord {
 }
 
 export function toWireDeviceRecord(record: DeviceRecord): WireDeviceRecord {
-  return {
+  // Validated on the way out as well as on the way in. A serializer that only
+  // encodes would happily return something typed as wire form that the schema
+  // would reject, and the crypto slice constructs these objects rather than
+  // receiving them from a parser.
+  return wireDeviceRecordSchema.parse({
     deviceId: record.deviceId,
     spaceId: record.spaceId,
     signingPublicKey: encodeBase64(record.signingPublicKey),
@@ -283,12 +289,13 @@ export function toWireDeviceRecord(record: DeviceRecord): WireDeviceRecord {
     revision: record.revision,
     createdAt: record.createdAt,
     authorisation: encodeBase64(record.authorisation),
-  };
+  });
 }
 
 export function parseWireDeviceTombstone(input: unknown): DeviceTombstone {
   const wire = wireDeviceTombstoneSchema.parse(input);
   return {
+    spaceId: wire.spaceId,
     targetDeviceId: wire.targetDeviceId,
     revision: wire.revision,
     revokedBy: wire.revokedBy,
@@ -298,13 +305,14 @@ export function parseWireDeviceTombstone(input: unknown): DeviceTombstone {
 }
 
 export function toWireDeviceTombstone(tombstone: DeviceTombstone): WireDeviceTombstone {
-  return {
+  return wireDeviceTombstoneSchema.parse({
+    spaceId: tombstone.spaceId,
     targetDeviceId: tombstone.targetDeviceId,
     revision: tombstone.revision,
     revokedBy: tombstone.revokedBy,
     revokedAt: tombstone.revokedAt,
     signature: encodeBase64(tombstone.signature),
-  };
+  });
 }
 
 export function parseWireSpaceKeyEnvelope(input: unknown): SpaceKeyEnvelope {
@@ -321,7 +329,7 @@ export function parseWireSpaceKeyEnvelope(input: unknown): SpaceKeyEnvelope {
 }
 
 export function toWireSpaceKeyEnvelope(envelope: SpaceKeyEnvelope): WireSpaceKeyEnvelope {
-  return {
+  return wireSpaceKeyEnvelopeSchema.parse({
     spaceId: envelope.spaceId,
     generation: envelope.generation,
     recipientDeviceId: envelope.recipientDeviceId,
@@ -329,7 +337,7 @@ export function toWireSpaceKeyEnvelope(envelope: SpaceKeyEnvelope): WireSpaceKey
     recipientRevision: envelope.recipientRevision,
     nonce: encodeBase64(envelope.nonce),
     ciphertext: encodeBase64(envelope.ciphertext),
-  };
+  });
 }
 
 export function parseWireRecoveryEnvelope(input: unknown): RecoveryEnvelope {
@@ -343,12 +351,12 @@ export function parseWireRecoveryEnvelope(input: unknown): RecoveryEnvelope {
 }
 
 export function toWireRecoveryEnvelope(envelope: RecoveryEnvelope): WireRecoveryEnvelope {
-  return {
+  return wireRecoveryEnvelopeSchema.parse({
     spaceId: envelope.spaceId,
     generation: envelope.generation,
     nonce: encodeBase64(envelope.nonce),
     ciphertext: encodeBase64(envelope.ciphertext),
-  };
+  });
 }
 
 export function parseWireMediaManifest(input: unknown): MediaManifest {
@@ -375,7 +383,7 @@ export function parseWireMediaManifest(input: unknown): MediaManifest {
 }
 
 export function toWireMediaManifest(manifest: MediaManifest): WireMediaManifest {
-  return {
+  return wireMediaManifestSchema.parse({
     mediaId: manifest.mediaId,
     spaceId: manifest.spaceId,
     generation: manifest.generation,
@@ -393,12 +401,13 @@ export function toWireMediaManifest(manifest: MediaManifest): WireMediaManifest 
     uploaderDeviceId: manifest.uploaderDeviceId,
     createdAt: manifest.createdAt,
     signature: encodeBase64(manifest.signature),
-  };
+  });
 }
 
 export function parseWireMediaTombstone(input: unknown): MediaTombstone {
   const wire = wireMediaTombstoneSchema.parse(input);
   return {
+    spaceId: wire.spaceId,
     mediaId: wire.mediaId,
     revision: wire.revision,
     deletedAt: wire.deletedAt,
@@ -408,11 +417,12 @@ export function parseWireMediaTombstone(input: unknown): MediaTombstone {
 }
 
 export function toWireMediaTombstone(tombstone: MediaTombstone): WireMediaTombstone {
-  return {
+  return wireMediaTombstoneSchema.parse({
+    spaceId: tombstone.spaceId,
     mediaId: tombstone.mediaId,
     revision: tombstone.revision,
     deletedAt: tombstone.deletedAt,
     deletedByDeviceId: tombstone.deletedByDeviceId,
     signature: encodeBase64(tombstone.signature),
-  };
+  });
 }

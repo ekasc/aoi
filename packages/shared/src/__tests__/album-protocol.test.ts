@@ -39,9 +39,9 @@ describe('canonical protocol encoding', () => {
       encodeRecoveryEnvelopeContext({ spaceId: 's', generation: 0 }),
       encodeMediaContext({ mediaId: 'm', generation: 0 }),
       encodeDeviceRecord({ deviceId: 'd', spaceId: 's', signingPublicKey: new Uint8Array(0), agreementPublicKey: new Uint8Array(0), authorisedBy: { kind: 'self' }, revision: 0, createdAt: 't' }),
-      encodeDeviceTombstone({ targetDeviceId: 'd', revision: 0, revokedBy: { kind: 'device', deviceId: 'a' }, revokedAt: 't' }),
+      encodeDeviceTombstone({ spaceId: 's', targetDeviceId: 'd', revision: 1, revokedBy: { kind: 'device', deviceId: 'a' }, revokedAt: 't' }),
       encodeMediaManifest({ mediaId: 'm', spaceId: 's', generation: 0, revision: 0, wrappedKey: { nonce: new Uint8Array(0), ciphertext: new Uint8Array(0) }, sealedNonce: new Uint8Array(0), byteLength: 0, mimeType: 'x', uploaderDeviceId: 'd', createdAt: 't' }),
-      encodeMediaTombstone({ mediaId: 'm', revision: 0, deletedAt: 't', deletedByDeviceId: 'd' }),
+      encodeMediaTombstone({ spaceId: 's', mediaId: 'm', revision: 1, deletedAt: 't', deletedByDeviceId: 'd' }),
     ];
     for (const bytes of everyStructure) {
       expect(bytes[0]).toBe(PROTOCOL_FORMAT_VERSION);
@@ -103,6 +103,7 @@ describe('canonical protocol encoding', () => {
     expect(
       hex(
         encodeDeviceTombstone({
+          spaceId: 'space-1',
           targetDeviceId: 'device-b',
           revision: 2,
           revokedBy: { kind: 'device', deviceId: 'device-a' },
@@ -110,7 +111,7 @@ describe('canonical protocol encoding', () => {
         })
       )
     ).toBe(
-      '0100000017616f692f6465766963652d746f6d6273746f6e652f7631000000086465766963652d62000000000000000202000000086465766963652d6100000018323032362d30322d30315430303a30303a30302e3030305a'
+      '0100000017616f692f6465766963652d746f6d6273746f6e652f76310000000773706163652d31000000086465766963652d62000000000000000202000000086465766963652d6100000018323032362d30322d30315430303a30303a30302e3030305a'
     );
   });
 
@@ -163,6 +164,7 @@ describe('canonical protocol encoding', () => {
     expect(
       hex(
         encodeMediaTombstone({
+          spaceId: 'space-1',
           mediaId: 'm-1',
           revision: 2,
           deletedAt: '2026-03-01T00:00:00.000Z',
@@ -170,7 +172,7 @@ describe('canonical protocol encoding', () => {
         })
       )
     ).toBe(
-      '0100000016616f692f6d656469612d746f6d6273746f6e652f7631000000036d2d31000000000000000200000018323032362d30332d30315430303a30303a30302e3030305a000000086465766963652d62'
+      '0100000016616f692f6d656469612d746f6d6273746f6e652f76310000000773706163652d31000000036d2d31000000000000000200000018323032362d30332d30315430303a30303a30302e3030305a000000086465766963652d62'
     );
   });
 });

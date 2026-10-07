@@ -401,6 +401,7 @@ about this object, so the signature comes from somewhere else:
 
 ```
 deviceTombstone {
+  spaceId
   targetDeviceId
   revision              // higher than the target record it revokes
   revokedBy             // tagged: recovery | { device, deviceId }
@@ -412,6 +413,12 @@ deviceTombstone {
 The rule, stated once: a device record is authorised by another trusted device
 or by recovery, and a device tombstone is signed the same way, because the
 device being revoked is exactly the one that cannot be trusted to cooperate.
+
+Both tombstones carry `spaceId`, as both creation records already did. Without
+it a signature says nothing about which Space the revocation or the deletion
+belongs to, and the protocol would be leaning on id uniqueness and server-side
+scoping, which an untrusted server does not supply. Every signed object binds
+itself to its Space in its own bytes.
 
 Real revocation means a new generation: generate a new random space key and
 rewrap every media key under it. A removed device is then excluded because it
@@ -463,6 +470,7 @@ mediaManifest {
 }
 
 mediaTombstone {
+  spaceId
   mediaId
   revision              // higher than the manifest it removes
   deletedAt

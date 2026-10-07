@@ -315,6 +315,7 @@ export function encodeDeviceRecord(input: DeviceRecordInput): Uint8Array {
 }
 
 export type DeviceTombstoneInput = {
+  spaceId: string;
   targetDeviceId: string;
   revision: number;
   revokedBy: DeviceRevoker;
@@ -330,6 +331,7 @@ export function encodeDeviceTombstone(input: DeviceTombstoneInput): Uint8Array {
   const writer = new ProtocolWriter()
     .version()
     .string(DEVICE_TOMBSTONE_LABEL)
+    .string(input.spaceId)
     .string(input.targetDeviceId)
     .uint64(input.revision);
   writeRevoker(writer, input.revokedBy);
@@ -385,6 +387,7 @@ export function encodeMediaManifest(input: MediaManifestInput): Uint8Array {
 }
 
 export type MediaTombstoneInput = {
+  spaceId: string;
   mediaId: string;
   revision: number;
   deletedAt: string;
@@ -400,6 +403,7 @@ export function encodeMediaTombstone(input: MediaTombstoneInput): Uint8Array {
   return new ProtocolWriter()
     .version()
     .string(MEDIA_TOMBSTONE_LABEL)
+    .string(input.spaceId)
     .string(input.mediaId)
     .uint64(input.revision)
     .string(input.deletedAt)

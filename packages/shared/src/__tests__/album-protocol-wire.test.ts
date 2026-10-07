@@ -18,6 +18,7 @@ import {
   toWireDeviceRecord,
   toWireMediaManifest,
   wireDeviceRecordSchema,
+  wireDeviceTombstoneSchema,
   wireMediaManifestSchema,
 } from '../album-protocol-wire';
 
@@ -80,6 +81,7 @@ describe('authority is tagged, not a sentinel string', () => {
   it('tags the revoker the same way, with no self variant', () => {
     const revoke = (revokedBy: Parameters<typeof encodeDeviceTombstone>[0]['revokedBy']) =>
       encodeDeviceTombstone({
+        spaceId: 'space-1',
         targetDeviceId: 'device-b',
         revision: 2,
         revokedBy,
@@ -214,6 +216,21 @@ describe('the wire schemas', () => {
     expect(wireMediaManifestSchema.safeParse(short).success).toBe(false);
   });
 
+  it('requires a spaceId on a tombstone', () => {
+    // Without it the signature says nothing about which Space the revocation
+    // belongs to, and the protocol would be relying on id uniqueness and
+    // server-side scoping, which an untrusted server does not provide.
+    const tombstone = {
+      targetDeviceId: 'device-b',
+      revision: 2,
+      revokedBy: { kind: 'device', deviceId: 'device-a' },
+      revokedAt: '2026-02-01T00:00:00.000Z',
+      signature: encodeBase64(bytesOf(64, 3)),
+    };
+    expect(wireDeviceTombstoneSchema.safeParse(tombstone).success).toBe(false);
+    expect(wireDeviceTombstoneSchema.safeParse({ ...tombstone, spaceId: 'space-1' }).success).toBe(true);
+  });
+
   it('accepts an omitted or null optional alike', () => {
     const base = {
       mediaId: 'm-1',
@@ -242,7 +259,9 @@ describe('the wire schemas', () => {
  */
 describe('the wire to protocol boundary', () => {
   it('decodes a record into bytes and keeps the tagged authoriser', () => {
-    const record = parseWireDeviceRecord(canonicalRecord({ authorisedBy: { kind: 'device', deviceId: 'recovery' } }));
+    const record = parseWireDeviceRecord(
+      canonicalRecord({ authorisedBy: { kind: 'device', deviceId: 'recovery' } })
+    );
     expect(record.signingPublicKey).toEqual(bytesOf(ED25519_PUBLIC_KEY_BYTES, 1));
     expect(record.authorisation).toEqual(bytesOf(64, 3));
     expect(record.authorisedBy).toEqual({ kind: 'device', deviceId: 'recovery' });
@@ -276,5 +295,35 @@ describe('the wire to protocol boundary', () => {
 
     const absent: MediaManifest = { ...present, width: null, height: null, personTag: null };
     expect(parseWireMediaManifest(toWireMediaManifest(absent))).toEqual(absent);
+  });
+});
+
+/**
+ * The outbound direction validates as well. The crypto slice builds these
+ * objects rather than receiving them from a parser, so a serializer that only
+ * encoded would happily return something typed as wire form that the schema
+ * would refuse.
+ */
+describe('the protocol to wire boundary validates too', () => {
+  it('refuses to serialise a record the wire would reject', () => {
+    expect(() =>
+      toWireDeviceRecord({
+        deviceId: 'device-a',
+        spaceId: 'space-1',
+        signingPublicKey: new Uint8Array(3),
+        agreementPublicKey: bytesOf(ED25519_PUBLIC_KEY_BYTES, 2),
+        authorisedBy: { kind: 'self' },
+        revision: 1,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        authorisation: bytesOf(64, 3),
+      })
+    ).toThrow();
+  });
+
+  it('refuses to serialise a timestamp the wire would reject', () => {
+    const record = parseWireDeviceRecord(canonicalRecord());
+    expect(() =>
+      toWireDeviceRecord({ ...record, createdAt: '2026-01-01T02:00:00.000+02:00' })
+    ).toThrow();
   });
 });
