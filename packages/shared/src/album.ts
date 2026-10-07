@@ -75,7 +75,9 @@ export const spaceKeyEnvelopeSchema = z.object({
   createdAt: z.string().min(1).max(TIMESTAMP_MAX),
 });
 
-export type SpaceKeyEnvelope = z.infer<typeof spaceKeyEnvelopeSchema>;
+// No type alias here. `SpaceKeyEnvelope` names the protocol's envelope in
+// `album-protocol.ts` now, and the alias this file used to export was never
+// consumed by anything.
 
 /**
  * Everything a device needs to join a space without a live partner: who to

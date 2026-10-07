@@ -38,8 +38,8 @@ describe('canonical protocol encoding', () => {
       encodeRecoverySigningContext(),
       encodeRecoveryEnvelopeContext({ spaceId: 's', generation: 0 }),
       encodeMediaContext({ mediaId: 'm', generation: 0 }),
-      encodeDeviceRecord({ deviceId: 'd', spaceId: 's', signingPublicKey: new Uint8Array(0), agreementPublicKey: new Uint8Array(0), authorisedBy: 'self', revision: 0, createdAt: 't' }),
-      encodeDeviceTombstone({ targetDeviceId: 'd', revision: 0, revokedByDeviceId: 'a', revokedAt: 't' }),
+      encodeDeviceRecord({ deviceId: 'd', spaceId: 's', signingPublicKey: new Uint8Array(0), agreementPublicKey: new Uint8Array(0), authorisedBy: { kind: 'self' }, revision: 0, createdAt: 't' }),
+      encodeDeviceTombstone({ targetDeviceId: 'd', revision: 0, revokedBy: { kind: 'device', deviceId: 'a' }, revokedAt: 't' }),
       encodeMediaManifest({ mediaId: 'm', spaceId: 's', generation: 0, revision: 0, wrappedKey: { nonce: new Uint8Array(0), ciphertext: new Uint8Array(0) }, sealedNonce: new Uint8Array(0), byteLength: 0, mimeType: 'x', uploaderDeviceId: 'd', createdAt: 't' }),
       encodeMediaTombstone({ mediaId: 'm', revision: 0, deletedAt: 't', deletedByDeviceId: 'd' }),
     ];
@@ -89,13 +89,13 @@ describe('canonical protocol encoding', () => {
           spaceId: 'space-1',
           signingPublicKey: new Uint8Array(32).fill(1),
           agreementPublicKey: new Uint8Array(32).fill(2),
-          authorisedBy: 'self',
+          authorisedBy: { kind: 'self' },
           revision: 1,
           createdAt: '2026-01-01T00:00:00.000Z',
         })
       )
     ).toBe(
-      '0100000014616f692f6465766963652d7265636f72642f7631000000086465766963652d610000000773706163652d310000002001010101010101010101010101010101010101010101010101010101010101010000002002020202020202020202020202020202020202020202020202020202020202020000000473656c66000000000000000100000018323032362d30312d30315430303a30303a30302e3030305a'
+      '0100000014616f692f6465766963652d7265636f72642f7631000000086465766963652d610000000773706163652d3100000020010101010101010101010101010101010101010101010101010101010101010100000020020202020202020202020202020202020202020202020202020202020202020201000000000000000100000018323032362d30312d30315430303a30303a30302e3030305a'
     );
   });
 
@@ -105,12 +105,12 @@ describe('canonical protocol encoding', () => {
         encodeDeviceTombstone({
           targetDeviceId: 'device-b',
           revision: 2,
-          revokedByDeviceId: 'device-a',
+          revokedBy: { kind: 'device', deviceId: 'device-a' },
           revokedAt: '2026-02-01T00:00:00.000Z',
         })
       )
     ).toBe(
-      '0100000017616f692f6465766963652d746f6d6273746f6e652f7631000000086465766963652d620000000000000002000000086465766963652d6100000018323032362d30322d30315430303a30303a30302e3030305a'
+      '0100000017616f692f6465766963652d746f6d6273746f6e652f7631000000086465766963652d62000000000000000202000000086465766963652d6100000018323032362d30322d30315430303a30303a30302e3030305a'
     );
   });
 

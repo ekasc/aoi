@@ -89,6 +89,8 @@ One encoder feeds all three, with these rules.
 - A list is a uint32 big-endian count, then each element in order.
 - A label is itself a length-prefixed string, so a label can never be read as
   data.
+- A tagged union is a discriminator byte, then the fields of the variant that
+  applies and nothing else.
 
 The length prefixes are the point. Concatenating a `spaceId` and a `generation`
 with no boundaries lets two different inputs produce one byte string, which is
@@ -112,10 +114,47 @@ That one value is both the HKDF `info` and the AEAD `aad`. The derivation and
 the authentication then bind the same bytes by construction, rather than by two
 expressions that happen to agree today.
 
-The encoder lives in `packages/shared/src/album-protocol.ts`, with frozen byte
-vectors in `packages/shared/src/__tests__/album-protocol.test.ts`. Those vectors
-are the format's real test: a round trip proves two copies of the same wrong
-encoder agree, and a frozen vector proves the wire format did not move.
+## Wire form and protocol form
+
+Every object above exists in two forms and they are not interchangeable.
+
+The wire form is what travels over HTTP and what the server stores: base64
+strings, JSON-safe numbers and strings. The protocol form is what the
+cryptography receives: `Uint8Array` key material, tagged unions, validated
+integers. A parser converts once at the boundary, and nothing downstream sees a
+base64 string or loosely validated JSON.
+
+Base64 has exactly one accepted spelling: the standard alphabet, padded, with
+zero bits in the final character's unused positions. Any other spelling of the
+same bytes is refused rather than normalised, because a signature covers bytes
+and two spellings of one key would be two signed values.
+
+Timestamps have exactly one accepted spelling: canonical ISO-8601 UTC ending in
+`Z` with milliseconds. `2026-01-01T00:00:00.000Z` and
+`2026-01-01T02:00:00.000+02:00` name the same instant and are different signed
+values, so the wire takes the first form only. That is deliberate rather than
+incidental.
+
+Decoded lengths are exact. An Ed25519 public key is 32 bytes, an X25519 public
+key is 32, a signature is 64, an AES-GCM nonce is 12, and a wrapped key is the
+32-byte key plus the 16-byte tag. A string that decodes to anything else is
+refused, so the cryptography cannot be handed a short key that fails later and
+ambiguously.
+
+Wire schemas are strict: an unknown field is rejected rather than dropped.
+Silently discarding a field is how a renamed field becomes a silently
+unauthenticated one.
+
+Counters are bounded to 1 through 2^31-1. Each is a monotonic counter that
+moves once per event, so the ceiling is unreachable in a lifetime and a value
+beyond it is a bug or an attack rather than data. Media byte length is bounded
+to 100 MiB, matching the media contract the API already enforces.
+
+The encoding lives in `packages/shared/src/album-protocol.ts` and the wire
+boundary in `packages/shared/src/album-protocol-wire.ts`, with tests beside
+them. The vectors are frozen rather than round-tripped: a round trip proves two
+copies of the same wrong encoder agree with each other, and a frozen vector
+proves the format did not move.
 
 ## The Space key
 
@@ -166,12 +205,18 @@ deviceRecord {
   spaceId
   signingPublicKey
   agreementPublicKey
-  authorisedBy        // a deviceId, or 'recovery'
+  authorisedBy        // tagged: self | recovery | { device, deviceId }
   authorisation       // signature over this record by the authoriser
   revision            // monotonic per deviceId
   createdAt
 }
 ```
+
+The authoriser is a tagged union rather than a string, and that is not
+cosmetic. As a string, `'self'` and `'recovery'` shared a namespace with
+arbitrary device ids, so a device whose id happened to be `'recovery'` would
+have been indistinguishable from the recovery root. The tag is structural: a
+discriminator byte, and a device id only in the variant that has one.
 
 `generation` is deliberately absent. Device trust and key generation are
 different axes. When generation 2 is created, an already-authorised device does
@@ -293,7 +338,7 @@ just confirmed, not against whatever the server listed. This is the step the
 current `establishAlbumSession` skips, and skipping it is the entire finding.
 
 The first device is its own root. It generates the space key, writes its own
-record with `authorisedBy: 'self'`, and publishes a recovery envelope at the
+record with `authorisedBy: { kind: 'self' }`, and publishes a recovery envelope at the
 same time. A Space with one device is a normal state, not an incomplete one.
 
 ## Recovery
@@ -358,7 +403,7 @@ about this object, so the signature comes from somewhere else:
 deviceTombstone {
   targetDeviceId
   revision              // higher than the target record it revokes
-  revokedByDeviceId
+  revokedBy             // tagged: recovery | { device, deviceId }
   revokedAt
   signature             // by another trusted device, or by the recovery root
 }

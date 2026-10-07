@@ -14,6 +14,7 @@ export * from './location';
 export * from './media';
 export * from './album';
 export * from './album-protocol';
+export * from './album-protocol-wire';
 export * from './collection';
 export * from './api';
 export * from './response';

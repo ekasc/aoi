@@ -56,6 +56,58 @@ export const MEDIA_TOMBSTONE_LABEL = 'aoi/media-tombstone/v1';
 const ABSENT = 0x00;
 const PRESENT = 0x01;
 
+// Tagged-union discriminators. The two unions are separate namespaces, so they
+// number independently.
+const AUTHORISER_SELF = 0x01;
+const AUTHORISER_RECOVERY = 0x02;
+const AUTHORISER_DEVICE = 0x03;
+const REVOKER_RECOVERY = 0x01;
+const REVOKER_DEVICE = 0x02;
+
+/**
+ * Who vouched for a device record.
+ *
+ * This is a tagged union rather than a string on purpose. As a string, `'self'`
+ * and `'recovery'` shared a namespace with arbitrary device ids, so a device
+ * whose id happened to be `'recovery'` would have been indistinguishable from
+ * the recovery root. The tag is structural now, and the device id only exists
+ * in the variant that has one.
+ */
+export type DeviceAuthoriser =
+  | { kind: 'self' }
+  | { kind: 'recovery' }
+  | { kind: 'device'; deviceId: string };
+
+/** Who signed a device tombstone. A device cannot revoke itself. */
+export type DeviceRevoker =
+  | { kind: 'recovery' }
+  | { kind: 'device'; deviceId: string };
+
+function writeAuthoriser(writer: ProtocolWriter, authoriser: DeviceAuthoriser): void {
+  switch (authoriser.kind) {
+    case 'self':
+      writer.byte(AUTHORISER_SELF);
+      return;
+    case 'recovery':
+      writer.byte(AUTHORISER_RECOVERY);
+      return;
+    case 'device':
+      writer.byte(AUTHORISER_DEVICE).string(authoriser.deviceId);
+      return;
+  }
+}
+
+function writeRevoker(writer: ProtocolWriter, revoker: DeviceRevoker): void {
+  switch (revoker.kind) {
+    case 'recovery':
+      writer.byte(REVOKER_RECOVERY);
+      return;
+    case 'device':
+      writer.byte(REVOKER_DEVICE).string(revoker.deviceId);
+      return;
+  }
+}
+
 function append(target: number[], source: Uint8Array): void {
   for (let index = 0; index < source.length; index += 1) {
     target.push(source[index]);
@@ -82,7 +134,17 @@ export class ProtocolWriter {
   private readonly out: number[] = [];
 
   version(): this {
-    this.out.push(PROTOCOL_FORMAT_VERSION);
+    return this.byte(PROTOCOL_FORMAT_VERSION);
+  }
+
+  /**
+   * A single byte. The format version and every tagged-union discriminator use
+   * this, so a variant is one byte on the wire rather than a string that could
+   * collide with data.
+   */
+  byte(value: number): this {
+    assertUint(value, 0xff, 'byte');
+    this.out.push(value);
     return this;
   }
 
@@ -230,42 +292,48 @@ export type DeviceRecordInput = {
   spaceId: string;
   signingPublicKey: Uint8Array;
   agreementPublicKey: Uint8Array;
-  /** A deviceId, 'self' for the Space's first device, or 'recovery'. */
-  authorisedBy: string;
+  authorisedBy: DeviceAuthoriser;
   revision: number;
   createdAt: string;
 };
 
+/** A device record as it exists, including the signature over the bytes above. */
+export type DeviceRecord = DeviceRecordInput & {
+  authorisation: Uint8Array;
+};
+
 export function encodeDeviceRecord(input: DeviceRecordInput): Uint8Array {
-  return new ProtocolWriter()
+  const writer = new ProtocolWriter()
     .version()
     .string(DEVICE_RECORD_LABEL)
     .string(input.deviceId)
     .string(input.spaceId)
     .bytes(input.signingPublicKey)
-    .bytes(input.agreementPublicKey)
-    .string(input.authorisedBy)
-    .uint64(input.revision)
-    .string(input.createdAt)
-    .toBytes();
+    .bytes(input.agreementPublicKey);
+  writeAuthoriser(writer, input.authorisedBy);
+  return writer.uint64(input.revision).string(input.createdAt).toBytes();
 }
 
 export type DeviceTombstoneInput = {
   targetDeviceId: string;
   revision: number;
-  revokedByDeviceId: string;
+  revokedBy: DeviceRevoker;
   revokedAt: string;
 };
 
+/** A device tombstone as it exists, including its signature. */
+export type DeviceTombstone = DeviceTombstoneInput & {
+  signature: Uint8Array;
+};
+
 export function encodeDeviceTombstone(input: DeviceTombstoneInput): Uint8Array {
-  return new ProtocolWriter()
+  const writer = new ProtocolWriter()
     .version()
     .string(DEVICE_TOMBSTONE_LABEL)
     .string(input.targetDeviceId)
-    .uint64(input.revision)
-    .string(input.revokedByDeviceId)
-    .string(input.revokedAt)
-    .toBytes();
+    .uint64(input.revision);
+  writeRevoker(writer, input.revokedBy);
+  return writer.string(input.revokedAt).toBytes();
 }
 
 /** A sealed key, as the two byte strings it is. */
@@ -285,9 +353,14 @@ export type MediaManifestInput = {
   mimeType: string;
   width?: number | null;
   height?: number | null;
-  personTag?: string | null;
+  personTag?: ProtocolPersonTag | null;
   uploaderDeviceId: string;
   createdAt: string;
+};
+
+/** A media manifest as it exists, including the uploader's signature. */
+export type MediaManifest = MediaManifestInput & {
+  signature: Uint8Array;
 };
 
 export function encodeMediaManifest(input: MediaManifestInput): Uint8Array {
@@ -318,6 +391,11 @@ export type MediaTombstoneInput = {
   deletedByDeviceId: string;
 };
 
+/** A media tombstone as it exists, including its signature. */
+export type MediaTombstone = MediaTombstoneInput & {
+  signature: Uint8Array;
+};
+
 export function encodeMediaTombstone(input: MediaTombstoneInput): Uint8Array {
   return new ProtocolWriter()
     .version()
@@ -328,3 +406,51 @@ export function encodeMediaTombstone(input: MediaTombstoneInput): Uint8Array {
     .string(input.deletedByDeviceId)
     .toBytes();
 }
+
+// ── bounds ───────────────────────────────────────────────────────────────
+//
+// Every integer the protocol carries is a monotonic counter that moves once per
+// event. 2^31 of anything is unreachable in a lifetime, and a ceiling well below
+// the JSON-safe range keeps a malformed or hostile value from being stored at
+// all. The byte ceiling matches the media contract the API already enforces.
+
+export const PROTOCOL_MIN_COUNTER = 1;
+export const PROTOCOL_MAX_COUNTER = 2 ** 31 - 1;
+export const PROTOCOL_MAX_ID_LENGTH = 128;
+export const PROTOCOL_MAX_MIME_TYPE_LENGTH = 255;
+export const PROTOCOL_MAX_MEDIA_BYTES = 100 * 1024 * 1024;
+
+export const ED25519_PUBLIC_KEY_BYTES = 32;
+export const X25519_PUBLIC_KEY_BYTES = 32;
+export const ED25519_SIGNATURE_BYTES = 64;
+export const AES_GCM_NONCE_BYTES = 12;
+export const AES_GCM_TAG_BYTES = 16;
+export const SPACE_KEY_BYTES = 32;
+export const MEDIA_KEY_BYTES = 32;
+/** A wrapped key is the key plus the GCM tag the seal appends. */
+export const WRAPPED_KEY_BYTES = SPACE_KEY_BYTES + AES_GCM_TAG_BYTES;
+
+export const PROTOCOL_PERSON_TAGS = ['you', 'partner'] as const;
+export type ProtocolPersonTag = (typeof PROTOCOL_PERSON_TAGS)[number];
+
+// ── envelopes ────────────────────────────────────────────────────────────
+//
+// Neither envelope is signed. They are sealed, and their integrity comes from
+// the AEAD and from the context that is both their KDF input and their AAD.
+
+export type SpaceKeyEnvelope = {
+  spaceId: string;
+  generation: number;
+  recipientDeviceId: string;
+  authoriserDeviceId: string;
+  recipientRevision: number;
+  nonce: Uint8Array;
+  ciphertext: Uint8Array;
+};
+
+export type RecoveryEnvelope = {
+  spaceId: string;
+  generation: number;
+  nonce: Uint8Array;
+  ciphertext: Uint8Array;
+};
