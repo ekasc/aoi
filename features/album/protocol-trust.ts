@@ -22,6 +22,10 @@ import { verifyDeviceRecord, verifyDeviceTombstone } from '@/features/album/prot
  * signer has to be reachable from an anchor, and that applies to a revocation
  * as much as to an authorisation: a tombstone nobody trusted signed is not a
  * revocation, it is a row the server made up.
+ *
+ * This answers the *authority* question, and it is the right one for enrolling a
+ * device, revoking one, or handing out a new Space-key envelope. It is the wrong
+ * one for media, which uses `verifyDeviceProvenance` instead.
  */
 
 export type DeviceTrustFailure =
@@ -43,6 +47,9 @@ export type DeviceTrustFailure =
 export type DeviceTrust = { trusted: true } | { trusted: false; reason: DeviceTrustFailure };
 
 const TRUSTED: DeviceTrust = { trusted: true };
+
+/** No device is revoked. Used by the provenance walk, which ignores revocation. */
+const NOTHING_REVOKED: ReadonlySet<string> = new Set();
 
 const fail = (reason: DeviceTrustFailure): DeviceTrust => ({ trusted: false, reason });
 
@@ -224,4 +231,34 @@ export function verifyDeviceTrust(
   const index = indexByHighestRevision(records);
   const revoked = computeRevokedDeviceIds(anchor, index, tombstones);
   return walk(targetDeviceId, anchor, index, revoked, new Set());
+}
+
+/**
+ * Does this signing key descend from the anchor through valid signed records?
+ *
+ * This is provenance, not current authority, and the difference is the whole
+ * reason it exists. It checks the same chain, signatures, anchor, key
+ * consistency and cycles, and it deliberately ignores device tombstones.
+ *
+ * Using current authority for archive objects breaks the archive in two
+ * directions. A phone uploads a photo and signs its manifest; the phone is later
+ * replaced and revoked; five years of its photos would become untrusted and
+ * disappear. A phone signs a deletion; it is later revoked; the deletion stops
+ * counting and the photo resurrects. Revoking a device should stop it being an
+ * authority over devices, not rewrite what it already authored.
+ *
+ * The limitation this leaves is stated in the protocol document: revocation does
+ * not invalidate media a device previously signed, because v1 has no trusted
+ * history log and does not rotate the Space key, so a fresh client cannot tell
+ * an object signed before a revocation from one a compromised device produced
+ * afterwards with the keys it kept. Rotation is what excludes a device from
+ * future generations.
+ */
+export function verifyDeviceProvenance(
+  targetDeviceId: string,
+  anchor: SpaceTrustAnchor,
+  records: readonly DeviceRecord[]
+): DeviceTrust {
+  const index = indexByHighestRevision(records);
+  return walk(targetDeviceId, anchor, index, NOTHING_REVOKED, new Set());
 }

@@ -9,7 +9,7 @@ import {
   signSpaceTrustAnchor,
   signSpaceTrustAnchorRecovery,
 } from '@/features/album/protocol-crypto';
-import { verifyDeviceTrust } from '@/features/album/protocol-trust';
+import { verifyDeviceProvenance, verifyDeviceTrust } from '@/features/album/protocol-trust';
 import { generateRecoveryPhrase, recoveryEntropyFromPhrase } from '@/features/album/recovery';
 import type { DeviceRecord, DeviceTombstone, SpaceTrustAnchor } from '@aoi/shared';
 
@@ -339,6 +339,69 @@ describe('recovery authority', () => {
     expect(verifyDeviceTrust('device-enrolled', anchor, [rootRecord, recordFromRecovery])).toEqual({
       trusted: false,
       reason: 'bad-signature',
+    });
+  });
+});
+
+/**
+ * Two questions that became visibly different once immutable archive history was
+ * being wired in. Authority is about what a device may do now; provenance is
+ * about whether a signing key descends from the anchor at all.
+ */
+describe('provenance is not current authority', () => {
+  it('keeps a revoked device’s provenance, so its archive does not vanish', () => {
+    const { anchor, rootRecord, middleRecord, root } = tree();
+    const revoked = tombstone('device-middle', 2, { kind: 'device', deviceId: ROOT }, root.signingPrivateKey);
+
+    // As an authority it is gone.
+    expect(verifyDeviceTrust('device-middle', anchor, [rootRecord, middleRecord], [revoked])).toEqual({
+      trusted: false,
+      reason: 'revoked',
+    });
+    // As the author of what it already signed, it still stands.
+    expect(verifyDeviceProvenance('device-middle', anchor, [rootRecord, middleRecord])).toEqual({
+      trusted: true,
+    });
+  });
+
+  it('keeps a descendant’s provenance when its authoriser is revoked', () => {
+    const { anchor, rootRecord, middleRecord, leafRecord, root } = tree();
+    const revoked = tombstone('device-middle', 2, { kind: 'device', deviceId: ROOT }, root.signingPrivateKey);
+
+    expect(verifyDeviceTrust('device-leaf', anchor, [rootRecord, middleRecord, leafRecord], [revoked])).toEqual({
+      trusted: false,
+      reason: 'revoked',
+    });
+    expect(verifyDeviceProvenance('device-leaf', anchor, [rootRecord, middleRecord, leafRecord])).toEqual({
+      trusted: true,
+    });
+  });
+
+  it('still refuses a chain that does not reach the anchor', () => {
+    const { anchor, rootRecord, middleRecord } = tree();
+    const impostor = keys();
+    const impostorRecord = record('device-impostor', impostor, { kind: 'self' }, 1, impostor.signingPrivateKey);
+    expect(verifyDeviceProvenance('device-impostor', anchor, [rootRecord, impostorRecord])).toEqual({
+      trusted: false,
+      reason: 'self-not-root',
+    });
+
+    const tampered = { ...middleRecord, revision: 2 };
+    expect(verifyDeviceProvenance('device-middle', anchor, [rootRecord, tampered])).toEqual({
+      trusted: false,
+      reason: 'bad-signature',
+    });
+  });
+
+  it('refuses a cycle in the provenance chain too', () => {
+    const { anchor } = tree();
+    const a = keys();
+    const b = keys();
+    const aRecord = record('device-a', a, { kind: 'device', deviceId: 'device-b' }, 1, b.signingPrivateKey);
+    const bRecord = record('device-b', b, { kind: 'device', deviceId: 'device-a' }, 1, a.signingPrivateKey);
+    expect(verifyDeviceProvenance('device-a', anchor, [aRecord, bRecord])).toEqual({
+      trusted: false,
+      reason: 'cycle',
     });
   });
 });

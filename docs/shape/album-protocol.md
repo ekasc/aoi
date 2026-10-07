@@ -594,6 +594,34 @@ direction. A forged tombstone cannot enter, because its signer is not trusted,
 and two devices that revoke each other both end up revoked rather than both
 standing.
 
+## Current authority, and archive provenance
+
+Two questions, and answering both with one check breaks the archive.
+
+`verifyDeviceTrust` asks whether a device may exercise authority now. It applies
+device tombstones and cascades. It is the right question for enrolling a device,
+revoking one, or handing out a new Space-key envelope.
+
+`verifyDeviceProvenance` asks whether a signing key descends from the anchor
+through valid signed device records. It checks the chain, the signatures, the
+anchor, key consistency and cycles, and it deliberately ignores device
+tombstones. It is the right question for a media manifest or a media tombstone.
+
+The difference is not academic. A phone uploads a photo and signs its manifest.
+The phone is later replaced and revoked. Asked the authority question, five years
+of that phone's photos would become untrusted and disappear, and a deletion it
+signed would stop counting and resurrect the photo. Revoking a phone should stop
+it being an authority over devices; it should not rewrite what it already
+authored.
+
+The limitation this leaves, stated plainly: **device revocation does not
+invalidate media objects previously signed by that device.** v1 has no trusted
+history log and does not rotate the Space key, so a fresh client cannot tell an
+object genuinely signed before a revocation from one a compromised device
+produced afterwards with the keys it kept. Rotation is what excludes a removed
+device from future generations. Using current authority for media would not fix
+that, it would hide it by destroying archive correctness.
+
 ## Authenticating media metadata
 
 Ciphertext integrity is not archive integrity. The server currently holds
