@@ -13,7 +13,7 @@ import { deleteAccountProgram } from '../../domains/auth';
  * linkage + tokens (auth_accounts), sessions (all devices), push tokens,
  * preferences, precise location shares.
  * RETAINED (shared relationship content for the remaining partner):
- * moments, letters, calendar, proposals, someday, weekly answers, media
+ * moments, letters, calendar, someday, weekly answers, media
  * rows + bytes, spaces/invites/activity rows, the Plus row (partner's paid
  * period), and the membership row itself (flipped to left).
  * The user row survives as an unlinked tombstone (id + deleted_at only)

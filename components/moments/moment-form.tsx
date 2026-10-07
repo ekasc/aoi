@@ -66,7 +66,6 @@ export type MomentFormValues = {
 };
 
 export type MomentFormProps = {
-  heroTitle: string;
   heroSubtitle: string;
   submitLabel: string;
   submittingLabel: string;
@@ -85,7 +84,6 @@ export type MomentFormProps = {
  * prefills from `initialMoment` and preserves occurredAt/audioUri untouched.
  */
 export function MomentForm({
-  heroTitle,
   heroSubtitle,
   submitLabel,
   submittingLabel,
@@ -306,9 +304,6 @@ export function MomentForm({
           entering={Reveal.up(Motion.slow)}
           style={styles.hero}
         >
-          <ThemedText type="display">
-            {heroTitle}
-          </ThemedText>
           <ThemedText type="body" style={{ color: muted }}>
             {heroSubtitle}
           </ThemedText>

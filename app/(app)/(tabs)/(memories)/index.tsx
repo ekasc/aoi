@@ -49,6 +49,7 @@ import { GlassSurface } from "@/components/ui/glass-surface";
 import { Pressed } from "@/components/ui/pressed";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ScreenHeader } from "@/components/ui/screen-header";
 import { Elevation, Motion, Radii, Spacing, shadow, withAlpha } from "@/constants/theme";
 import { getDaysTogether, formatDaysTogether } from "@/features/time-together/time-together";
 import { useMoments } from "@/features/moments/moments-context";
@@ -146,6 +147,21 @@ const MOMENT_MENU_ACTIONS: MenuAction[] = [
 ];
 
 /**
+ * The "New" boundary: a labelled rule above the first unread partner post.
+ * A fresh screen that lands on unread now says so, instead of reading as a
+ * failed jump to the newest. It retires once the reader catches up.
+ */
+function UnreadDivider({ color }: { color: string }) {
+	return (
+		<View accessible accessibilityLabel="New memories below" style={styles.unreadMarker}>
+			<View style={[styles.unreadLine, { backgroundColor: color }]} />
+			<ThemedText type="meta" style={[styles.unreadLabel, { color }]}>New</ThemedText>
+			<View style={[styles.unreadLine, { backgroundColor: color }]} />
+		</View>
+	);
+}
+
+/**
  * Memories is one oldest-first archive with two presentations. The Feed is
  * the dashboard default: photo, note, and voice memories render inline in a
  * single scroll, grouped under subdued month headings that open their
@@ -182,7 +198,7 @@ export default function MemoriesScreen() {
 	const router = useRouter();
 	const isFocused = useIsFocused();
 	const insets = useSafeAreaInsets();
-	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+	const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
 	const skyRevealHeight = compactSkyHeightForWindow(windowHeight);
 	// The sky lands first and stops. It is the one layer that finishes before
 	// the arrival does, which is what gives the rest of the move something to
@@ -256,9 +272,9 @@ export default function MemoriesScreen() {
 	// Feed/Gallery switcher on the right. The feed scrolls underneath it; the
 	// sky stays pinned behind it throughout. The switcher lives in the title
 	// row so it is always reachable, and Space lives in the tab bar.
-	const TITLE_ROW = 56;
+	const TITLE_ROW = Math.max(56, 26 * (fontScale ?? 1));
 	const HEADER_PAD_BOTTOM = Spacing[12];
-	const headerHeight = insets.top + TITLE_ROW + HEADER_PAD_BOTTOM;
+	const headerHeight = insets.top + Spacing[8] + TITLE_ROW + HEADER_PAD_BOTTOM;
 	// Absolute scroll distance over which the title-bar frost fades in, so
 	// rows sliding underneath dissolve into frost instead of ghosting through
 	// the title. Transparent at the very top, where the sky shows instead.
@@ -298,6 +314,10 @@ export default function MemoriesScreen() {
 	// deep in a list (or the list proves too short to jump), and never again
 	// for this space. Until then the unread target owns a sliced prefix.
 	const [placed, setPlaced] = useState(false);
+	// The "New" marker at the unread boundary retires once the reader reaches
+	// the newest moment, so it says "you arrived at something new", not "there
+	// is always something new".
+	const [unreadCleared, setUnreadCleared] = useState(false);
 
 	// A new space decides and places fresh: the resolve below resets both,
 	// so a stale cursor or placement never leaks across accounts.
@@ -311,6 +331,7 @@ export default function MemoriesScreen() {
 			if (placementSpaceRef.current !== (space?.id ?? null)) {
 				placementSpaceRef.current = space?.id ?? null;
 				setPlaced(false);
+				setUnreadCleared(false);
 			}
 			seenStoredRef.current = cursor;
 			setSeenCursor(cursor);
@@ -436,6 +457,7 @@ export default function MemoriesScreen() {
 				if (newest && (!seenStoredRef.current || newest > seenStoredRef.current)) {
 					seenStoredRef.current = newest;
 					void saveSeenCursor(space?.id, newest);
+					setUnreadCleared(true);
 				}
 			}
 			trackScroll(event);
@@ -542,6 +564,10 @@ export default function MemoriesScreen() {
 		}
 		return firstUnreadPartnerId(feed.moments, seenCursor);
 	}, [seenCursor, feed.moments]);
+
+	// The row the "New" marker rides above: the unread boundary while it is
+	// still meaningful, null once the reader has caught up this session.
+	const unreadMarkerMomentId = unreadTargetId && !unreadCleared ? unreadTargetId : null;
 
 	// What each list actually renders. Before the cursor loads, nothing: a
 	// guess here paints, slices, or jumps on stale state. With an unread
@@ -956,6 +982,7 @@ export default function MemoriesScreen() {
 		);
 		return (
 			<View>
+				{unreadMarkerMomentId === item.moment.id ? <UnreadDivider color={accent} /> : null}
 				{firstPage.kind === 'welcome' && firstPage.momentId === item.moment.id ? (
 					<ThemedText type="subheading" style={styles.welcomeLine}>
 						{firstPage.authorName} left something here for you.
@@ -994,6 +1021,8 @@ export default function MemoriesScreen() {
 			muted,
 			border,
 			surface,
+			accent,
+			unreadMarkerMomentId,
 			useNativeMomentMenu,
 			contentWidth,
 			firstPage, handleLeaveSomething, handleSkipFirstPage,
@@ -1016,8 +1045,11 @@ export default function MemoriesScreen() {
 			const rowSize = galleryTileSizeFor(item.items.length);
 			const rowHeight =
 				item.items.length === 1 ? Math.round(rowSize * (9 / 16)) : undefined;
+			const hasUnread = unreadMarkerMomentId !== null && item.items.some((tile) => tile.momentId === unreadMarkerMomentId);
 			return (
-				<View style={styles.galleryGridRow}>
+				<View>
+					{hasUnread ? <UnreadDivider color={accent} /> : null}
+					<View style={styles.galleryGridRow}>
 					{item.items.map((tile, column) => {
 						const position = `${item.itemStartIndex + column + 1} of ${item.itemTotal}`;
 						const context = `${position} from ${item.sectionLabel}`;
@@ -1057,10 +1089,11 @@ export default function MemoriesScreen() {
 							/>
 						);
 					})}
+					</View>
 				</View>
 			);
 		},
-		[galleryTileSizeFor, handleOpenGalleryItem, handleOpenMonth],
+		[galleryTileSizeFor, handleOpenGalleryItem, handleOpenMonth, unreadMarkerMomentId, accent],
 	);
 
 	const handleCloseActionSheet = useCallback(() => {
@@ -1412,7 +1445,7 @@ export default function MemoriesScreen() {
 				<View
 					style={[
 						styles.headerInner,
-						{ paddingTop: insets.top, height: headerHeight },
+						{ paddingTop: insets.top + Spacing[8], minHeight: headerHeight },
 					]}
 				>
 					{/* Frosted ground behind the title bar: blur keeps the pinned
@@ -1437,8 +1470,7 @@ export default function MemoriesScreen() {
 							]}
 						/>
 					</Animated.View>
-					<View style={[styles.titleRow, { height: TITLE_ROW }]}>
-						<ThemedText type="title">Memories</ThemedText>
+					<ScreenHeader title="Memories" actions={
 						<View style={styles.viewSwitch}>
 							<SegmentedControl
 								accessibilityLabel="Memories view"
@@ -1448,18 +1480,20 @@ export default function MemoriesScreen() {
 									{
 										value: "feed",
 										label: "Feed",
+										icon: "newspaper-outline",
 										accessibilityHint: "Show memories oldest first",
 									},
 									{
 										value: "gallery",
 										label: "Gallery",
+										icon: "grid-outline",
 										accessibilityHint: "Show memory photos in a grid",
 									},
 								]}
 								value={view}
 							/>
 						</View>
-					</View>
+					} />
 				</View>
 			</View>
 
@@ -1713,17 +1747,10 @@ const styles = StyleSheet.create({
 		paddingHorizontal: Spacing[24],
 		paddingBottom: Spacing[12],
 	},
-	titleRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: Spacing[12],
-	},
 	// The Feed/Gallery switcher rides the title row: flexible so it squeezes
 	// on narrow phones, capped so it never crowds the title on wide ones.
 	viewSwitch: {
-		flex: 1,
-		maxWidth: 200,
+		width: 108,
 	},
 	keptLayer: {
 		position: "absolute",
@@ -1793,6 +1820,16 @@ const styles = StyleSheet.create({
 		gap: GALLERY_GAP,
 		paddingBottom: GALLERY_GAP,
 	},
+	unreadMarker: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: Spacing[8],
+		paddingHorizontal: Spacing[24],
+		paddingTop: Spacing[16],
+		paddingBottom: Spacing[8],
+	},
+	unreadLine: { flex: 1, height: StyleSheet.hairlineWidth },
+	unreadLabel: { fontWeight: "600" },
 	loadMoreWrap: {
 		alignItems: "center",
 		paddingVertical: Spacing[8],

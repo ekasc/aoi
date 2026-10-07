@@ -63,9 +63,7 @@ export type RawExportManifest = {
   datasets: {
     moments: number;
     calendarEvents: number;
-    proposals: number;
     somedayItems: number;
-    importedMilestones: number;
     letters: number;
     responses: number;
     partnerDetails: number;
@@ -317,11 +315,7 @@ export async function exportRawArchive(
     const events = (await deps.fetchJson(
       `/v1/spaces/current/calendar/events?from=${encodeURIComponent(CALENDAR_WINDOW.from)}&to=${encodeURIComponent(CALENDAR_WINDOW.to)}`
     )) as unknown;
-    const proposalsRes = (await deps.fetchJson('/v1/spaces/current/proposals')) as {
-      proposals?: unknown[];
-    };
     const somedayRes = (await deps.fetchJson('/v1/spaces/current/someday')) as { items?: unknown[] };
-    const milestones = (await deps.fetchJson('/v1/spaces/current/imported-milestones')) as unknown;
     const question = (await deps.fetchJson('/v1/spaces/current/question')) as unknown;
     // Shelf shape exactly as the API authorizes it: sealed bodies absent.
     const lettersRes = (await deps.fetchJson('/v1/spaces/current/letters')) as { letters?: unknown[] };
@@ -376,9 +370,7 @@ export async function exportRawArchive(
     await zip.addBytes('space.json', encode(spacePart));
     await zip.addBytes('moments.json', encode(moments));
     await zip.addBytes('calendar-events.json', encode(events));
-    await zip.addBytes('proposals.json', encode(proposalsRes?.proposals ?? []));
     await zip.addBytes('someday.json', encode(somedayRes?.items ?? []));
-    await zip.addBytes('milestones.json', encode(milestones));
     await zip.addBytes('question.json', encode(question));
     await zip.addBytes('letters.json', encode(lettersRes?.letters ?? []));
     await zip.addBytes('responses.json', encode(responses));
@@ -423,9 +415,7 @@ export async function exportRawArchive(
       datasets: {
         moments: moments.length,
         calendarEvents: asArray(events).length,
-        proposals: asArray(proposalsRes?.proposals).length,
         somedayItems: asArray(somedayRes?.items).length,
-        importedMilestones: asArray(milestones).length,
         letters: asArray(lettersRes?.letters).length,
         responses: responses.length,
         partnerDetails: details.length,

@@ -209,63 +209,6 @@ beforeEach(() => {
   uploadImage.mockResolvedValue({ mediaId: 'media-1', url: 'https://cdn.test/media-1' });
 });
 
-describe('Legacy trace deep link forwards to Memories composer (no auto-save)', () => {
-  it('forwards Us-origin capture=note returnTo=us to Memories compose=note', async () => {
-    traceSearchParams = { capture: 'note', returnTo: 'us' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    render(<TraceScreen />);
-    await act(async () => {});
-    // Universal final destination: Memories, returnTo ignored, never detail.
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'note' },
-    });
-    expect(addMoment).not.toHaveBeenCalled();
-    expect(dismissToSpy).not.toHaveBeenCalled();
-    expect(backSpy).not.toHaveBeenCalled();
-  });
-
-  it('forwards capture=photo to Memories compose=photos without opening pickers', async () => {
-    traceSearchParams = { capture: 'photo', returnTo: 'us' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    render(<TraceScreen />);
-    await act(async () => {});
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'photos' },
-    });
-    expect(addMoment).not.toHaveBeenCalled();
-  });
-});
-
-describe('Memories-origin trace compat (unified, no direct save)', () => {
-  it('forwards capture=note to Memories compose=note without saving', async () => {
-    traceSearchParams = { capture: 'note' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    render(<TraceScreen />);
-    await act(async () => {});
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'note' },
-    });
-    expect(addMoment).not.toHaveBeenCalled();
-    expect(dismissToSpy).not.toHaveBeenCalled();
-    expect(backSpy).not.toHaveBeenCalled();
-  });
-
-  it('ignores legacy returnTo and still ends in Memories', async () => {
-    traceSearchParams = { capture: 'note', returnTo: 'memories' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    render(<TraceScreen />);
-    await act(async () => {});
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'note' },
-    });
-    expect(addMoment).not.toHaveBeenCalled();
-  });
-});
-
 describe('Detail back respects origin', () => {
   it('Us-origin explicit close dismisses to Us, never back through composer', async () => {
     detailMoments = [];

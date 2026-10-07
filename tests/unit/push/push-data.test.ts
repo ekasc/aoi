@@ -53,7 +53,7 @@ describe('parsePushNotificationData', () => {
   });
 
   it('ignores unknown kinds — receivers never act on them', () => {
-    expect(parsePushNotificationData({ kind: 'proposal' })).toBeNull();
+    expect(parsePushNotificationData({ kind: 'not_a_kind' })).toBeNull();
     expect(parsePushNotificationData({ kind: '' })).toBeNull();
   });
 

@@ -54,6 +54,7 @@ describe('After Hours theme foundation', () => {
       'sunset-shore',
       'sea-glass',
       'deep-ocean',
+      'lagoon',
     ]);
   });
 
@@ -61,8 +62,9 @@ describe('After Hours theme foundation', () => {
     for (const id of ['sunset-shore', 'sea-glass', 'deep-ocean', 'editorial-paper']) {
       expect(BeachThemes[id as keyof typeof BeachThemes]).toBeDefined();
     }
+    expect(BeachThemes['lagoon']).toBeDefined();
     expect(Object.keys(BeachThemes).sort()).toEqual(
-      ['after-hours', 'deep-ocean', 'editorial-paper', 'sea-glass', 'sunset-shore'].sort()
+      ['after-hours', 'deep-ocean', 'editorial-paper', 'lagoon', 'sea-glass', 'sunset-shore'].sort()
     );
   });
 

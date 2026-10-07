@@ -68,9 +68,6 @@ describe('buildPushCopy', () => {
       'event_added',
       'event_updated',
       'event_deleted',
-      'proposal_received',
-      'proposal_accepted',
-      'proposal_declined',
     ] as const) {
       const copy = buildPushCopy(kind);
       expect(copy.title.length).toBeGreaterThan(0);
@@ -104,17 +101,6 @@ describe('buildPushCopy', () => {
       // No dates, no clock times — a weekday name is the ceiling.
       expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
       expect(wire).not.toMatch(/\d{1,2}:\d{2}/);
-    }
-  });
-
-  it('proposal kinds never carry the proposed title or time — the builder accepts neither', () => {
-    const secret = 'Farmers market Saturday';
-    for (const kind of ['proposal_received', 'proposal_accepted', 'proposal_declined'] as const) {
-      const copy = buildPushCopy(kind);
-      const wire = `${copy.title} ${copy.body}`;
-      expect(wire).not.toContain(secret);
-      expect(wire).not.toMatch(/\d{1,2}:\d{2}/);
-      expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     }
   });
 

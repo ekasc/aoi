@@ -117,7 +117,7 @@ export default function PaywallScreen() {
 
   if (isPlus) {
     return (
-      <View style={[styles.center, { backgroundColor: background, paddingTop: insets.top + Spacing[24] }]}>
+      <View style={[styles.center, { backgroundColor: background, paddingTop: Spacing[24] }]}>
         <ThemedText type="title">You have Aoi Plus</ThemedText>
         <ThemedText type="body" style={styles.sub}>
           Plus is active on this account.
@@ -132,7 +132,7 @@ export default function PaywallScreen() {
       contentContainerStyle={[
         styles.content,
         {
-          paddingTop: insets.top + Spacing[24],
+          paddingTop: Spacing[24],
           paddingBottom: insets.bottom + Spacing[32],
         },
       ]}
@@ -140,7 +140,6 @@ export default function PaywallScreen() {
       showsVerticalScrollIndicator={false}
       style={{ backgroundColor: background }}
     >
-      <ThemedText type="display">Aoi Plus</ThemedText>
       <ThemedText type="body" style={styles.sub}>
         More room to preserve what you share. One Plus covers your shared Space.
       </ThemedText>

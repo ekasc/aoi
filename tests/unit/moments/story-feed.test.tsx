@@ -535,6 +535,33 @@ describe('Memories story feed (oldest-first archive)', () => {
     expect(html.indexOf('February 2026')).toBeLessThan(html.indexOf('March 2026'));
   });
 
+  it('marks the unread boundary so landing on new posts does not read as a failed jump', async () => {
+    await globalThis.__mockAsyncStorage.setItem('aoi.feed.seen.v1.space-1', '2026-03-10T00:00:00.000Z');
+    feedMoments = [
+      makeMoment({ id: 'older', occurredAt: '2026-03-01T10:00:00.000Z' }),
+      makeMoment({ id: 'theirs', authorId: 'user_june', authorRole: 'partner', isOwn: false, occurredAt: '2026-03-16T10:00:00.000Z' }),
+    ];
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    await act(async () => {});
+    expect(feedLayer().getByLabelText('New memories below')).toBeTruthy();
+    expect(feedLayer().getByText('New')).toBeTruthy();
+  });
+
+  it('shows no unread marker once the reader is caught up', async () => {
+    await globalThis.__mockAsyncStorage.setItem('aoi.feed.seen.v1.space-1', '2026-03-20T00:00:00.000Z');
+    feedMoments = [
+      makeMoment({ id: 'older', occurredAt: '2026-03-01T10:00:00.000Z' }),
+      makeMoment({ id: 'theirs', authorId: 'user_june', authorRole: 'partner', isOwn: false, occurredAt: '2026-03-16T10:00:00.000Z' }),
+    ];
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    await act(async () => {});
+    expect(feedLayer().queryByLabelText('New memories below')).toBeNull();
+  });
+
   it('opens a gallery tile as the memory\'s whole set at that photo', async () => {
     feedMoments = [
       makeMoment({
@@ -550,7 +577,8 @@ describe('Memories story feed (oldest-first archive)', () => {
     render(createElement(MemoriesScreen));
     await act(async () => {});
 
-    fireEvent.click(screen.getByText('Gallery'));
+    // The switch's segments are icons; the tab's accessible name is the way in.
+    fireEvent.click(screen.getByLabelText('Gallery'));
     // The second tile of that memory's grid row.
     fireEvent.click(screen.getByLabelText('Open photo 2 of 2 from March 2026'));
 

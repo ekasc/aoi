@@ -18,6 +18,7 @@ import { SubscriptionProvider } from "@/features/subscription/subscription-conte
 import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
 import { useAoiFonts } from "@/hooks/use-aoi-fonts";
 import { SkyEntryProvider } from "@/components/home/sky-entry-provider";
+import { Typography } from "@/constants/typography";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -174,6 +175,12 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 				<Stack
 					screenOptions={{
 						contentStyle: { backgroundColor: colors.background },
+						headerStyle: { backgroundColor: colors.background },
+						headerTintColor: colors.text,
+						headerTitleStyle: Typography.navigationTitle,
+						headerTitleAlign: "center",
+						headerBackButtonDisplayMode: "minimal",
+						headerShadowVisible: false,
 					}}
 				>
 					<Stack.Screen

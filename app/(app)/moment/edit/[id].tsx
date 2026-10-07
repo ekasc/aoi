@@ -126,7 +126,6 @@ export default function EditMomentScreen() {
 		<>
 			<Stack.Screen options={{ title: "Edit moment" }} />
 			<MomentForm
-				heroTitle="Edit this moment"
 				heroSubtitle="The memory stays; the words can change."
 				initialMoment={moment}
 				onCancel={handleCancel}

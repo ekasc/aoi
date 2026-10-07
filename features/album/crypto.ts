@@ -37,13 +37,62 @@ function randomBytes(length: number): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(length));
 }
 
+/**
+ * base64 that does not assume a Node global.
+ *
+ * `Buffer` exists under Node (tests, tooling). On Hermes — the engine this
+ * runs in on a phone — it does not, so reading it off `globalThis` and
+ * falling back to the engine's own `btoa`/`atob` is what keeps this file
+ * loadable where the global is absent. The pattern matches
+ * `features/composer/composer-memory-adapters.ts`.
+ */
+type NodeBuffer = {
+  from: (data: Uint8Array | string, encoding?: string) => { toString: (encoding: string) => string } & Uint8Array;
+};
+
+function nodeBuffer(): NodeBuffer | null {
+  const globalRef = globalThis as { Buffer?: NodeBuffer };
+  return globalRef.Buffer ?? null;
+}
+
 /** Public key material is not secret, so it travels as base64. */
 export function toBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64');
+  const buffer = nodeBuffer();
+  if (buffer) {
+    return buffer.from(bytes).toString('base64');
+  }
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
 }
 
 export function fromBase64(value: string): Uint8Array {
-  return new Uint8Array(Buffer.from(value, 'base64'));
+  const buffer = nodeBuffer();
+  if (buffer) {
+    return new Uint8Array(buffer.from(value, 'base64'));
+  }
+  const binary = atob(value);
+  const out = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    out[index] = binary.charCodeAt(index);
+  }
+  return out;
+}
+
+/**
+ * A view's bytes as a plain ArrayBuffer.
+ *
+ * `fetch` and `Blob` take an `ArrayBuffer`, while a `Uint8Array` can be backed
+ * by a shared buffer those APIs will not accept. Copying into a fresh buffer
+ * is the narrow bridge, and it is also the ownership the network layer needs:
+ * nothing here can mutate what we just handed it.
+ */
+export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 // ── identity ─────────────────────────────────────────────────────────────

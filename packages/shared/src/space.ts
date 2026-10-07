@@ -79,33 +79,3 @@ export const updateSpaceRequestSchema = z.object({
 });
 
 export type UpdateSpaceRequest = z.infer<typeof updateSpaceRequestSchema>;
-
-export const IMPORTED_MILESTONE_TYPES = ['note', 'milestone', 'date', 'goal'] as const;
-
-export const importedMilestoneTypeSchema = z.enum(IMPORTED_MILESTONE_TYPES);
-
-export type ImportedMilestoneType = z.infer<typeof importedMilestoneTypeSchema>;
-
-export const importedMilestoneSchema = z.object({
-  id: z.string(),
-  type: importedMilestoneTypeSchema,
-  title: z.string(),
-  body: z.string().optional(),
-  occurredAt: z.string(),
-  targetAt: z.string().optional(),
-  createdAt: z.string(),
-});
-
-export type ImportedMilestone = z.infer<typeof importedMilestoneSchema>;
-
-export const createImportedMilestoneRequestSchema = z.object({
-  type: importedMilestoneTypeSchema,
-  title: z.string(),
-  body: z.string().optional(),
-  occurredAt: z.string(),
-  targetAt: z.string().optional(),
-});
-
-export type CreateImportedMilestoneRequest = z.infer<
-  typeof createImportedMilestoneRequestSchema
->;

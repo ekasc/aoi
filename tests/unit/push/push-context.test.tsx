@@ -29,10 +29,6 @@ const calendarMock = vi.hoisted(() => ({
   refresh: vi.fn(async () => {}),
 }));
 
-const proposalsMock = vi.hoisted(() => ({
-  reload: vi.fn(async () => {}),
-}));
-
 const spaceRefreshMock = vi.fn(async () => {});
 
 vi.mock('@/features/notifications/notifications-module', () => ({
@@ -51,9 +47,6 @@ vi.mock('@/features/letters/letters-context', () => ({
 }));
 vi.mock('@/features/calendar/calendar-context', () => ({
   useCalendar: () => ({ refresh: calendarMock.refresh }),
-}));
-vi.mock('@/features/proposals/proposals-context', () => ({
-  useProposals: () => ({ reload: proposalsMock.reload }),
 }));
 
 const VALID_TOKEN = 'ExpoPushToken[context-test-token-123]';
@@ -102,7 +95,6 @@ beforeEach(() => {
   momentsMock.refresh.mockClear();
   lettersMock.reload.mockClear();
   calendarMock.refresh.mockClear();
-  proposalsMock.reload.mockClear();
   notificationsMock.requestPermissionsAsync.mockReset();
   notificationsMock.getExpoPushTokenAsync.mockReset();
   notificationsMock.addNotificationReceivedListener.mockReset();
@@ -218,33 +210,6 @@ describe('PushProvider receive handling (remote)', () => {
     await waitFor(() => expect(calendarMock.refresh).toHaveBeenCalledTimes(3));
     // The push never names the event — only the calendar re-reads.
     expect(momentsMock.refresh).not.toHaveBeenCalled();
-    expect(proposalsMock.reload).not.toHaveBeenCalled();
-    view.unmount();
-  });
-
-  it('reloads suggestions for proposal_received and proposal_declined', async () => {
-    const view = renderProvider();
-    await waitFor(() => expect(receivedListener).not.toBeNull());
-
-    deliver({ kind: 'proposal_received' });
-    await waitFor(() => expect(proposalsMock.reload).toHaveBeenCalledTimes(1));
-
-    deliver({ kind: 'proposal_declined' });
-    await waitFor(() => expect(proposalsMock.reload).toHaveBeenCalledTimes(2));
-    // A pass or a new idea does not touch the calendar.
-    expect(calendarMock.refresh).not.toHaveBeenCalled();
-    view.unmount();
-  });
-
-  it('reloads both suggestions and the calendar for proposal_accepted', async () => {
-    const view = renderProvider();
-    await waitFor(() => expect(receivedListener).not.toBeNull());
-
-    deliver({ kind: 'proposal_accepted' });
-
-    await waitFor(() => expect(proposalsMock.reload).toHaveBeenCalledTimes(1));
-    // Acceptance creates a real event — the calendar refreshes too.
-    await waitFor(() => expect(calendarMock.refresh).toHaveBeenCalledTimes(1));
     view.unmount();
   });
 
@@ -252,14 +217,12 @@ describe('PushProvider receive handling (remote)', () => {
     const view = renderProvider();
     await waitFor(() => expect(receivedListener).not.toBeNull());
 
-    deliver({ kind: 'proposal' });
     deliver('garbage');
 
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     expect(lettersMock.reload).not.toHaveBeenCalled();
     expect(calendarMock.refresh).not.toHaveBeenCalled();
-    expect(proposalsMock.reload).not.toHaveBeenCalled();
     expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
   });
@@ -347,16 +310,6 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     view.unmount();
   });
 
-  it('reloads suggestions and the calendar for a tapped proposal_accepted push', async () => {
-    const view = renderProvider();
-    await waitFor(() => expect(responseListener).not.toBeNull());
-
-    deliverResponse({ kind: 'proposal_accepted' });
-    await waitFor(() => expect(proposalsMock.reload).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(calendarMock.refresh).toHaveBeenCalledTimes(1));
-    view.unmount();
-  });
-
   it('ignores unknown kinds tapped from the notification tray', async () => {
     const view = renderProvider();
     await waitFor(() => expect(responseListener).not.toBeNull());
@@ -367,7 +320,6 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     expect(lettersMock.reload).not.toHaveBeenCalled();
     expect(calendarMock.refresh).not.toHaveBeenCalled();
-    expect(proposalsMock.reload).not.toHaveBeenCalled();
     expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
   });

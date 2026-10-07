@@ -35,6 +35,27 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 - Run one file: `npx vitest run tests/path/to/file.test.ts`
 - Run one test name: `npx vitest run -t "renders empty state"`
 
+### What a test may assert — read before writing one
+Test **behavior** and **durable rules**, never the presence of UI.
+
+- Assert what the app *does*: a tap navigates, saves, or removes; a failed
+  write keeps the draft and shows the error; an empty result is distinguishable
+  from a failed read; a reorder persists; a route stays reachable.
+- **Do not** assert that a section, string, or element is on screen —
+  `getByText('Letters')`, "renders the X group", "shows the Y details". That is
+  a snapshot of a design decision, not a requirement: it passes because the
+  code does what it was written to do, and it fails only when someone changes
+  the design. A red test then pressures the author to satisfy the test instead
+  of the user, which is exactly how deliberately-removed features get re-added.
+- A presence check is legitimate only when it encodes a stated **rule**, not a
+  layout: the accessibility contract, "no emoji anywhere", "the empty state and
+  the failed read are distinct". Keep those, and phrase them as the rule.
+- `getByText` / `getByLabelText` are fine as a way to *find* a control you then
+  act on. They are not fine as the assertion itself.
+
+When a presence test goes red because you changed the design, delete it — do
+not re-add the UI to make it pass.
+
 ### Accessibility audit
 - Static contract check across `app/` and `components/`:
   `pnpm run a11y:audit` (add `--json` for machines, `--strict` to exit 1

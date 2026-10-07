@@ -14,6 +14,7 @@ import {
   Circle,
   Group,
   LinearGradient,
+  Oval,
   Path,
   RadialGradient,
   Rect,
@@ -29,11 +30,13 @@ import Animated, {
   useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
+  useFrameCallback,
   useReducedMotion,
   useSharedValue,
   withRepeat,
   withSequence,
   withTiming,
+  type DerivedValue,
   type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -49,16 +52,27 @@ import {
   DAY_SKY_STAR_DIM,
   DAY_SKY_STAR_PARTNER,
   DAY_SKY_STAR_YOU,
-  DARK_SKY_MID,
-  DARK_SKY_TOP,
-  LIGHT_SKY_MID,
-  LIGHT_SKY_TOP,
   PHOTO_SKY_DEPTH,
   PHOTO_SKY_HAZE_COOL,
   PHOTO_SKY_HAZE_WARM,
   PHOTO_SKY_STAR_COOL,
   PHOTO_SKY_STAR_WARM,
+  SEA_FOAM,
+  SEA_FOAM_DARK,
+  SEA_SAND_DARK_DEEP,
+  SEA_SAND_DARK_TOP,
+  SEA_SAND_LIGHT_DEEP,
+  SEA_SAND_LIGHT_TOP,
+  SEA_SHELL_PALETTE,
+  SEA_WATER_DARK_DEEP,
+  SEA_WATER_DARK_SHALLOW,
+  SEA_WATER_LIGHT_DEEP,
+  SEA_WATER_LIGHT_SHALLOW,
+  SEA_WET_DARK,
+  SEA_WET_LIGHT,
+  isBeachTheme,
   mixHex,
+  skyStopsForTheme,
   starToneColor,
 } from '@/components/home/sky-palette';
 import { ThemedText } from '@/components/themed-text';
@@ -70,9 +84,10 @@ import {
   type DaySkySpatialStar,
 } from '@/features/home/day-sky-spatial';
 import { buildPhotoSkyField } from '@/features/home/photo-sky';
-import { photoSkyPlane, type PhotoSkyCamera, type SkyViewport } from '@/features/home/photo-sky-camera';
+import { photoSkyGlyphScale, photoSkyPlane, type PhotoSkyCamera, type SkyViewport } from '@/features/home/photo-sky-camera';
 import { formatDaySkyCaption } from '@/features/home/day-sky';
 import type { SkyItem } from '@/features/home/day-sky';
+import { useAoiTheme } from '@/features/theme/theme-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export const MEMORY_SKY_MAX_STARS = 40;
@@ -501,6 +516,235 @@ export function duskSkyUniforms(options: {
   };
 }
 /**
+ * The beach, as a shader.
+ *
+ * Sand on top, sea on the bottom, and both are *procedural*: fbm noise for
+ * dune shading and sand grain, stretched noise for wave relief, a foaming
+ * crest at the waterline, and a sun-glitter path on the water. Nothing here
+ * is a gradient band — every tone is mixed from noise, which is what makes it
+ * read as a surface rather than a stripe.
+ *
+ * Static on purpose: no time uniform, so it costs nothing and never asks the
+ * bridge to animate a canvas prop.
+ */
+export const MEMORY_SKY_BEACH_SKSL = `
+uniform float2 uSize;
+uniform float2 uPan;
+uniform float uScale;
+uniform float uShore;
+uniform float4 uSandLight;
+uniform float4 uSandDeep;
+uniform float4 uWet;
+uniform float4 uSeaShallow;
+uniform float4 uSeaDeep;
+uniform float4 uFoam;
+uniform float2 uSun;
+uniform float uFadeFrom;
+uniform float uTime;
+uniform float uDither;
+
+float hash21(float2 p) {
+  p = fract(p * float2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+float vnoise(float2 p) {
+  float2 i = floor(p);
+  float2 f = fract(p);
+  float2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + float2(1.0, 0.0));
+  float c = hash21(i + float2(0.0, 1.0));
+  float d = hash21(i + float2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(float2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    v += a * vnoise(p);
+    p *= 2.03;
+    a *= 0.5;
+  }
+  return v;
+}
+
+// Caustics: the bright web of refracted sunlight on the seabed. Summed,
+// time-evolved light rays focusing — the standard real-time approximation.
+float caustics(float2 uv, float time) {
+  float2 p = uv * 6.28318 - 250.0;
+  float2 i = p;
+  float c = 1.0;
+  float inten = 0.005;
+  for (int n = 0; n < 3; n++) {
+    float tn = time * (1.0 - (3.5 / float(n + 1)));
+    i = p + float2(cos(tn - i.x) + sin(tn + i.y), sin(tn - i.y) + cos(tn + i.x));
+    c += 1.0 / length(float2(p.x / (sin(i.x + tn) / inten), p.y / (cos(i.y + tn) / inten)));
+  }
+  c /= 3.0;
+  c = 1.17 - pow(c, 1.4);
+  return pow(abs(c), 8.0);
+}
+
+half4 main(float2 xy) {
+  // Scene space: the shore is one flat plane the camera pans and zooms, so
+  // the surface is sampled at the camera's transformed coordinate. Shells
+  // use the same plane, which is what keeps them locked to the sand.
+  float2 scene = (xy - uPan) / max(uScale, 0.0001);
+  float v = scene.y / uSize.y;
+  float hasShore = uShore > 0.001 ? 1.0 : 0.0;
+  float t = uTime * 0.001;
+
+  // ---- The ground: sand, everywhere. Water is a layer over it. ----
+  float dune = fbm(scene * 0.016);
+  float grain = vnoise(scene * 1.8);
+  float ripple = sin(scene.y * 0.5 + fbm(scene * 0.03) * 6.0) * 0.5 + 0.5;
+  float3 sand = mix(uSandDeep.rgb, uSandLight.rgb,
+    clamp(dune * 0.7 + grain * 0.2 + ripple * 0.1, 0.0, 1.0));
+  sand *= 0.94 + grain * 0.12;
+
+  // ---- The waterline: meanders, and laps up the sand and back. ----
+  float lap = sin(t * 0.5) * 0.5 * 0.06 + sin(t * 1.13 + 1.7) * 0.5 * 0.025;
+  float meander = (fbm(float2(scene.x * 0.008, 3.0)) - 0.5) * 0.10
+                + (fbm(float2(scene.x * 0.022, 9.0)) - 0.5) * 0.03;
+  float shoreLine = uShore + (meander + lap) * hasShore;
+
+  // ---- Depth: 0 at the waterline, deepening into the sea. ----
+  float depth;
+  float waterAmount;
+  float3 ground = sand;
+  if (hasShore > 0.5) {
+    depth = smoothstep(shoreLine, shoreLine + 0.42, v);
+    waterAmount = smoothstep(shoreLine - 0.006, shoreLine + 0.012, v);
+  } else {
+    // A band strip is water only: no sand under it.
+    depth = 0.45 + v * 0.35;
+    waterAmount = 1.0;
+    ground = mix(uSeaShallow.rgb, uSeaDeep.rgb, 0.3);
+  }
+
+  // ---- Refraction: the rippling surface bends the view of the seabed, so
+  //      the sand you see through the water wobbles. ----
+  float2 wn = float2(
+    fbm(float2(scene.x * 0.06, scene.y * 0.10 + t * 0.30)) - 0.5,
+    fbm(float2(scene.x * 0.05 + 7.0, scene.y * 0.09 + t * 0.35)) - 0.5
+  );
+  float2 refr = wn * 0.055 * depth;
+  ground *= 0.96 + vnoise((scene + refr) * 1.8) * 0.09;
+
+  // ---- The body of water: absorbs toward its own colour with depth. ----
+  float3 waterCol = mix(uSeaShallow.rgb, uSeaDeep.rgb, clamp(depth, 0.0, 1.0));
+  float3 water = mix(ground, waterCol, clamp(depth * 1.2, 0.0, 1.0));
+
+  // ---- Caustics: refracted sunlight webbing the seabed. ----
+  float caust = caustics(scene * 0.02, t * 0.4);
+  water += uFoam.rgb * caust * 0.20 * (1.0 - depth * 0.6);
+
+  // ---- A soft sunlit patch on the surface. ----
+  water += uFoam.rgb * exp(-pow(distance(scene, uSun) / (uSize.x * 0.5), 2.0)) * 0.06;
+
+  float3 col = mix(sand, water, waterAmount);
+
+  // ---- Wet sand darkening the strip above the waterline. ----
+  if (hasShore > 0.5) {
+    float wet = smoothstep(shoreLine - 0.18, shoreLine, v) * (1.0 - waterAmount);
+    col = mix(col, uWet.rgb, wet * 0.5);
+  }
+
+  // ---- Foam: a thin, broken line at the waterline, swash washing past it. ----
+  if (hasShore > 0.5) {
+    float edge = v - shoreLine;
+    float band = smoothstep(-0.03, 0.015, edge) * (1.0 - smoothstep(0.02, 0.09, edge));
+    float foamTex = smoothstep(0.35, 0.92, fbm(float2(scene.x * 0.05, scene.y * 0.22 + t * 0.4) + 7.0));
+    float swash = smoothstep(0.60, 0.95, fbm(float2(scene.x * 0.03, scene.y * 0.10 + t * 0.5) + 21.0))
+                * (1.0 - smoothstep(0.01, 0.12, edge)) * step(0.0, edge);
+    col = mix(col, uFoam.rgb, clamp(band * (0.25 + foamTex * 0.35) + swash * 0.25, 0.0, 1.0));
+  }
+
+  // A band strip dissolves into the page instead of ending on a hard edge.
+  float alpha = 1.0 - smoothstep(uFadeFrom, 1.0, v);
+  col += (hash21(scene) - 0.5) * uDither;
+  return half4(half3(clamp(col, 0.0, 1.0) * alpha), half(alpha));
+}
+`;
+
+let beachEffect: SkRuntimeEffect | null = null;
+
+/** Compiled once per launch; null (and stays null) without runtime effects. */
+function beachEffectOnce(): SkRuntimeEffect | null {
+  if (beachEffect) {
+    return beachEffect;
+  }
+  try {
+    beachEffect = Skia?.RuntimeEffect?.Make(MEMORY_SKY_BEACH_SKSL) ?? null;
+  } catch (error) {
+    beachEffect = null;
+    // Dev-only: surface the compiler's own message so a shader that silently
+    // falls back can be diagnosed from the device instead of guessed at.
+    if (__DEV__) {
+      (globalThis as unknown as Record<string, unknown>).__aoiBeachShaderError =
+        String(error);
+    }
+  }
+  return beachEffect;
+}
+
+/** Where the sand ends and the sea begins, as a fraction of the strip. Sand
+ *  dominates (the view is looking down at the shore), with the sea a body
+ *  across the lower part of the frame. */
+export const BEACH_SHORE_FRACTION = 0.58;
+
+/** The beach shader's uniform payload for one strip. Pure. */
+export function beachSkyUniforms(options: {
+  width: number;
+  height: number;
+  shore?: number;
+  sandLight: string;
+  sandDeep: string;
+  wet: string;
+  seaShallow: string;
+  seaDeep: string;
+  foam?: string;
+  /** Sun x as a fraction of the width. */
+  sunX?: number;
+  /**
+   * Fraction of the strip below which alpha eases to nothing. 1 leaves the
+   * surface opaque (a full scene); a band strip passes a value so the water
+   * dissolves into the page instead of ending on a hard edge.
+   */
+  fadeFrom?: number;
+  /** Scene-space pan the surface is sampled at (the flat-plane camera). */
+  pan?: [number, number];
+  /** Scene-space scale the surface is sampled at. */
+  scale?: number;
+  /** Milliseconds; drives the lapping shore and travelling water. */
+  time?: number;
+}): DuskUniforms {
+  const shore = Math.min(0.9, Math.max(0, options.shore ?? BEACH_SHORE_FRACTION));
+  const sunX = Math.min(1, Math.max(0, options.sunX ?? 0.7));
+  const fadeFrom = Math.min(1, Math.max(0, options.fadeFrom ?? 1));
+  const pan = options.pan ?? [0, 0];
+  const scale = options.scale ?? 1;
+  return {
+    uSize: [options.width, options.height],
+    uPan: [pan[0], pan[1]],
+    uScale: scale,
+    uTime: options.time ?? 0,
+    uShore: shore,
+    uSandLight: colorToRgba(options.sandLight),
+    uSandDeep: colorToRgba(options.sandDeep),
+    uWet: colorToRgba(options.wet),
+    uSeaShallow: colorToRgba(options.seaShallow),
+    uSeaDeep: colorToRgba(options.seaDeep),
+    uFoam: colorToRgba(options.foam ?? SEA_FOAM),
+    uSun: [options.width * sunX, options.height * shore],
+    uFadeFrom: fadeFrom,
+    uDither: 1 / 255,
+  };
+}
+/**
  * Compact star fade to 0 at the visible bottom (virtual sy units).
  * visibleBottom is the clipped bottom (skyHeight / (H * scaleX), clamped to
  * 1); stars at/below it are invisible, fading over FADE_BAND above it.
@@ -593,6 +837,18 @@ export {
   DARK_SKY_TOP,
   LIGHT_SKY_MID,
   LIGHT_SKY_TOP,
+  SEA_SAND_DARK_DEEP,
+  SEA_SAND_DARK_TOP,
+  SEA_SAND_LIGHT_DEEP,
+  SEA_SAND_LIGHT_TOP,
+  SEA_SHELL_BLUSH,
+  SEA_SHELL_BLUSH_RIB,
+  SEA_SHELL_PALETTE,
+  SEA_SHELL_PEARL,
+  SEA_SHELL_PEARL_RIB,
+  THEME_SKY_RAMPS,
+  isBeachTheme,
+  skyStopsForTheme,
   starToneColor,
 } from './sky-palette';
 
@@ -925,7 +1181,264 @@ type PlottedStar = {
   rotationDeg: number;
   haloRadius?: number;
   haloOpacity?: number;
+  /** Whose memory this is; the beach tints their shell pearl or blush. */
+  role?: 'you' | 'partner';
 };
+
+/**
+ * How many shells a beach band holds at most. Bands are decorative
+ * backdrops, not censuses: past this many marks the strip turns to static,
+ * so the field is sampled and the caption keeps the true count. The full sky
+ * never samples.
+ */
+export const BEACH_BAND_CREATURE_MAX = 12;
+/**
+ * The header band is the shortest of all (it sits behind a working screen's
+ * title), so it carries fewer shells again than the compact strip.
+ */
+export const BEACH_HEADER_CREATURE_MAX = 8;
+
+/**
+ * Stride sampling for day-mode beach bands: keep every nth day so the
+ * school spans the whole relationship instead of bunching at one end.
+ */
+export function beachDayStride(totalDays: number, max: number = BEACH_BAND_CREATURE_MAX): number {
+  return Math.max(1, Math.ceil(totalDays / Math.max(1, max)));
+}
+
+/**
+ * Rank sampling for memory-mode beach bands: keep the best-ranked ids by
+ * hash, so the survivors spread across the strip (positions are
+ * hash-scattered) instead of clustering. Stable forever per id set.
+ */
+export function beachMomentKeep(ids: string[], max: number = BEACH_BAND_CREATURE_MAX): Set<string> {
+  if (ids.length <= max) {
+    return new Set(ids);
+  }
+  const rank = (id: string) => hashMomentId(`${id}-beach`);
+  return new Set(
+    [...ids].sort((a, b) => rank(a) - rank(b)).slice(0, max),
+  );
+}
+
+/**
+ * Where the sand shelf begins, as a fraction of the drawn strip, for the
+ * plain strip and the full sky. Immersive (the Us photo field) is
+ * water-dominant: the lagoon fills most of the frame and the sand is a shelf
+ * at the bottom, so the field is water you look into, not a flat sand wall.
+ */
+export const BEACH_SAND_TOP = 0.52;
+export const BEACH_SHORE_TOP = 0.8;
+
+/**
+ * Where a shell sits on the beach: the sand runs across the top of the strip
+ * (looking down at the shore), so marks map onto it, keeping each field's own
+ * spread.
+ */
+export function beachShellY(rawFraction: number): number {
+  const t = Math.min(1, Math.max(0, rawFraction));
+  return 0.05 + t * (0.52 - 0.05);
+}
+
+/**
+ * The foam edge lapping the sand: a filled wave along `y`, screen px.
+ * M/L/Q/Z verbs only, like every other path here.
+ */
+export function foamEdgePath(width: number, y: number, amp = 5): string {
+  const w = Math.max(1, width);
+  return (
+    `M -10 ${y + 7} L -10 ${y} ` +
+    `Q ${w * 0.125} ${y - amp} ${w * 0.25} ${y} ` +
+    `Q ${w * 0.375} ${y + amp} ${w * 0.5} ${y} ` +
+    `Q ${w * 0.625} ${y - amp} ${w * 0.75} ${y} ` +
+    `Q ${w * 0.875} ${y + amp} ${w + 10} ${y} ` +
+    `L ${w + 10} ${y + 7} Z`
+  );
+}
+
+/**
+ * Which of the four shell kinds a memory becomes: 0 scallop, 1 clam, 2 whelk,
+ * 3 cowrie. Stable forever per key, so a shell never changes shape between
+ * renders.
+ */
+export function shellKindFor(key: string): number {
+  return hashMomentId(key) % 4;
+}
+
+/**
+ * A scalloped fan: the outer arc bumps instead of sweeping smoothly, so the
+ * edge reads as shell rather than as a plain arc.
+ */
+export function scallopFanPath(cx: number, cy: number, r: number, bumps = 7): string {
+  const steps = bumps * 2;
+  let d = `M ${cx - r} ${cy}`;
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    const ang = Math.PI - t * Math.PI;
+    const bump = i % 2 === 0 ? 1 : 1.07;
+    d += ` L ${cx + Math.cos(ang) * r * bump} ${cy - Math.sin(ang) * r * bump}`;
+  }
+  return `${d} L ${cx + r} ${cy} Z`;
+}
+
+/**
+ * One memory as a shell on the shore.
+ *
+ * Four kinds — the fan scallop, the ribbed clam, the spired whelk, and the
+ * smooth cowrie — each drawn with *form* rather than flat fill: a body lit
+ * from the upper left and falling into shade, ridges that catch a highlight
+ * beside their shadow, a hinge, and a soft cast shadow set to one side. That
+ * shading, not the outline, is what stops a shell reading as clip art.
+ * Everything is plain numbers, path verbs, and Skia gradients.
+ */
+function ShellGlyph({ shellKey, cx, cy, r }: {
+  shellKey: string;
+  cx: number;
+  cy: number;
+  r: number;
+}) {
+  const h = hashMomentId(shellKey);
+  const sizeFactor = 0.82 + ((h >>> 21) % 36) / 100;
+  const rr = Math.max(7, r * 3) * sizeFactor;
+  const kind = shellKindFor(shellKey);
+  const rotation = ((h >>> 5) % 360) * (Math.PI / 180);
+  const palette = SEA_SHELL_PALETTE[(h >>> 13) % SEA_SHELL_PALETTE.length];
+  const body = palette.body;
+  const dark = palette.rib;
+  const light = mixHex(body, '#FFFFFF', 0.55);
+  const shadow = '#3A2A12';
+  // The light comes from the upper left, so the shade falls to the lower right.
+  const lit = (x0: number, y0: number, x1: number, y1: number) => (
+    <LinearGradient
+      start={vec(x0, y0)}
+      end={vec(x1, y1)}
+      colors={[light, body, dark]}
+      positions={[0, 0.42, 1]}
+    />
+  );
+
+  const castShadow = (
+    <Oval x={cx - rr * 1.05} y={cy - rr * 0.05} width={rr * 2.2} height={rr * 0.72} opacity={0.32}>
+      <RadialGradient
+        c={vec(cx + rr * 0.22, cy + rr * 0.16)}
+        r={rr * 1.2}
+        colors={[shadow, `${shadow}00`]}
+        positions={[0, 1]}
+      />
+    </Oval>
+  );
+  const highlight = (
+    <Oval x={cx - rr * 0.52} y={cy - rr * 0.72} width={rr * 0.5} height={rr * 0.3} color="#FFFFFF" opacity={0.6} />
+  );
+
+  let shape;
+  if (kind === 0) {
+    // Scallop: a scalloped fan of ribs radiating from the hinge.
+    const ribs = [];
+    for (let i = 1; i <= 6; i += 1) {
+      const t = i / 7;
+      const ang = Math.PI - t * Math.PI;
+      const ex = cx + Math.cos(ang) * rr * 0.94;
+      const ey = cy - Math.sin(ang) * rr * 0.94;
+      ribs.push(<Path key={`sd${i}`} path={`M ${cx} ${cy} L ${ex} ${ey}`} color={dark} opacity={0.3} style="stroke" strokeWidth={0.7} />);
+      ribs.push(<Path key={`sl${i}`} path={`M ${cx + rr * 0.06} ${cy} L ${ex + rr * 0.06} ${ey - rr * 0.08}`} color={light} opacity={0.6} style="stroke" strokeWidth={0.6} />);
+    }
+    shape = (
+      <>
+        <Path path={scallopFanPath(cx, cy, rr, 7)}>{lit(cx - rr, cy - rr, cx + rr, cy + rr)}</Path>
+        {ribs}
+        <Oval x={cx - rr * 0.22} y={cy - rr * 0.18} width={rr * 0.44} height={rr * 0.36} color={dark} opacity={0.5} />
+      </>
+    );
+  } else if (kind === 1) {
+    // Clam: an oval of concentric growth lines under a raised umbo.
+    const arcs = [];
+    for (let i = 1; i <= 5; i += 1) {
+      const k = 0.28 + i * 0.15;
+      arcs.push(<Path key={`cd${i}`} path={`M ${cx - rr * k} ${cy + rr * 0.08} Q ${cx} ${cy - rr * k * 0.85} ${cx + rr * k} ${cy + rr * 0.08}`} color={dark} opacity={0.4} style="stroke" strokeWidth={1} />);
+    }
+    shape = (
+      <>
+        <Oval x={cx - rr} y={cy - rr * 0.62} width={rr * 2} height={rr * 1.24}>{lit(cx - rr, cy - rr, cx + rr, cy + rr)}</Oval>
+        {arcs}
+        <Path path={`M ${cx - rr * 0.95} ${cy + rr * 0.12} Q ${cx} ${cy + rr * 0.56} ${cx + rr * 0.95} ${cy + rr * 0.12}`} color={dark} opacity={0.32} style="stroke" strokeWidth={1.1} />
+        <Oval x={cx - rr * 0.19} y={cy - rr * 0.54} width={rr * 0.38} height={rr * 0.26} color={dark} opacity={0.55} />
+      </>
+    );
+  } else if (kind === 2) {
+    // Whelk: a body whorl under a rounded spire, banded.
+    shape = (
+      <>
+        <Path path={`M ${cx - rr * 0.5} ${cy - rr * 0.1} L ${cx - rr * 0.14} ${cy - rr * 1.45} Q ${cx} ${cy - rr * 1.72} ${cx + rr * 0.14} ${cy - rr * 1.45} L ${cx + rr * 0.5} ${cy - rr * 0.1} Z`}>{lit(cx - rr, cy - rr * 1.7, cx + rr, cy)}</Path>
+        <Oval x={cx - rr * 0.6} y={cy - rr * 0.28} width={rr * 1.2} height={rr * 1}>{lit(cx - rr, cy - rr, cx + rr, cy + rr)}</Oval>
+        <Path path={`M ${cx - rr * 0.56} ${cy + rr * 0.02} Q ${cx} ${cy + rr * 0.3} ${cx + rr * 0.56} ${cy + rr * 0.02}`} color={dark} opacity={0.38} style="stroke" strokeWidth={1} />
+        <Path path={`M ${cx - rr * 0.44} ${cy - rr * 0.32} Q ${cx} ${cy - rr * 0.12} ${cx + rr * 0.44} ${cy - rr * 0.32}`} color={dark} opacity={0.38} style="stroke" strokeWidth={1} />
+        <Path path={`M ${cx - rr * 0.2} ${cy - rr * 0.72} Q ${cx} ${cy - rr * 0.56} ${cx + rr * 0.2} ${cy - rr * 0.72}`} color={dark} opacity={0.34} style="stroke" strokeWidth={0.9} />
+      </>
+    );
+  } else {
+    // Cowrie: a smooth, glossy oval with a slit and a row of teeth.
+    const teeth = [];
+    for (const t of [-0.42, -0.22, 0.22, 0.42]) {
+      teeth.push(<Path key={`ct${t}`} path={`M ${cx + rr * t} ${cy + rr * 0.16} L ${cx + rr * t * 0.72} ${cy + rr * 0.32}`} color={dark} opacity={0.36} style="stroke" strokeWidth={0.9} />);
+    }
+    shape = (
+      <>
+        <Oval x={cx - rr * 0.82} y={cy - rr * 0.62} width={rr * 1.64} height={rr * 1.24}>{lit(cx - rr, cy - rr, cx + rr, cy + rr)}</Oval>
+        <Path path={`M ${cx - rr * 0.72} ${cy + rr * 0.06} Q ${cx} ${cy + rr * 0.36} ${cx + rr * 0.72} ${cy + rr * 0.06}`} color={dark} opacity={0.5} style="stroke" strokeWidth={1.3} />
+        {teeth}
+      </>
+    );
+  }
+
+  return (
+    <Group key={shellKey}>
+      {castShadow}
+      <Group origin={vec(cx, cy)} transform={[{ rotate: rotation }]}>
+        {shape}
+        {highlight}
+      </Group>
+    </Group>
+  );
+}
+
+
+/**
+ * The beach surface: one shader, animated by a monotonic frame clock, and
+ * (for the Us field) sampled in the same scene plane the shells use so the
+ * water and the sand and the shells move as one. Kept as its own component so
+ * the frame clock only runs where the beach actually renders.
+ */
+function BeachSurface({ effect, base, camera, planeViewport, rectWidth, rectHeight, animated }: {
+  effect: SkRuntimeEffect;
+  base: DuskUniforms;
+  camera?: SharedValue<PhotoSkyCamera>;
+  planeViewport: SkyViewport;
+  rectWidth: number;
+  rectHeight: number;
+  animated: boolean;
+}) {
+  const clock = useSharedValue(0);
+  useFrameCallback((info) => {
+    'worklet';
+    if (info.timeSinceFirstFrame != null) {
+      clock.value = info.timeSinceFirstFrame;
+    }
+  }, animated);
+  const uniforms = useDerivedValue(() => {
+    const time = animated ? clock.value : 0;
+    if (!camera) {
+      return { ...base, uTime: time };
+    }
+    const plane = photoSkyPlane(camera.value, 0, planeViewport);
+    return { ...base, uTime: time, uPan: [plane.x, plane.y], uScale: plane.scale };
+  });
+  return (
+    <Rect x={0} y={0} width={rectWidth} height={rectHeight}>
+      <Shader source={effect} uniforms={uniforms} />
+    </Rect>
+  );
+}
 
 function fadeAboveQuestion(opacity: number, screenY: number): number {
   if (screenY <= 0.72) {
@@ -1013,18 +1526,47 @@ const TWINKLE_RISE_MS = 200;
 const TWINKLE_FALL_MS = 700;
 const TWINKLE_SETTLE_MS = 450;
 
+type PhotoGlyphTransform = DerivedValue<{ scale: number }[]>;
+
 function PhotoDepthLayer({ camera, depth, viewport, children }: {
-  camera: SharedValue<PhotoSkyCamera>; depth: number; viewport: SkyViewport; children: ReactNode;
+  camera: SharedValue<PhotoSkyCamera>; depth: number; viewport: SkyViewport; children: (transform: PhotoGlyphTransform) => ReactNode;
 }) {
   const transform = useDerivedValue(() => {
     const plane = photoSkyPlane(camera.value, depth, viewport);
     return [{ translateX: plane.x }, { translateY: plane.y }, { scale: plane.scale }];
   });
-  return <Group transform={transform}>{children}</Group>;
+  const glyphTransform = useDerivedValue(() => {
+    const plane = photoSkyPlane(camera.value, depth, viewport);
+    return [{ scale: photoSkyGlyphScale(plane.scale) / plane.scale }];
+  });
+  return <Group transform={transform}>{children(glyphTransform)}</Group>;
 }
 
-function TwinkleOverlay({ x, y, color, photoCamera, depth = 0, viewport }: {
-  x: number; y: number; color: string; photoCamera?: SharedValue<PhotoSkyCamera>; depth?: number; viewport?: SkyViewport;
+function PhotoSkyAtmosphere({ camera, viewport, isDark, still }: {
+  camera?: SharedValue<PhotoSkyCamera>; viewport: SkyViewport; isDark: boolean; still: boolean;
+}) {
+  const far = useDerivedValue(() => [{ translateX: still ? 0 : -(camera?.value.x ?? 0) * viewport.width * 0.025 },
+    { translateY: still ? 0 : -(camera?.value.y ?? 0) * viewport.height * 0.025 }]);
+  const near = useDerivedValue(() => [{ translateX: still ? 0 : -(camera?.value.x ?? 0) * viewport.width * 0.055 },
+    { translateY: still ? 0 : -(camera?.value.y ?? 0) * viewport.height * 0.055 }]);
+  return <>
+    <Group transform={far}>
+      <Rect x={-viewport.width} y={-viewport.height} width={viewport.width * 3} height={viewport.height * 3} opacity={isDark ? 0.16 : 0.1}>
+        <RadialGradient c={vec(viewport.width * 0.32, viewport.height * 0.28)} r={viewport.width * 0.65}
+          colors={[PHOTO_SKY_HAZE_COOL, `${PHOTO_SKY_HAZE_COOL}00`]} positions={[0, 1]} />
+      </Rect>
+    </Group>
+    <Group transform={near}>
+      <Rect x={-viewport.width} y={-viewport.height} width={viewport.width * 3} height={viewport.height * 3} opacity={isDark ? 0.12 : 0.08}>
+        <RadialGradient c={vec(viewport.width * 0.74, viewport.height * 0.52)} r={viewport.width * 0.5}
+          colors={[PHOTO_SKY_HAZE_WARM, `${PHOTO_SKY_HAZE_WARM}00`]} positions={[0, 1]} />
+      </Rect>
+    </Group>
+  </>;
+}
+
+function TwinkleOverlay({ x, y, color, photoCamera, radius = 2.5, depth = 0, viewport }: {
+  x: number; y: number; color: string; photoCamera?: SharedValue<PhotoSkyCamera>; radius?: number; depth?: number; viewport?: SkyViewport;
 }) {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.7);
@@ -1045,19 +1587,20 @@ function TwinkleOverlay({ x, y, color, photoCamera, depth = 0, viewport }: {
   }, [opacity, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+    opacity: opacity.value * (photoCamera ? 0.55 : 1),
     transform: [{ scale: scale.value }],
   }));
 
   const positionStyle = useAnimatedStyle(() => {
     if (!photoCamera || !viewport) return {};
     const plane = photoSkyPlane(photoCamera.value, depth, viewport);
-    return { left: x * plane.scale + plane.x, top: y * plane.scale + plane.y, transform: [{ scale: plane.scale }] };
+    return { left: x * plane.scale + plane.x, top: y * plane.scale + plane.y, transform: [{ scale: photoSkyGlyphScale(plane.scale) }] };
   });
+  const diameter = photoCamera ? radius * 2 : 5;
 
   return (
     <Animated.View pointerEvents="none" accessible={false} style={[styles.twinkleBase, { left: x, top: y }, positionStyle]}>
-      <Animated.View style={[styles.twinkleDot, { backgroundColor: color }, animatedStyle]} />
+      <Animated.View style={[styles.twinkleDot, { backgroundColor: color, width: diameter, height: diameter, borderRadius: diameter / 2 }, animatedStyle]} />
     </Animated.View>
   );
 }
@@ -1112,6 +1655,7 @@ export function MemorySky({
   handoverProgress,
   onSceneLayout,
   onPress,
+  themeId,
 }: {
   moments: SkyItem[];
   /** Us represents every album photo; other screens retain their existing cap. */
@@ -1171,6 +1715,12 @@ export function MemorySky({
   handoverProgress?: SharedValue<number>;
   /** The loaded canvas is laid out. Not a GPU-paint acknowledgement. */
   onSceneLayout?: () => void;
+  /**
+   * Explicit theme for the dusk. Defaults to the selected theme: the sky
+   * follows the theme picker like every other surface, instead of rendering
+   * the After Hours wine dusk under every preset.
+   */
+  themeId?: string;
 }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const sceneSize = useSharedValue({ width: 0, height: 0 });
@@ -1185,9 +1735,26 @@ export function MemorySky({
   const compactLayout = compact && !immersive;
   const background = useThemeColor({}, 'background');
   const muted = useThemeColor({}, 'muted');
+  const { selectedThemeId } = useAoiTheme();
   const isDark = isDarkBackground(background);
-  const skyTop = isDark ? DARK_SKY_TOP : LIGHT_SKY_TOP;
-  const skyMid = isDark ? DARK_SKY_MID : LIGHT_SKY_MID;
+  // Beach sand, per mode: a sunlit top settling to a deeper floor.
+  const sandTop = isDark ? SEA_SAND_DARK_TOP : SEA_SAND_LIGHT_TOP;
+  const sandDeep = isDark ? SEA_SAND_DARK_DEEP : SEA_SAND_LIGHT_DEEP;
+  // Per-theme dusk: the same ramp family as After Hours (dark top, lighter
+  // mid melting into the live background), keyed by the selected preset so
+  // Sunset Shore glows ember, Sea Glass runs teal, Deep Ocean goes pine
+  // night, and Editorial Paper settles to espresso ink. Lagoon is the
+  // exception: a daytime beach (bright cyan water over sunlit sand), where
+  // memories walk as footprints along a shoreline trail instead of shining
+  // as stars (see isBeach below). After Hours keeps
+  // the canonical LIGHT_/DARK_SKY_* stops via the palette table.
+  const activeThemeId = themeId ?? selectedThemeId;
+  const stops = skyStopsForTheme(activeThemeId, isDark ? 'dark' : 'light');
+  const skyTop = stops.top;
+  const skyMid = stops.mid;
+  // Beach mode: the Lagoon theme renders sea life instead of the star field.
+  // Everything else (After Hours included) keeps the stars untouched.
+  const isBeach = isBeachTheme(activeThemeId);
   // Living-sky aura (Us full sky only): the dusk stops breathe with the
   // time of day — dawn gold, dusk ember, night deepened, day canonical —
   // and run a few degrees warmer/cooler for what is waiting. Static per
@@ -1210,6 +1777,12 @@ export function MemorySky({
   const docVisible = useDocumentVisible();
   const motionAllowed =
     !reduceMotion && !systemReduce && appActive && docVisible && focused;
+  // Compile the beach shader once, after the first paint, so switching to the
+  // beach theme never stalls a frame compiling it — a stall reads as a
+  // flicker the moment the theme changes.
+  useEffect(() => {
+    beachEffectOnce();
+  }, []);
 
   const skyFraction = header
     ? MEMORY_SKY_HEADER_QUARTER
@@ -1261,6 +1834,20 @@ export function MemorySky({
   const visible = useMemo(() => starLimit === null ? moments : moments.slice(0, starLimit), [moments, starLimit]);
   const dayCount = typeof daysTogether === 'number' ? daysTogether : 0;
   const count = isDayMode ? dayCount : moments.length;
+  // Beach sampling: bands hold a small school, the full sky a larger one;
+  // the caption keeps the true count, so no memory is ever uncounted, only
+  // unpainted.
+  const beachMax = !isBeach
+    ? 0
+    : header
+      ? BEACH_HEADER_CREATURE_MAX
+      : compactLayout
+        ? BEACH_BAND_CREATURE_MAX
+        : 40;
+  const beachKeep = useMemo(
+    () => (beachMax > 0 ? beachMomentKeep(visible.map((moment) => moment.id), beachMax) : null),
+    [beachMax, visible],
+  );
 
   const buckets = useMemo(
     () => (field ? bucketStarsByDepth(field.stars) : null),
@@ -1291,7 +1878,13 @@ export function MemorySky({
       near: [],
     };
     if (field && buckets) {
+      const dayStride = beachMax > 0 ? beachDayStride(field.stars.length, beachMax) : 1;
       const push = (star: DaySkySpatialStar) => {
+        // Band sampling: every nth day so 200 days together read as a calm
+        // shore across the whole relationship, not static.
+        if (dayStride > 1 && star.dayIndex % dayStride !== 0) {
+          return;
+        }
         const p = plot(star.x, star.y);
         // Cull offscreen visually only; field.stars still holds all days.
         if (
@@ -1317,8 +1910,9 @@ export function MemorySky({
               ? fadeCompactStarOpacity(baseOpacity, p.sy, compactVisibleBottomSy)
               : fadeAboveQuestion(baseOpacity, p.sy),
           color: starToneColor(star.tone),
-          bright: isBrightDayStar(star.dayIndex),
+          bright: isBeach ? false : isBrightDayStar(star.dayIndex),
           rotationDeg: sparkleRotationDeg(key),
+          role: star.tone === 'dim' ? undefined : star.tone,
         };
         if (star.size === 2) {
           out.far.push(entry);
@@ -1353,7 +1947,9 @@ export function MemorySky({
       return out;
     }
     if (photoStars) {
-      for (const star of buildPhotoSkyField(visible)) {
+      // The beach is a flat plane: every photo shell shares one depth, so the
+      // camera moves them with the surface instead of sliding them across it.
+      for (const star of buildPhotoSkyField(visible, isBeach)) {
         const size = star.depth === 'far' ? 2 : star.depth === 'mid' ? 3 : 4;
         const entry: PlottedStar = {
           key: star.id, cx: star.x * canvasW, cy: star.y * canvasH,
@@ -1367,6 +1963,10 @@ export function MemorySky({
       return out;
     }
     for (const moment of visible) {
+      // Sampling: rank-kept survivors only; the caption keeps count.
+      if (beachKeep && !beachKeep.has(moment.id)) {
+        continue;
+      }
       const layout = starForMoment(moment.id);
       const p = { cx: (layout.leftPct / 100) * canvasW, cy: (layout.topPct / 100) * canvasH };
       if (
@@ -1389,8 +1989,9 @@ export function MemorySky({
           ? fadeCompactStarOpacity(starRestOpacity(moment.id), layout.topPct / 100, compactVisibleBottomSy)
           : fadeAboveQuestion(starRestOpacity(moment.id), layout.topPct / 100),
         color: moment.authorRole === 'partner' ? DAY_SKY_STAR_PARTNER : DAY_SKY_STAR_YOU,
-        bright: hashMomentId(`${moment.id}-bright`) % 16 === 0,
+        bright: isBeach ? false : hashMomentId(`${moment.id}-bright`) % 16 === 0,
         rotationDeg: sparkleRotationDeg(moment.id),
+        role: moment.authorRole,
       };
       if (layout.size === 2) {
         out.far.push(entry);
@@ -1405,7 +2006,12 @@ export function MemorySky({
     // someone's memories, and so the sky clears its ambience the moment the
     // first memory lands.
     if (ambient && !field && visible.length === 0) {
+      const ambientMod = compactLayout || header ? 5 : 4;
       for (let index = 0; index < MEMORY_SKY_AMBIENT_COUNT; index += 1) {
+        // Bands need only a hint of texture; the full sky keeps the field.
+        if (beachMax > 0 && index % ambientMod !== 0) {
+          continue;
+        }
         const layout = ambientStarForIndex(index);
         const p = { cx: (layout.xPct / 100) * canvasW, cy: (layout.yPct / 100) * canvasH };
         if (
@@ -1429,7 +2035,7 @@ export function MemorySky({
             ? fadeCompactStarOpacity(opacity, layout.yPct / 100, compactVisibleBottomSy)
             : fadeAboveQuestion(opacity, layout.yPct / 100),
           color: DAY_SKY_STAR_DIM,
-          bright: isAmbientSparkle(index),
+          bright: isBeach ? false : isAmbientSparkle(index),
           rotationDeg: sparkleRotationDeg(key),
         };
         if (layout.size === 3) {
@@ -1439,8 +2045,20 @@ export function MemorySky({
         }
       }
     }
+    // Beach: the beach runs sand-first, so every mark is a shell resting on
+    // the sand band (spilling to the waterline), keeping the field's spread.
+    if (isBeach) {
+      const onSand = (entry: PlottedStar): PlottedStar => ({
+        ...entry,
+        cy: beachShellY(entry.cy / canvasH) * canvasH,
+        bright: false,
+      });
+      out.far = out.far.map(onSand);
+      out.mid = out.mid.map(onSand);
+      out.near = out.near.map(onSand);
+    }
     return out;
-  }, [ambient, field, buckets, zoom, visible, compactLayout, compactVisibleBottomSy, photoStars]);
+  }, [ambient, field, buckets, zoom, visible, compactLayout, compactVisibleBottomSy, photoStars, isBeach, beachMax, beachKeep, header]);
 
   const starByKey = useMemo(() => {
     const map = new Map<string, PlottedStar>();
@@ -1613,6 +2231,31 @@ export function MemorySky({
     background,
     peak: SETUP_SKY_PEAK,
   }), [skyCanvasW, canvasHeight, skyTop, skyMid, background]);
+  // The beach is one shader: procedural sand over the sea, plain numbers in,
+  // nothing animated. A band strip (compact/header) keeps only the water and
+  // dissolves it into the page, so an 88pt backdrop flows instead of showing
+  // a sand/sea split it has no room for.
+  const beachEffect = isBeach ? beachEffectOnce() : null;
+  const beachWaterOnly = isBeach && (compactLayout || header);
+  const beachUniforms = useMemo(
+    () =>
+      beachSkyUniforms({
+        width: skyCanvasW,
+        height: canvasHeight,
+        shore: beachWaterOnly ? 0 : BEACH_SHORE_FRACTION,
+        fadeFrom: beachWaterOnly ? 0.3 : 1,
+        sandLight: isDark ? SEA_SAND_DARK_TOP : SEA_SAND_LIGHT_TOP,
+        sandDeep: isDark ? SEA_SAND_DARK_DEEP : SEA_SAND_LIGHT_DEEP,
+        wet: isDark ? SEA_WET_DARK : SEA_WET_LIGHT,
+        seaShallow: isDark ? SEA_WATER_DARK_SHALLOW : SEA_WATER_LIGHT_SHALLOW,
+        seaDeep: isDark ? SEA_WATER_DARK_DEEP : SEA_WATER_LIGHT_DEEP,
+        foam: isDark ? SEA_FOAM_DARK : SEA_FOAM,
+      }),
+    [skyCanvasW, canvasHeight, isDark, beachWaterOnly],
+  );
+  // Flat-plane camera: the surface is sampled in the same scene space the
+  // shells use, so sand and shells move together as one plane. The clock and
+  // the scene sampling live in BeachSurface so they only exist when it renders.
   const sourceStars = useMemo<PlottedStar[]>(() => handoverProgress
     ? Array.from({ length: MEMORY_SKY_AMBIENT_COUNT }, (_, index) => {
       const layout = ambientStarForIndex(index);
@@ -1627,10 +2270,10 @@ export function MemorySky({
         opacity: fadeCompactStarOpacity(ambientStarOpacity(index), layout.yPct / 100,
           Math.min(1, windowHeight / (MEMORY_SKY_CANVAS_H * scaleX))),
         color: DAY_SKY_STAR_DIM,
-        bright: isAmbientSparkle(index),
+        bright: isBeach ? false : isAmbientSparkle(index),
         rotationDeg: sparkleRotationDeg(key),
       };
-    }) : [], [handoverProgress, windowHeight, scaleX]);
+    }) : [], [handoverProgress, windowHeight, scaleX, isBeach]);
 
   // Depth, as travel: the same camera move, read at four distances.
   const travel = Math.min(1, Math.max(0, camera)) * skyHeight;
@@ -1641,50 +2284,48 @@ export function MemorySky({
   const nearTravel = -travel * 0.24;
   const cloudTravel = -travel * 0.34;
 
-  const renderBucket = (stars: PlottedStar[]) => (
+  const renderHalo = (star: PlottedStar) => {
+    const radius = photoCamera ? Math.max(star.haloRadius ?? 0, star.r * 4) : star.haloRadius ?? 0;
+    const cx = star.cx * scaleX;
+    const cy = star.cy * scaleY;
+    return <Oval key={`halo-${star.key}`} x={cx - radius} y={cy - radius} width={radius * 2} height={radius * 2} opacity={star.haloOpacity}>
+      <RadialGradient c={vec(cx, cy)} r={radius}
+        colors={[star.color, `${star.color}30`, `${star.color}00`]} positions={[0, 0.35, 1]} />
+    </Oval>;
+  };
+  const renderCore = (star: PlottedStar) => {
+    const cx = star.cx * scaleX;
+    const cy = star.cy * scaleY;
+    // Beach mode, every surface: a memory is a shell on the shore — one of
+    // four kinds, tinted and turned by its key. Pure (no hooks here): plain
+    // numbers and path verbs.
+    if (isBeach) {
+      return <ShellGlyph
+        key={star.key}
+        shellKey={star.key}
+        cx={cx}
+        cy={cy}
+        r={star.r}
+      />;
+    }
+    if (!star.bright) return <Circle key={star.key} cx={cx} cy={cy} r={star.r} color={star.color} opacity={star.opacity}>
+      {photoStars && photoCamera ? <RadialGradient c={vec(cx, cy)} r={star.r}
+        colors={['#FFF8FA', star.color, `${star.color}88`]} positions={[0, 0.5, 1]} /> : null}
+    </Circle>;
+    return <Group key={star.key} origin={vec(cx, cy)} transform={[{ rotate: (star.rotationDeg * Math.PI) / 180 }]}>
+      <Path path={sparklePath(cx, cy, star.sparkleR)} color={star.color} opacity={Math.min(1, star.opacity + 0.2)} />
+    </Group>;
+  };
+  const renderBucket = (stars: PlottedStar[], glyphTransform?: PhotoGlyphTransform) => glyphTransform ? (
+    stars.map((star) => <Group key={star.key} origin={vec(star.cx * scaleX, star.cy * scaleY)} transform={glyphTransform}>
+      {renderHalo(star)}
+      {renderCore(star)}
+    </Group>)
+  ) : (
     <>
-      {photoStars ? stars.filter((star) => photoCamera || (star.haloRadius ?? 0) > 0).map((star) => {
-        const radius = photoCamera ? Math.max(star.haloRadius ?? 0, star.r * 4) : star.haloRadius ?? 0;
-        const cx = star.cx * scaleX;
-        const cy = star.cy * scaleY;
-        return <Rect key={`halo-${star.key}`} x={cx - radius} y={cy - radius} width={radius * 2} height={radius * 2} opacity={star.haloOpacity}>
-          <RadialGradient c={vec(cx, cy)} r={radius} colors={[star.color, `${star.color}00`]} positions={[0, 1]} />
-        </Rect>;
-      }) : null}
-      {stars
-        .filter((star) => !star.bright)
-        .map((star) => (
-          <Circle
-            key={star.key}
-            cx={star.cx * scaleX}
-            cy={star.cy * scaleY}
-            r={star.r}
-            color={star.color}
-            opacity={star.opacity}
-          >
-            {photoStars && photoCamera ? <RadialGradient
-              c={vec(star.cx * scaleX - star.r * 0.2, star.cy * scaleY - star.r * 0.2)} r={star.r * 1.4}
-              colors={['#FFF8FA', star.color, `${star.color}66`]} positions={[0, 0.4, 1]} /> : null}
-          </Circle>
-        ))}
-      {stars
-        .filter((star) => star.bright)
-        .map((star) => {
-          const cx = star.cx * scaleX;
-          const cy = star.cy * scaleY;
-          const R = star.sparkleR;
-          const radians = (star.rotationDeg * Math.PI) / 180;
-          const d = sparklePath(cx, cy, R);
-          return (
-            <Group key={star.key} origin={vec(cx, cy)} transform={[{ rotate: radians }]}>
-              <Path
-                path={d}
-                color={star.color}
-                opacity={Math.min(1, star.opacity + 0.2)}
-              />
-            </Group>
-          );
-        })}
+      {photoStars ? stars.filter((star) => (star.haloRadius ?? 0) > 0).map(renderHalo) : null}
+      {stars.filter((star) => !star.bright).map(renderCore)}
+      {stars.filter((star) => star.bright).map(renderCore)}
     </>
   );
 
@@ -1718,9 +2359,9 @@ export function MemorySky({
 
   const starBuckets = photoStars && photoCamera ? (
     <>
-      <PhotoDepthLayer camera={photoCamera} depth={1.1} viewport={{ width: skyCanvasW, height: skyHeight }}>{renderBucket(plotted.far)}</PhotoDepthLayer>
-      <PhotoDepthLayer camera={photoCamera} depth={0.45} viewport={{ width: skyCanvasW, height: skyHeight }}>{renderBucket(plotted.mid)}</PhotoDepthLayer>
-      <PhotoDepthLayer camera={photoCamera} depth={0} viewport={{ width: skyCanvasW, height: skyHeight }}>{renderBucket(plotted.near)}</PhotoDepthLayer>
+      <PhotoDepthLayer camera={photoCamera} depth={1.1} viewport={{ width: skyCanvasW, height: skyHeight }}>{(transform) => renderBucket(plotted.far, transform)}</PhotoDepthLayer>
+      <PhotoDepthLayer camera={photoCamera} depth={0.45} viewport={{ width: skyCanvasW, height: skyHeight }}>{(transform) => renderBucket(plotted.mid, transform)}</PhotoDepthLayer>
+      <PhotoDepthLayer camera={photoCamera} depth={0} viewport={{ width: skyCanvasW, height: skyHeight }}>{(transform) => renderBucket(plotted.near, transform)}</PhotoDepthLayer>
     </>
   ) : (
     <>
@@ -1736,13 +2377,51 @@ export function MemorySky({
     </>
   );
 
-  const caption = isDayMode
-    ? formatDaySkyCaption(dayCount)
-    : count === 0
-      ? 'Keep your first memory and light the sky'
+  // Fallback shore for a platform without Skia runtime effects: a gradient
+  // sand band and foam edge. When the beach shader is available it paints the
+  // whole surface and this stays null.
+  const sandTopFrac = immersive || photoStars ? BEACH_SHORE_TOP : BEACH_SAND_TOP;
+  const sandTopPx = sandTopFrac * skyHeight;
+  const sandColors = compactLayout
+    ? [sandTop, backgroundAtAlpha(sandTop, 0)]
+    : immersive || photoStars
+      ? [sandTop, sandDeep]
+      : [sandTop, background];
+  const beachSand = !isBeach || beachEffect ? null : (
+    <>
+      <Rect x={0} y={sandTopPx} width={skyCanvasW} height={Math.max(0, skyHeight - sandTopPx)}>
+        <LinearGradient
+          start={vec(0, sandTopPx)}
+          end={vec(0, skyHeight)}
+          colors={sandColors}
+          positions={[0, 1]}
+        />
+      </Rect>
+      <Path path={foamEdgePath(skyCanvasW, sandTopPx)} color="#FFFFFF" opacity={0.32} />
+    </>
+  );
+
+  // Beach dressing: shells resting on the sand. Full sky only — bands are
+  // 88pt tall with content scrolling over them, and shells there read as
+  // dirt. Scenery, never data: fixed positions, no twinkle, no captions
+  // counted.
+  // The shore's own shells were scenery; the beach shader now paints the
+  // ground, and every shell on screen is a memory, so scenery is dropped.
+  const beachShells = null;
+
+  const caption = isBeach
+    ? count === 0
+      ? 'Keep your first memory and find your first shell'
       : count === 1
-        ? '1 memory lighting your sky'
-        : `${count} memories lighting your sky`;
+        ? '1 shell on your shore'
+        : `${count} shells on your shore`
+    : isDayMode
+      ? formatDaySkyCaption(dayCount)
+      : count === 0
+        ? 'Keep your first memory and light the sky'
+        : count === 1
+          ? '1 memory lighting your sky'
+          : `${count} memories lighting your sky`;
 
   // Aspect-correct banks (never squashed): same 1200x500 ratio as the
   // source art; transparent edges bleed offscreen and clip (no hard seams).
@@ -1779,15 +2458,18 @@ export function MemorySky({
     reverse: boolean;
   };
 
+  // Clouds over a beach scene read as haze on the water; keep them faint.
+  const beachCloudDim = isBeach ? 0.2 : 1;
+
   const cloudLayers: CloudLayerSpec[] = ambient || handoverProgress
     ? [
-        { testID: 'memory-sky-cloud-b', source: cloudBBank, width: cloudWidth, height: cloudHeight, top: cloudBTop, opacity: MEMORY_SKY_AMBIENT_CLOUD_B_OPACITY, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
-        { testID: 'memory-sky-cloud-a', source: cloudABank, width: cloudWidth, height: cloudHeight, top: bankTop(MEMORY_SKY_AMBIENT_CLOUD_A_TOP, cloudHeight), opacity: MEMORY_SKY_AMBIENT_CLOUD_A_OPACITY, amplitudePx: MEMORY_SKY_CLOUD_A.amplitudePx, durationMs: MEMORY_SKY_CLOUD_A.durationMs, reverse: false },
-        { testID: 'memory-sky-cloud-c', source: cloudBBank, width: wispWidth, height: wispHeight, top: bankTop(MEMORY_SKY_AMBIENT_CLOUD_C_TOP, wispHeight), opacity: MEMORY_SKY_AMBIENT_CLOUD_C_OPACITY, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
+        { testID: 'memory-sky-cloud-b', source: cloudBBank, width: cloudWidth, height: cloudHeight, top: cloudBTop, opacity: MEMORY_SKY_AMBIENT_CLOUD_B_OPACITY * beachCloudDim, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
+        { testID: 'memory-sky-cloud-a', source: cloudABank, width: cloudWidth, height: cloudHeight, top: bankTop(MEMORY_SKY_AMBIENT_CLOUD_A_TOP, cloudHeight), opacity: MEMORY_SKY_AMBIENT_CLOUD_A_OPACITY * beachCloudDim, amplitudePx: MEMORY_SKY_CLOUD_A.amplitudePx, durationMs: MEMORY_SKY_CLOUD_A.durationMs, reverse: false },
+        { testID: 'memory-sky-cloud-c', source: cloudBBank, width: wispWidth, height: wispHeight, top: bankTop(MEMORY_SKY_AMBIENT_CLOUD_C_TOP, wispHeight), opacity: MEMORY_SKY_AMBIENT_CLOUD_C_OPACITY * beachCloudDim, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
       ]
     : [
-        { testID: 'memory-sky-cloud-b', source: cloudBBank, width: cloudWidth, height: cloudHeight, top: cloudBTop, opacity: compactLayout ? MEMORY_SKY_COMPACT_CLOUD_B_OPACITY : 0.45, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
-        { testID: 'memory-sky-cloud-a', source: cloudABank, width: cloudWidth, height: cloudHeight, top: cloudATop, opacity: compactLayout ? MEMORY_SKY_COMPACT_CLOUD_A_OPACITY : 0.55, amplitudePx: MEMORY_SKY_CLOUD_A.amplitudePx, durationMs: MEMORY_SKY_CLOUD_A.durationMs, reverse: false },
+        { testID: 'memory-sky-cloud-b', source: cloudBBank, width: cloudWidth, height: cloudHeight, top: cloudBTop, opacity: (compactLayout ? MEMORY_SKY_COMPACT_CLOUD_B_OPACITY : 0.45) * beachCloudDim, amplitudePx: MEMORY_SKY_CLOUD_B.amplitudePx, durationMs: MEMORY_SKY_CLOUD_B.durationMs, reverse: true },
+        { testID: 'memory-sky-cloud-a', source: cloudABank, width: cloudWidth, height: cloudHeight, top: cloudATop, opacity: (compactLayout ? MEMORY_SKY_COMPACT_CLOUD_A_OPACITY : 0.55) * beachCloudDim, amplitudePx: MEMORY_SKY_CLOUD_A.amplitudePx, durationMs: MEMORY_SKY_CLOUD_A.durationMs, reverse: false },
       ];
 
   return (
@@ -1852,7 +2534,17 @@ export function MemorySky({
               {(ready) =>
                 ready ? (
                   <Canvas onSize={onSceneLayout ? sceneSize : undefined} style={{ width: skyCanvasW, height: canvasHeight }}>
-                    {compactLayout && duskEffect ? (
+                    {isBeach && beachEffect ? (
+                      <BeachSurface
+                        effect={beachEffect}
+                        base={beachUniforms}
+                        camera={photoCamera}
+                        planeViewport={{ width: skyCanvasW, height: skyHeight }}
+                        rectWidth={skyCanvasW}
+                        rectHeight={canvasHeight}
+                        animated={motionAllowed}
+                      />
+                    ) : compactLayout && duskEffect ? (
                       <Rect x={0} y={0} width={skyCanvasW} height={canvasHeight}>
                         {handoverProgress
                           ? <SettlingShader source={duskEffect} from={sourceDuskUniforms} to={duskUniforms} progress={handoverProgress} />
@@ -1886,21 +2578,15 @@ export function MemorySky({
                         </Rect>
                       </>
                     )}
-                    {photoStars ? <>
-                      <Rect x={0} y={0} width={skyCanvasW} height={skyHeight} opacity={isDark ? 0.16 : 0.1}>
-                        <RadialGradient c={vec(skyCanvasW * 0.32, skyHeight * 0.28)} r={skyCanvasW * 0.65}
-                          colors={[PHOTO_SKY_HAZE_COOL, `${PHOTO_SKY_HAZE_COOL}00`]} positions={[0, 1]} />
-                      </Rect>
-                      <Rect x={0} y={0} width={skyCanvasW} height={skyHeight} opacity={isDark ? 0.12 : 0.08}>
-                        <RadialGradient c={vec(skyCanvasW * 0.74, skyHeight * 0.52)} r={skyCanvasW * 0.5}
-                          colors={[PHOTO_SKY_HAZE_WARM, `${PHOTO_SKY_HAZE_WARM}00`]} positions={[0, 1]} />
-                      </Rect>
-                    </> : null}
+                    {photoStars && !isBeach ? <PhotoSkyAtmosphere camera={photoCamera} viewport={{ width: skyCanvasW, height: skyHeight }}
+                      isDark={isDark} still={reduceMotion || systemReduce} /> : null}
+                    {beachSand}
                     {handoverProgress ? (
                       <SettlingStars progress={handoverProgress} distance={windowHeight - skyHeight} source={renderBucket(sourceStars)}>
                         {starBuckets}
+                        {beachShells}
                       </SettlingStars>
-                    ) : starBuckets}
+                    ) : <>{starBuckets}{beachShells}</>}
                   </Canvas>
                 ) : (
                   <View style={{ width: skyCanvasW, height: skyHeight }} />
@@ -1928,7 +2614,7 @@ export function MemorySky({
               handover={handoverProgress ? { progress: handoverProgress, top: layer.top, opacity: layer.opacity } : undefined}
             />
           ))}
-          {motionAllowed && twinkleStar ? (
+          {motionAllowed && twinkleStar && !isBeach ? (
             <View
               testID="memory-sky-twinkle"
               pointerEvents="none"
@@ -1941,6 +2627,7 @@ export function MemorySky({
                 y={twinkleStar.cy * scaleY}
                 color={twinkleStar.color}
                 photoCamera={photoStars ? photoCamera : undefined}
+                radius={twinkleStar.r}
                 depth={twinkleStar.size === 2 ? 1.1 : twinkleStar.size === 3 ? 0.45 : 0}
                 viewport={{ width: skyCanvasW, height: skyHeight }}
               />

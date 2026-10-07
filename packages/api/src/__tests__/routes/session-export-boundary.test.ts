@@ -101,9 +101,7 @@ describe('export read boundary', () => {
       '/v1/spaces/current/calendar/events?from=2000-01-01T00:00:00.000Z&to=2100-01-01T00:00:00.000Z',
       TOKEN_A
     );
-    await getJson(app, '/v1/spaces/current/proposals', TOKEN_A);
     await getJson(app, '/v1/spaces/current/someday', TOKEN_A);
-    await getJson(app, '/v1/spaces/current/imported-milestones', TOKEN_A);
     await getJson(app, '/v1/spaces/current/question', TOKEN_A);
     await getJson(app, '/v1/spaces/current/letters', TOKEN_A);
     // Free, no entitlement row at all — reads stay 200 regardless.

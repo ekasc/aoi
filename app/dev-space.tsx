@@ -1,6 +1,6 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
 
-import SpaceScreen from '@/app/(app)/(tabs)/space';
+import OursScreen from '@/app/(app)/(tabs)/ours';
 import EditRelationshipScreen from '@/app/(app)/profile/edit-relationship';
 import { DevErrorBoundary, PREVIEW_SESSION, PREVIEW_SPACE } from '@/features/dev/preview';
 import { SessionContext } from '@/features/session/session-context';
@@ -24,8 +24,8 @@ function DevSpacePreview() {
           inviteCode: waiting === 'true' ? 'HQABD7' : space.inviteCode,
         } : null,
       }}>
-        <DevErrorBoundary label="SpaceScreen">
-          {edit === 'true' ? <EditRelationshipScreen /> : <SpaceScreen />}
+        <DevErrorBoundary label="OursScreen">
+          {edit === 'true' ? <EditRelationshipScreen /> : <OursScreen />}
         </DevErrorBoundary>
       </SpaceContext.Provider>
     </SessionContext.Provider>

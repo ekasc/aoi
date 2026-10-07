@@ -191,7 +191,7 @@ export const signOutProgram = (
  *   is a DB lookup), push registrations, preferences, and precise
  *   location shares (plus consent withdrawal on the member row).
  * - RETAINED (shared relationship content for the remaining partner):
- *   moments, letters, calendar, proposals, someday, weekly answers, media
+ *   moments, letters, calendar, someday, weekly answers, media
  *   rows + bytes, spaces, invites, activity, the Plus row (the partner's
  *   paid period runs on), and the membership row itself (flipped to left
  *   — pairing history and the audit trail stay intact).

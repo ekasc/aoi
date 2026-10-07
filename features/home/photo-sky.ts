@@ -52,6 +52,11 @@ export function photoSkyStar(id: string): PhotoSkyStar {
   };
 }
 
-export function buildPhotoSkyField(photos: readonly SkyItem[]): PhotoSkyStar[] {
-  return photos.map((photo) => photoSkyStar(photo.id));
+export function buildPhotoSkyField(photos: readonly SkyItem[], flat = false): PhotoSkyStar[] {
+  return photos.map((photo) => {
+    const star = photoSkyStar(photo.id);
+    // `flat` collapses the field to one plane (the beach): no depth means no
+    // parallax, so marks ride the surface instead of sliding across it.
+    return flat ? { ...star, depth: 'near' as const } : star;
+  });
 }

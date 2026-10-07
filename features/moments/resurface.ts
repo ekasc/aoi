@@ -24,7 +24,7 @@ function isSameMonthAndDay(value: Date, reference: Date): boolean {
  *
  * Eligibility (P4B): only published memories in the list — same month/day
  * as today, at least one year back. Excluded by construction or by filter:
- * - sealed letters / proposals are not moments, so they never appear here;
+ * - sealed letters are not moments, so they never appear here;
  * - deleted moments are dropped from the moments list upstream (tombstones
  *   are separate), so they never appear here;
  * - goal-typed moments are excluded explicitly — future goals and Plans

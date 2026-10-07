@@ -1,5 +1,5 @@
 # Plans: month navigation both directions, event create, Someday.
-# Date pickers are native wheels and proposal/goal sheets need them —
+# Date pickers are native wheels and the goal sheet needs them —
 # navigation and the title field are automated; the rest is manual-device.
 appId: com.ekasc.aoi
 ---

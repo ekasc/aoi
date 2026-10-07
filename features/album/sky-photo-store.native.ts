@@ -32,7 +32,7 @@ export function getSkyPhotoRepository(scope: SkyPhotoScope) {
         destination = photoFile(id);
         existed = destination.exists;
         directory.create({ idempotent: true, intermediates: true });
-        if (!existed) temporary.copy(destination);
+        if (!existed) await temporary.copy(destination);
         return { id, addedAt: new Date().toISOString(), width: prepared.width, height: prepared.height };
       } catch (error) {
         if (destination && !existed && destination.exists) destination.delete();

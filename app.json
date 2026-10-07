@@ -88,8 +88,7 @@
       ],
       "expo-notifications",
       "expo-asset",
-      "expo-video",
-      "onnxruntime-react-native"
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

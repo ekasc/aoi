@@ -37,10 +37,16 @@ export function photoSkyPlane(camera: PhotoSkyCamera, depth: number, viewport: S
   };
 }
 
+export function photoSkyGlyphScale(planeScale: number): number {
+  'worklet';
+  // Camera travel magnifies spacing, but starlight must not become a large disc.
+  return Math.min(3, planeScale);
+}
+
 export function projectPhotoSkyStar(star: PhotoSkyStar, camera: PhotoSkyCamera, viewport: SkyViewport) {
   'worklet';
   const plane = photoSkyPlane(camera, photoSkyDepth(star.depth), viewport);
-  return { x: star.x * viewport.width * plane.scale + plane.x, y: star.y * viewport.height * plane.scale + plane.y, radius: star.radius * plane.scale };
+  return { x: star.x * viewport.width * plane.scale + plane.x, y: star.y * viewport.height * plane.scale + plane.y, radius: star.radius * photoSkyGlyphScale(plane.scale) };
 }
 
 /** Keep the world point under the pinch's moving focal point, not the screen centre. */
@@ -61,6 +67,30 @@ export function panPhotoSky(camera: PhotoSkyCamera, delta: SkyPoint, depth: numb
   'worklet';
   const distance = cameraDistance(camera.zoom, depth) / camera.zoom;
   return clampPhotoSkyCamera({ ...camera, x: camera.x - delta.x * distance, y: camera.y - delta.y * distance });
+}
+
+export function photoSkyReleaseVelocity(velocity: SkyPoint): SkyPoint {
+  'worklet';
+  const speed = Math.hypot(velocity.x, velocity.y);
+  if (speed < 30) return { x: 0, y: 0 };
+  const scale = Math.min(1, 1400 / speed);
+  return { x: velocity.x * scale, y: velocity.y * scale };
+}
+
+export function stepPhotoSkyMomentum({ camera, velocity, depth, viewport, deltaMs }: {
+  camera: PhotoSkyCamera; velocity: SkyPoint; depth: number; viewport: SkyViewport; deltaMs: number;
+}): { camera: PhotoSkyCamera; velocity: SkyPoint } {
+  'worklet';
+  // Resume at rest after a stalled frame, rather than catching up across the sky.
+  if (deltaMs > 64 || Math.hypot(velocity.x, velocity.y) < 12) return { camera, velocity: { x: 0, y: 0 } };
+  if (deltaMs <= 0) return { camera, velocity };
+  const decay = Math.exp(-deltaMs / 180);
+  const travel = 0.18 * (1 - decay);
+  const next = panPhotoSky(camera, { x: velocity.x * travel / viewport.width, y: velocity.y * travel / viewport.height }, depth);
+  return {
+    camera: next,
+    velocity: { x: next.x === camera.x ? 0 : velocity.x * decay, y: next.y === camera.y ? 0 : velocity.y * decay },
+  };
 }
 
 export function focusPhotoSkyStar(star: PhotoSkyStar, zoom = 7): PhotoSkyCamera {

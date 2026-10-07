@@ -19,9 +19,6 @@ export const PUSH_NOTIFICATION_KINDS = [
   'event_added',
   'event_updated',
   'event_deleted',
-  'proposal_received',
-  'proposal_accepted',
-  'proposal_declined',
 ] as const;
 
 export const pushNotificationKindSchema = z.enum(PUSH_NOTIFICATION_KINDS);

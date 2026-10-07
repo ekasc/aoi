@@ -45,6 +45,11 @@ export const FontFamilies: {
 };
 
 export const Typography = {
+  navigationTitle: {
+    fontFamily: FontFamilies.body,
+    fontSize: 17,
+    fontWeight: '600',
+  },
   /**
    * The one level above `display`, for the two moments that earn it: the
    * pair's names on Us, and the landing wordmark. Everything else that

@@ -1,8 +1,0 @@
-{
-  "id": "sface-2021dec-f32-v1",
-  "revision": "47534e27c9851bb1128ccc0102f1145e27f23f98",
-  "file": "face_recognition_sface_2021dec.onnx",
-  "sha256": "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
-  "bytes": 38696353,
-  "license": "Apache-2.0"
-}

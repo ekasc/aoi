@@ -80,19 +80,19 @@ export default function TabsLayout() {
           }}
         />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="space" contentStyle={{ backgroundColor: colors.background }}>
-        <NativeTabs.Trigger.Label>Space</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="ours" contentStyle={{ backgroundColor: colors.background }}>
+        <NativeTabs.Trigger.Label>Lists</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'person', selected: 'person.fill' }}
+          sf={{ default: 'square.grid.2x2', selected: 'square.grid.2x2.fill' }}
           src={{
             default: (
               <NativeTabs.Trigger.VectorIcon
                 family={Ionicons}
-                name="person-outline"
+                name="grid-outline"
               />
             ),
             selected: (
-              <NativeTabs.Trigger.VectorIcon family={Ionicons} name="person" />
+              <NativeTabs.Trigger.VectorIcon family={Ionicons} name="grid" />
             ),
           }}
         />

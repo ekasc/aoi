@@ -1,7 +1,7 @@
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import LittleThingsScreen from '@/app/(app)/profile/little-things';
+import PartnerPortraitScreen from '@/app/(app)/partner';
 import { PartnerDetailsProvider, usePartnerDetails } from '@/features/partner-details/partner-details-context';
 
 const repository = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn(), remove: vi.fn() }));
@@ -19,13 +19,13 @@ beforeEach(() => {
   repository.remove.mockReset();
 });
 
-describe('Little things empty states', () => {
+describe('partner portrait empty states', () => {
   it('recovers from a failed read without navigating away', async () => {
     repository.list.mockRejectedValueOnce(new Error('offline')).mockResolvedValue([]);
-    render(<PartnerDetailsProvider><LittleThingsScreen /></PartnerDetailsProvider>);
+    render(<PartnerDetailsProvider><PartnerPortraitScreen /></PartnerDetailsProvider>);
     await screen.findByText('Could not load your details.');
     fireEvent.click(screen.getByText('Try again'));
-    expect(await screen.findByText('No details yet.')).toBeTruthy();
+    expect(await screen.findByText(/Nothing here yet/)).toBeTruthy();
     expect(screen.queryByText('Could not load your details.')).toBeNull();
     expect(repository.list).toHaveBeenCalledTimes(2);
   });
@@ -56,20 +56,20 @@ describe('Little things empty states', () => {
     await act(async () => { await expect(result.current.removeDetail(detail.id)).rejects.toThrow('offline'); });
     expect(result.current.details).toEqual([detail]);
   });
-  it('shows the empty indicator and prompts after a successful empty read', async () => {
-    render(<PartnerDetailsProvider><LittleThingsScreen /></PartnerDetailsProvider>);
-    expect(await screen.findByText('No details yet.')).toBeTruthy();
-    expect(screen.getByText('Need a spark?')).toBeTruthy();
+  it('shows the empty portrait and a prompt after a successful empty read', async () => {
+    render(<PartnerDetailsProvider><PartnerPortraitScreen /></PartnerDetailsProvider>);
+    expect(await screen.findByText(/Nothing here yet/)).toBeTruthy();
+    expect(screen.getByText('Something to notice')).toBeTruthy();
   });
 
   it('does not present a pending read as empty', async () => {
     let complete: (() => void) | undefined;
     repository.list.mockReturnValue(new Promise((resolve) => { complete = () => resolve([]); }));
-    render(<PartnerDetailsProvider><LittleThingsScreen /></PartnerDetailsProvider>);
-    expect(screen.getByText('Loading details…')).toBeTruthy();
-    expect(screen.queryByText('No details yet.')).toBeNull();
+    render(<PartnerDetailsProvider><PartnerPortraitScreen /></PartnerDetailsProvider>);
+    expect(screen.getByText('Loading what you have noticed…')).toBeTruthy();
+    expect(screen.queryByText(/Nothing here yet/)).toBeNull();
     await act(async () => complete?.());
-    expect(await screen.findByText('No details yet.')).toBeTruthy();
+    expect(await screen.findByText(/Nothing here yet/)).toBeTruthy();
   });
 
   it('does not turn a storage failure into an empty collection', async () => {
@@ -79,8 +79,8 @@ describe('Little things empty states', () => {
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.error).toBe('Could not load your details.');
-    render(<PartnerDetailsProvider><LittleThingsScreen /></PartnerDetailsProvider>);
+    render(<PartnerDetailsProvider><PartnerPortraitScreen /></PartnerDetailsProvider>);
     expect(await screen.findByText('Could not load your details.')).toBeTruthy();
-    expect(screen.queryByText('No details yet.')).toBeNull();
+    expect(screen.queryByText(/Nothing here yet/)).toBeNull();
   });
 });

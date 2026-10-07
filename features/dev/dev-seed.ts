@@ -32,6 +32,7 @@ import {
   resetPreviewComposerStore,
   type PreviewVariant,
 } from '@/features/dev/preview';
+import { seedDevCollections } from '@/features/dev/dev-seed-collections';
 import type { RelationshipSpace } from '@/features/space/types';
 
 const SESSION_STORAGE_KEY = 'aoi.session.v1';
@@ -81,10 +82,17 @@ export function ensureDevSeed(): Promise<void> {
   }
   if (!seedPromise) {
     seedPromise = (async () => {
-      await SecureStore.setItemAsync(
-        SESSION_STORAGE_KEY,
-        JSON.stringify(DEV_SEED_SESSION)
-      );
+      try {
+        await SecureStore.setItemAsync(
+          SESSION_STORAGE_KEY,
+          JSON.stringify(DEV_SEED_SESSION)
+        );
+      } catch {
+        // Web has no secure store. The session cannot be written there, but the
+        // rest of the seed still has to run: the space and the lists live in
+        // AsyncStorage, which web does have. Aborting here left the dev preview
+        // routes empty on web for no reason.
+      }
       const spaceKey = `${SPACE_USER_KEY_PREFIX}${DEV_SEED_USER_ID}`;
       if (variant === 'setup') {
         // The pre-space world. A space left by an earlier `full` seed would
@@ -93,6 +101,12 @@ export function ensureDevSeed(): Promise<void> {
         await AsyncStorage.removeItem(spaceKey);
       } else {
         await AsyncStorage.setItem(spaceKey, JSON.stringify(DEV_SEED_SPACE));
+      }
+      // The couple's lists live in the stub collections repository, which the
+      // Ours screen reads on mount. Seed them here so the catalogue is present
+      // deterministically rather than racing the provider.
+      if (variant !== 'empty' && variant !== 'setup') {
+        await seedDevCollections(DEV_SEED_SPACE_ID);
       }
       // Pending rows (unsent/failed memories) live in the composer store,
       // which the composer provider hydrates on mount — seed it here so the

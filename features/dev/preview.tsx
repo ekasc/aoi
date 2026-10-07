@@ -309,7 +309,6 @@ export const PREVIEW_SPACE: SpaceContextValue = {
     createdAt: '2022-06-14T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
   },
-  importedMilestones: [],
   isHydrated: true,
   createSpace: previewUnavailable('spaces'),
   joinSpace: previewUnavailable('spaces'),
@@ -319,7 +318,6 @@ export const PREVIEW_SPACE: SpaceContextValue = {
   regenerateInvite: previewUnavailable('invite codes'),
   // Preview spaces are fixed; there is nothing newer to read.
   refreshSpace: async () => {},
-  importMilestones: previewUnavailable('milestone import'),
 };
 
 // ── Mock world: composer pending ────────────────────────────────────────

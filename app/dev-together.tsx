@@ -16,7 +16,6 @@ import {
 } from "@/features/dev/preview";
 import { LettersProvider } from "@/features/letters/letters-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
-import { ProposalsProvider } from "@/features/proposals/proposals-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
 import { ResponsesProvider } from "@/features/responses/responses-context";
@@ -82,7 +81,6 @@ function DevTogetherPreview() {
 						<SomedayProvider>
 							<QuestionProvider>
 								<SqueezeProvider>
-									<ProposalsProvider>
 										<LettersProvider>
 											<PushProvider>
 												<ResponsesProvider>
@@ -94,7 +92,6 @@ function DevTogetherPreview() {
 												</ResponsesProvider>
 											</PushProvider>
 										</LettersProvider>
-									</ProposalsProvider>
 								</SqueezeProvider>
 							</QuestionProvider>
 						</SomedayProvider>

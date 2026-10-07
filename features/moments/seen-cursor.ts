@@ -3,8 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 /**
  * The feed's read position: the newest moment the reader has plausibly seen,
  * as an ISO timestamp. Unread means partner-authored and newer than this —
- * the reader's own posts were seen at the keyboard. There is deliberately no
- * divider or badge UI for unread (the feed decided that long ago); the cursor
+ * the reader's own posts were seen at the keyboard. The screen draws a "New"
+ * boundary above the first unread post from this cursor; the cursor itself
  * only decides where a fresh screen lands.
  */
 

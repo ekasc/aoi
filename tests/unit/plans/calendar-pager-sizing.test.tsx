@@ -79,6 +79,29 @@ vi.mock('react-native', () => {
     View,
     Text,
     Pressable,
+    Animated: {
+      View,
+      Value: class {
+        v: unknown;
+        constructor(v: unknown = 0) { this.v = v; }
+        setValue(v: unknown) { this.v = v; }
+        interpolate() { return {}; }
+      },
+      timing: (value: { setValue: (v: unknown) => void }, config: { toValue: unknown }) => ({
+        start: (done?: (result?: { finished: boolean }) => void) => {
+          value.setValue(config.toValue);
+          done?.({ finished: true });
+        },
+      }),
+    },
+    Easing: {
+      bezier: () => ({}),
+      out: (curve: unknown) => curve,
+      in: (curve: unknown) => curve,
+      inOut: (curve: unknown) => curve,
+      exp: {},
+      linear: {},
+    },
     ScrollView: (props: Record<string, unknown>) => {
       const { children, style, onLayout, ...rest } = props;
       // The platform fires onLayout after mount, and the week strip sizes its
@@ -170,15 +193,6 @@ vi.mock('@/features/calendar/calendar-context', () => ({
   }),
 }));
 
-vi.mock('@/features/proposals/proposals-context', () => ({
-  useProposals: () => ({
-    proposals: [],
-    accept: vi.fn(async () => {}),
-    decline: vi.fn(async () => {}),
-    reload: vi.fn(async () => {}),
-  }),
-}));
-
 vi.mock('@/features/someday/someday-context', () => ({
   useSomeday: () => ({ openItems: [], doneItems: [] }),
 }));
@@ -252,10 +266,8 @@ describe('Plans calendar pager sizing', () => {
 
   it('creates from a floating control, not from a Today pill', () => {
     const PLANS_SOURCE = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
-    // The floating Today pill is gone. Creation is the floating control now,
-    // and it is the same tinted glass FAB the Memories tab uses.
-    expect(PLANS_SOURCE).not.toContain('handleJumpToToday');
-    expect(PLANS_SOURCE).not.toContain('accessibilityLabel="Today"');
+    // Creation is the floating control, the same tinted glass FAB the
+    // Memories tab uses.
     expect(PLANS_SOURCE).toContain('accessibilityLabel="Add an event"');
     expect(PLANS_SOURCE).toContain('styles.fabGlass');
     expect(PLANS_SOURCE).toContain('fabBottomOffset(insets.bottom');

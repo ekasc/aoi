@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 
-import LittleThingsScreen from '@/app/(app)/profile/little-things';
+import PartnerPortraitScreen from '@/app/(app)/partner';
 import { DevErrorBoundary, PREVIEW_SESSION, PREVIEW_SPACE } from '@/features/dev/preview';
 import { PartnerDetailsProvider } from '@/features/partner-details/partner-details-context';
 import { SessionContext } from '@/features/session/session-context';
@@ -11,7 +11,7 @@ export default function DevLittleThings() {
   return (
     <SessionContext.Provider value={PREVIEW_SESSION}>
       <SpaceContext.Provider value={PREVIEW_SPACE}>
-        <PartnerDetailsProvider><DevErrorBoundary label="LittleThingsScreen"><LittleThingsScreen /></DevErrorBoundary></PartnerDetailsProvider>
+        <PartnerDetailsProvider><DevErrorBoundary label="PartnerPortraitScreen"><PartnerPortraitScreen /></DevErrorBoundary></PartnerDetailsProvider>
       </SpaceContext.Provider>
     </SessionContext.Provider>
   );

@@ -301,7 +301,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		[events],
 	);
 
-	// A partner-side change (a push, an accepted proposal) may leave the
+	// A partner-side change (a push) may leave the
 	// local state stale — re-read the current month + upcoming window.
 	const refresh = useCallback(async () => {
 		await reloadAfterMutation();

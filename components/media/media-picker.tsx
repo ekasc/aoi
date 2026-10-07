@@ -18,6 +18,8 @@ export type MediaPickerProps = {
   onClear: () => void;
   selectedUri?: string | null;
   disabled?: boolean;
+  /** What the picker is for, e.g. "Cover". Defaults to "Media". */
+  label?: string;
 };
 
 export function MediaPicker({
@@ -25,6 +27,7 @@ export function MediaPicker({
   onClear,
   selectedUri,
   disabled,
+  label = 'Media',
 }: MediaPickerProps) {
   const accent = useThemeColor({}, 'accent');
   const onAccent = useThemeColor({}, 'onAccent');
@@ -59,7 +62,7 @@ export function MediaPicker({
   if (selectedUri) {
     return (
       <Surface style={styles.container}>
-        <ThemedText type="meta">Media</ThemedText>
+        <ThemedText type="meta">{label}</ThemedText>
         <View style={styles.previewContainer}>
           <View
             style={[
@@ -98,7 +101,7 @@ export function MediaPicker({
 
   return (
     <Surface style={styles.container}>
-      <ThemedText type="meta">Media</ThemedText>
+      <ThemedText type="meta">{label}</ThemedText>
       <Pressable
         accessibilityLabel="Select image from library"
         accessibilityRole="button"

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
+  Pressable,
   StyleSheet,
   TextInput as RNTextInput,
   View,
@@ -63,6 +64,7 @@ export function PaperTextInput({
   ...rest
 }: PaperTextInputProps) {
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<RNTextInput>(null);
   const isRow = variant === 'row';
   const onSky = tone === 'sky';
   // Only read for the sky: half the palette is not needed to dress a field
@@ -95,13 +97,20 @@ export function PaperTextInput({
         // value already fill the width. It gets its own line underneath.
         <View style={styles.rowField}>
           {label ? (
-            <ThemedText type="supporting" style={isDisabled ? styles.disabled : undefined}>
-              {label}
-            </ThemedText>
+            <Pressable
+              accessible={false}
+              hitSlop={Spacing[8]}
+              onPress={() => inputRef.current?.focus()}
+            >
+              <ThemedText type="label" style={isDisabled ? styles.disabled : undefined}>
+                {label}
+              </ThemedText>
+            </Pressable>
           ) : null}
           <RNTextInput
             accessibilityLabel={accessibilityLabel ?? label}
             editable={editable}
+            ref={inputRef}
             placeholderTextColor={textMuted}
             selectionColor={borderStrong}
             onFocus={(event) => {
@@ -125,17 +134,24 @@ export function PaperTextInput({
       ) : (
         <>
           {label ? (
-            <ThemedText
-              type="supporting"
-              accessibilityRole="header"
-              style={isDisabled ? styles.disabled : undefined}
+            <Pressable
+              accessible={false}
+              hitSlop={Spacing[8]}
+              onPress={() => inputRef.current?.focus()}
             >
-              {label}
-            </ThemedText>
+              <ThemedText
+                type="label"
+                accessibilityRole="header"
+                style={isDisabled ? styles.disabled : undefined}
+              >
+                {label}
+              </ThemedText>
+            </Pressable>
           ) : null}
           <RNTextInput
             accessibilityLabel={accessibilityLabel ?? label}
             editable={editable}
+            ref={inputRef}
             placeholderTextColor={textMuted}
             selectionColor={borderStrong}
             onFocus={(event) => {

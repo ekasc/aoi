@@ -106,11 +106,9 @@ function fixtures() {
     '/v1/spaces/current/calendar/events?from=2000-01-01T00%3A00%3A00.000Z&to=2100-01-01T00%3A00%3A00.000Z': [
       { id: 'e-1', title: 'Anniversary' },
     ],
-    '/v1/spaces/current/proposals': { proposals: [{ id: 'p-1', title: 'Dinner' }] },
     '/v1/users/me/partner-details': { details: [] },
     '/v1/spaces/current/responses?limit=100': { responses: [] },
     '/v1/spaces/current/someday': { items: [{ id: 's-1', title: 'Kyoto' }] },
-    '/v1/spaces/current/imported-milestones': [{ id: 'g-1', type: 'goal', title: 'Save more' }],
     '/v1/spaces/current/question': { weekKey: '2026-W03', answers: [{ answer: 'our song' }] },
     '/v1/spaces/current/letters': {
       letters: [
@@ -321,9 +319,7 @@ describe('exportRawArchive', () => {
       'space.json',
       'moments.json',
       'calendar-events.json',
-      'proposals.json',
       'someday.json',
-      'milestones.json',
       'question.json',
       'letters.json',
       'responses.json',
@@ -333,13 +329,10 @@ describe('exportRawArchive', () => {
       expect(entries.has(name), name).toBe(true);
     }
 
-    // Paging reached the second page; goal + milestone-goal represented.
+    // Paging reached the second page; the goal is represented.
     const moments = decode(entries, 'moments.json') as { id: string; type: string }[];
     expect(moments.map((m) => m.id)).toEqual(['m-photo', 'm-goal', 'm-note']);
     expect(moments.map((m) => m.type)).toContain('goal');
-    expect(decode(entries, 'milestones.json') as { type: string }[]).toEqual([
-      expect.objectContaining({ type: 'goal' }),
-    ]);
 
     // Invite credential is not archive data.
     expect(JSON.stringify(decode(entries, 'space.json'))).not.toContain('SECRET-INVITE-CODE');
@@ -361,9 +354,7 @@ describe('exportRawArchive', () => {
     expect(manifest.datasets).toMatchObject({
       moments: 3,
       calendarEvents: 1,
-      proposals: 1,
       somedayItems: 1,
-      importedMilestones: 1,
       letters: 2,
       responses: 0,
       partnerDetails: 0,

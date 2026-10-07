@@ -414,9 +414,10 @@ describe('Compact toolbar regression (single row, chip date, no wrap)', () => {
     expect(screen.getByText('New memory')).toBeTruthy();
     const source = await import('node:fs').then((fs) => fs.readFileSync('components/moments/inline-memory-composer.tsx', 'utf8'));
     // Restrained, and on the scale: this pinned `fontSize: 17`, an
-    // off-scale size three screens had each invented separately. `subheading`
-    // is the nearest step and is the same one to look at.
-    expect(source).toContain('...Typography.subheading');
+    // off-scale size three screens had each invented separately.
+    // `navigationTitle` is that exact size promoted to a token, so the
+    // child-screen title is one step on the scale rather than a literal.
+    expect(source).toContain('...Typography.navigationTitle');
     expect(source).toContain('flexShrink: 1');
     expect(source).not.toContain('type="title">New memory');
   });

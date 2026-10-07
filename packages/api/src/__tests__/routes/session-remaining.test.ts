@@ -5,7 +5,7 @@ import { makeTestHarness, type ShimD1 } from '../../effects/test-harness';
 
 /**
  * Route-level contract tests for the ported worker routers (calendar,
- * proposals, letters, question, someday, location, preferences, milestones,
+ * letters, question, someday, location, preferences, milestones,
  * squeezes) — the HTTP face through the worker shell (createApp + Effect
  * runtime + error mapper + session middleware).
  */
@@ -154,45 +154,6 @@ describe('worker calendar routes', () => {
   });
 });
 
-describe('worker proposals routes', () => {
-  it('create → 201; partner accepts → calendar event; proposer cannot accept own', async () => {
-    const { harness, app } = makeApp();
-    seedCouple(harness.d1);
-
-    const created = await app.request('/v1/spaces/current/proposals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({
-        title: 'Dinner?',
-        proposedStart: new Date(FEB_1).toISOString(),
-        proposedEnd: new Date(FEB_1 + 3600_000).toISOString(),
-      }),
-    });
-    expect(created.status).toBe(201);
-    const createdBody = await created.json();
-    expect(createdBody.proposerRole).toBe('you');
-    const proposalId = createdBody.id;
-
-    const selfAccept = await app.request(`/v1/proposals/${proposalId}/accept`, {
-      method: 'POST',
-      headers: auth(TOKEN_A),
-    });
-    expect(selfAccept.status).toBe(403);
-
-    const accept = await app.request(`/v1/proposals/${proposalId}/accept`, {
-      method: 'POST',
-      headers: auth(TOKEN_B),
-    });
-    expect(accept.status).toBe(200);
-    expect((await accept.json()).status).toBe('accepted');
-
-    const events = harness.d1.rawDb
-      .prepare('select count(*) as n from calendar_events where space_id = ? and deleted_at is null')
-      .get('00000000-0000-4000-8000-000000000010') as { n: number };
-    expect(events.n).toBe(1);
-  });
-});
-
 describe('worker letters routes', () => {
   it('seal → body omitted; open before the seal → 400; open after → body present', async () => {
     const { harness, app } = makeApp();
@@ -335,25 +296,6 @@ describe('worker preferences / milestones / squeezes routes', () => {
     expect((await updated.json()).themeId).toBe('sea-glass');
   });
 
-  it('milestones create + list', async () => {
-    const { harness, app } = makeApp();
-    seedCouple(harness.d1);
-
-    const created = await app.request('/v1/spaces/current/imported-milestones', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({
-        type: 'milestone',
-        title: 'First trip',
-        occurredAt: new Date(JAN_1).toISOString(),
-      }),
-    });
-    expect(created.status).toBe(201);
-
-    const listed = await app.request('/v1/spaces/current/imported-milestones', { headers: auth(TOKEN_A) });
-    expect((await listed.json())).toHaveLength(1);
-  });
-
   it('squeeze → 202 with a space; 400 without one', async () => {
     const { harness, app } = makeApp();
     seedCouple(harness.d1);
@@ -368,7 +310,6 @@ describe('worker route auth + 404 behaviors', () => {
     const { app } = makeApp();
     for (const path of [
       '/v1/spaces/current/calendar/events',
-      '/v1/spaces/current/proposals',
       '/v1/spaces/current/letters',
       '/v1/spaces/current/question',
       '/v1/spaces/current/someday',

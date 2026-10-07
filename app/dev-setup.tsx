@@ -19,7 +19,6 @@ import type { SpaceContextValue } from '@/features/space/types';
 const PREVIEW_SPACELESS: SpaceContextValue = {
   status: 'none',
   space: null,
-  importedMilestones: [],
   isHydrated: true,
   // Creation resolves with a real-shaped space and its code, so the whole
   // first-run flow (including the beat after creating) is walkable here
@@ -59,7 +58,6 @@ const PREVIEW_SPACELESS: SpaceContextValue = {
   regenerateInvite: async () => 'MAYA16',
   // Preview spaces are fixed; there is nothing newer to read.
   refreshSpace: async () => {},
-  importMilestones: async () => [],
 };
 
 export default function DevSetup() {

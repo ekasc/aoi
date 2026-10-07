@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calendarLabelSchema,
   createMomentRequestSchema,
-  createProposalRequestSchema,
   createSpaceRequestSchema,
-  eventProposalSchema,
   isAllowedMediaMimeType,
   isExpoPushToken,
   letterSchema,
@@ -14,11 +12,9 @@ import {
   mediaUploadIntentRequestSchema,
   momentSchema,
   parsePushNotificationData,
-  proposalListResponseSchema,
   pushNotificationDataSchema,
   sealLetterRequestSchema,
   sortLettersNewestFirst,
-  sortProposalsNewestFirst,
   sortSomedayItems,
   spaceSchema,
   userSchema,
@@ -211,35 +207,6 @@ describe('letter contract', () => {
   });
 });
 
-describe('proposal contract', () => {
-  it('parses proposals with and without labels', () => {
-    const parsed = proposalListResponseSchema.parse({
-      proposals: [
-        {
-          id: 'p1',
-          proposerRole: 'you',
-          proposerName: 'You',
-          title: 'Dinner?',
-          proposedStart: '2026-02-01T19:00:00.000Z',
-          proposedEnd: '2026-02-01T21:00:00.000Z',
-          status: 'pending',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          resolvedAt: null,
-        },
-      ],
-    });
-    expect(parsed.proposals[0].status).toBe('pending');
-  });
-
-  it('enforces the proposal title length', () => {
-    expect(createProposalRequestSchema.safeParse({
-      title: 'x'.repeat(121),
-      proposedStart: '2026-02-01T19:00:00.000Z',
-      proposedEnd: '2026-02-01T21:00:00.000Z',
-    }).success).toBe(false);
-  });
-});
-
 describe('push helpers', () => {
   it('recognizes current and legacy Expo token formats', () => {
     expect(isExpoPushToken('ExpoPushToken[AbCdEf12_345]')).toBe(true);
@@ -318,17 +285,6 @@ describe('question contract', () => {
 });
 
 describe('shared pure helpers (behavior pins)', () => {
-  it('sorts proposals newest-first', () => {
-    const items = [
-      { createdAt: '2026-01-01T00:00:00.000Z' },
-      { createdAt: '2026-01-02T00:00:00.000Z' },
-    ];
-    expect(sortProposalsNewestFirst(items).map((i) => i.createdAt)).toEqual([
-      '2026-01-02T00:00:00.000Z',
-      '2026-01-01T00:00:00.000Z',
-    ]);
-  });
-
   it('sorts letters newest-first', () => {
     const items = [
       { createdAt: '2026-01-01T00:00:00.000Z' },

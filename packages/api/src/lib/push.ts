@@ -180,7 +180,7 @@ export async function sendPushToUser(
 
 /**
  * Notify the OTHER active member of a two-person space. The reusable hook
- * every partner-facing feature (squeezes, moments, calendar, proposals, and
+ * every partner-facing feature (squeezes, moments, calendar, and
  * location requests/grants) delivers through. Never throws.
  *
  * Deliberately takes NO data parameter: payloads carry the kind only.

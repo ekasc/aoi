@@ -9,7 +9,6 @@ const PLANS_PREVIEW = readFileSync('app/dev-plans.tsx', 'utf8');
 const PROVIDERS: Record<string, string> = {
   useCalendar: 'CalendarProvider',
   useMoments: 'MomentsProvider',
-  useProposals: 'ProposalsProvider',
   useSomeday: 'SomedayProvider',
   useSpace: 'SpaceContext.Provider',
 };
@@ -25,13 +24,11 @@ describe('Calendar dev preview', () => {
     expect(PREVIEW).toContain('return <Redirect href="/" />');
   });
 
-  it('offers every calendar screen, including the ones without a tab', () => {
+  it('offers the calendar screens that have no tab', () => {
     expect(PREVIEW).toContain("'plans'");
     expect(PREVIEW).toContain("'year'");
-    expect(PREVIEW).toContain("'search'");
     expect(PREVIEW).toContain('<PlansScreen />');
     expect(PREVIEW).toContain('<CalendarYearScreen />');
-    expect(PREVIEW).toContain('<CalendarSearchScreen />');
   });
 
   it('feeds every provider the calendar screen reads', () => {
@@ -52,6 +49,5 @@ describe('Calendar dev preview', () => {
   it('renders the same screen components the app does, not copies', () => {
     expect(PREVIEW).toContain('@/app/(app)/(tabs)/plans');
     expect(PREVIEW).toContain('@/app/(app)/calendar/year');
-    expect(PREVIEW).toContain('@/app/(app)/calendar/search');
   });
 });

@@ -35,10 +35,6 @@ const calendarMock = vi.hoisted(() => ({
   refresh: vi.fn(async () => {}),
 }));
 
-const proposalsMock = vi.hoisted(() => ({
-  reload: vi.fn(async () => {}),
-}));
-
 const spaceRefreshMock = vi.fn(async () => {});
 
 vi.mock('@/features/notifications/notifications-module', () => ({
@@ -57,9 +53,6 @@ vi.mock('@/features/letters/letters-context', () => ({
 }));
 vi.mock('@/features/calendar/calendar-context', () => ({
   useCalendar: () => ({ refresh: calendarMock.refresh }),
-}));
-vi.mock('@/features/proposals/proposals-context', () => ({
-  useProposals: () => ({ reload: proposalsMock.reload }),
 }));
 vi.mock('@/features/push/push-api', () => pushApiMock);
 

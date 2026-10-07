@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 import { ed25519 } from '@noble/curves/ed25519.js';
 
@@ -43,16 +44,40 @@ function devicePrefix(spaceId: string): string {
  * SecureStore values are strings, so a keypair is stored base64. These are
  * deliberately chunked: a 32-byte key is comfortably inside the platform
  * limits, and splitting it would only add a way to reassemble it wrongly.
+ *
+ * On web there is no SecureStore, so the private halves fall back to
+ * AsyncStorage. That is not a keystore and must never ship as the production
+ * path; it exists because the browser is a development preview and the
+ * alternative is a preview with no album at all. Native always uses the
+ * platform keystore.
  */
 async function writeSecret(name: string, key: Uint8Array): Promise<void> {
-  await SecureStore.setItemAsync(name, toBase64(key), {
+  const value = toBase64(key);
+  if (Platform.OS === 'web') {
+    // dev/web only — AsyncStorage is not hardware-backed.
+    await AsyncStorage.setItem(name, value);
+    return;
+  }
+  await SecureStore.setItemAsync(name, value, {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
 }
 
 async function readSecret(name: string): Promise<Uint8Array | null> {
-  const stored = await SecureStore.getItemAsync(name);
+  const stored =
+    Platform.OS === 'web'
+      ? await AsyncStorage.getItem(name)
+      : await SecureStore.getItemAsync(name);
   return stored ? fromBase64(stored) : null;
+}
+
+async function deleteSecret(name: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    // dev/web only — mirror the AsyncStorage fallback above.
+    await AsyncStorage.removeItem(name);
+    return;
+  }
+  await SecureStore.deleteItemAsync(name);
 }
 
 export type StoredDevice = {
@@ -130,8 +155,8 @@ export function createLocalKeyStore(): LocalKeyStore {
     async forgetDevice(spaceId) {
       const base = devicePrefix(spaceId);
       await Promise.all([
-        SecureStore.deleteItemAsync(`${base}signing.private`),
-        SecureStore.deleteItemAsync(`${base}agreement.private`),
+        deleteSecret(`${base}signing.private`),
+        deleteSecret(`${base}agreement.private`),
       ]);
       await AsyncStorage.removeItem(`${base}device`);
     },

@@ -41,7 +41,7 @@ vi.mock('@/features/session/session-context', () => ({
 }));
 
 vi.mock('@/features/space/space-context', () => ({
-  useSpace: () => ({ importedMilestones: [] }),
+  useSpace: () => ({ space: null }),
 }));
 
 function deferred<T>() {

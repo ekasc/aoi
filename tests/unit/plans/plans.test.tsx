@@ -245,15 +245,6 @@ vi.mock('@/features/calendar/calendar-context', () => ({
   },
 }));
 
-vi.mock('@/features/proposals/proposals-context', () => ({
-  useProposals: () => ({
-    proposals: mockProposals,
-    accept: acceptProposalSpy,
-    decline: declineProposalSpy,
-    reload: vi.fn(async () => {}),
-  }),
-}));
-
 vi.mock('@/features/someday/someday-context', () => ({
   useSomeday: () => ({ openItems: mockSomedayOpen, doneItems: [] }),
 }));
@@ -272,6 +263,48 @@ vi.mock('@/components/calendar/plans-agenda', () => ({
   },
 }));
 
+// The Someday mode is its own covered component with its own tests; what is
+// under test here is that Plans renders it as the third mode and hides the
+// add-event FAB while it is showing.
+vi.mock('@/components/calendar/plans-someday', () => ({
+  PlansSomeday: () =>
+    createElement('div', { 'data-testid': 'plans-someday-stub' }),
+}));
+
+// The real control measures its track and animates a thumb; this stand-in
+// keeps the tablist/tab contract the Plans tests actually query.
+vi.mock('@/components/ui/segmented-control', () => ({
+  SegmentedControl: ({
+    accessibilityLabel,
+    onChange,
+    options,
+    value,
+  }: {
+    accessibilityLabel?: string;
+    onChange: (value: string) => void;
+    options: { value: string; label: string }[];
+    value: string;
+  }) =>
+    createElement(
+      'div',
+      { 'aria-label': accessibilityLabel, role: 'tablist' },
+      ...options.map((option) =>
+        createElement(
+          'button',
+          {
+            'aria-label': option.label,
+            'aria-selected': String(option.value === value),
+            key: option.value,
+            onClick: () => onChange(option.value),
+            role: 'tab',
+            type: 'button',
+          },
+          option.label,
+        ),
+      ),
+    ),
+}));
+
 vi.mock('@/features/session/session-context', () => ({
   useSession: () => ({ user: { displayName: 'You', email: 'you@example.com' } }),
 }));
@@ -284,7 +317,6 @@ let mockSelectedDate = new Date(2026, 0, 15, 12, 0, 0);
 let mockVisibleMonth = new Date(2026, 0, 1);
 let mockEventsForDay: Record<string, any[]> = {};
 let mockUpcomingEvents: any[] = [];
-let mockProposals: any[] = [];
 let mockSomedayOpen: any[] = [];
 let mockCalendarLoading = false;
 let mockCalendarError: string | null = null;
@@ -292,8 +324,6 @@ let mockFontScale = 1;
 let mockWindowWidth = 390;
 let mockSpace: any = { relationshipStartDate: '2024-06-15' };
 const refreshCalendarSpy = vi.fn(async () => {});
-const acceptProposalSpy = vi.fn(async () => {});
-const declineProposalSpy = vi.fn(async () => {});
 const loadGoals = vi.fn(async (): Promise<any[]> => []);
 
 function makeEvent(overrides: Record<string, any> = {}) {
@@ -330,7 +360,6 @@ beforeEach(() => {
   mockVisibleMonth = new Date(2026, 0, 1);
   mockEventsForDay = {};
   mockUpcomingEvents = [];
-  mockProposals = [];
   mockSomedayOpen = [];
   mockCalendarLoading = false;
   mockCalendarError = null;
@@ -342,8 +371,6 @@ beforeEach(() => {
   calendarSubscribers.clear();
   pushSpy.mockClear();
   refreshCalendarSpy.mockClear();
-  acceptProposalSpy.mockClear();
-  declineProposalSpy.mockClear();
   plansAgendaRender.mockClear();
   loadGoals.mockReset();
   loadGoals.mockResolvedValue([]);
@@ -528,34 +555,6 @@ describe('Plans day view', () => {
     await openDaySheet();
 
     expect(centerPage('Thursday – Jan 15, 2026').getByText('Loading plans…')).toBeTruthy();
-  });
-
-  it('offers the agenda from a day whose only plans are proposals', async () => {
-    // The month grid marks a pending proposal's day, so the day view must not
-    // read it as free: it hands the reader to the list where it can be
-    // answered instead.
-    mockProposals = [
-      {
-        id: 'proposal-1',
-        status: 'pending',
-        proposedStart: new Date(2026, 0, 15, 19, 0, 0).toISOString(),
-        proposedEnd: new Date(2026, 0, 15, 21, 0, 0).toISOString(),
-        title: 'Sunset picnic',
-      },
-    ];
-    await openDaySheet();
-
-    expect(
-      centerPage('Thursday – Jan 15, 2026').queryByText('No plans for this day.'),
-    ).toBeNull();
-
-    expect(centerPage('Thursday – Jan 15, 2026').getByText('No confirmed plans for this day.')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('View suggestions and goals'));
-
-    // The agenda takes the screen and the sheet goes away with it: the two
-    // never stack.
-    expect(screen.getByTestId('agenda-surface')).toBeTruthy();
-    expect(screen.queryByTestId('day-sheet')).toBeNull();
   });
 
   it('says the plans could not be loaded, and offers the retry', async () => {
@@ -943,20 +942,21 @@ vi.mock('moti', () => ({
   },
 }));
 
-describe('Plans agenda view', () => {
-  it('labels the agenda control with words, not just an icon', async () => {
+describe('Plans view control', () => {
+  it('offers one three-way control for the modes, with the active one selected', async () => {
     await renderPlans();
 
-    // The control is a text pill, so what it does is readable at a glance
-    // rather than guessed from a list glyph.
-    const agenda = screen.getByLabelText('Agenda');
-    expect(within(agenda).getByText('Agenda')).toBeTruthy();
-    expect(agenda.style.minHeight).toBe('44px');
-
-    fireEvent.click(agenda);
-
-    const calendar = screen.getByLabelText('Calendar');
-    expect(within(calendar).getByText('Calendar')).toBeTruthy();
+    // A single tablist names the screen's modes: Month, Agenda, Someday.
+    const view = screen.getByRole('tablist', { name: 'Plans view' });
+    expect(within(view).getByRole('tab', { name: 'Month' })).toBeTruthy();
+    expect(within(view).getByRole('tab', { name: 'Agenda' })).toBeTruthy();
+    expect(within(view).getByRole('tab', { name: 'Someday' })).toBeTruthy();
+    expect(
+      within(view).getByRole('tab', { name: 'Month' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      within(view).getByRole('tab', { name: 'Agenda' }).getAttribute('aria-selected'),
+    ).toBe('false');
   });
 
   it('steps from the month into the agenda and back to the month', async () => {
@@ -967,7 +967,7 @@ describe('Plans agenda view', () => {
     expect(screen.getByTestId('month-surface')).toBeTruthy();
     expect(screen.queryByTestId('agenda-surface')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Agenda'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Agenda' }));
 
     expect(screen.queryByTestId('month-surface')).toBeNull();
     expect(screen.getByTestId('agenda-surface')).toBeTruthy();
@@ -977,12 +977,29 @@ describe('Plans agenda view', () => {
     expect(plansAgendaRender.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ now: expect.any(Date) }),
     );
-    // The same header control now reads Calendar and puts the month back.
-    fireEvent.click(screen.getByLabelText('Calendar'));
+    // The same control puts the month back: a mode is chosen, not toggled.
+    fireEvent.click(screen.getByRole('tab', { name: 'Month' }));
 
     expect(screen.getByTestId('month-surface')).toBeTruthy();
     expect(screen.queryByTestId('agenda-surface')).toBeNull();
-    expect(screen.getByLabelText('Agenda')).toBeTruthy();
+  });
+
+  it('shows Someday as a third mode and stands the add-event FAB down', async () => {
+    await renderPlans();
+
+    expect(screen.getByLabelText('Add an event')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Someday' }));
+
+    expect(screen.queryByTestId('month-surface')).toBeNull();
+    expect(screen.queryByTestId('agenda-surface')).toBeNull();
+    expect(screen.getByTestId('someday-surface')).toBeTruthy();
+    expect(screen.getByTestId('plans-someday-stub')).toBeTruthy();
+    // Someday carries its own quick-add, so the event FAB is gone.
+    expect(screen.queryByLabelText('Add an event')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Month' }));
+    expect(screen.getByTestId('month-surface')).toBeTruthy();
+    expect(screen.getByLabelText('Add an event')).toBeTruthy();
   });
 
   it('adds no search or profile controls to the header', async () => {
@@ -990,7 +1007,7 @@ describe('Plans agenda view', () => {
     expect(screen.queryByLabelText('Search')).toBeNull();
     expect(screen.queryByLabelText('Profile')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Agenda'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Agenda' }));
     expect(screen.queryByLabelText('Search')).toBeNull();
     expect(screen.queryByLabelText('Profile')).toBeNull();
   });

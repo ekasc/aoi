@@ -16,13 +16,6 @@ import type { CalendarEvent } from '@/features/calendar/types';
 import { getGoalHorizon, isUpcomingGoal } from '@/features/moments/moment-goal-utils';
 import { useMoments } from '@/features/moments/moments-context';
 import type { Moment } from '@/features/moments/types';
-import {
-  formatProposalWhen,
-  getAnswerableProposals,
-  getPendingProposals,
-} from '@/features/proposals/proposal-time';
-import { useProposals } from '@/features/proposals/proposals-context';
-import type { EventProposal } from '@/features/proposals/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type PlansAgendaProps = {
@@ -33,15 +26,12 @@ export type PlansAgendaProps = {
   now?: Date;
 };
 
-type PendingAction = { proposalId: string; kind: 'accept' | 'decline' };
-
 /**
- * The readable half of Plans: upcoming events grouped by day, partner
- * suggestions that can be answered, the viewer's own suggestions waiting for
- * an answer, and future goals. No time grid — the day timeline owns that.
+ * The readable half of Plans: upcoming events grouped by day and future goals.
+ * No time grid — the day timeline owns that.
  *
- * The screen does not have to hand it data: it reads the calendar, proposal,
- * and goal contexts itself, so it drops into Plans as one element.
+ * The screen does not have to hand it data: it reads the calendar and goal
+ * contexts itself, so it drops into Plans as one element.
  */
 export function PlansAgenda({ now }: PlansAgendaProps) {
   const router = useRouter();
@@ -52,34 +42,18 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
     error: calendarError,
     refresh: refreshCalendar,
   } = useCalendar();
-  const {
-    proposals,
-    isLoading: proposalsLoading,
-    error: proposalsError,
-    accept,
-    decline,
-    reload: reloadProposals,
-  } = useProposals();
   const { loadGoals } = useMoments();
 
   const [goals, setGoals] = useState<Moment[] | null>(null);
   const [goalsError, setGoalsError] = useState(false);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  // An accept is committed by the time the calendar re-read runs, so a failed
-  // re-read must not read as a failed accept: only the read is left to retry.
-  const [acceptRefreshFailed, setAcceptRefreshFailed] = useState(false);
   const [retryInFlight, setRetryInFlight] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-  // The visible disabled state re-renders a frame late; the ref is what makes
-  // a double-tap answer a suggestion exactly once.
-  const actionInFlight = useRef(false);
   const retryInFlightRef = useRef(false);
 
   const nowDate = useMemo(() => now ?? new Date(), [now]);
 
   // Goals are a separate, bounded read; a new goal set on another screen
-  // lands on the next focus the way a new partner suggestion does.
+  // lands on the next focus the way a partner's change does.
   useEffect(() => {
     if (!isFocused) {
       return;
@@ -117,89 +91,13 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
     () => groupAgendaEvents(upcomingEvents, nowDate),
     [upcomingEvents, nowDate]
   );
-  const pendingProposals = useMemo(
-    () => getPendingProposals(proposals),
-    [proposals]
-  );
-  const answerableProposals = useMemo(
-    () => getAnswerableProposals(proposals),
-    [proposals]
-  );
-  // Your own suggestions wait quietly: they are never yours to answer.
-  const suggestionsWaiting = useMemo(
-    () => pendingProposals.filter((proposal) => proposal.proposerRole === 'you'),
-    [pendingProposals]
-  );
   const upcomingGoals = useMemo(
     () => (goals ?? []).filter((goal) => isUpcomingGoal(goal, nowDate)),
     [goals, nowDate]
   );
 
-  const isLoading =
-    calendarLoading || proposalsLoading || (goals === null && !goalsError);
-  const loadError = Boolean(calendarError || proposalsError || goalsError);
-
-  const runResponse = useCallback(
-    async (proposalId: string, kind: 'accept' | 'decline') => {
-      if (actionInFlight.current) {
-        return;
-      }
-      actionInFlight.current = true;
-      setPendingAction({ kind, proposalId });
-      setActionError(null);
-      setAcceptRefreshFailed(false);
-
-      try {
-        if (kind === 'accept') {
-          try {
-            await accept(proposalId);
-          } catch {
-            // The repository's message is not fit for a reader; say something
-            // calm and let the suggestion stay answerable.
-            setActionError('That suggestion could not be accepted just now.');
-            return;
-          }
-          // Accepting creates a real event, so the calendar has to re-read.
-          // The answer is already settled here — a failed read is a stale
-          // view, not an unanswered suggestion, and is never retried by
-          // accepting again.
-          try {
-            await refreshCalendar();
-          } catch {
-            setAcceptRefreshFailed(true);
-            setActionError(
-              'That suggestion was accepted, but your calendar could not be refreshed.'
-            );
-          }
-          return;
-        }
-
-        try {
-          await decline(proposalId);
-        } catch {
-          setActionError('That suggestion could not be answered just now.');
-        }
-      } finally {
-        actionInFlight.current = false;
-        setPendingAction(null);
-      }
-    },
-    [accept, decline, refreshCalendar]
-  );
-
-  const handleAccept = useCallback(
-    (proposalId: string) => {
-      void runResponse(proposalId, 'accept');
-    },
-    [runResponse]
-  );
-
-  const handleDecline = useCallback(
-    (proposalId: string) => {
-      void runResponse(proposalId, 'decline');
-    },
-    [runResponse]
-  );
+  const isLoading = calendarLoading || (goals === null && !goalsError);
+  const loadError = Boolean(calendarError || goalsError);
 
   const handleOpenEvent = useCallback(
     (eventId: string) => {
@@ -218,36 +116,9 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
     [router]
   );
 
-  const handleSuggestTime = useCallback(() => {
-    router.push('/(app)/proposal/new');
-  }, [router]);
-
   const handleSetGoal = useCallback(() => {
     router.push('/(app)/goal-new');
   }, [router]);
-
-  // The accept-refresh retry reloads the calendar only. The suggestion is
-  // already accepted, so there is nothing to answer a second time.
-  const handleRetryCalendarRefresh = useCallback(() => {
-    if (retryInFlightRef.current) {
-      return;
-    }
-    retryInFlightRef.current = true;
-    setRetryInFlight(true);
-
-    void refreshCalendar()
-      .then(() => {
-        setAcceptRefreshFailed(false);
-        setActionError(null);
-      })
-      .catch(() => {
-        setActionError('Your calendar could not be refreshed just now.');
-      })
-      .finally(() => {
-        retryInFlightRef.current = false;
-        setRetryInFlight(false);
-      });
-  }, [refreshCalendar]);
 
   const handleRetry = useCallback(() => {
     if (retryInFlightRef.current) {
@@ -259,12 +130,9 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
 
     // Neither read may reject into the void: allSettled turns a failed retry
     // into the same calm line the failed read already shows.
-    void Promise.allSettled([refreshCalendar(), reloadProposals()])
-      .then(([calendar, proposals]) => {
-        if (
-          calendar.status === 'rejected' ||
-          proposals.status === 'rejected'
-        ) {
+    void Promise.allSettled([refreshCalendar()])
+      .then(([calendar]) => {
+        if (calendar.status === 'rejected') {
           setRetryError('Some of your plans could not be refreshed just now.');
         }
       })
@@ -274,7 +142,7 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
       });
 
     handleRetryGoals();
-  }, [handleRetryGoals, refreshCalendar, reloadProposals]);
+  }, [handleRetryGoals, refreshCalendar]);
 
   const accent = useThemeColor({}, 'accent');
   const partnerAccent = useThemeColor({}, 'partnerAccent');
@@ -322,75 +190,9 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
         </ThemedText>
       ) : null}
 
-      {actionError ? (
-        <View style={styles.actionNotice}>
-          <ThemedText
-            accessibilityLiveRegion="polite"
-            accessibilityRole="alert"
-            type="supporting"
-            style={[styles.status, styles.noticeText, { color: danger }]}
-          >
-            {actionError}
-          </ThemedText>
-          {acceptRefreshFailed ? (
-            <Button
-              accessibilityState={{ busy: retryInFlight, disabled: retryInFlight }}
-              disabled={retryInFlight}
-              label="Reload calendar"
-              onPress={handleRetryCalendarRefresh}
-              size="sm"
-              variant="secondary"
-            />
-          ) : null}
-        </View>
-      ) : null}
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <ThemedText type="subheading">Suggestions</ThemedText>
-          </View>
-          {pendingProposals.length === 0 ? (
-            <ThemedText accessibilityLiveRegion="polite" type="supporting" style={{ color: muted }}>
-              {proposalsError ? 'Your suggestions could not be loaded.' : proposalsLoading ? 'Loading suggestions…' : 'No suggestions yet.'}
-            </ThemedText>
-          ) : null}
-          {answerableProposals.map((proposal) => (
-            <ProposalRow
-              borderColor={border}
-              canRespond
-              key={proposal.id}
-              mutedColor={muted}
-              now={nowDate}
-              onAccept={handleAccept}
-              onDecline={handleDecline}
-              pendingAction={pendingAction}
-              proposal={proposal}
-            />
-          ))}
-          {suggestionsWaiting.map((proposal) => (
-            <ProposalRow
-              borderColor={border}
-              canRespond={false}
-              key={proposal.id}
-              mutedColor={muted}
-              now={nowDate}
-              onAccept={handleAccept}
-              onDecline={handleDecline}
-              pendingAction={pendingAction}
-              proposal={proposal}
-            />
-          ))}
-        </View>
-
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <ThemedText type="subheading">Upcoming</ThemedText>
-          <Button
-            label="Suggest a time"
-            onPress={handleSuggestTime}
-            size="sm"
-            variant="ghost"
-          />
         </View>
         {agendaDays.length === 0 ? (
           <ThemedText accessibilityLiveRegion="polite" type="supporting" style={{ color: muted }}>
@@ -496,70 +298,6 @@ function EventRow({
   );
 }
 
-type ProposalRowProps = {
-  proposal: EventProposal;
-  now: Date;
-  canRespond: boolean;
-  pendingAction: PendingAction | null;
-  onAccept: (proposalId: string) => void;
-  onDecline: (proposalId: string) => void;
-  borderColor: string;
-  mutedColor: string;
-};
-
-function ProposalRow({
-  proposal,
-  now,
-  canRespond,
-  pendingAction,
-  onAccept,
-  onDecline,
-  borderColor,
-  mutedColor,
-}: ProposalRowProps) {
-  const anyPending = pendingAction !== null;
-  const busy = pendingAction?.proposalId === proposal.id;
-
-  return (
-    <View style={[styles.card, { borderColor }]}>
-      <ThemedText numberOfLines={2} type="bodyEmphasis">
-        {proposal.title}
-      </ThemedText>
-      <ThemedText type="caption" style={{ color: mutedColor }}>
-        {formatProposalWhen(proposal, now)}
-      </ThemedText>
-      {canRespond ? (
-        <View style={styles.responseRow}>
-          <ThemedText type="caption" style={{ color: mutedColor }}>
-            {`From ${proposal.proposerName}`}
-          </ThemedText>
-          <View style={styles.responseActions}>
-            <Button
-              accessibilityState={{ busy, disabled: anyPending }}
-              disabled={anyPending}
-              label="Accept"
-              onPress={() => onAccept(proposal.id)}
-              size="sm"
-            />
-            <Button
-              accessibilityState={{ busy, disabled: anyPending }}
-              disabled={anyPending}
-              label="Not now"
-              onPress={() => onDecline(proposal.id)}
-              size="sm"
-              variant="secondary"
-            />
-          </View>
-        </View>
-      ) : (
-        <ThemedText type="caption" style={{ color: mutedColor }}>
-          Waiting for them.
-        </ThemedText>
-      )}
-    </View>
-  );
-}
-
 type GoalRowProps = {
   goal: Moment;
   now: Date;
@@ -627,13 +365,6 @@ const styles = StyleSheet.create({
   noticeText: {
     flex: 1,
   },
-  actionNotice: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: Spacing[12],
-    justifyContent: 'space-between',
-    minHeight: 44,
-  },
   dayGroup: {
     gap: Spacing[8],
   },
@@ -649,23 +380,6 @@ const styles = StyleSheet.create({
   rowBody: {
     flex: 1,
     gap: 2,
-  },
-  card: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: Spacing[8],
-    minHeight: 44,
-    paddingVertical: Spacing[12],
-  },
-  responseRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing[12],
-    justifyContent: 'space-between',
-  },
-  responseActions: {
-    flexDirection: 'row',
-    gap: Spacing[8],
   },
   goalRow: {
     alignItems: 'center',

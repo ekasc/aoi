@@ -10,12 +10,6 @@ import {
   updateEventProgram,
 } from '../../domains/calendar';
 import {
-  acceptProposalProgram,
-  createProposalProgram,
-  declineProposalProgram,
-  listProposalsProgram,
-} from '../../domains/proposals';
-import {
   listLettersProgram,
   openLetterProgram,
   sealLetterProgram,
@@ -37,10 +31,6 @@ import {
   getPreferencesProgram,
   updatePreferencesProgram,
 } from '../../domains/preferences';
-import {
-  createMilestoneProgram,
-  listMilestonesProgram,
-} from '../../domains/milestones';
 import { sendSqueezeProgram } from '../../domains/squeezes';
 import {
   BadRequestError,
@@ -53,7 +43,6 @@ import {
  * level against the real D1 baseline (better-sqlite3 shim):
  * - calendar: range list, creator-only update/delete, weekly expansion into
  *   concrete instances;
- * - proposals: partner-only accept/decline, atomic accept → calendar event;
  * - letters: seal horizon, body lock, guarded one-way open;
  * - question: reveal gate (both answers before partner content);
  * - someday: membership gate, meaningful-only transitions;
@@ -124,32 +113,6 @@ function insertCalendarEvent(
     endsAtMs,
     startsAtMs,
     startsAtMs
-  );
-}
-
-function insertProposal(
-  d1: ShimD1,
-  id: string,
-  spaceId: string,
-  proposerId: string,
-  startMs: number,
-  endMs: number,
-  status = 'pending',
-  labelJson: string | null = null
-): void {
-  d1.runSync(
-    `insert into event_proposals
-       (id, space_id, proposer_user_id, title, proposed_start, proposed_end,
-        label, status, created_at, resolved_at)
-     values (?, ?, ?, 'Dinner?', ?, ?, ?, ?, ?, null)`,
-    id,
-    spaceId,
-    proposerId,
-    startMs,
-    endMs,
-    labelJson,
-    status,
-    startMs
   );
 }
 
@@ -229,7 +192,7 @@ const JAN_2 = Date.parse('2026-01-02T00:00:00.000Z');
 const JAN_3 = Date.parse('2026-01-03T00:00:00.000Z');
 const JAN_10 = Date.parse('2026-01-10T00:00:00.000Z');
 // The harness clock starts at 2026-01-15T00:00:00Z — future-facing dates
-// for proposals (must point ahead of now) and letters (seal + open gates).
+// for letters (seal + open gates).
 const FEB_1 = Date.parse('2026-02-01T00:00:00.000Z');
 const FEB_2 = Date.parse('2026-02-02T00:00:00.000Z');
 const MAR_1 = Date.parse('2026-03-01T00:00:00.000Z');
@@ -330,118 +293,6 @@ describe('calendar domain', () => {
     const events = await run(ctx.provide(listEventsProgram(USER_A, { from: new Date(JAN_1 - 1).toISOString(), to: new Date(JAN_2 + 1).toISOString() })));
     expect(events).toHaveLength(0);
     expect(hasPushKind(ctx.harness.capturedQueue, 'event_deleted')).toBe(true);
-  });
-});
-
-// ── Proposals ────────────────────────────────────────────────────────────
-
-describe('proposals domain', () => {
-  it('create + list with viewer-relative authorship', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertUser(ctx.harness.d1, USER_B, 'b@example.com', 'Bob');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    insertMember(ctx.harness.d1, SPACE_1, USER_B, 'partner');
-
-    const created = await run(
-      ctx.provide(
-        createProposalProgram(USER_A, {
-          title: 'Dinner?',
-          proposedStart: new Date(FEB_1).toISOString(),
-          proposedEnd: new Date(FEB_1 + 3600_000).toISOString(),
-        })
-      )
-    );
-    expect(created.proposerRole).toBe('you');
-    expect(hasPushKind(ctx.harness.capturedQueue, 'proposal_received')).toBe(true);
-
-    const listA = await run(ctx.provide(listProposalsProgram(USER_A)));
-    expect(listA).toHaveLength(1);
-    expect(listA[0].proposerRole).toBe('you');
-
-    const listB = await run(ctx.provide(listProposalsProgram(USER_B)));
-    expect(listB[0].proposerRole).toBe('partner');
-  });
-
-  it('rejects a proposal that is not in the future or ends before it starts', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-
-    const failPast = await failureOf(
-      ctx.provide(
-        createProposalProgram(USER_A, {
-          title: 'Dinner?',
-          proposedStart: new Date(JAN_1).toISOString(),
-          proposedEnd: new Date(JAN_1 + 3600_000).toISOString(),
-        })
-      )
-    );
-    expect(failPast).toBeInstanceOf(BadRequestError);
-
-    const failOrder = await failureOf(
-      ctx.provide(
-        createProposalProgram(USER_A, {
-          title: 'Dinner?',
-          proposedStart: new Date(FEB_1).toISOString(),
-          proposedEnd: new Date(JAN_3).toISOString(),
-        })
-      )
-    );
-    expect(failOrder).toBeInstanceOf(BadRequestError);
-  });
-
-  it('accept is partner-only and atomically creates a calendar event', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertUser(ctx.harness.d1, USER_B, 'b@example.com', 'Bob');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    insertMember(ctx.harness.d1, SPACE_1, USER_B, 'partner');
-    insertProposal(ctx.harness.d1, '00000000-0000-4000-8000-000000000031', SPACE_1, USER_A, FEB_1, FEB_1 + 3600_000, 'pending', JSON.stringify({ preset: 'Date' }));
-
-    // The proposer can never answer their own suggestion.
-    const failOwn = await failureOf(ctx.provide(acceptProposalProgram(USER_A, '00000000-0000-4000-8000-000000000031')));
-    expect(failOwn).toBeInstanceOf(ForbiddenError);
-
-    const accepted = await run(ctx.provide(acceptProposalProgram(USER_B, '00000000-0000-4000-8000-000000000031')));
-    expect(accepted.status).toBe('accepted');
-    expect(hasPushKind(ctx.harness.capturedQueue, 'proposal_accepted')).toBe(true);
-
-    // The calendar event was created in the same atomic batch.
-    const events = ctx.harness.d1.rawDb
-      .prepare('select count(*) as n from calendar_events where space_id = ? and deleted_at is null')
-      .get(SPACE_1) as { n: number };
-    expect(events.n).toBe(1);
-    const eventRow = ctx.harness.d1.rawDb
-      .prepare('select title, label_preset, label_custom_text from calendar_events where space_id = ? limit 1')
-      .get(SPACE_1) as { title: string; label_preset: string; label_custom_text: string | null };
-    expect(eventRow.title).toBe('Dinner?');
-    // The proposal's label carries into the accepted event.
-    expect(eventRow.label_preset).toBe('Date');
-    expect(eventRow.label_custom_text).toBeNull();
-
-    // A second accept is a calm already-answered.
-    const failAgain = await failureOf(ctx.provide(acceptProposalProgram(USER_B, '00000000-0000-4000-8000-000000000031')));
-    expect(failAgain).toBeInstanceOf(BadRequestError);
-  });
-
-  it('decline is partner-only and guarded', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertUser(ctx.harness.d1, USER_B, 'b@example.com', 'Bob');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    insertMember(ctx.harness.d1, SPACE_1, USER_B, 'partner');
-    insertProposal(ctx.harness.d1, '00000000-0000-4000-8000-000000000032', SPACE_1, USER_A, FEB_1, FEB_1 + 3600_000);
-
-    const declined = await run(ctx.provide(declineProposalProgram(USER_B, '00000000-0000-4000-8000-000000000032')));
-    expect(declined.status).toBe('declined');
-    expect(hasPushKind(ctx.harness.capturedQueue, 'proposal_declined')).toBe(true);
-
-    // No calendar event was created for a decline.
-    const events = ctx.harness.d1.rawDb
-      .prepare('select count(*) as n from calendar_events where space_id = ? and deleted_at is null')
-      .get(SPACE_1) as { n: number };
-    expect(events.n).toBe(0);
   });
 });
 
@@ -741,40 +592,6 @@ describe('preferences domain', () => {
 
     const again = await run(ctx.provide(getPreferencesProgram(USER_A)));
     expect(again.themeId).toBe('sea-glass');
-  });
-});
-
-describe('milestones domain', () => {
-  it('creates and lists imported milestones newest-first', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-
-    const m1 = await run(
-      ctx.provide(
-        createMilestoneProgram(USER_A, {
-          type: 'milestone',
-          title: 'First trip',
-          occurredAt: new Date(JAN_1).toISOString(),
-        })
-      )
-    );
-    const m2 = await run(
-      ctx.provide(
-        createMilestoneProgram(USER_A, {
-          type: 'date',
-          title: 'Anniversary',
-          occurredAt: new Date(JAN_2).toISOString(),
-          body: 'A quiet dinner',
-        })
-      )
-    );
-    expect(m1.title).toBe('First trip');
-    expect(m2.body).toBe('A quiet dinner');
-
-    const list = await run(ctx.provide(listMilestonesProgram(USER_A)));
-    expect(list).toHaveLength(2);
-    expect(list[0].title).toBe('Anniversary'); // newest first
   });
 });
 

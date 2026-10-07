@@ -110,6 +110,7 @@ vi.mock('react-native', () => {
     Text,
     TextInput,
     Image,
+    Alert: { alert: vi.fn() },
     Platform: { OS: 'ios', select: (obj: any) => obj.ios },
     Dimensions: { get: () => ({ width: 390, height: 844 }) },
     useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
@@ -119,8 +120,79 @@ vi.mock('react-native', () => {
     TouchableOpacity: View,
     TouchableHighlight: View,
     ScrollView: View,
-    FlatList: View,
+    // FlatList is data-driven, so a bare View would render nothing. Render the
+    // sections and each row, which is what a screen test needs to see a list.
+    // Tests that care about a list's own behaviour (windowing, scrolling) still
+    // mock it locally and win.
+    FlatList: (props: any) => {
+      const {
+        data,
+        renderItem,
+        keyExtractor,
+        ListEmptyComponent,
+        ListHeaderComponent,
+        ListFooterComponent,
+        ItemSeparatorComponent,
+        contentContainerStyle,
+        contentInsetAdjustmentBehavior,
+        showsVerticalScrollIndicator,
+        style,
+        ...rest
+      } = props;
+      const section = (node: any) =>
+        node == null
+          ? null
+          : React.isValidElement(node)
+            ? node
+            : typeof node === 'function'
+              ? React.createElement(node)
+              : node;
+      const items = Array.isArray(data) ? data : [];
+      return createDiv(
+        [
+          section(ListHeaderComponent),
+          items.length > 0
+            ? items.map((item: any, index: number) =>
+                React.createElement(
+                  React.Fragment,
+                  { key: keyExtractor ? keyExtractor(item, index) : index },
+                  renderItem ? renderItem({ item, index, separators: {} }) : null
+                )
+              )
+            : section(ListEmptyComponent),
+          section(ListFooterComponent),
+        ],
+        style,
+        rest
+      );
+    },
     ActivityIndicator: View,
+    // Animated is JS-thread surface only. The shared view switch measures its
+    // track via onLayout and renders its thumb from that, so a Value and a View
+    // are enough for any screen that includes the control.
+    Animated: {
+      View,
+      Value: class {
+        private current: any;
+        constructor(value: any) {
+          this.current = value;
+        }
+        setValue(next: any) {
+          this.current = next;
+        }
+      },
+      timing: (value: any, config: any) => ({
+        start: (done?: () => void) => {
+          value?.setValue?.(config?.toValue);
+          done?.();
+        },
+      }),
+    },
+    Easing: {
+      bezier: () => ({}),
+      out: (curve: unknown) => curve,
+      exp: {},
+    },
     Modal: View,
     Pressable,
     KeyboardAvoidingView: View,
@@ -131,6 +203,12 @@ vi.mock('react-native', () => {
     // Share opens a native sheet, which no test can observe. A spy, so a test
     // can assert what would have been sent and how a refused sheet is handled.
     Share: { share: vi.fn(async () => ({ action: 'sharedAction' })) },
+    // Linking hands a URL to the platform. A spy, so a test can assert that a
+    // link was opened (and that a place name was not).
+    Linking: {
+      openURL: vi.fn(async () => {}),
+      canOpenURL: vi.fn(async () => true),
+    },
     // Only the reduce-motion surface WindowRain uses. The resting
     // default is off; tests capture the change handler to simulate
     // a dynamic system-setting flip.
@@ -671,6 +749,7 @@ vi.mock('react-native-reanimated', () => {
     },
     useDerivedValue: (fn: any) => React.useState(() => ({ value: fn() }))[0],
     useReducedMotion: () => false,
+    useFrameCallback: () => React.useMemo(() => ({ setActive: vi.fn() }), []),
     useAnimatedStyle: () => ({}),
     // A scroll handler is just a callback the host list would invoke. The
     // mock hands it back so a component can put it on a ScrollView, and

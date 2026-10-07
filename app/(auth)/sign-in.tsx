@@ -33,7 +33,7 @@ export default function SignInScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: insets.top + 24,
+            paddingTop: 24,
             paddingBottom: insets.bottom + 32,
           },
         ]}

@@ -716,12 +716,12 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     // a BlurView.
     expect(INDEX_SOURCE.match(/<BlurView[\s/>]/g)?.length).toBe(1);
     // Absolute root anchored behind content: immediate root child after
-    // FrostedBackdrop, straight into the scroll list (never nested after
-    // a custom header — the native large-title header owns the title).
+    // FrostedBackdrop, straight into the scroll list. The screen draws its
+    // own shared header over the pinned sky (no native large-title header).
     expect(INDEX_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(
       INDEX_SOURCE.indexOf('<MemorySky compact'),
     );
-    expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
+    expect(INDEX_SOURCE).toContain('<ScreenHeader title="Memories"');
     expect(INDEX_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
       INDEX_SOURCE.indexOf('<FlatList\n'),
     );
@@ -759,9 +759,10 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
   });
 
   it('keeps header chrome readable on dark dusk (light foreground, above the sky)', () => {
-    // Default tone is the light over-sky chrome; onLight tabs opt out
-    // explicitly (Memories has no sky behind its header).
-    expect(HEADER_SOURCE).toContain("tone = 'onDark'");
+    // `onLight` is the default — the header reads on paper unless a screen
+    // asks otherwise; Us passes onDark to draw light chrome over its sky.
+    expect(HEADER_SOURCE).toContain("tone = 'onLight'");
+    expect(HEADER_SOURCE).toContain("tone === 'onLight'");
     expect(HEADER_SOURCE).toContain("'#FFF8FA'");
     expect(HEADER_SOURCE).toContain('zIndex: 2');
     expect(SOURCE).toContain('pointerEvents="none"');
@@ -798,7 +799,7 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     // with no gap and no jump. After entry, the sky stays pinned.
     // Nothing collapses, settles, or hides: the switcher lives in the title
     // row so it is always reachable, and Space lives in the tab bar.
-    expect(INDEX_SOURCE).toContain('const headerHeight = insets.top + TITLE_ROW + HEADER_PAD_BOTTOM');
+    expect(INDEX_SOURCE).toContain('const headerHeight = insets.top + Spacing[8] + TITLE_ROW + HEADER_PAD_BOTTOM');
     expect(INDEX_SOURCE).toContain('headerHeight');
     expect(INDEX_SOURCE).not.toContain('headerExpanded');
     expect(INDEX_SOURCE).not.toContain('headerCollapsed');
@@ -815,8 +816,7 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     expect(INDEX_SOURCE).not.toContain('headerBlockStyle');
     expect(INDEX_SOURCE).not.toContain('headerBlockHeight');
     expect(INDEX_SOURCE).not.toContain('headerBlock: {');
-    expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
-    expect(INDEX_SOURCE).not.toContain('title="Memories"');
+    expect(INDEX_SOURCE).toContain('<ScreenHeader title="Memories"');
     expect(INDEX_SOURCE).not.toContain('<SpaceAvatarButton');
     expect(INDEX_SOURCE).not.toContain('Search memories');
     expect(INDEX_SOURCE).not.toContain('styles.tabsRow');
@@ -878,7 +878,7 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
 
 
   it('keeps Us immersive, photo-driven, and tappable without changing compact skies', () => {
-    const viewport = TOGETHER_SOURCE.match(/<PhotoSkyViewport[\s\S]{0,320}?\/>/)?.[0] ?? '';
+    const viewport = TOGETHER_SOURCE.match(/<PhotoSkyViewport[\s\S]{0,420}?\/>/)?.[0] ?? '';
     const source = readFileSync('components/home/photo-sky-viewport.tsx', 'utf8');
     const sky = source.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
     expect(viewport).toContain('moments={skyItems}');
@@ -892,41 +892,32 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
 });
 
 describe('Tab header normalization (one shared anatomy)', () => {
-  it('keeps Us titled over its own sky while Plans heads its days with Calendar pills', () => {
-    // This rule existed so the three tabs could not drift into three headers.
-    // Us is now the one stated exception, and it is the only one that could
-    // be: it is the only tab whose surface is a full-bleed image, so the
-    // title has to be light chrome drawn over that image rather than a
-    // header built for a page of content sitting on a background.
-    expect(TOGETHER_SOURCE).not.toContain('<ScreenHeader');
-    // The title is a ThemedText over the sky, not a ScreenHeader prop.
-    expect(TOGETHER_SOURCE).toMatch(/<ThemedText[^>]*>\s*Us\s*<\/ThemedText>/);
-    expect(TOGETHER_SOURCE).not.toContain('title="Us"');
-    // Not an oversight: Calendar has no title row. The month pill names the
-    // month; a grid cell lifts the day into the sheet, so there is no view
-    // pill and no week strip.
-    expect(PLANS_SOURCE).not.toContain('<ScreenHeader');
+  it('keeps Us titled over its own sky while every tab shares one header anatomy', () => {
+    // The rule this pins is unchanged: the three tabs cannot drift into
+    // three headers, and it now holds literally — each renders the same
+    // shared `ScreenHeader`. Us is the one stated exception in *tone*, not
+    // in anatomy: it is the only tab whose surface is a full-bleed image,
+    // so it asks for the light over-sky chrome while the other two read on
+    // paper.
+    expect(TOGETHER_SOURCE).toContain('<ScreenHeader title="Us" tone="onDark"');
+    expect(INDEX_SOURCE).toContain('<ScreenHeader title="Memories"');
+    // Not an oversight: Calendar has no view pill. The month pill names the
+    // month; a grid cell lifts the day into the sheet, so there is no week
+    // strip either.
+    expect(PLANS_SOURCE).toContain('<ScreenHeader title="Plans"');
     expect(PLANS_SOURCE).not.toContain('<WeekStrip');
-    expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
     // The native stack header is off; the screen renders the title itself.
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
     expect(MEMORIES_LAYOUT_SOURCE).not.toContain("title: 'Memories'");
-    expect(INDEX_SOURCE).toContain('type="title"');
-    expect(INDEX_SOURCE).toContain('>Memories</');
-    // Us is the exception, and it is the point: it is the only screen whose
-    // surface is a full-bleed image, so it sets the title over that image
-    // rather than borrowing a header meant for a page of content.
-    expect(TOGETHER_SOURCE).not.toContain('<ScreenHeader');
-    expect(TOGETHER_SOURCE).toMatch(/<ThemedText[^>]*>\s*Us\s*<\/ThemedText>/);
   });
 
   it('keeps one title scale and one action-cluster rhythm in the shared header', () => {
     // One title scale means the header does not carry a size of its own: the
-    // display token is the only thing that decides how big this title is.
+    // title token is the only thing that decides how big this title is.
     // It used to pin `fontSize: 28` here, which is the same contract written
     // as a literal, and the reason four screens each invented a page-title
     // size of their own.
-    expect(HEADER_SOURCE).toContain('type="display"');
+    expect(HEADER_SOURCE).toContain('type="title"');
     expect(HEADER_SOURCE).not.toMatch(/fontSize:\s*\d+/);
     expect(HEADER_SOURCE).not.toMatch(/lineHeight:\s*\d+/);
     expect(HEADER_SOURCE).toContain("'#FFF8FA'");
@@ -959,12 +950,12 @@ describe('Tab header normalization (one shared anatomy)', () => {
     expect(INDEX_SOURCE).toContain('FAB_SIZE');
     expect(INDEX_SOURCE).not.toContain('Capture a moment');
     expect(INDEX_SOURCE).not.toContain('handleOpenCompose');
-    // The screen owns the Memories title now (no per-tab tone override on
-    // the in-screen header); the native stack header stays off.
-    expect(INDEX_SOURCE).not.toContain('title="Memories"');
+    // Memories keeps the default `onLight` chrome — no per-tab tone override;
+    // Us is the only tab that asks for the light over-sky chrome.
+    expect(INDEX_SOURCE).toContain('title="Memories"');
     expect(INDEX_SOURCE).not.toContain('tone=');
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
-    expect(TOGETHER_SOURCE).not.toContain('tone=');
+    expect(TOGETHER_SOURCE).toMatch(/<ScreenHeader\b[^>]*\btone="onDark"/);
     // The full width frost and its tone pick are gone. The pills carry their
     // own glass, so the chrome reads over the sky without a band.
     expect(PLANS_SOURCE).not.toContain('backgroundIsLight');

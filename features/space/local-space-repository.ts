@@ -2,7 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { createInviteCode, normalizeInviteCode } from '@/features/space/invite-code';
 import type {
-  ImportedMilestone,
   JoinSpaceInput,
   RelationshipSpace,
   SpaceRepository,
@@ -11,7 +10,6 @@ import type {
 
 const SPACE_USER_KEY_PREFIX = 'aoi.space.by-user.v1.';
 const SPACE_INVITE_KEY_PREFIX = 'aoi.space.by-invite.v1.';
-const SPACE_MILESTONES_KEY_PREFIX = 'aoi.space.milestones.v1.';
 
 function spaceUserKey(userId: string) {
   return `${SPACE_USER_KEY_PREFIX}${userId}`;
@@ -19,10 +17,6 @@ function spaceUserKey(userId: string) {
 
 function spaceInviteKey(inviteCode: string) {
   return `${SPACE_INVITE_KEY_PREFIX}${normalizeInviteCode(inviteCode)}`;
-}
-
-function spaceMilestonesKey(userId: string) {
-  return `${SPACE_MILESTONES_KEY_PREFIX}${userId}`;
 }
 
 async function readJson<T>(key: string): Promise<T | null> {
@@ -171,39 +165,10 @@ export const localSpaceRepository: SpaceRepository = {
   },
 
   async clearSpaceForUser(userId: string) {
-    await AsyncStorage.multiRemove([spaceUserKey(userId), spaceMilestonesKey(userId)]);
+    await AsyncStorage.removeItem(spaceUserKey(userId));
   },
 
   async leaveSpace(userId: string) {
-    await AsyncStorage.multiRemove([spaceUserKey(userId), spaceMilestonesKey(userId)]);
-  },
-
-  async getImportedMilestonesForUser(userId: string) {
-    const milestones = await readJson<ImportedMilestone[]>(spaceMilestonesKey(userId));
-    return milestones ?? [];
-  },
-
-  async appendImportedMilestonesForUser(
-    userId: string,
-    milestones: ImportedMilestone[]
-  ) {
-    const currentMilestones = await this.getImportedMilestonesForUser(userId);
-    const byId = new Map<string, ImportedMilestone>();
-
-    [...currentMilestones, ...milestones].forEach((milestone) => {
-      byId.set(milestone.id, milestone);
-    });
-
-    const nextMilestones = Array.from(byId.values()).sort(
-      (left, right) =>
-        new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime()
-    );
-
-    await writeJson(spaceMilestonesKey(userId), nextMilestones);
-    return nextMilestones;
-  },
-
-  async clearImportedMilestonesForUser(userId: string) {
-    await AsyncStorage.removeItem(spaceMilestonesKey(userId));
+    await AsyncStorage.removeItem(spaceUserKey(userId));
   },
 };

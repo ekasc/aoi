@@ -4,6 +4,7 @@ import { Stack } from 'expo-router/stack';
 import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
 import { useAoiTheme } from '@/features/theme/theme-context';
+import { Typography } from '@/constants/typography';
 
 export default function AuthLayout() {
   const { status, isHydrated: isSessionHydrated } = useSession();
@@ -54,7 +55,11 @@ export default function AuthLayout() {
     <Stack
       screenOptions={{
         contentStyle: { backgroundColor: colors.background },
-        headerStyle: { backgroundColor: colors.surface },
+        headerStyle: { backgroundColor: colors.background },
+        headerTitleStyle: Typography.navigationTitle,
+        headerTitleAlign: 'center',
+        headerBackButtonDisplayMode: 'minimal',
+        headerShadowVisible: false,
         headerTintColor: colors.text,
       }}
     >

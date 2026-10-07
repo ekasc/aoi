@@ -685,7 +685,7 @@ const styles = StyleSheet.create({
     gap: Spacing[8],
   },
   headerTitle: {
-    ...Typography.subheading,
+    ...Typography.navigationTitle,
     flex: 1,
     flexShrink: 1,
     textAlign: 'center',

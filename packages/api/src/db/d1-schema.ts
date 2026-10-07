@@ -202,37 +202,6 @@ export const spaceInvites = sqliteTable(
   (table) => [uniqueIndex('uq_space_invites_code_normalized').on(table.codeNormalized)]
 );
 
-// ── Imported Milestones ────────────────────────────────────────────────────
-
-export const importedMilestones = sqliteTable(
-  'imported_milestones',
-  {
-    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    spaceId: text('space_id')
-      .notNull()
-      .references(() => spaces.id, { onDelete: 'cascade' }),
-    createdByUserId: text('created_by_user_id')
-      .notNull()
-      .references(() => users.id),
-    type: text('type').notNull(),
-    title: text('title').notNull(),
-    body: text('body'),
-    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull(),
-    targetAt: integer('target_at', { mode: 'timestamp_ms' }),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
-    deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
-  },
-  (table) => [
-    index('idx_imported_milestones_space_occurred')
-      .on(table.spaceId, table.occurredAt)
-      .where(sql`${table.deletedAt} is null`),
-    check(
-      'ck_imported_milestones_type',
-      sql`${table.type} in ('note', 'milestone', 'date', 'goal')`
-    ),
-  ]
-);
-
 // ── Moments ────────────────────────────────────────────────────────────────
 // `clientId` idempotency: optional client-supplied key; the partial unique
 // makes duplicate creates with the same (space, createdBy, clientId) a
@@ -418,35 +387,6 @@ export const calendarEvents = sqliteTable(
   ]
 );
 
-// ── Event Proposals ────────────────────────────────────────────────────────
-
-export const eventProposals = sqliteTable(
-  'event_proposals',
-  {
-    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    spaceId: text('space_id')
-      .notNull()
-      .references(() => spaces.id, { onDelete: 'cascade' }),
-    proposerUserId: text('proposer_user_id')
-      .notNull()
-      .references(() => users.id),
-    title: text('title').notNull(),
-    proposedStart: integer('proposed_start', { mode: 'timestamp_ms' }).notNull(),
-    proposedEnd: integer('proposed_end', { mode: 'timestamp_ms' }).notNull(),
-    label: text('label', { mode: 'json' }).$type<{ preset: string; customText?: string }>(),
-    status: text('status').notNull().default('pending'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
-    resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
-  },
-  (table) => [
-    index('idx_event_proposals_space_status').on(table.spaceId, table.status),
-    check(
-      'ck_event_proposals_status',
-      sql`${table.status} in ('pending', 'accepted', 'declined')`
-    ),
-  ]
-);
-
 // ── Someday Items ──────────────────────────────────────────────────────────
 
 export const somedayItems = sqliteTable(
@@ -472,6 +412,71 @@ export const somedayItems = sqliteTable(
       'ck_someday_items_category',
       sql`${table.category} in ('place', 'food', 'film', 'other')`
     ),
+  ]
+);
+
+// ── Collections (authored shelves) ─────────────────────────────────────────
+// A shelf is a name + optional emoji; an item is a title + optional one-line
+// note + optional single link. Both members share and author. Removals are
+// soft-deletes, and `position` is append-on-create so drag-reorder is
+// additive later without a migration.
+
+export const collections = sqliteTable(
+  'collections',
+  {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    emoji: text('emoji'),
+    color: text('color'),
+    position: integer('position').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()).$onUpdateFn(() => new Date()),
+    deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('idx_collections_space')
+      .on(table.spaceId)
+      .where(sql`${table.deletedAt} is null`),
+  ]
+);
+
+export const collectionItems = sqliteTable(
+  'collection_items',
+  {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    collectionId: text('collection_id')
+      .notNull()
+      .references(() => collections.id, { onDelete: 'cascade' }),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    title: text('title').notNull(),
+    note: text('note'),
+    link: text('link'),
+    /** A cover photo's URI. */
+    coverUrl: text('cover_url'),
+    /** How far along it is: want | doing | done. */
+    status: text('status'),
+    /** Out of ten, one score for the pair. */
+    score: integer('score'),
+    position: integer('position').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()).$onUpdateFn(() => new Date()),
+    deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('idx_collection_items_collection')
+      .on(table.collectionId)
+      .where(sql`${table.deletedAt} is null`),
   ]
 );
 
@@ -623,6 +628,63 @@ export const mediaObjects = sqliteTable(
     ),
   ]
 );
+
+// ── Album Media (E2EE shared library) ─────────────────────────────────────
+// The server is a dumb, membership-gated pipe. Sealed ciphertext bytes live
+// in R2 at the deterministic key `album/{spaceId}/{mediaId}.bin`; the row
+// carries only the server-opaque sealed nonce, the space-key-wrapped media
+// key, and non-secret metadata (size, MIME, person tag). `byte_length` is the
+// declared ciphertext length the completion head-verify checks against.
+
+export const albumMedia = sqliteTable(
+  'album_media',
+  {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    mimeType: text('mime_type').notNull(),
+    byteLength: integer('byte_length').notNull(),
+    width: integer('width'),
+    height: integer('height'),
+    personTag: text('person_tag'),
+    sealedNonce: text('sealed_nonce').notNull(),
+    wrappedKeyNonce: text('wrapped_key_nonce').notNull(),
+    wrappedKeyCiphertext: text('wrapped_key_ciphertext').notNull(),
+    storageKey: text('storage_key').notNull().unique(),
+    uploadState: text('upload_state').notNull().default('pending'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
+    completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('idx_album_media_space').on(table.spaceId),
+    check(
+      'ck_album_media_upload_state',
+      sql`${table.uploadState} in ('pending', 'complete', 'failed')`
+    ),
+    check(
+      'ck_album_media_person_tag',
+      sql`${table.personTag} is null or ${table.personTag} in ('you', 'partner')`
+    ),
+  ]
+);
+
+// ── Album Backups (space key envelopes) ───────────────────────────────────
+// One opaque JSON payload per space: public identities, signed device keys,
+// and one wrapped space-key envelope per authorised device. Not secret to the
+// server's threat model, but treated with the same membership gate as media.
+
+export const albumBackups = sqliteTable('album_backups', {
+  spaceId: text('space_id')
+    .primaryKey()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  payload: text('payload').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
+});
 
 // ── User Preferences ───────────────────────────────────────────────────────
 

@@ -8,8 +8,6 @@ import type { useSkyPhotos } from '@/features/album/use-sky-photos';
 
 vi.mock('@/components/ui/native-sheet', () => ({ NativeSheet: ({ children, visible, dismissible }: { children: ReactNode; visible: boolean; dismissible: boolean }) => visible ? <section role="dialog" data-dismissible={dismissible}>{children}</section> : null }));
 vi.mock('@/components/ui/button', () => ({ Button: ({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) => <button disabled={disabled} onClick={onPress}>{label}</button> }));
-vi.mock('@/features/album/automatic-album-state', () => ({ useAutomaticAlbum: () => { throw new Error('Local copies must not start recognition'); } }));
-
 beforeEach(() => {
   vi.spyOn(ReactNative, 'FlatList').mockImplementation(({ data, renderItem, ListHeaderComponent, ListFooterComponent }) => <div>{ListHeaderComponent as ReactNode}{data?.map((item, index) => <div key={index}>{renderItem?.({ item, index, separators: { highlight() {}, unhighlight() {}, updateProps() {} } })}</div>)}{ListFooterComponent as ReactNode}</div>);
 });

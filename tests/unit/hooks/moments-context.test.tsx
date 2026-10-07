@@ -1,18 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
-import type { ImportedMilestone } from '@/features/space/types';
-
 vi.mock('@/features/api-client', () => ({
   isStubMode: () => true,
 }));
 
-// Mutable so a test can hand the stub space an imported milestone — the only
-// way a base (non-locally-created) moment can exist now that nothing is seeded.
-let importedMilestones: ImportedMilestone[] = [];
-
 vi.mock('@/features/space/space-context', () => ({
-  useSpace: () => ({ importedMilestones, space: null }),
+  useSpace: () => ({ space: null }),
 }));
 
 async function renderStubMoments() {
@@ -26,7 +20,6 @@ async function renderStubMoments() {
 describe('useMoments (stub)', () => {
   beforeEach(() => {
     vi.resetModules();
-    importedMilestones = [];
   });
 
   it('starts empty: a space with no memories has no moments', async () => {
@@ -88,38 +81,6 @@ describe('useMoments (stub)', () => {
 
     const edited = result.current.moments.find((m) => m.id === target.id);
     expect(edited?.title).toBe('Edited title');
-  });
-
-  it('updateMoment stamps updatedAt beyond the edit tolerance on a base moment', async () => {
-    importedMilestones = [
-      {
-        id: 'imported_1',
-        type: 'note',
-        title: 'Imported',
-        body: 'From a milestone import',
-        occurredAt: '2024-01-01T00:00:00.000Z',
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-    ];
-
-    const { result } = await renderStubMoments();
-
-    await waitFor(() => {
-      expect(result.current.moments).toHaveLength(1);
-    });
-
-    const target = result.current.moments[0];
-
-    await act(async () => {
-      await result.current.updateMoment(target.id, { title: 'Edited title' });
-    });
-
-    const edited = result.current.moments.find((m) => m.id === target.id);
-    expect(edited?.title).toBe('Edited title');
-    // Edited marker contract: updatedAt moves beyond the 1s tolerance.
-    expect(new Date(edited!.updatedAt!).getTime()).toBeGreaterThan(
-      new Date(edited!.createdAt).getTime() + 1000,
-    );
   });
 
   it('updateMoment applies partial patches without clobbering other fields', async () => {

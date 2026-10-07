@@ -15,6 +15,7 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  runOnJS,
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
@@ -331,20 +332,31 @@ function ViewerSession({
   });
 
   const handleClose = useCallback(() => {
-    if (closing) {
+    if (closing || handingBack) {
       return;
     }
     if (!currentIsPhoto) {
       closeMediaPage();
       return;
     }
-    if (!origin && reduceMotion) {
-      onClose();
+    if (!origin) {
+      handleDismissStart();
+      if (reduceMotion) {
+        onClose();
+      } else {
+        // No thumbnail to land in: retain the current fit and zoom while fading.
+        // Reanimated shared values are mutable animation state, not React state.
+        // eslint-disable-next-line react-hooks/immutability
+        overlay.value = withTiming(0, { duration: FADE_DURATION }, (finished) => {
+          'worklet';
+          if (finished) runOnJS(onClose)();
+        });
+      }
       return;
     }
     // Morph first, close when the photo has reached the thumbnail.
     setClosing(true);
-  }, [closing, closeMediaPage, currentIsPhoto, onClose, origin, reduceMotion]);
+  }, [closing, handingBack, closeMediaPage, currentIsPhoto, handleDismissStart, onClose, origin, overlay, reduceMotion]);
 
   const handleOpenMemory = useCallback(() => {
     if (!current?.momentId) {

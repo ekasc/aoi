@@ -7,7 +7,6 @@ import { useCalendar } from '@/features/calendar/calendar-context';
 import { useLetters } from '@/features/letters/letters-context';
 import { useSpace } from '@/features/space/space-context';
 import { useMoments } from '@/features/moments/moments-context';
-import { useProposals } from '@/features/proposals/proposals-context';
 import { registerDevicePushToken } from '@/features/push/register-push-token';
 import { useSqueeze } from '@/features/squeeze/squeeze-context';
 
@@ -26,9 +25,7 @@ let registeredThisSession = false;
  *   the timeline so partner changes appear without waiting for app focus;
  *   `letter_sealed` quietly refreshes the letters shelf; `event_*`
  *   refreshes the calendar (a partner planned / shifted / let go of a plan
- *   — the push never says which); `proposal_*` reloads the suggestions
- *   (and the calendar too when one was accepted, since acceptance creates
- *   a real event).
+ *   — the push never says which).
  *   Pushes received while backgrounded/killed only surface when the user
  *   taps the notification — the response listener routes those too.
  *
@@ -40,7 +37,6 @@ export function PushProvider({ children }: PropsWithChildren) {
   const { receiveSqueeze } = useSqueeze();
   const { refresh } = useMoments();
   const { refresh: refreshCalendar } = useCalendar();
-  const { reload: reloadProposals } = useProposals();
   const { reload: reloadLetters } = useLetters();
   const { refreshSpace } = useSpace();
 
@@ -109,26 +105,11 @@ export function PushProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      if (data.kind === 'proposal_received' || data.kind === 'proposal_declined') {
-        // A new suggestion, or a gentle pass on one of yours — reload the
-        // list quietly.
-        void reloadProposals();
-        return;
-      }
-
       if (data.kind === 'partner_joined') {
         // Somebody joined the space while this app was closed or idle. The
         // space itself is the thing that changed, so re-read it: the waiting
         // empty state and the partner's name both depend on it.
         void refreshSpace();
-        return;
-      }
-
-      if (data.kind === 'proposal_accepted') {
-        // They said yes — the suggestion became a real event, so both the
-        // list and the calendar refresh.
-        void reloadProposals();
-        void refreshCalendar();
         return;
       }
 
@@ -159,7 +140,6 @@ export function PushProvider({ children }: PropsWithChildren) {
     refreshCalendar,
     reloadLetters,
     refreshSpace,
-    reloadProposals,
   ]);
 
   return <>{children}</>;

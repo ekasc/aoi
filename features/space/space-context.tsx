@@ -12,8 +12,6 @@ import { useSession } from "@/features/session/session-context";
 import { getSpaceRepository } from "@/features/space/space-repository";
 import type {
 	CreateSpaceInput,
-	ImportedMilestone,
-	ImportedMilestoneInput,
 	JoinSpaceInput,
 	RelationshipSpace,
 	SpaceContextValue,
@@ -27,30 +25,11 @@ import type {
  */
 export const SpaceContext = createContext<SpaceContextValue | undefined>(undefined);
 
-function buildImportedMilestones(
-	inputs: ImportedMilestoneInput[],
-): ImportedMilestone[] {
-	const now = new Date().toISOString();
-
-	return inputs.map((input, index) => ({
-		id: `import_${Date.now()}_${index}_${Math.floor(Math.random() * 100000)}`,
-		title: input.title.trim(),
-		body: input.body?.trim() || undefined,
-		type: input.type,
-		occurredAt: input.occurredAt,
-		targetAt: input.targetAt ?? null,
-		createdAt: now,
-	}));
-}
-
 export function SpaceProvider({ children }: PropsWithChildren) {
 	const { status: sessionStatus, user } = useSession();
 	const repository = useMemo(() => getSpaceRepository(), []);
 	const [status, setStatus] = useState<SpaceStatus>("loading");
 	const [space, setSpace] = useState<RelationshipSpace | null>(null);
-	const [importedMilestones, setImportedMilestones] = useState<
-		ImportedMilestone[]
-	>([]);
 	const [isHydrated, setIsHydrated] = useState(false);
 
 	useEffect(() => {
@@ -59,7 +38,6 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		if (sessionStatus === "loading") {
 			setStatus("loading");
 			setSpace(null);
-			setImportedMilestones([]);
 			setIsHydrated(false);
 			return;
 		}
@@ -67,7 +45,6 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		if (sessionStatus === "signed_out" || !user) {
 			setStatus("none");
 			setSpace(null);
-			setImportedMilestones([]);
 			setIsHydrated(true);
 			return;
 		}
@@ -79,17 +56,13 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 
 		async function hydrateSpace() {
 			try {
-				const [nextSpace, nextImportedMilestones] = await Promise.all([
-					repository.getSpaceForUser(userId),
-					repository.getImportedMilestonesForUser(userId),
-				]);
+				const nextSpace = await repository.getSpaceForUser(userId);
 
 				if (!isActive) {
 					return;
 				}
 
 				setSpace(nextSpace);
-				setImportedMilestones(nextImportedMilestones);
 				setStatus(nextSpace ? "ready" : "none");
 			} catch {
 				if (!isActive) {
@@ -97,7 +70,6 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 				}
 
 				setSpace(null);
-				setImportedMilestones([]);
 				setStatus("error");
 			} finally {
 				if (isActive) {
@@ -157,7 +129,6 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 
 		await repository.clearSpaceForUser(user.id);
 		setSpace(null);
-		setImportedMilestones([]);
 		setStatus("none");
 	}, [repository, user]);
 
@@ -168,7 +139,6 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 
 		await repository.leaveSpace(user.id);
 		setSpace(null);
-		setImportedMilestones([]);
 		setStatus("none");
 	}, [repository, user]);
 
@@ -194,12 +164,8 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		}
 
 		try {
-			const [nextSpace, nextImportedMilestones] = await Promise.all([
-				repository.getSpaceForUser(user.id),
-				repository.getImportedMilestonesForUser(user.id),
-			]);
+			const nextSpace = await repository.getSpaceForUser(user.id);
 			setSpace(nextSpace);
-			setImportedMilestones(nextImportedMilestones);
 			setStatus(nextSpace ? "ready" : "none");
 		} catch {
 			// Keep what we have. A failed re-read must not empty a space the
@@ -207,29 +173,10 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		}
 	}, [repository, user]);
 
-	const importMilestones = useCallback(
-		async (inputs: ImportedMilestoneInput[]) => {
-			if (!user || inputs.length === 0) {
-				return [];
-			}
-
-			const nextMilestones = buildImportedMilestones(inputs);
-			const persistedMilestones =
-				await repository.appendImportedMilestonesForUser(
-					user.id,
-					nextMilestones,
-				);
-			setImportedMilestones(persistedMilestones);
-			return nextMilestones;
-		},
-		[repository, user],
-	);
-
 	const value = useMemo<SpaceContextValue>(
 		() => ({
 			status,
 			space,
-			importedMilestones,
 			isHydrated,
 			createSpace,
 			joinSpace,
@@ -237,13 +184,11 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			clearSpace,
 			leaveSpace,
 			regenerateInvite,
-			importMilestones,
 			refreshSpace,
 		}),
 		[
 			status,
 			space,
-			importedMilestones,
 			isHydrated,
 			createSpace,
 			joinSpace,
@@ -251,7 +196,6 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			clearSpace,
 			leaveSpace,
 			regenerateInvite,
-			importMilestones,
 			refreshSpace,
 		],
 	);

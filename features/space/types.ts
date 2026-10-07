@@ -67,21 +67,6 @@ export type UpdateSpaceInput = Partial<
   Pick<RelationshipSpace, 'name' | 'partnerName' | 'relationshipStartDate'>
 >;
 
-export type ImportedMilestoneType = 'note' | 'milestone' | 'date' | 'goal';
-
-export type ImportedMilestoneInput = {
-  type: ImportedMilestoneType;
-  title: string;
-  body?: string;
-  occurredAt: string;
-  targetAt?: string | null;
-};
-
-export type ImportedMilestone = ImportedMilestoneInput & {
-  id: string;
-  createdAt: string;
-};
-
 export type SpaceRepository = {
   getSpaceForUser: (userId: string) => Promise<RelationshipSpace | null>;
   createSpace: (input: CreateSpaceInput) => Promise<RelationshipSpace>;
@@ -94,18 +79,11 @@ export type SpaceRepository = {
   ) => Promise<RelationshipSpace | null>;
   clearSpaceForUser: (userId: string) => Promise<void>;
   leaveSpace: (userId: string) => Promise<void>;
-  getImportedMilestonesForUser: (userId: string) => Promise<ImportedMilestone[]>;
-  appendImportedMilestonesForUser: (
-    userId: string,
-    milestones: ImportedMilestone[]
-  ) => Promise<ImportedMilestone[]>;
-  clearImportedMilestonesForUser: (userId: string) => Promise<void>;
 };
 
 export type SpaceContextValue = {
   status: SpaceStatus;
   space: RelationshipSpace | null;
-  importedMilestones: ImportedMilestone[];
   isHydrated: boolean;
   createSpace: (input: CreateSpaceInput) => Promise<RelationshipSpace>;
   joinSpace: (input: JoinSpaceInput) => Promise<RelationshipSpace>;
@@ -122,7 +100,4 @@ export type SpaceContextValue = {
    * was closed would not exist until the next relaunch.
    */
   refreshSpace: () => Promise<void>;
-  importMilestones: (
-    inputs: ImportedMilestoneInput[]
-  ) => Promise<ImportedMilestone[]>;
 };

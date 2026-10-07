@@ -148,21 +148,3 @@ describe('WindowRain cycle behavior', () => {
     expect(SOURCE).toContain('timings.darkRest');
   });
 });
-
-describe('WindowRain source guards', () => {
-  it('subscribes to the dynamic system setting, AppState, and web visibility', () => {
-    expect(SOURCE).toContain('useReducedMotion');
-    expect(SOURCE).toContain('isReduceMotionEnabled');
-    expect(SOURCE).toContain('reduceMotionChanged');
-    expect(SOURCE).toContain('AppState');
-    expect(SOURCE).toContain('visibilitychange');
-    expect(SOURCE).toContain('cancelAnimation');
-  });
-
-  it('uses no SVG and never touches headline or button layers', () => {
-    expect(SOURCE).not.toContain('<Svg');
-    expect(SOURCE).not.toContain('<svg');
-    expect(SOURCE).not.toContain('react-native-svg');
-    expect(SOURCE).not.toMatch(/headline|button|cta/i);
-  });
-});
