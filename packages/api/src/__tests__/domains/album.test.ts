@@ -5,6 +5,8 @@ import { albumMediaRecordSchema, type SpaceBackup } from '@aoi/shared';
 
 import { makeTestHarness, type ShimD1 } from '../../effects/test-harness';
 import {
+  ALBUM_RESERVATION_MAX_LIFETIME_MS,
+  ALBUM_RESERVATION_TTL_MS,
   albumMediaKey,
   completeAlbumUploadProgram,
   createAlbumUploadIntentProgram,
@@ -16,6 +18,7 @@ import {
   reserveAlbumMediaProgram,
   serveAlbumObjectProgram,
 } from '../../domains/album';
+import { mediaPurgeProgram } from '../../programs/cron';
 import {
   BadRequestError,
   ConflictError,
@@ -38,6 +41,7 @@ const USER_A = '00000000-0000-4000-8000-000000000001';
 const USER_B = '00000000-0000-4000-8000-000000000002';
 const USER_C = '00000000-0000-4000-8000-000000000003';
 const SPACE_1 = '00000000-0000-4000-8000-000000000010';
+const OTHER_SPACE = '00000000-0000-4000-8000-000000000020';
 const T0 = Date.parse('2026-01-15T00:00:00.000Z');
 
 const ALT = 'MDEyMzQ1Njc4OWFiY2RlZg==';
@@ -793,8 +797,10 @@ describe('finalising signed media', () => {
       SPACE_1,
       USER_A
     );
+    // The caller has no active Space, so the scoped lookup finds nothing to
+    // finalise — the same refusal as any other spaceless caller.
     expect(await failureOf(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toBeInstanceOf(
-      ForbiddenError
+      BadRequestError
     );
   });
 });
@@ -853,5 +859,298 @@ describe('signed media isolation and quota transitions', () => {
       ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: MIB })))
     );
     expect(reserved.mediaId).toBe(MEDIA_1);
+  });
+
+  it('cannot be read through the legacy object route either', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)));
+
+    expect(
+      await failureOf(ctx.provide(serveAlbumObjectProgram(USER_A, MEDIA_1)))
+    ).toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('the cleanup and finalisation race', () => {
+  it('refuses to finalise once cleanup has claimed the reservation', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+
+    // The sweep's claim. Whoever moves the row first owns it, so the old
+    // interleaving — finalise, then delete the just-finalised object — cannot
+    // happen: finalisation now finds `expiring`, not `pending`, and does
+    // nothing. (The claim cannot even be expressed before the fix, because the
+    // state did not exist.)
+    ctx.harness.d1.runSync(
+      `update album_media_reservations set state = 'expiring' where space_id = ? and media_id = ?`,
+      SPACE_1,
+      MEDIA_1
+    );
+
+    expect(await failureOf(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toBeInstanceOf(
+      BadRequestError
+    );
+    // It did not sneak through: the row is still cleanup's.
+    expect(reservationState(ctx)).toBe('expiring');
+  });
+
+  it('never reclaims a completed reservation, even past its expiry', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)));
+
+    // Completed is not a cleanup candidate, so its object survives an expiry
+    // that would otherwise make it eligible.
+    ctx.harness.d1.runSync(
+      `update album_media_reservations set expires_at = 0 where space_id = ? and media_id = ?`,
+      SPACE_1,
+      MEDIA_1
+    );
+    await run(Effect.provide(mediaPurgeProgram, ctx.harness.layer));
+
+    expect(reservationState(ctx)).toBe('complete');
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, MEDIA_1))).toBe(true);
+  });
+
+  it('retries a reservation a previous sweep claimed but could not finish', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    ctx.harness.d1.runSync(
+      `update album_media_reservations set state = 'expiring', expires_at = 0
+        where space_id = ? and media_id = ?`,
+      SPACE_1,
+      MEDIA_1
+    );
+
+    await run(Effect.provide(mediaPurgeProgram, ctx.harness.layer));
+
+    expect(reservationState(ctx)).toBe('failed');
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, MEDIA_1))).toBe(false);
+  });
+
+  it('never destroys an object that finalisation completed during the sweep', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    const t0 = ctx.harness.clock.value();
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    // Expired, so the sweep is entitled to reclaim it.
+    ctx.harness.clock.set(t0 + 24 * 60 * 60 * 1000);
+
+    // The interleaving, made deterministic: finalisation lands exactly between
+    // the sweep's read and its storage delete. The storage seam is the pause.
+    const originalDelete = ctx.harness.r2.delete.bind(ctx.harness.r2);
+    ctx.harness.r2.delete = async (key: string) => {
+      await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1))).catch(() => undefined);
+      return originalDelete(key);
+    };
+
+    await run(Effect.provide(mediaPurgeProgram, ctx.harness.layer));
+
+    // The invariant the old ordering broke: a `complete` record pointing at
+    // destroyed ciphertext. The claim makes the row cleanup's before the delete,
+    // so finalisation cannot complete it — it lands on `failed` instead. On the
+    // pre-fix code this row reads `complete` with no object, and this test fails.
+    const row = ctx.harness.d1.rawDb
+      .prepare('select state from album_media_reservations where media_id = ?')
+      .get(MEDIA_1) as { state: string };
+    expect(row.state).toBe('failed');
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, MEDIA_1))).toBe(false);
+  });
+});
+
+describe('reservation expiry and retries', () => {
+  it('extends a retried reservation so a fresh URL never outlives it', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    const t0 = ctx.harness.clock.value();
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+
+    // A retry near the original expiry issues a fresh URL, so the reservation
+    // has to move with it — otherwise the URL could authorize an upload after
+    // cleanup had already reclaimed the object.
+    const nearExpiry = t0 + ALBUM_RESERVATION_TTL_MS - 60_000;
+    ctx.harness.clock.set(nearExpiry);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+
+    const row = ctx.harness.d1.rawDb
+      .prepare('select expires_at from album_media_reservations where media_id = ?')
+      .get(MEDIA_1) as { expires_at: number };
+    expect(row.expires_at).toBe(nearExpiry + ALBUM_RESERVATION_TTL_MS);
+
+    // The object is safe past the ORIGINAL expiry, because eligibility follows
+    // the extended value.
+    ctx.harness.clock.set(t0 + ALBUM_RESERVATION_TTL_MS + 1);
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(Effect.provide(mediaPurgeProgram, ctx.harness.layer));
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, MEDIA_1))).toBe(true);
+  });
+
+  it('bounds how far retries can extend a reservation', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    const t0 = ctx.harness.clock.value();
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+
+    // Retry past the hard bound: the expiry stops at created + MAX rather than
+    // following the fresh URL, so an authorization cannot be renewed forever.
+    ctx.harness.clock.set(t0 + ALBUM_RESERVATION_MAX_LIFETIME_MS + 60_000);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+
+    const row = ctx.harness.d1.rawDb
+      .prepare('select expires_at from album_media_reservations where media_id = ?')
+      .get(MEDIA_1) as { expires_at: number };
+    expect(row.expires_at).toBe(t0 + ALBUM_RESERVATION_MAX_LIFETIME_MS);
+
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(Effect.provide(mediaPurgeProgram, ctx.harness.layer));
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, MEDIA_1))).toBe(false);
+    expect(reservationState(ctx)).toBe('failed');
+  });
+
+  it('refuses to finalise an expired reservation', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    const t0 = ctx.harness.clock.value();
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    ctx.harness.clock.set(t0 + ALBUM_RESERVATION_TTL_MS + 1);
+
+    expect(await failureOf(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toBeInstanceOf(
+      BadRequestError
+    );
+    expect(reservationState(ctx)).toBe('pending');
+  });
+});
+
+describe('the legacy album shares the one budget', () => {
+  it('blocks a signed upload once the legacy album has spent the room', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    insertAlbumMedia(ctx.harness.d1, 'legacy-1', SPACE_1, USER_A, { byteLength: 250 * MIB });
+    expect(
+      await failureOf(
+        ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: MIB })))
+      )
+    ).toBeInstanceOf(LimitExceededError);
+  });
+
+  it('blocks a legacy upload once signed media has spent the room', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    // One reservation is capped at 100 MiB, so the 250 MiB Free budget is spent
+    // across three ids.
+    for (const [index, mebibytes] of [99, 99, 52].entries()) {
+      await run(
+        ctx.provide(
+          reserveAlbumMediaProgram(USER_A, {
+            mediaId: `00000000-0000-4000-8000-00000000020${index}`,
+            generation: 1,
+            uploaderDeviceId: 'device-a',
+            byteLength: mebibytes * MIB,
+          })
+        )
+      );
+    }
+    expect(
+      await failureOf(
+        ctx.provide(createAlbumUploadIntentProgram(USER_A, validIntent({ byteLength: MIB })))
+      )
+    ).toBeInstanceOf(LimitExceededError);
+  });
+
+  it('fails when ordinary media has spent the room', async () => {
+    const ctx = couple();
+    ctx.harness.d1.runSync(
+      `insert into media_objects
+         (id, space_id, created_by_user_id, filename, mime_type, size_bytes, storage_key, upload_state, created_at)
+       values ('m-1', ?, ?, 'a.jpg', 'image/jpeg', ?, 'media/m-1/original.jpg', 'pending', ?)`,
+      SPACE_1,
+      USER_A,
+      250 * MIB,
+      T0
+    );
+    expect(
+      await failureOf(
+        ctx.provide(createAlbumUploadIntentProgram(USER_A, validIntent({ byteLength: MIB })))
+      )
+    ).toBeInstanceOf(LimitExceededError);
+  });
+
+  it('lets two paths compete for the last bytes, and only one wins', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    insertAlbumMedia(ctx.harness.d1, 'legacy-1', SPACE_1, USER_A, { byteLength: 249 * MIB });
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: MIB }))));
+    expect(
+      await failureOf(
+        ctx.provide(createAlbumUploadIntentProgram(USER_A, validIntent({ byteLength: MIB })))
+      )
+    ).toBeInstanceOf(LimitExceededError);
+  });
+
+  it('keeps quota held while a failed legacy upload still has its object', async () => {
+    const ctx = couple();
+    // The object does not match the reservation, so completion wants to mark it
+    // failed — but `failed` releases quota, so the object must go first.
+    const key = insertAlbumMedia(ctx.harness.d1, 'legacy-1', SPACE_1, USER_A, { byteLength: 3 });
+    ctx.harness.r2.putSync(key, new Uint8Array(4).fill(9), 'application/octet-stream');
+    ctx.harness.r2.delete = async () => {
+      throw new Error('r2 down');
+    };
+
+    expect(
+      await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, 'legacy-1')))
+    ).toBeInstanceOf(BadRequestError);
+
+    const row = ctx.harness.d1.rawDb
+      .prepare('select upload_state from album_media where id = ?')
+      .get('legacy-1') as { upload_state: string };
+    // Still pending, so the mismatched object stays counted.
+    expect(row.upload_state).toBe('pending');
+  });
+});
+
+describe('finalisation is scoped to the active Space', () => {
+  it('does not finalise the same media id reserved in another Space', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+
+    // A second Space, whose member reserves the SAME uuid.
+    insertUser(ctx.harness.d1, USER_C, 'c@example.com', 'Cara');
+    insertSpace(ctx.harness.d1, OTHER_SPACE, USER_C);
+    enrolDevice(ctx.harness.d1, OTHER_SPACE, 'device-c', USER_C);
+    await run(
+      ctx.provide(
+        reserveAlbumMediaProgram(USER_C, {
+          mediaId: MEDIA_1,
+          generation: 1,
+          uploaderDeviceId: 'device-c',
+          byteLength: 3,
+        })
+      )
+    );
+
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)));
+
+    const stateIn = (spaceId: string) =>
+      (
+        ctx.harness.d1.rawDb
+          .prepare('select state from album_media_reservations where space_id = ? and media_id = ?')
+          .get(spaceId, MEDIA_1) as { state: string }
+      ).state;
+    expect(stateIn(SPACE_1)).toBe('complete');
+    expect(stateIn(OTHER_SPACE)).toBe('pending');
   });
 });

@@ -896,7 +896,7 @@ export const albumMediaReservations = sqliteTable(
     index('idx_album_media_reservations_state').on(table.spaceId, table.state),
     check(
       'ck_album_media_reservations_state',
-      sql`${table.state} in ('pending', 'complete', 'failed')`
+      sql`${table.state} in ('pending', 'expiring', 'complete', 'failed')`
     ),
   ]
 );

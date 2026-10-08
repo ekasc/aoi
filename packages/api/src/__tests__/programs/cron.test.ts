@@ -437,7 +437,7 @@ describe('album reservation cleanup', () => {
 
     expect(result.reservationsExpired).toBe(0);
     expect(harness.r2.objects.has(albumKey)).toBe(true);
-    // Still pending, so its bytes are still counted: no untracked storage.
-    expect(reservationState(harness.d1)).toBe('pending');
+    // Claimed but not finished, so it still holds its bytes for the next sweep.
+    expect(reservationState(harness.d1)).toBe('expiring');
   });
 });

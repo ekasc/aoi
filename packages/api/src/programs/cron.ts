@@ -4,7 +4,7 @@ import type { WorkerCtx } from '../env';
 import { Db, guardedUpdate, type DbService } from '../effects/d1';
 import { nowMs } from '../effects/clock';
 import { Logger, logInfo, type LoggerService } from '../effects/logger';
-import { MediaStore, type MediaStoreService } from '../services/media-store';
+import { MediaStore, deleteKeyConfirmed, type MediaStoreService } from '../services/media-store';
 import { albumMediaKey } from '../domains/album';
 import { mediaDisplayKey, mediaThumbKey } from '../domains/media';
 
@@ -41,33 +41,6 @@ export const ORPHAN_SWEEP_MAX_PAGES = 5;
  * are treated as young (fail-closed).
  */
 export const ORPHAN_MIN_AGE_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Fail-closed storage delete: returns true only when R2 positively shows the
- * key is gone — either `delete` succeeded (R2 delete is idempotent) or a
- * follow-up `head` returns null (already absent). Any uncertainty (delete
- * threw AND head shows present or head itself failed) returns false so the
- * caller retains the authoritative DB row for a later retry.
- */
-const deleteKeyConfirmed = (
-  store: MediaStoreService,
-  key: string
-): Effect.Effect<boolean, never, never> =>
-  Effect.tryPromise({
-    try: () => store.delete(key),
-    catch: () => new Error('cron: r2 delete failed'),
-  }).pipe(
-    Effect.as(true),
-    Effect.catchAll(() =>
-      Effect.tryPromise({
-        try: () => store.head(key),
-        catch: () => new Error('cron: r2 head failed'),
-      }).pipe(
-        Effect.map((head) => head === null),
-        Effect.catchAll(() => Effect.succeed(false))
-      )
-    )
-  );
 
 /**
  * Minimum-age gate for orphan candidates. Unknown age (missing, non-Date,
@@ -401,30 +374,36 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     now - PUSH_TOKEN_STALE_MS
   );
 
-  // 4. Abandoned signed-media reservations (fail-closed per row).
+  // 4. Abandoned signed-media reservations (claim first, delete second).
   //
-  // A reservation outlives its own presigned URL, so by the time one is past
-  // `expires_at` no upload can still be in flight. The object is deleted before
-  // the row flips to `failed`: a `failed` row has released its quota, and that
-  // is only honest once the bytes are actually gone. A delete that cannot be
-  // confirmed leaves the row `pending`, still holding its bytes, for the next
-  // sweep. A completed reservation is never touched, and neither is an object
-  // with a published manifest.
+  // The order is the safety property. The sweep CLAIMS a reservation
+  // (`pending → expiring`) before it touches storage, so finalisation can no
+  // longer complete it: whoever moves the row first owns it, and the loser does
+  // nothing. Without the claim, a finalisation landing between the read and the
+  // delete would leave a completed record whose object this sweep then
+  // destroyed.
+  //
+  // `expiring` rows are ones a previous sweep could not finish, so they are
+  // retried. A row only reaches `failed` — which releases its bytes — after
+  // storage positively confirms the object is gone. A completed reservation is
+  // never a candidate, so an object with a published manifest is never touched.
   const expired = yield* Effect.tryPromise({
     try: () =>
       db.d1
         .prepare(
-          `select space_id, media_id from album_media_reservations
-           where state = 'pending' and expires_at < ?`
+          `select space_id, media_id, state from album_media_reservations
+           where state in ('pending', 'expiring') and expires_at < ?`
         )
         .bind(now)
-        .all<{ space_id: string; media_id: string }>(),
+        .all<{ space_id: string; media_id: string; state: string }>(),
     catch: () => new Error('cron: album reservation query failed'),
   }).pipe(
     Effect.catchAll(() =>
       Effect.flatMap(Logger, (l) => {
         l.warn('cron: album reservation query failed');
-        return Effect.succeed({ results: [] as { space_id: string; media_id: string }[] });
+        return Effect.succeed({
+          results: [] as { space_id: string; media_id: string; state: string }[],
+        });
       })
     )
   );
@@ -432,6 +411,32 @@ export const mediaPurgeProgram = Effect.gen(function* () {
   const expiredRows = expired.results ?? [];
   let reservationsExpired = 0;
   for (const row of expiredRows) {
+    if (row.state === 'pending') {
+      const claimed = yield* Effect.tryPromise({
+        try: () =>
+          db.d1
+            .prepare(
+              `update album_media_reservations set state = 'expiring'
+               where space_id = ? and media_id = ? and state = 'pending' and expires_at < ?`
+            )
+            .bind(row.space_id, row.media_id, now)
+            .run(),
+        catch: () => new Error('cron: album reservation claim failed'),
+      }).pipe(
+        Effect.map((res) => res.meta?.changes ?? 0),
+        Effect.catchAll(() =>
+          Effect.flatMap(Logger, (l) => {
+            l.warn('cron: album reservation claim failed');
+            return Effect.succeed(0);
+          })
+        )
+      );
+      if (claimed === 0) {
+        // Finalisation won the row between the read and the claim. Leave it.
+        continue;
+      }
+    }
+
     const confirmed = yield* deleteKeyConfirmed(store, albumMediaKey(row.space_id, row.media_id));
     if (!confirmed) {
       yield* Effect.flatMap(Logger, (l) => {
@@ -445,9 +450,9 @@ export const mediaPurgeProgram = Effect.gen(function* () {
         db.d1
           .prepare(
             `update album_media_reservations set state = 'failed'
-             where space_id = ? and media_id = ? and state = 'pending' and expires_at < ?`
+             where space_id = ? and media_id = ? and state = 'expiring'`
           )
-          .bind(row.space_id, row.media_id, now)
+          .bind(row.space_id, row.media_id)
           .run(),
       catch: () => new Error('cron: album reservation update failed'),
     }).pipe(

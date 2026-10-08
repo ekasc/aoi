@@ -155,6 +155,13 @@
       "when": 1791428615259,
       "tag": "0021_high_gertrude_yorkes",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1791430220561,
+      "tag": "0022_pale_sister_grimm",
+      "breakpoints": true
     }
   ]
 }

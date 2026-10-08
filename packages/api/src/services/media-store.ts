@@ -170,3 +170,31 @@ export const mediaStoreOp = <A>(
 export class MediaStoreError extends Data.TaggedError('MediaStoreError')<{
   readonly cause?: unknown;
 }> {}
+
+/**
+ * Fail-closed storage delete: true only when R2 positively shows the key is
+ * gone — either `delete` succeeded (R2 delete is idempotent) or a follow-up
+ * `head` returns null. Any uncertainty (the delete threw and the object is
+ * still there, or the head itself failed) returns false, so the caller keeps
+ * the authoritative row and retries rather than releasing quota for bytes that
+ * may still exist.
+ */
+export const deleteKeyConfirmed = (
+  store: MediaStoreService,
+  key: string
+): Effect.Effect<boolean, never, never> =>
+  Effect.tryPromise({
+    try: () => store.delete(key),
+    catch: () => new Error('r2 delete failed'),
+  }).pipe(
+    Effect.as(true),
+    Effect.catchAll(() =>
+      Effect.tryPromise({
+        try: () => store.head(key),
+        catch: () => new Error('r2 head failed'),
+      }).pipe(
+        Effect.map((head) => head === null),
+        Effect.catchAll(() => Effect.succeed(false))
+      )
+    )
+  );

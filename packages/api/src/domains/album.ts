@@ -18,6 +18,7 @@ import { Db, type DbService } from '../effects/d1';
 import {
   MEDIA_PRESIGN_TTL_SEC,
   MediaStore,
+  deleteKeyConfirmed,
   type MediaStoreService,
 } from '../services/media-store';
 import {
@@ -195,7 +196,7 @@ export const createAlbumUploadIntentProgram = (
   input: AlbumUploadIntentRequest
 ): Effect.Effect<
   AlbumUploadIntentResponse,
-  BadRequestError | InternalError,
+  BadRequestError | LimitExceededError | InternalError,
   DbService | MediaStoreService | ClockService | IdService
 > =>
   Effect.gen(function* () {
@@ -220,7 +221,12 @@ export const createAlbumUploadIntentProgram = (
     const storageKey = albumMediaKey(spaceId, mediaId);
 
     const db = yield* Db;
-    yield* Effect.tryPromise({
+    // Quota-guarded in ONE statement, against the same counted-usage expression
+    // every other path uses, so the legacy album cannot exceed the shared
+    // budget. The request and success-response shapes are unchanged; the new
+    // failure mode is the same limit error ordinary media already returns.
+    const usage = yield* readSpaceUsage(db.d1, spaceId, at);
+    const inserted = yield* Effect.tryPromise({
       try: () =>
         db.d1
           .prepare(
@@ -228,7 +234,8 @@ export const createAlbumUploadIntentProgram = (
                (id, space_id, created_by_user_id, mime_type, byte_length, width,
                 height, person_tag, sealed_nonce, wrapped_key_nonce,
                 wrapped_key_ciphertext, storage_key, upload_state, created_at)
-             values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+             select ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?
+             where ${COUNTED_MEDIA_BYTES_SQL} + ? <= ?`
           )
           .bind(
             mediaId,
@@ -243,11 +250,26 @@ export const createAlbumUploadIntentProgram = (
             request.wrappedKey.nonce,
             request.wrappedKey.ciphertext,
             storageKey,
-            at
+            at,
+            spaceId,
+            spaceId,
+            spaceId,
+            request.byteLength,
+            usage.mediaLimitBytes
           )
           .run(),
       catch: () => new InternalError({}),
     });
+    if ((inserted.meta?.changes ?? 0) === 0) {
+      return yield* Effect.fail(
+        limitExceeded('This space is out of media room', {
+          kind: 'media_quota',
+          usedBytes: usage.mediaUsedBytes,
+          limitBytes: usage.mediaLimitBytes,
+          plusLimitBytes: PLUS_MEDIA_BYTES,
+        })
+      );
+    }
 
     const store = yield* MediaStore;
     const presigned = yield* Effect.tryPromise({
@@ -323,6 +345,8 @@ export const completeAlbumUploadProgram = (
       });
 
     if (head === null) {
+      // Nothing landed, so nothing is left unaccounted for: releasing the
+      // reservation is safe.
       yield* markFailed();
       return yield* Effect.fail(badRequest('The uploaded object was not found'));
     }
@@ -334,7 +358,14 @@ export const completeAlbumUploadProgram = (
       head.httpMetadata?.contentType === undefined ||
       head.httpMetadata.contentType === ALBUM_CONTENT_TYPE;
     if (head.size !== media.byte_length || !contentTypeOk) {
-      yield* markFailed();
+      // The object exists but is not what was reserved. `failed` releases the
+      // reservation, so the bytes have to be gone first; if the delete cannot
+      // be confirmed the row stays `pending` and the staged purge retries,
+      // rather than freeing quota for storage that is still there.
+      const confirmed = yield* deleteKeyConfirmed(store, media.storage_key);
+      if (confirmed) {
+        yield* markFailed();
+      }
       return yield* Effect.fail(
         badRequest('Uploaded content does not match the reserved size')
       );
@@ -607,6 +638,15 @@ export const ALBUM_RESERVATION_SAFETY_MS = 15 * 60 * 1000;
 export const ALBUM_RESERVATION_TTL_MS =
   MEDIA_PRESIGN_TTL_SEC * 1000 + ALBUM_RESERVATION_SAFETY_MS;
 
+/**
+ * Hard bound on how long one reservation may live, however many retries it
+ * takes. A retry legitimately extends `expires_at` so a fresh URL is never
+ * valid past cleanup eligibility, but an unbounded extension would let a client
+ * keep one authorization alive forever. Past this bound the client starts a new
+ * upload with a new id.
+ */
+export const ALBUM_RESERVATION_MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
 interface AlbumReservationRow {
   space_id: string;
   media_id: string;
@@ -614,12 +654,13 @@ interface AlbumReservationRow {
   uploader_device_id: string;
   generation: number;
   byte_length: number;
-  state: 'pending' | 'complete' | 'failed';
+  state: 'pending' | 'expiring' | 'complete' | 'failed';
+  expires_at: number;
 }
 
 const RESERVATION_SELECT = `
   select space_id, media_id, created_by_user_id, uploader_device_id,
-         generation, byte_length, state
+         generation, byte_length, state, expires_at
   from album_media_reservations
 `;
 
@@ -762,13 +803,37 @@ export const reserveAlbumMediaProgram = (
       return yield* Effect.fail(conflict('That media id is reserved for a different upload'));
     }
     if (existing.state !== 'pending') {
-      // Completed or abandoned. Never mint a fresh authorisation for an id that
-      // has already been used.
+      // Completed, abandoned, or already owned by cleanup. Never mint a fresh
+      // authorisation for an id that has been used.
       return yield* Effect.fail(conflict('That media id can no longer be uploaded'));
     }
 
-    // Pending and identical: a retry of the same reservation. Same key, so
-    // re-presigning hands back an equivalent short-lived URL.
+    // Pending and identical: a retry of the same reservation. A fresh URL is
+    // issued below, so the reservation has to be extended to outlive it — but
+    // never past the hard bound, and never if cleanup has claimed it in the
+    // meantime. The guarded extend is what decides that: if it touches no row,
+    // this caller no longer owns the reservation and gets no authorization.
+    const extended = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `update album_media_reservations
+                set expires_at = min(?, created_at + ?)
+              where space_id = ? and media_id = ? and state = 'pending'`
+          )
+          .bind(
+            at + ALBUM_RESERVATION_TTL_MS,
+            ALBUM_RESERVATION_MAX_LIFETIME_MS,
+            spaceId,
+            request.mediaId
+          )
+          .run(),
+      catch: () => new InternalError({}),
+    });
+    if ((extended.meta?.changes ?? 0) === 0) {
+      return yield* Effect.fail(conflict('That media id can no longer be uploaded'));
+    }
+
     const store = yield* MediaStore;
     const presigned = yield* Effect.tryPromise({
       try: () =>
@@ -791,12 +856,14 @@ export const reserveAlbumMediaProgram = (
   });
 
 /**
- * Abandon a pending reservation: remove the object, then release its bytes.
+ * Abandon a reservation: claim it, then remove the object and release its bytes.
  *
- * Fail-closed. The row stays `pending` — still holding its quota — unless
- * storage positively confirms the object is gone, so a failed delete leaves
- * durable state for the cleanup sweep to retry instead of leaking untracked
- * storage.
+ * The claim (`pending → expiring`) is what makes this safe. Once it lands,
+ * finalisation can no longer complete the reservation, so the delete below can
+ * never destroy an object that was just finalised. The row reaches `failed` —
+ * the state that releases quota — only after storage positively confirms the
+ * object is gone; otherwise it stays `expiring` for the sweep to retry, so a
+ * failed delete never silently frees bytes that are still there.
  */
 const abandonReservation = (
   db: DbService,
@@ -805,13 +872,22 @@ const abandonReservation = (
   mediaId: string
 ): Effect.Effect<boolean, InternalError> =>
   Effect.gen(function* () {
-    const deleted: boolean = yield* Effect.promise(() =>
-      store.delete(albumMediaKey(spaceId, mediaId)).then(
-        () => true,
-        () => false
-      )
-    );
-    if (!deleted) {
+    const claimed = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `update album_media_reservations set state = 'expiring'
+              where space_id = ? and media_id = ? and state = 'pending'`
+          )
+          .bind(spaceId, mediaId)
+          .run(),
+      catch: () => new InternalError({}),
+    });
+    if ((claimed.meta?.changes ?? 0) === 0) {
+      return false;
+    }
+    const confirmed = yield* deleteKeyConfirmed(store, albumMediaKey(spaceId, mediaId));
+    if (!confirmed) {
       return false;
     }
     yield* Effect.tryPromise({
@@ -819,7 +895,7 @@ const abandonReservation = (
         db.d1
           .prepare(
             `update album_media_reservations set state = 'failed'
-              where space_id = ? and media_id = ? and state = 'pending'`
+              where space_id = ? and media_id = ? and state = 'expiring'`
           )
           .bind(spaceId, mediaId)
           .run(),
@@ -846,12 +922,21 @@ export const finalizeAlbumMediaProgram = (
 > =>
   Effect.gen(function* () {
     const db = yield* Db;
+    const at = yield* nowMs;
+
+    // Scope to the caller's active Space. A media id is not globally unique —
+    // the table is keyed by (space_id, media_id) — so authorization comes from
+    // the Space, never from the id being hard to guess.
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return yield* Effect.fail(badRequest('You must have an active space to upload media'));
+    }
 
     const reservation = yield* Effect.tryPromise({
       try: () =>
         db.d1
-          .prepare(`${RESERVATION_SELECT} where media_id = ?`)
-          .bind(mediaId)
+          .prepare(`${RESERVATION_SELECT} where space_id = ? and media_id = ?`)
+          .bind(spaceId, mediaId)
           .first<AlbumReservationRow>(),
       catch: () => new InternalError({}),
     });
@@ -865,7 +950,14 @@ export const finalizeAlbumMediaProgram = (
       return { ok: true as const };
     }
     if (reservation.state !== 'pending') {
-      return yield* Effect.fail(badRequest('That upload was abandoned'));
+      // `expiring` means cleanup owns it; `failed` means it is gone. Either way
+      // there is nothing here to finalise.
+      return yield* Effect.fail(badRequest('That upload is no longer available'));
+    }
+    if (reservation.expires_at <= at) {
+      // Past its window, so cleanup is free to reclaim the object: finalising
+      // now would race the delete.
+      return yield* Effect.fail(badRequest('That upload has expired'));
     }
     if (!(yield* isActiveMember(db, reservation.space_id, userId))) {
       return yield* Effect.fail(forbidden('You are no longer a member of this Space'));
@@ -888,7 +980,6 @@ export const finalizeAlbumMediaProgram = (
       return yield* Effect.fail(badRequest('Uploaded content does not match the reserved size'));
     }
 
-    const at = yield* nowMs;
     const transition = yield* Effect.tryPromise({
       try: () =>
         db.d1
@@ -896,13 +987,14 @@ export const finalizeAlbumMediaProgram = (
             `update album_media_reservations
                 set state = 'complete', completed_at = ?, completed_etag = ?, completed_size = ?
               where space_id = ? and media_id = ? and state = 'pending'
+                and expires_at > ?
                 and exists (
                   select 1 from space_members
                    where space_id = album_media_reservations.space_id
                      and user_id = ? and state = 'active'
                 )`
           )
-          .bind(at, head.httpEtag, head.size, reservation.space_id, mediaId, userId)
+          .bind(at, head.httpEtag, head.size, spaceId, mediaId, at, userId)
           .run(),
       catch: () => new InternalError({}),
     });
@@ -910,14 +1002,22 @@ export const finalizeAlbumMediaProgram = (
       const fresh = yield* Effect.tryPromise({
         try: () =>
           db.d1
-            .prepare('select state from album_media_reservations where media_id = ?')
-            .bind(mediaId)
-            .first<{ state: string }>(),
+            .prepare(
+              'select state, expires_at from album_media_reservations where space_id = ? and media_id = ?'
+            )
+            .bind(spaceId, mediaId)
+            .first<{ state: string; expires_at: number }>(),
         catch: () => new InternalError({}),
       });
-      if (!fresh || fresh.state !== 'pending') {
+      if (fresh?.state === 'complete') {
         // A concurrent finalisation won. Success, not a conflict.
         return { ok: true as const };
+      }
+      if (!fresh || fresh.state !== 'pending') {
+        return yield* Effect.fail(badRequest('That upload is no longer available'));
+      }
+      if (fresh.expires_at <= at) {
+        return yield* Effect.fail(badRequest('That upload has expired'));
       }
       return yield* Effect.fail(forbidden('You are no longer a member of this Space'));
     }
