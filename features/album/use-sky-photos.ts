@@ -1,6 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import type { AlbumMediaRecord } from '@aoi/shared';
+
 import { createAlbumPhotoStore, type AlbumPhotoStore } from '@/features/album/album-photo-store';
 import {
   establishAlbumSession,
@@ -8,19 +10,32 @@ import {
   sealAndUploadPhoto,
   type AlbumSessionReady,
 } from '@/features/album/album-session';
+import {
+  establishProtocolArchive,
+  readProtocolArchive,
+  removeProtocolPhoto,
+  uploadProtocolPhoto,
+  type ProtocolArchiveReady,
+} from '@/features/album/protocol-archive';
 import { prepareSkyPhoto } from '@/features/album/sky-photo-import';
 import { SKY_PHOTO_BATCH_LIMIT, releaseSelectedSkyPhotos, skyPhotoScopeKey, type SelectedSkyPhoto, type SkyPhoto } from '@/features/album/sky-photo-repository';
 import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
 
 /**
- * The Us sky, now backed by the shared, encrypted album.
+ * The Us sky, backed by the shared encrypted album.
  *
- * The public shape is unchanged from the local-only version so the screen
- * above it did not have to move. What changed is underneath: a scope change
- * establishes a session, lists sealed records, and decrypts them into
- * displayable copies. A partner who has not joined yet is a `waiting` session,
- * which surfaces as an empty but ready sky rather than an error.
+ * Two formats are read side by side and never reinterpreted as each other:
+ *
+ *   signed    media with a manifest, authenticated before it is shown, removed
+ *             with a signed tombstone.
+ *   legacy    media sealed under the old device-derived key, read through its
+ *             own path and left exactly as it is. An upgrade is a migration,
+ *             and this hook does not perform one.
+ *
+ * The plaintext cache is an optimisation in both cases. Only media that passed
+ * its checks is handed to it, and a read that *failed* never evicts: a network
+ * blip must not look like an authenticated empty archive.
  */
 
 type PhotoRead = {
@@ -34,12 +49,57 @@ type PhotoRead = {
 type SessionBundle = {
   scopeKey: string;
   session: AlbumSessionReady;
+  protocol: ProtocolArchiveReady | null;
+  /** Signed media this device currently shows, with its manifest revision. */
+  protocolRevisions: Map<string, number>;
+  /** The plaintext of those photos, so one cache serves both formats. */
+  protocolBytes: Map<string, Uint8Array>;
   store: AlbumPhotoStore;
 };
 
 const READ_ERROR = 'Could not open your shared photos. Please try again.';
 const ADD_ERROR = 'Could not add these photos. Please try again.';
 const REMOVE_ERROR = 'Could not finish removing this photo. Please try again.';
+
+/** A signed photo, dressed as a legacy record so one cache serves both. */
+function protocolRecord(photo: {
+  mediaId: string;
+  addedAt: string;
+  width?: number;
+  height?: number;
+  bytes: Uint8Array;
+}): AlbumMediaRecord {
+  return {
+    id: photo.mediaId,
+    createdAt: photo.addedAt,
+    byteLength: photo.bytes.length,
+    mimeType: 'image/jpeg',
+    ...(photo.width !== undefined ? { width: photo.width } : {}),
+    ...(photo.height !== undefined ? { height: photo.height } : {}),
+    wrappedKey: { nonce: '', ciphertext: '' },
+    sealedNonce: '',
+  };
+}
+
+/**
+ * Everything this device may show, in one pass. Signed media is verified first,
+ * so the cache only ever receives media that passed its checks.
+ */
+async function loadBundlePhotos(bundle: SessionBundle): Promise<SkyPhoto[]> {
+  const records = await bundle.session.client.list();
+  if (!bundle.protocol) {
+    return bundle.store.list(records);
+  }
+
+  const read = await readProtocolArchive(bundle.protocol);
+  bundle.protocolRevisions.clear();
+  bundle.protocolBytes.clear();
+  for (const photo of read.photos) {
+    bundle.protocolBytes.set(photo.mediaId, photo.bytes);
+    bundle.protocolRevisions.set(photo.mediaId, 1);
+  }
+  return bundle.store.list([...read.photos.map(protocolRecord), ...records]);
+}
 
 export function useSkyPhotos() {
   const { user } = useSession();
@@ -80,18 +140,46 @@ export function useSkyPhotos() {
           setStored({ scopeKey, photos: [], status: 'ready', error: null, revision });
           return;
         }
+
+        // Signed media, if this device has joined the signed protocol at all.
+        // `waiting` and `unavailable` both mean "read the legacy archive", not
+        // an error: the Space may simply not have been upgraded yet.
+        const archive = await establishProtocolArchive({ spaceId });
+        const protocol = archive.status === 'ready' ? archive : null;
+
+        const protocolBytes = new Map<string, Uint8Array>();
+        const protocolRevisions = new Map<string, number>();
         const store = createAlbumPhotoStore({
           spaceId,
-          fetchObject: session.client.fetchObject,
-          open: (record, bytes) => openPhoto(session.spaceKey, record, bytes),
+          fetchObject: async (id) => protocolBytes.get(id) ?? session.client.fetchObject(id),
+          open: (record, bytes) =>
+            protocolBytes.has(record.id) ? bytes : openPhoto(session.spaceKey, record, bytes),
         });
-        const records = await session.client.list();
-        const photos = await store.list(records);
+        const bundle: SessionBundle = {
+          scopeKey,
+          session,
+          protocol,
+          protocolRevisions,
+          protocolBytes,
+          store,
+        };
+
+        const photos = await loadBundlePhotos(bundle);
+
+        // Authenticated deletion evicts the cached plaintext. This runs only
+        // after a read that succeeded, so a failed fetch never deletes.
+        const previous = bundleRef.current;
+        if (previous && previous.scopeKey === scopeKey) {
+          for (const id of previous.protocolRevisions.keys()) {
+            if (!protocolRevisions.has(id)) await store.removeCached(id);
+          }
+        }
+
         if (currentScope.current !== scopeKey || readSequence.current !== sequence) {
           store.dispose();
           return;
         }
-        bundleRef.current = { scopeKey, session, store };
+        bundleRef.current = bundle;
         setStored({ scopeKey, photos, status: 'ready', error: null, revision });
       } catch {
         if (currentScope.current === scopeKey && readSequence.current === sequence) {
@@ -135,10 +223,13 @@ export function useSkyPhotos() {
         if (currentScope.current !== scopeKey) return;
         const prepared = await prepareSkyPhoto(photo.uri);
         if (currentScope.current !== scopeKey) return;
-        await sealAndUploadPhoto(bundle.session, prepared);
+        if (bundle.protocol) {
+          await uploadProtocolPhoto(bundle.protocol, prepared);
+        } else {
+          await sealAndUploadPhoto(bundle.session, prepared);
+        }
       }
-      const records = await bundle.session.client.list();
-      const photos = await bundle.store.list(records);
+      const photos = await loadBundlePhotos(bundle);
       if (currentScope.current === scopeKey) setStored({ scopeKey, photos, status: 'ready', error: null, revision });
     } catch {
       if (currentScope.current === scopeKey) setActionError({ scopeKey, message: ADD_ERROR });
@@ -156,15 +247,19 @@ export function useSkyPhotos() {
     setOperation({ scopeKey, kind: 'removing' });
     setActionError(null);
     try {
-      await bundle.session.client.remove(id);
+      const protocolRevision = bundle.protocolRevisions.get(id);
+      if (bundle.protocol && protocolRevision !== undefined) {
+        await removeProtocolPhoto(bundle.protocol, { mediaId: id, manifestRevision: protocolRevision });
+      } else {
+        await bundle.session.client.remove(id);
+      }
       await bundle.store.removeCached(id);
       if (currentScope.current === scopeKey) setStored((previous) => ({ ...previous, photos: previous.photos.filter((photo) => photo.id !== id) }));
     } catch {
       if (currentScope.current === scopeKey) {
         setActionError({ scopeKey, message: REMOVE_ERROR });
         try {
-          const records = await bundle.session.client.list();
-          const photos = await bundle.store.list(records);
+          const photos = await loadBundlePhotos(bundle);
           if (currentScope.current === scopeKey) setStored({ scopeKey, photos, status: 'ready', error: null, revision });
         } catch {
           if (currentScope.current === scopeKey) setStored((previous) => ({ ...previous, status: 'failed', error: READ_ERROR }));

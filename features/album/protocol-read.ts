@@ -164,34 +164,64 @@ export type ArchiveReadInput = {
   ciphertext: Uint8Array;
 };
 
-export function readArchiveMedia(input: ArchiveReadInput): ArchiveReadResult {
-  // 2. The manifest: parse the exact wire schema, then identity, provenance and
-  //    signature — in that order, so a caller learns which of them failed.
+export type ArchiveManifestResult =
+  | { ok: true; manifest: MediaManifest }
+  | { ok: false; reason: ArchiveReadFailure };
+
+/**
+ * Steps 1–2 of the read, on their own.
+ *
+ * A caller that must decide *whether to fetch bytes at all* needs the manifest
+ * verdict without the ciphertext, because fetching every object to discover it
+ * is deleted is both wasteful and a needless disclosure of interest. `ok: false`
+ * carries the same named reasons the full read does.
+ */
+export function verifyArchiveManifest(input: {
+  anchor: SpaceTrustAnchor;
+  records: readonly DeviceRecord[];
+  mediaId: string;
+  manifest: WireMediaManifest;
+}): ArchiveManifestResult {
   let manifest: MediaManifest;
   try {
     manifest = parseWireMediaManifest(input.manifest);
   } catch {
-    return { status: 'rejected', mediaId: input.mediaId, reason: 'unparseable-manifest' };
+    return { ok: false, reason: 'unparseable-manifest' };
   }
   if (manifest.mediaId !== input.mediaId) {
-    return { status: 'rejected', mediaId: input.mediaId, reason: 'wrong-media' };
+    return { ok: false, reason: 'wrong-media' };
   }
   if (manifest.spaceId !== input.anchor.spaceId) {
-    return { status: 'rejected', mediaId: input.mediaId, reason: 'wrong-space' };
+    return { ok: false, reason: 'wrong-space' };
   }
 
   const uploader = highestRevisionRecord(input.records, manifest.uploaderDeviceId);
   if (!uploader) {
-    return { status: 'rejected', mediaId: input.mediaId, reason: 'untrusted-uploader' };
+    return { ok: false, reason: 'untrusted-uploader' };
   }
-  if (
-    !verifyDeviceProvenance(manifest.uploaderDeviceId, input.anchor, input.records).trusted
-  ) {
-    return { status: 'rejected', mediaId: input.mediaId, reason: 'untrusted-uploader' };
+  if (!verifyDeviceProvenance(manifest.uploaderDeviceId, input.anchor, input.records).trusted) {
+    return { ok: false, reason: 'untrusted-uploader' };
   }
   if (!verifyMediaManifest(manifest, uploader.signingPublicKey)) {
-    return { status: 'rejected', mediaId: input.mediaId, reason: 'bad-manifest-signature' };
+    return { ok: false, reason: 'bad-manifest-signature' };
   }
+
+  return { ok: true, manifest };
+}
+
+export function readArchiveMedia(input: ArchiveReadInput): ArchiveReadResult {
+  // 2. The manifest: parse the exact wire schema, then identity, provenance and
+  //    signature — in that order, so a caller learns which of them failed.
+  const verified = verifyArchiveManifest({
+    anchor: input.anchor,
+    records: input.records,
+    mediaId: input.mediaId,
+    manifest: input.manifest,
+  });
+  if (!verified.ok) {
+    return { status: 'rejected', mediaId: input.mediaId, reason: verified.reason };
+  }
+  const manifest = verified.manifest;
 
   // 3. Deletion: authenticated candidates only, and only newer than the
   //    manifest. Nothing is decrypted for a photo that is not displayable.
