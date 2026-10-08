@@ -62,6 +62,7 @@ import {
   readCreationBootstrap,
   readDeletionState,
   readPinnedAnchor,
+  readRecoveryEntropy,
   recordAuthenticatedDeletion,
   writeCreationBootstrap,
   writeRecoveryEntropy,
@@ -267,6 +268,25 @@ export async function establishProtocolArchive(
     return { status: 'blocked' };
   }
 
+  // A crash between pinning and persisting recovery entropy leaves a pinned
+  // archive with no recoverable phrase — and a normal open would report it
+  // ready without ever resuming the bootstrap. Reconcile first, but only for
+  // an already-pinned archive: with no pin the resume path below owns the
+  // bootstrap, and completing it here would clear the very state that path
+  // needs to see.
+  if (pinned.state === 'pinned') {
+    try {
+      await completeCreationBootstrap({
+        spaceId: input.spaceId,
+        deviceId,
+        material,
+        anchor,
+      });
+    } catch {
+      return { status: 'unavailable' };
+    }
+  }
+
   if (pinned.state === 'none') {
     // No pin. The server's anchor being self-consistent with its own records and
     // envelopes is not evidence of anything: a fabricated Space looks exactly
@@ -439,9 +459,12 @@ async function createSpace(input: {
   await client.putSpaceKeyEnvelope(wireEnvelope);
   await client.putRecoveryEnvelope(SIGNED_ALBUM_GENERATION, wireRecoveryEnvelope);
 
-  await pinAnchor(spaceId, anchor);
-  await writeRecoveryEntropy(spaceId, entropy);
-  await clearCreationBootstrap(spaceId);
+  // Local completion is idempotent: a crash between these writes leaves the
+  // bootstrap behind, and the next open finishes what is missing rather than
+  // reporting a pinned archive with no recoverable phrase.
+  if ((await finalizeCreation({ spaceId, anchor, entropy })) !== 'ok') {
+    return { status: 'unavailable' };
+  }
 
   return {
     status: 'ready',
@@ -478,6 +501,98 @@ function canonicalize(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Finish local creation state idempotently: re-pin the anchor, persist the
+ * recovery entropy, confirm it round-trips through the protected store, then
+ * remove the bootstrap.
+ *
+ * Every step repeats the same bytes, so a crash anywhere in this sequence is
+ * safe to retry — including a retry of a retry. The bootstrap is removed only
+ * after the entropy is confirmed readable, so a pinned archive is never left
+ * without a recoverable phrase. Anything that cannot be confirmed surfaces as
+ * `unavailable` with the bootstrap retained, never as a ready archive with a
+ * silent gap.
+ */
+async function finalizeCreation(input: {
+  spaceId: string;
+  anchor: SpaceTrustAnchor;
+  entropy: Uint8Array;
+}): Promise<'ok' | 'unavailable'> {
+  try {
+    await pinAnchor(input.spaceId, input.anchor);
+    await writeRecoveryEntropy(input.spaceId, input.entropy);
+    const stored = await readRecoveryEntropy(input.spaceId);
+    if (!stored || !sameBytes(stored, input.entropy)) {
+      return 'unavailable';
+    }
+    await clearCreationBootstrap(input.spaceId);
+    return 'ok';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+/**
+ * Complete a creation bootstrap for an already-pinned archive.
+ *
+ * This is the crash window the normal paths miss: pin written, recovery
+ * entropy not yet persisted, bootstrap still present. The bootstrap is
+ * authenticated before anything is written — it must name the pinned root,
+ * the root key must be this device's, and the entropy must derive the
+ * recovery key the anchor commits to. Anything else is left alone: a foreign
+ * bootstrap is not ours to complete, and the callers treat the archive
+ * exactly as they would have without it.
+ */
+async function completeCreationBootstrap(input: {
+  spaceId: string;
+  deviceId: string;
+  material: DeviceKeyMaterial;
+  anchor: SpaceTrustAnchor;
+}): Promise<void> {
+  const bootstrap = await readCreationBootstrap(input.spaceId);
+  if (!bootstrap || bootstrap.deviceId !== input.deviceId) {
+    return;
+  }
+  let entropy: Uint8Array;
+  let bootstrapAnchor: SpaceTrustAnchor;
+  try {
+    entropy = fromBase64(bootstrap.entropy);
+    bootstrapAnchor = parseWireSpaceTrustAnchor(bootstrap.anchor);
+  } catch {
+    return;
+  }
+  if (!anchorsMatch(bootstrapAnchor, input.anchor)) {
+    return;
+  }
+  if (
+    toBase64(bootstrapAnchor.rootSigningPublicKey) !== toBase64(input.material.signingPublicKey)
+  ) {
+    return;
+  }
+  if (
+    toBase64(recoverySigningPublicKey(entropy)) !== toBase64(input.anchor.recoverySigningPublicKey)
+  ) {
+    return;
+  }
+  if (
+    (await finalizeCreation({ spaceId: input.spaceId, anchor: input.anchor, entropy })) !== 'ok'
+  ) {
+    throw new Error('creation bootstrap completion failed');
+  }
 }
 
 /**
@@ -619,9 +734,15 @@ async function resumeCreation(input: {
     );
   }
 
-  await pinAnchor(spaceId, anchor);
-  await writeRecoveryEntropy(spaceId, fromBase64(bootstrap.entropy));
-  await clearCreationBootstrap(spaceId);
+  let entropy: Uint8Array;
+  try {
+    entropy = fromBase64(bootstrap.entropy);
+  } catch {
+    return { status: 'blocked' };
+  }
+  if ((await finalizeCreation({ spaceId, anchor, entropy })) !== 'ok') {
+    return { status: 'unavailable' };
+  }
 
   return {
     status: 'ready',

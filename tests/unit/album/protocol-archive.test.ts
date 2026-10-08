@@ -37,8 +37,9 @@ import {
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
 import { signMediaManifest } from '@/features/album/protocol-crypto';
+import { toBase64 } from '@/features/album/crypto';
 import { phraseFromRecoveryEntropy } from '@/features/album/recovery';
-import { readPinnedAnchor, readRecoveryEntropy } from '@/features/album/protocol-local-state';
+import { readPinnedAnchor, readCreationBootstrap, writeCreationBootstrap, readRecoveryEntropy } from '@/features/album/protocol-local-state';
 import {
   forgetPendingUpload,
   readPendingUploads,
@@ -996,4 +997,171 @@ describe('resumable creation', () => {
       expect(recovered.session.anchor.rootDeviceId).toBe(CREATOR);
     });
   }
+});
+
+describe('interrupted local finalization', () => {
+  const ALICE = 'device-alice';
+
+  function rememberingKeyStore(device: DeviceKeys) {
+    const slot = { current: device };
+    return {
+      ensureDevice: async () => slot.current,
+      loadDevice: async () => slot.current,
+      forgetDevice: async () => {},
+      saveDevice: async (_spaceId: string, next: DeviceKeys) => {
+        slot.current = next;
+      },
+    };
+  }
+
+  /** A complete creation, then a hand-built bootstrap for the crash point. */
+  async function createdWithBootstrap(spaceId: string) {
+    const server = new FakeServer(spaceId);
+    const store = rememberingKeyStore(device(ALICE));
+    const first = await establishProtocolArchive({
+      spaceId,
+      deviceId: ALICE,
+      client: server,
+      keyStore: store,
+      now: NOW,
+    });
+    if (first.status !== 'ready') throw new Error('setup failed');
+    const entropy = (await readRecoveryEntropy(spaceId))!;
+    expect(entropy).not.toBeNull();
+
+    await writeCreationBootstrap(spaceId, {
+      deviceId: ALICE,
+      spaceKey: toBase64(first.spaceKey),
+      entropy: toBase64(entropy),
+      anchor: server.anchor,
+      record: server.records.get(ALICE),
+      envelope: server.envelopes.find((candidate) => candidate.recipientDeviceId === ALICE),
+      recoveryEnvelope: server.recoveryEnvelopes[0],
+      createdAt: NOW,
+    });
+    return { server, store, spaceKey: first.spaceKey };
+  }
+
+  /** The archive reopens, the phrase is available, and it restores the key. */
+  async function expectFullRecovery(
+    server: FakeServer,
+    spaceId: string,
+    spaceKey: Uint8Array,
+    store: ReturnType<typeof rememberingKeyStore>
+  ) {
+    const reopened = await establishProtocolArchive({
+      spaceId,
+      deviceId: ALICE,
+      client: server,
+      keyStore: store,
+      now: NOW,
+    });
+    expect(reopened.status).toBe('ready');
+
+    const entropy = await readRecoveryEntropy(spaceId);
+    expect(entropy).not.toBeNull();
+    const phrase = phraseFromRecoveryEntropy(entropy!);
+
+    await globalThis.__mockAsyncStorage.clear();
+    const recovered = await recoverProtocolArchive({
+      spaceId,
+      phrase,
+      deviceId: 'device-recovered',
+      client: server,
+      keyStore: rememberingKeyStore(device('device-recovered')),
+      now: NOW,
+    });
+    expect(recovered.status).toBe('ready');
+    if (recovered.status !== 'ready') return;
+    expect(toBase64(recovered.session.spaceKey)).toBe(toBase64(spaceKey));
+    expect(recovered.session.anchor.rootDeviceId).toBe(ALICE);
+
+    expect(await readCreationBootstrap(spaceId)).toBeNull();
+  }
+
+  it('finishes after a crash immediately after pinning', async () => {
+    const spaceId = 'space-crash-pin';
+    const { server, store, spaceKey } = await createdWithBootstrap(spaceId);
+    // The crash: pin written, recovery entropy never persisted.
+    const SecureStore = await import('expo-secure-store');
+    await SecureStore.deleteItemAsync(`aoi.album.recovery.v1.${spaceId}`);
+    expect(await readRecoveryEntropy(spaceId)).toBeNull();
+    expect(await readCreationBootstrap(spaceId)).not.toBeNull();
+
+    const reopened = await establishProtocolArchive({
+      spaceId,
+      deviceId: ALICE,
+      client: server,
+      keyStore: store,
+      now: NOW,
+    });
+    expect(reopened.status).toBe('ready');
+
+    await expectFullRecovery(server, spaceId, spaceKey, store);
+  });
+
+  it('finishes after a crash once entropy is persisted but the bootstrap remains', async () => {
+    const spaceId = 'space-crash-entropy';
+    const { server, store, spaceKey } = await createdWithBootstrap(spaceId);
+
+    // The crash: pin and entropy both written, bootstrap never cleared. This
+    // is the same observable state as a crash immediately before cleanup.
+    expect(await readRecoveryEntropy(spaceId)).not.toBeNull();
+    expect(await readCreationBootstrap(spaceId)).not.toBeNull();
+
+    const reopened = await establishProtocolArchive({
+      spaceId,
+      deviceId: ALICE,
+      client: server,
+      keyStore: store,
+      now: NOW,
+    });
+    expect(reopened.status).toBe('ready');
+
+    await expectFullRecovery(server, spaceId, spaceKey, store);
+  });
+
+  it('reopens a completed creation without touching the bootstrap', async () => {
+    const spaceId = 'space-crash-clean';
+    const server = new FakeServer(spaceId);
+    const store = rememberingKeyStore(device(ALICE));
+    const first = await establishProtocolArchive({
+      spaceId,
+      deviceId: ALICE,
+      client: server,
+      keyStore: store,
+      now: NOW,
+    });
+    expect(first.status).toBe('ready');
+    expect(await readCreationBootstrap(spaceId)).toBeNull();
+
+    const second = await establishProtocolArchive({
+      spaceId,
+      deviceId: ALICE,
+      client: server,
+      keyStore: store,
+      now: NOW,
+    });
+    expect(second.status).toBe('ready');
+    expect(await readCreationBootstrap(spaceId)).toBeNull();
+    expect(await readRecoveryEntropy(spaceId)).not.toBeNull();
+  });
+
+  it('never completes a bootstrap that names another device', async () => {
+    const spaceId = 'space-crash-foreign';
+    const { server } = await createdWithBootstrap(spaceId);
+
+    // A joiner opens the archive while a stale foreign bootstrap lingers: it
+    // must neither resume it nor be blocked by it. The pin is present, so the
+    // joiner claims and waits — and the foreign bootstrap is left untouched.
+    const joiner = await establishProtocolArchive({
+      spaceId,
+      deviceId: 'device-bob',
+      client: server,
+      keyStore: rememberingKeyStore(device('device-bob')),
+      now: NOW,
+    });
+    expect(joiner.status).toBe('waiting');
+    expect(await readCreationBootstrap(spaceId)).not.toBeNull();
+  });
 });
