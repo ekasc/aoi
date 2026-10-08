@@ -18,6 +18,7 @@ import { Db, type DbService } from '../effects/d1';
 import {
   MEDIA_PRESIGN_TTL_SEC,
   MediaStore,
+  deleteKeyConfirmed,
   type MediaStoreService,
 } from '../services/media-store';
 import {
@@ -331,22 +332,12 @@ export const completeAlbumUploadProgram = (
       catch: () => new InternalError({}),
     });
 
-    const markFailed = () =>
-      Effect.tryPromise({
-        try: () =>
-          db.d1
-            .prepare(
-              "update album_media set upload_state = 'failed' where id = ? and upload_state = 'pending'"
-            )
-            .bind(mediaId)
-            .run(),
-        catch: () => new InternalError({}),
-      });
-
     if (head === null) {
-      // Nothing landed, so nothing is left unaccounted for: releasing the
-      // reservation is safe.
-      yield* markFailed();
+      // Nothing has landed yet, and that is not proof the upload is abandoned:
+      // the presigned PUT can still be valid, so releasing the reservation here
+      // would hand back quota for bytes that may arrive a moment later. The row
+      // stays `pending` and the client may retry; the staged sweep reclaims it
+      // only after the authorization window has closed.
       return yield* Effect.fail(badRequest('The uploaded object was not found'));
     }
 
@@ -387,7 +378,7 @@ export const completeAlbumUploadProgram = (
             `update album_media
                 set upload_state = 'complete', completed_at = ?,
                     completed_etag = ?, completed_size = ?
-              where id = ? and upload_state = 'pending'
+              where id = ? and upload_state = 'pending' and deleted_at is null
                 and exists (
                   select 1 from space_members
                    where space_id = album_media.space_id
@@ -402,17 +393,18 @@ export const completeAlbumUploadProgram = (
       const fresh = yield* Effect.tryPromise({
         try: () =>
           db.d1
-            .prepare('select upload_state from album_media where id = ?')
+            .prepare('select upload_state, deleted_at from album_media where id = ?')
             .bind(mediaId)
-            .first<{ upload_state: string }>(),
+            .first<{ upload_state: string; deleted_at: number | null }>(),
         catch: () => new InternalError({}),
       });
-      if (!fresh || fresh.upload_state !== 'pending') {
-        // A concurrent complete won, or the row moved to failed meanwhile.
-        return yield* Effect.fail(badRequest('Upload is already completed'));
+      if (!fresh || fresh.upload_state !== 'pending' || fresh.deleted_at !== null) {
+        // A concurrent complete won, cleanup claimed it, or it was deleted
+        // meanwhile. None of those is something to retry into.
+        return yield* Effect.fail(badRequest('Upload is no longer available'));
       }
-      // Still pending, so membership is what refused the write: the member was
-      // removed after the check above and before this statement.
+      // Still pending and not deleted, so membership is what refused the write:
+      // the member was removed after the check above and before this statement.
       return yield* Effect.fail(forbidden('You are no longer a member of this Space'));
     }
 
@@ -574,17 +566,25 @@ export const deleteAlbumMediaProgram = (
     // removal is only safe once every authorization issued for this row has
     // expired — the intent's PUT URL lives for `MEDIA_PRESIGN_TTL_SEC` from
     // `created_at`, and deleting earlier would let a late PUT refill the key
-    // after the row stopped being counted. When it is not safe yet, the album
-    // soft-delete sweep reclaims it after the grace period instead; `deleted_at`
-    // is the durable marker that makes the retry possible.
+    // after the row stopped being counted. Quota follows storage, so the row is
+    // marked reclaimed only once the delete is confirmed; otherwise the sweep
+    // retries, with `deleted_at` as the durable marker.
     const store = yield* MediaStore;
     if (at >= media.created_at + MEDIA_PRESIGN_TTL_SEC * 1000) {
-      yield* Effect.promise(() =>
-        store.delete(media.storage_key).then(
-          () => true,
-          () => false
-        )
-      );
+      const confirmed = yield* deleteKeyConfirmed(store, media.storage_key);
+      if (confirmed) {
+        yield* Effect.tryPromise({
+          try: () =>
+            db.d1
+              .prepare(
+                `update album_media set storage_reclaimed_at = ?
+                  where id = ? and deleted_at is not null and storage_reclaimed_at is null`
+              )
+              .bind(at, mediaId)
+              .run(),
+          catch: () => new InternalError({}),
+        });
+      }
     }
 
     return { ok: true as const };

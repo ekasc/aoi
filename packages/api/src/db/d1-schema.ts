@@ -671,6 +671,16 @@ export const albumMedia = sqliteTable(
     completedEtag: text('completed_etag'),
     completedSize: integer('completed_size'),
     deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+    /**
+     * When the ciphertext was confirmed gone from storage.
+     *
+     * Distinct from `deleted_at`, which is the user-visible act. A soft delete
+     * hides the photo immediately, but its bytes stay accounted for until this
+     * is set — which only happens after a fail-closed delete, and never while an
+     * upload authorization could still recreate the object. The shared quota
+     * counts actual storage, not the tombstone.
+     */
+    storageReclaimedAt: integer('storage_reclaimed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
     index('idx_album_media_space').on(table.spaceId),

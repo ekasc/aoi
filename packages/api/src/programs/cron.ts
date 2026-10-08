@@ -4,7 +4,7 @@ import type { WorkerCtx } from '../env';
 import { Db, guardedUpdate, type DbService } from '../effects/d1';
 import { nowMs } from '../effects/clock';
 import { Logger, logInfo, type LoggerService } from '../effects/logger';
-import { MediaStore, deleteKeyConfirmed, type MediaStoreService } from '../services/media-store';
+import { MediaStore, MEDIA_PRESIGN_TTL_SEC, deleteKeyConfirmed, type MediaStoreService } from '../services/media-store';
 import { albumMediaKey } from '../domains/album';
 import { mediaDisplayKey, mediaThumbKey } from '../domains/media';
 
@@ -230,28 +230,32 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     if (deleted > 0) softDeletedPurged += 1;
   }
 
-  // 2b. Abandoned legacy album uploads (fail-closed per row).
+  // 2b. Abandoned legacy album uploads (claim first, delete second).
   //
-  // `pending` (never completed) and `expiring` (claimed by a failed completion
-  // or a size mismatch). Both are past every authorization once `created_at` is
-  // older than the staged TTL, so deleting the object cannot race a late PUT.
-  // The object goes first and the row second, so a failed delete leaves the row
-  // — still counted — for the next sweep.
+  // The claim is the safety property, exactly as for signed media: without it a
+  // completion landing between the read and the delete would destroy the object
+  // of a row whose guarded delete then affects nothing, leaving a `complete`
+  // record pointing at nothing. `pending` and `expiring` are both past every
+  // authorization once `created_at` is older than the staged TTL, so the object
+  // cannot be refilled by a late PUT. The object goes first and the row second,
+  // so a failed delete leaves the row — still counted — for the next sweep.
   const albumStaged = yield* Effect.tryPromise({
     try: () =>
       db.d1
         .prepare(
-          `select id, storage_key from album_media
+          `select id, storage_key, upload_state from album_media
            where upload_state in ('pending', 'expiring') and created_at < ?`
         )
         .bind(now - MEDIA_STAGED_TTL_MS)
-        .all<{ id: string; storage_key: string }>(),
+        .all<{ id: string; storage_key: string; upload_state: string }>(),
     catch: () => new Error('cron: album staged query failed'),
   }).pipe(
     Effect.catchAll(() =>
       Effect.flatMap(Logger, (l) => {
         l.warn('cron: album staged query failed');
-        return Effect.succeed({ results: [] as { id: string; storage_key: string }[] });
+        return Effect.succeed({
+          results: [] as { id: string; storage_key: string; upload_state: string }[],
+        });
       })
     )
   );
@@ -259,6 +263,32 @@ export const mediaPurgeProgram = Effect.gen(function* () {
   const albumStagedRows = albumStaged.results ?? [];
   let albumStagedPurged = 0;
   for (const row of albumStagedRows) {
+    if (row.upload_state === 'pending') {
+      const claimed = yield* Effect.tryPromise({
+        try: () =>
+          db.d1
+            .prepare(
+              `update album_media set upload_state = 'expiring'
+               where id = ? and upload_state = 'pending' and created_at < ?`
+            )
+            .bind(row.id, now - MEDIA_STAGED_TTL_MS)
+            .run(),
+        catch: () => new Error('cron: album staged claim failed'),
+      }).pipe(
+        Effect.map((res) => res.meta?.changes ?? 0),
+        Effect.catchAll(() =>
+          Effect.flatMap(Logger, (l) => {
+            l.warn('cron: album staged claim failed');
+            return Effect.succeed(0);
+          })
+        )
+      );
+      if (claimed === 0) {
+        // A completion won the row between the read and the claim. Leave it.
+        continue;
+      }
+    }
+
     const confirmed = yield* deleteKeyConfirmed(store, row.storage_key);
     if (!confirmed) {
       yield* Effect.flatMap(Logger, (l) => {
@@ -270,11 +300,8 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     const deleted = yield* Effect.tryPromise({
       try: () =>
         db.d1
-          .prepare(
-            `delete from album_media
-             where id = ? and upload_state in ('pending', 'expiring') and created_at < ?`
-          )
-          .bind(row.id, now - MEDIA_STAGED_TTL_MS)
+          .prepare(`delete from album_media where id = ? and upload_state = 'expiring'`)
+          .bind(row.id)
           .run(),
       catch: () => new Error('cron: album staged row delete failed'),
     }).pipe(
@@ -289,26 +316,36 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     if (deleted > 0) albumStagedPurged += 1;
   }
 
-  // 2c. Soft-deleted legacy album rows (fail-closed per row).
+  // 2c. Soft-deleted legacy album rows.
   //
-  // A delete is immediate for the person and durable for us: `deleted_at` is
-  // the marker, and this is the retry that reclaims storage the request could
-  // not remove. Objects go first, then the row.
+  // Two separate acts, because they are two separate facts. Reclamation removes
+  // the object once no authorization can recreate it — the intent's PUT URL
+  // lives for `MEDIA_PRESIGN_TTL_SEC` from `created_at` — and only then releases
+  // the bytes: `storage_reclaimed_at` is that moment, and it is what the shared
+  // budget reads. The retention purge then drops the row itself after the grace
+  // period, and only once reclamation is confirmed, so a failed delete keeps its
+  // durable marker instead of losing the reference.
   const albumDeleted = yield* Effect.tryPromise({
     try: () =>
       db.d1
         .prepare(
-          `select id, storage_key from album_media
-           where deleted_at is not null and deleted_at < ?`
+          `select id, storage_key, storage_reclaimed_at from album_media
+           where deleted_at is not null and created_at < ?`
         )
-        .bind(now - MEDIA_SOFT_DELETE_PURGE_MS)
-        .all<{ id: string; storage_key: string }>(),
-    catch: () => new Error('cron: album soft-delete query failed'),
+        .bind(now - MEDIA_PRESIGN_TTL_SEC * 1000)
+        .all<{ id: string; storage_key: string; storage_reclaimed_at: number | null }>(),
+    catch: () => new Error('cron: album reclaim query failed'),
   }).pipe(
     Effect.catchAll(() =>
       Effect.flatMap(Logger, (l) => {
-        l.warn('cron: album soft-delete query failed');
-        return Effect.succeed({ results: [] as { id: string; storage_key: string }[] });
+        l.warn('cron: album reclaim query failed');
+        return Effect.succeed({
+          results: [] as {
+            id: string;
+            storage_key: string;
+            storage_reclaimed_at: number | null;
+          }[],
+        });
       })
     )
   );
@@ -316,33 +353,79 @@ export const mediaPurgeProgram = Effect.gen(function* () {
   const albumDeletedRows = albumDeleted.results ?? [];
   let albumDeletedPurged = 0;
   for (const row of albumDeletedRows) {
+    if (row.storage_reclaimed_at !== null) continue;
     const confirmed = yield* deleteKeyConfirmed(store, row.storage_key);
     if (!confirmed) {
       yield* Effect.flatMap(Logger, (l) => {
-        l.warn('cron: album soft-delete storage delete uncertain — retaining row for retry');
+        l.warn('cron: album reclaim delete uncertain — retaining row for retry');
         return Effect.void;
       });
       continue;
     }
-    const deleted = yield* Effect.tryPromise({
+    const marked = yield* Effect.tryPromise({
       try: () =>
         db.d1
           .prepare(
-            `delete from album_media where id = ? and deleted_at is not null and deleted_at < ?`
+            `update album_media set storage_reclaimed_at = ?
+              where id = ? and deleted_at is not null and storage_reclaimed_at is null`
           )
-          .bind(row.id, now - MEDIA_SOFT_DELETE_PURGE_MS)
+          .bind(now, row.id)
           .run(),
-      catch: () => new Error('cron: album soft-delete row delete failed'),
+      catch: () => new Error('cron: album reclaim mark failed'),
     }).pipe(
       Effect.map((res) => res.meta?.changes ?? 0),
       Effect.catchAll(() =>
         Effect.flatMap(Logger, (l) => {
-          l.warn('cron: album soft-delete row delete failed');
+          l.warn('cron: album reclaim mark failed');
           return Effect.succeed(0);
         })
       )
     );
-    if (deleted > 0) albumDeletedPurged += 1;
+    if (marked > 0) albumDeletedPurged += 1;
+  }
+
+  const albumRetention = yield* Effect.tryPromise({
+    try: () =>
+      db.d1
+        .prepare(
+          `select id from album_media
+           where deleted_at is not null and deleted_at < ? and storage_reclaimed_at is not null`
+        )
+        .bind(now - MEDIA_SOFT_DELETE_PURGE_MS)
+        .all<{ id: string }>(),
+    catch: () => new Error('cron: album retention query failed'),
+  }).pipe(
+    Effect.catchAll(() =>
+      Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album retention query failed');
+        return Effect.succeed({ results: [] as { id: string }[] });
+      })
+    )
+  );
+
+  const albumRetentionRows = albumRetention.results ?? [];
+  let albumRetentionPurged = 0;
+  for (const row of albumRetentionRows) {
+    const deleted = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `delete from album_media
+             where id = ? and deleted_at is not null and deleted_at < ? and storage_reclaimed_at is not null`
+          )
+          .bind(row.id, now - MEDIA_SOFT_DELETE_PURGE_MS)
+          .run(),
+      catch: () => new Error('cron: album retention delete failed'),
+    }).pipe(
+      Effect.map((res) => res.meta?.changes ?? 0),
+      Effect.catchAll(() =>
+        Effect.flatMap(Logger, (l) => {
+          l.warn('cron: album retention delete failed');
+          return Effect.succeed(0);
+        })
+      )
+    );
+    if (deleted > 0) albumRetentionPurged += 1;
   }
 
   // 3. Orphan R2 sweep (bounded cursor pagination, fail-closed).
@@ -495,7 +578,10 @@ export const mediaPurgeProgram = Effect.gen(function* () {
   const albumKnownOutcome = yield* Effect.tryPromise({
     try: async () => {
       const media = await db.d1
-        .prepare('select storage_key from album_media')
+        .prepare(
+          `select storage_key from album_media
+            where storage_reclaimed_at is null and upload_state != 'failed'`
+        )
         .all<{ storage_key: string }>();
       // Only reservations that can still name a live object. A `failed` one has
       // had its object deleted, so anything sitting at that key is unaccounted —
@@ -691,6 +777,7 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     softDeletedPurged,
     albumStagedPurged,
     albumDeletedPurged,
+    albumRetentionPurged,
     orphanScanned,
     orphansDeleted,
     albumOrphanScanned,
@@ -704,6 +791,7 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     softDeletedPurged,
     albumStagedPurged,
     albumDeletedPurged,
+    albumRetentionPurged,
     orphanScanned,
     orphansDeleted,
     albumOrphanScanned,

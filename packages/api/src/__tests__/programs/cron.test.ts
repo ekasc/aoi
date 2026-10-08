@@ -13,6 +13,9 @@ import {
 } from '../../programs/cron';
 import { makeTestHarness } from '../../effects/test-harness';
 import { mediaDisplayKey, mediaOriginalKey, mediaThumbKey } from '../../domains/media';
+import { completeAlbumUploadProgram } from '../../domains/album';
+import { COUNTED_MEDIA_BYTES_SQL } from '../../domains/plus';
+import { MEDIA_PRESIGN_TTL_SEC } from '../../services/media-store';
 
 function seed(d1: ReturnType<typeof makeTestHarness>['d1'], now: number): void {
   const db = d1.rawDb;
@@ -417,6 +420,14 @@ describe('album cleanup', () => {
     return row.state;
   }
 
+  /** The shared budget's own definition of counted bytes, read directly. */
+  function albumUsedBytes(d1: ReturnType<typeof makeTestHarness>['d1']): number {
+    const row = d1.rawDb
+      .prepare(`select ${COUNTED_MEDIA_BYTES_SQL} as used`)
+      .get('s1', 's1', 's1') as { used: number };
+    return row.used;
+  }
+
   it('deletes an abandoned object and only then releases its reservation', async () => {
     const harness = makeTestHarness();
     seedUserSpace(harness.d1);
@@ -571,5 +582,99 @@ describe('album cleanup', () => {
 
     expect(result.albumOrphansDeleted).toBe(1);
     expect(harness.r2.objects.has(albumKey)).toBe(false);
+  });
+
+  it('never deletes a legacy object that finalisation completed during the sweep', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    const key = insertLegacyAlbum(harness.d1, 'legacy-race', {
+      createdAt: now - MEDIA_STAGED_TTL_MS - 1,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream');
+
+    // Finalisation lands exactly between the sweep's decision and its delete.
+    // The storage seam is the deterministic pause.
+    const originalDelete = harness.r2.delete.bind(harness.r2);
+    harness.r2.delete = async (k: string) => {
+      await Effect.runPromise(
+        Effect.provide(completeAlbumUploadProgram('u1', 'legacy-race'), harness.layer)
+      ).catch(() => undefined);
+      return originalDelete(k);
+    };
+
+    await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    // The claim owns the row before the delete, so finalisation cannot complete
+    // it and the sweep finishes cleanly. Pre-fix the row survived as `complete`
+    // with its object destroyed.
+    const row = harness.d1.rawDb
+      .prepare('select upload_state from album_media where id = ?')
+      .get('legacy-race') as { upload_state: string } | undefined;
+    expect(row).toBeUndefined();
+    expect(harness.r2.objects.has(key)).toBe(false);
+  });
+
+  it('accounts for a soft-deleted object until its bytes are actually gone', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    // Soft-deleted just now: the PUT window is still open, so nothing may be
+    // reclaimed and the bytes stay counted.
+    const key = insertLegacyAlbum(harness.d1, 'legacy-soft', {
+      state: 'complete',
+      createdAt: now,
+      deletedAt: now,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream');
+
+    const first = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+    expect(first.albumDeletedPurged).toBe(0);
+    expect(harness.r2.objects.has(key)).toBe(true);
+    expect(albumUsedBytes(harness.d1)).toBe(10);
+
+    // Past the window the object is reclaimed, and only then is it released.
+    harness.clock.set(now + MEDIA_PRESIGN_TTL_SEC * 1000 + 1);
+    const second = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+    expect(second.albumDeletedPurged).toBe(1);
+    expect(harness.r2.objects.has(key)).toBe(false);
+    expect(albumUsedBytes(harness.d1)).toBe(0);
+    // The row itself stays for the retention period.
+    expect(harness.d1.rawDb.prepare('select id from album_media').all()).toHaveLength(1);
+  });
+
+  it('reclaims an unexpected object on a terminal legacy row once it is aged', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    // A terminal row released its quota, so it must not shield whatever sits at
+    // its key; the age gate is what keeps the sweep from acting on uncertainty.
+    const key = insertLegacyAlbum(harness.d1, 'legacy-terminal', {
+      state: 'failed',
+      createdAt: now,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream', new Date(0));
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.albumOrphansDeleted).toBe(1);
+    expect(harness.r2.objects.has(key)).toBe(false);
+  });
+
+  it('leaves a fresh object at a terminal legacy key alone', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    const key = insertLegacyAlbum(harness.d1, 'legacy-terminal-fresh', {
+      state: 'failed',
+      createdAt: now,
+    });
+    // Just written: its ownership is uncertain, so it is not an orphan yet.
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream', new Date(now));
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.albumOrphansDeleted).toBe(0);
+    expect(harness.r2.objects.has(key)).toBe(true);
   });
 });

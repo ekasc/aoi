@@ -763,7 +763,8 @@ export const COUNTED_MEDIA_BYTES_SQL = `(
   coalesce((select sum(size_bytes) from media_objects
              where space_id = ? and deleted_at is null and upload_state in ('pending', 'complete')), 0)
 + coalesce((select sum(byte_length) from album_media
-             where space_id = ? and deleted_at is null and upload_state in ('pending', 'expiring', 'complete')), 0)
+             where space_id = ? and storage_reclaimed_at is null
+               and upload_state in ('pending', 'expiring', 'complete')), 0)
 + coalesce((select sum(byte_length) from album_media_reservations
              where space_id = ? and state in ('pending', 'expiring', 'complete')), 0)
 )`;

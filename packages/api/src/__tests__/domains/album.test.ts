@@ -289,12 +289,22 @@ describe('completeAlbumUploadProgram', () => {
     expect(rowFor(ctx, mediaId).upload_state).toBe('expiring');
   });
 
-  it('refuses a missing object', async () => {
-    const { ctx, mediaId } = setup(new Uint8Array(0));
+  it('refuses a missing object without releasing the reservation, and a late PUT can still complete', async () => {
+    const { ctx, mediaId, key } = setup(new Uint8Array(0), 4);
 
     const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
     expect(err).toBeInstanceOf(BadRequestError);
-    expect(rowFor(ctx, mediaId).upload_state).toBe('failed');
+    // Absence is not proof of abandonment: the PUT URL may still be valid, so
+    // the row stays retryable and keeps its quota.
+    expect(rowFor(ctx, mediaId).upload_state).toBe('pending');
+    expect(usedBytes(ctx)).toBe(4);
+
+    // The late PUT lands, and the same completion now succeeds.
+    ctx.harness.r2.putSync(key, new Uint8Array([1, 2, 3, 4]), 'application/octet-stream');
+    expect(await run(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)))).toEqual({
+      ok: true,
+    });
+    expect(rowFor(ctx, mediaId).upload_state).toBe('complete');
   });
 
   it('400s when the upload is already complete', async () => {
@@ -1261,5 +1271,53 @@ describe('finalisation is scoped to the active Space', () => {
       ).state;
     expect(stateIn(SPACE_1)).toBe('complete');
     expect(stateIn(OTHER_SPACE)).toBe('pending');
+  });
+});
+
+describe('the legacy delete and completion race', () => {
+  it('lets completion win and keeps the object accounted until it is reclaimed', async () => {
+    const ctx = couple();
+    const key = insertAlbumMedia(ctx.harness.d1, 'legacy-race', SPACE_1, USER_A, {
+      state: 'pending',
+      byteLength: 4,
+    });
+    ctx.harness.r2.putSync(key, new Uint8Array(4).fill(9), 'application/octet-stream');
+
+    await run(ctx.provide(completeAlbumUploadProgram(USER_A, 'legacy-race')));
+    await run(ctx.provide(deleteAlbumMediaProgram(USER_B, 'legacy-race')));
+
+    const row = ctx.harness.d1.rawDb
+      .prepare(
+        'select upload_state, deleted_at, storage_reclaimed_at from album_media where id = ?'
+      )
+      .get('legacy-race') as {
+      upload_state: string;
+      deleted_at: number | null;
+      storage_reclaimed_at: number | null;
+    };
+    // The completion stands; the delete is the user-visible act layered on it.
+    expect(row.upload_state).toBe('complete');
+    expect(row.deleted_at).toBeTypeOf('number');
+    // Its PUT window is still open, so nothing was reclaimed and the bytes are
+    // still accounted for.
+    expect(row.storage_reclaimed_at).toBeNull();
+    expect(ctx.harness.r2.objects.has(key)).toBe(true);
+    expect(usedBytes(ctx)).toBe(4);
+  });
+
+  it('refuses a completion that arrives after the delete', async () => {
+    const ctx = couple();
+    const key = insertAlbumMedia(ctx.harness.d1, 'legacy-race-2', SPACE_1, USER_A, {
+      state: 'pending',
+      byteLength: 4,
+    });
+    ctx.harness.r2.putSync(key, new Uint8Array(4).fill(9), 'application/octet-stream');
+
+    await run(ctx.provide(deleteAlbumMediaProgram(USER_B, 'legacy-race-2')));
+    // The completion's lookup requires `deleted_at is null`, so a deleted upload
+    // can no longer be finalised.
+    expect(
+      await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, 'legacy-race-2')))
+    ).toBeInstanceOf(NotFoundError);
   });
 });
