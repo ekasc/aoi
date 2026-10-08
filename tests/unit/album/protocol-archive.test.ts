@@ -26,6 +26,7 @@ import {
   ProtocolUploadInterrupted,
   authoriseProtocolDevice,
   establishProtocolArchive,
+  pinVerifiedAnchor,
   publishProtocolDeviceRecord,
   readProtocolArchive,
   removeProtocolPhoto,
@@ -33,6 +34,7 @@ import {
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
 import { signMediaManifest } from '@/features/album/protocol-crypto';
+import { readPinnedAnchor } from '@/features/album/protocol-local-state';
 import {
   forgetPendingUpload,
   readPendingUploads,
@@ -56,7 +58,12 @@ const OTHER_SPACE = 'space-2';
 const NOW = '2026-01-15T00:00:00.000Z';
 
 vi.mock('@/features/album/photo-bytes', () => ({
-  readPhotoBytes: async (uri: string) => new TextEncoder().encode(`photo:${uri}`),
+  readPhotoBytes: async (uri: string) => {
+    // `bytes:<n>` builds a payload of a realistic size; anything else is a tag.
+    const sized = /^bytes:(\d+)$/.exec(uri);
+    if (sized) return new Uint8Array(Number(sized[1])).fill(7);
+    return new TextEncoder().encode(`photo:${uri}`);
+  },
 }));
 // The archive takes an explicit key store in these tests; the native modules
 // behind the default one are not loadable under the runner.
@@ -245,7 +252,7 @@ function device(id: string): DeviceKeys {
   return generateDeviceKeys(id, new Date(NOW));
 }
 
-/** Alice creates the Space; Bob claims an id, is authorised, and joins. */
+/** Alice creates the Space; Bob is a separate device and must be verified in. */
 async function couple(server = new FakeServer(SPACE)) {
   const aliceKeys = device('device-alice');
   const bobKeys = device('device-bob');
@@ -260,17 +267,23 @@ async function couple(server = new FakeServer(SPACE)) {
   expect(alice.status).toBe('ready');
   const aliceReady = alice as ProtocolArchiveReady;
 
-  // Bob arrives with nothing: he claims his id and waits.
-  const waiting = await establishProtocolArchive({
+  // Bob is a different phone, so his device-local state starts empty. The test
+  // storage is shared, so it is cleared to model that.
+  await globalThis.__mockAsyncStorage.clear();
+
+  const unverified = await establishProtocolArchive({
     spaceId: server.spaceId,
     deviceId: 'device-bob',
     client: server,
     keyStore: keyStoreFor(bobKeys),
     now: NOW,
   });
-  expect(waiting.status).toBe('waiting');
+  // A server-supplied anchor whose own records verify against it is exactly
+  // what a fabricated Space looks like, so this is not trust yet.
+  expect(unverified.status).toBe('unverified');
 
-  // The out-of-band comparison is a human step; here it is assumed done.
+  // The out-of-band comparison is a human step; here it is assumed done, and
+  // then the pin is a deliberate act.
   const record = await authoriseProtocolDevice(
     aliceReady,
     {
@@ -281,6 +294,7 @@ async function couple(server = new FakeServer(SPACE)) {
     NOW
   );
   await publishProtocolDeviceRecord(server, record);
+  await pinVerifiedAnchor(server.spaceId, (unverified as { anchor: never }).anchor);
 
   const bob = await establishProtocolArchive({
     spaceId: server.spaceId,
@@ -475,6 +489,50 @@ describe('the connected signed archive', () => {
     expect((await readProtocolArchive(two.bob)).deleted).not.toContain(mediaId);
   });
 
+  it('does not trust a self-consistent anchor from a malicious server', async () => {
+    // A fabricated Space: the attacker holds its root key, so every record and
+    // envelope the server returns verifies against the anchor it also returned.
+    // Only a human comparison, or the phrase, can tell this from the real one.
+    const server = new FakeServer(SPACE);
+    const attacker = device('device-attacker');
+    const victim = device('device-victim');
+
+    const attackerArchive = await establishProtocolArchive({
+      spaceId: SPACE,
+      deviceId: 'device-attacker',
+      client: server,
+      keyStore: keyStoreFor(attacker),
+      now: NOW,
+    });
+    expect(attackerArchive.status).toBe('ready');
+
+    // The victim is a fresh device.
+    await globalThis.__mockAsyncStorage.clear();
+
+    const record = await authoriseProtocolDevice(
+      attackerArchive as ProtocolArchiveReady,
+      {
+        deviceId: 'device-victim',
+        signingPublicKey: victim.signing.publicKey,
+        agreementPublicKey: victim.agreement.publicKey,
+      },
+      NOW
+    );
+    await publishProtocolDeviceRecord(server, record);
+
+    const victimResult = await establishProtocolArchive({
+      spaceId: SPACE,
+      deviceId: 'device-victim',
+      client: server,
+      keyStore: keyStoreFor(victim),
+      now: NOW,
+    });
+
+    // Everything the server sent verifies, and that is not enough.
+    expect(victimResult.status).toBe('unverified');
+    expect((await readPinnedAnchor(SPACE)).state).toBe('none');
+  });
+
   it('does not see legacy media, and never touches it', async () => {    const { alice, bob } = await couple();
     await uploadProtocolPhoto(alice, { uri: 'signed.jpg', width: 1, height: 1 }, { now: NOW });
 
@@ -514,8 +572,51 @@ describe('the connected signed archive', () => {
     expect(recovered.incomplete).toBe(false);
   });
 
-  it('journals an interrupted upload so a restart finishes the same one', async () => {
-    const { alice, bob } = await couple();
+  it('keeps several realistic pending uploads apart, and cleans up only the published one', async () => {
+    const { alice } = await couple();
+    const scope = 'scope-multi';
+    // 0.5 MiB, 1 MiB and 2 MiB: sizes that would not belong in AsyncStorage as
+    // base64, and three of them at once.
+    const sizes = [512 * 1024, 1024 * 1024, 2 * 1024 * 1024];
+    const pendingIds: string[] = [];
+
+    for (const [index, size] of sizes.entries()) {
+      (alice.client as unknown as FakeServer).failNextPut = true;
+      let interrupted: ProtocolUploadInterrupted | null = null;
+      try {
+        await uploadProtocolPhoto(
+          alice,
+          { uri: `bytes:${size}`, width: 4000, height: 3000 },
+          { scopeKey: scope, now: NOW }
+        );
+      } catch (error) {
+        interrupted = error as ProtocolUploadInterrupted;
+      }
+      expect(interrupted).not.toBeNull();
+      pendingIds.push(interrupted!.pending.mediaId);
+      // The journal is written before the first network call, so the failure
+      // above already left it behind.
+      const entries = await readPendingUploads(scope);
+      expect(entries.map((entry) => entry.mediaId)).toContain(interrupted!.pending.mediaId);
+      expect(entries.find((entry) => entry.mediaId === interrupted!.pending.mediaId)!.ciphertext.length)
+        .toBeGreaterThan(size);
+    }
+    expect(await readPendingUploads(scope)).toHaveLength(3);
+
+    // Finish the middle one; only its own temporary file may go.
+    const all = await readPendingUploads(scope);
+    const middle = all[1];
+    await uploadProtocolPhoto(
+      alice,
+      { uri: middle.uri, width: middle.width, height: middle.height },
+      { resume: middle, scopeKey: scope, now: NOW }
+    );
+
+    const remaining = await readPendingUploads(scope);
+    expect(remaining.map((entry) => entry.mediaId)).toEqual([pendingIds[0], pendingIds[2]]);
+  });
+
+  it('journals an interrupted upload so a restart finishes the same one', async () => {    const { alice, bob } = await couple();
     (alice.client as unknown as FakeServer).failNextPut = true;
 
     let pending: ProtocolUploadInterrupted | null = null;

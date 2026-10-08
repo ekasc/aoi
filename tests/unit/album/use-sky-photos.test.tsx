@@ -25,7 +25,7 @@ vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { i
 // network attempt.
 const protocol = vi.hoisted(() => ({
   establish: vi.fn(async () => ({ status: 'unavailable' })),
-  read: vi.fn(async () => ({ photos: [], deleted: [], rejected: [], incomplete: false })),
+  read: vi.fn(async () => ({ photos: [], deleted: [], rejected: [], incomplete: false, missing: [] })),
   remove: vi.fn(async () => {}),
   upload: vi.fn(async () => {}),
 }));
@@ -73,7 +73,7 @@ beforeEach(() => {
   state.prepare.mockReset().mockResolvedValue(prepared);
   state.pick.mockReset().mockResolvedValue({ canceled: true, assets: null });
   protocol.establish.mockReset().mockResolvedValue({ status: 'unavailable' });
-  protocol.read.mockReset().mockResolvedValue({ photos: [], deleted: [], rejected: [], incomplete: false });
+  protocol.read.mockReset().mockResolvedValue({ photos: [], deleted: [], rejected: [], incomplete: false, missing: [] });
   protocol.remove.mockReset().mockResolvedValue(undefined);
   protocol.upload.mockReset().mockResolvedValue(undefined);
 });
@@ -190,8 +190,49 @@ describe('shared sky photos', () => {
     expect(result.current.protocolStatus).toBe('ready');
   });
 
-  it('surfaces a trust failure instead of silently using the legacy path', async () => {
-    protocol.establish.mockResolvedValue({ status: 'blocked' });
+  it('keeps a displayed photo when its download fails, and drops it on an authenticated deletion', async () => {
+    protocol.establish.mockResolvedValue({ status: 'ready' });
+    protocol.read.mockResolvedValueOnce({
+      photos: [{ mediaId: 'm-1', addedAt: '2026-01-01T00:00:00.000Z', width: 1, height: 1, bytes: new Uint8Array([1]) }],
+      deleted: [],
+      rejected: [],
+      incomplete: false,
+      missing: [],
+    });
+    state.storeList.mockResolvedValueOnce([
+      { id: 'm-1', addedAt: '2026-01-01T00:00:00.000Z', width: 1, height: 1, uri: 'blob:m-1' },
+    ]);
+
+    const { result } = renderHook(useSkyPhotos);
+    await waitFor(() => expect(result.current.photos).toHaveLength(1));
+
+    // The download fails on the next pass: an outage, not a deletion, so the
+    // copy this device already showed stays.
+    protocol.read.mockResolvedValueOnce({
+      photos: [],
+      deleted: [],
+      rejected: [],
+      incomplete: true,
+      missing: ['m-1'],
+    });
+    state.storeList.mockResolvedValueOnce([]);
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.photos).toHaveLength(1));
+
+    // An authenticated deletion does remove it.
+    protocol.read.mockResolvedValueOnce({
+      photos: [],
+      deleted: ['m-1'],
+      rejected: [],
+      incomplete: false,
+      missing: [],
+    });
+    state.storeList.mockResolvedValueOnce([]);
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.photos).toHaveLength(0));
+  });
+
+  it('surfaces a trust failure instead of silently using the legacy path', async () => {    protocol.establish.mockResolvedValue({ status: 'blocked' });
 
     const { result } = renderHook(useSkyPhotos);
     await waitFor(() => expect(result.current.status).toBe('failed'));

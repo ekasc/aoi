@@ -29,6 +29,11 @@ import { verificationFingerprint } from '@/features/album/keys';
 import type { LocalKeyStore } from '@/features/album/local-key-store';
 import { readPhotoBytes } from '@/features/album/photo-bytes';
 import {
+  forgetPendingUpload,
+  rememberPendingUpload,
+  type PendingProtocolUpload,
+} from '@/features/album/protocol-upload-journal';
+import {
   deriveRecoverySigningKey,
   generateSpaceKey,
   openSpaceKeyFromEnvelope,
@@ -104,14 +109,36 @@ export type ProtocolArchiveReady = {
 export type ProtocolArchive =
   | ProtocolArchiveReady
   /** This device has claimed an id and nobody has authorised it yet. */
-  | { status: 'waiting' }  /** The server could not be reached, or failed. Try again. */
+  | { status: 'waiting' }
+  /**
+   * This device has not established trust here: no pin, and the server's anchor
+   * is only self-consistent. Nothing signed is shown and nothing is pinned until
+   * a human confirms the root out of band, or the recovery phrase authenticates
+   * it. The anchor is handed back only so two devices can compare it.
+   */
+  | { status: 'unverified'; anchor: SpaceTrustAnchor; records: DeviceRecord[] }
+  /** The server could not be reached, or failed. Try again. */
   | { status: 'unavailable' }
   /**
    * The protocol state is wrong in a way retrying will not fix: a root this
-   * device did not pin, a pinned root the server withheld, or a malformed
-   * object. Callers must surface this rather than fall back to legacy.
+   * device did not pin, a pinned root the server withheld, a damaged pin, or a
+   * malformed object. Callers must surface this rather than fall back to legacy.
    */
   | { status: 'blocked' };
+
+/**
+ * Accept a root after a human compared its fingerprint out of band.
+ *
+ * This is the only way a joining device pins a root it did not create, and it is
+ * deliberately separate from `establishProtocolArchive`: trust comes from the
+ * comparison, not from the establishment succeeding.
+ */
+export async function pinVerifiedAnchor(
+  spaceId: string,
+  anchor: SpaceTrustAnchor
+): Promise<void> {
+  await pinAnchor(spaceId, anchor);
+}
 
 function highestRevision(records: readonly DeviceRecord[], deviceId: string): DeviceRecord | null {
   let best: DeviceRecord | null = null;
@@ -169,12 +196,19 @@ export async function establishProtocolArchive(
   const device = await store.ensureDevice(input.spaceId, deviceId);
   const material = materialOf(device);
 
+  const pinned = await readPinnedAnchor(input.spaceId);
+  if (pinned.state === 'corrupt') {
+    // A pin this device cannot read is not a fresh install. Adopting the
+    // server's root here is exactly the substitution the pin exists to stop.
+    return { status: 'blocked' };
+  }
+
   if (snapshot.anchor === null) {
     // An absent anchor means "no Space yet" only when this device has never
     // pinned one. Once it has, a missing anchor is the server withholding the
     // root, and creating a replacement would mint a fresh archive over the old
     // one under the same Space id.
-    if ((await readPinnedAnchor(input.spaceId)) !== null) {
+    if (pinned.state === 'pinned') {
       return { status: 'blocked' };
     }
     try {
@@ -192,8 +226,7 @@ export async function establishProtocolArchive(
     return { status: 'blocked' };
   }
 
-  const pinned = await readPinnedAnchor(input.spaceId);
-  if (pinned !== null && !anchorsMatch(pinned, anchor)) {
+  if (pinned.state === 'pinned' && !anchorsMatch(pinned.anchor, anchor)) {
     // A different root is a different Space wearing this one's id.
     return { status: 'blocked' };
   }
@@ -205,6 +238,15 @@ export async function establishProtocolArchive(
     deviceTombstones = snapshot.tombstones.map(parseWireDeviceTombstone);
   } catch {
     return { status: 'blocked' };
+  }
+
+  if (pinned.state === 'none') {
+    // No pin. The server's anchor being self-consistent with its own records and
+    // envelopes is not evidence of anything: a fabricated Space looks exactly
+    // like that. Nothing is pinned and no signed media is shown until a human
+    // compares the root's fingerprint out of band, or the recovery phrase
+    // authenticates the anchor.
+    return { status: 'unverified', anchor, records };
   }
 
   const mine = highestRevision(records, deviceId);
@@ -405,11 +447,7 @@ export async function publishProtocolDeviceRecord(
 
 // ── upload ───────────────────────────────────────────────────────────────
 
-export type PendingProtocolUpload = {
-  mediaId: string;
-  manifest: MediaManifest;
-  ciphertext: Uint8Array;
-};
+export type PendingProtocolUploadRef = PendingProtocolUpload;
 
 /**
  * An interrupted upload, carrying everything needed to finish it.
@@ -437,7 +475,7 @@ export type UploadProtocolPhotoInput = {
 export async function uploadProtocolPhoto(
   session: ProtocolArchiveReady,
   prepared: UploadProtocolPhotoInput,
-  options: { resume?: PendingProtocolUpload; now?: string } = {}
+  options: { resume?: PendingProtocolUpload; scopeKey?: string; now?: string } = {}
 ): Promise<{ mediaId: string }> {
   const now = options.now ?? new Date().toISOString();
   let pending = options.resume;
@@ -470,18 +508,36 @@ export async function uploadProtocolPhoto(
         signature: signMediaManifest(manifestInput, session.device.signingPrivateKey),
       },
       ciphertext: sealed.ciphertext,
+      uri: prepared.uri,
+      width: prepared.width,
+      height: prepared.height,
+      createdAt: now,
     };
+  }
+
+  // Persist before the first network call. A termination anywhere below — the
+  // reserve, the PUT, the finalisation, or the manifest — then leaves enough
+  // behind to finish under the same media id.
+  const upload = pending;
+  if (options.scopeKey) {
+    await rememberPendingUpload(options.scopeKey, {
+      ...upload,
+      uri: prepared.uri,
+      width: prepared.width,
+      height: prepared.height,
+      createdAt: now,
+    });
   }
 
   try {
     const reservation = await session.client.reserveMedia({
-      mediaId: pending.mediaId,
+      mediaId: upload.mediaId,
       generation: session.generation,
       uploaderDeviceId: session.deviceId,
-      byteLength: pending.ciphertext.length,
+      byteLength: upload.ciphertext.length,
     });
-    await session.client.putObject(reservation.uploadUrl, reservation.headers, pending.ciphertext);
-    await session.client.finalizeMedia(pending.mediaId);
+    await session.client.putObject(reservation.uploadUrl, reservation.headers, upload.ciphertext);
+    await session.client.finalizeMedia(upload.mediaId);
   } catch (error) {
     // A refusal here means the server is further along than this attempt — not
     // that the upload is finished. Whether it is finished is decided below, by
@@ -492,22 +548,28 @@ export async function uploadProtocolPhoto(
       (error.status === 400 || error.status === 409 || error.status === 412);
     if (!recoverable) {
       throw new ProtocolUploadInterrupted(
-        pending,
+        upload,
         'The upload was interrupted. Retry with the same media id.'
       );
     }
   }
 
   try {
-    await session.client.putManifest(pending.mediaId, toWireMediaManifest(pending.manifest));
+    await session.client.putManifest(upload.mediaId, toWireMediaManifest(upload.manifest));
   } catch {
     throw new ProtocolUploadInterrupted(
-      pending,
+      upload,
       'The upload could not be finished. Retry with the same media id.'
     );
   }
 
-  return { mediaId: pending.mediaId };
+  // Only now: the manifest published, so this upload is genuinely finished and
+  // only its own temporary file may go.
+  if (options.scopeKey) {
+    await forgetPendingUpload(options.scopeKey, upload.mediaId);
+  }
+
+  return { mediaId: upload.mediaId };
 }
 
 // ── read ─────────────────────────────────────────────────────────────────
@@ -533,6 +595,12 @@ export type ProtocolArchiveRead = {
    * because it is absent from it.
    */
   incomplete: boolean;
+  /**
+   * The media whose download failed this pass. Distinct from `deleted` and
+   * `rejected`: those are decisions, this is an outage, and a caller keeps the
+   * copy it already showed rather than treating the outage as a removal.
+   */
+  missing: string[];
 };
 
 export async function readProtocolArchive(
@@ -579,7 +647,7 @@ export async function readProtocolArchive(
   const photos: ProtocolPhoto[] = [];
   const deleted: string[] = [];
   const rejected: { mediaId: string; reason: string }[] = [];
-  let incomplete = false;
+  const missing: string[] = [];
 
   for (const wire of manifests) {
     const verified = verifyArchiveManifest({
@@ -612,7 +680,7 @@ export async function readProtocolArchive(
       // A fetch that failed is not a photo that was deleted, and not a photo
       // that is absent: the archive is simply not fully known this pass. The
       // caller keeps whatever it already had and tries again.
-      incomplete = true;
+      missing.push(manifest.mediaId);
       continue;
     }
 
@@ -648,7 +716,7 @@ export async function readProtocolArchive(
     await recordAuthenticatedDeletion(session.spaceId, tombstone.mediaId, tombstone.revision);
   }
 
-  return { photos, deleted, rejected, incomplete };
+  return { photos, deleted, rejected, incomplete: missing.length > 0, missing };
 }
 
 // ── remove ───────────────────────────────────────────────────────────────

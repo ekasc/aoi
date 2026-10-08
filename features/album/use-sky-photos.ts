@@ -19,11 +19,7 @@ import {
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
 import { prepareSkyPhoto } from '@/features/album/sky-photo-import';
-import {
-  forgetPendingUpload,
-  readPendingUploads,
-  rememberPendingUpload,
-} from '@/features/album/protocol-upload-journal';
+import { readPendingUploads } from '@/features/album/protocol-upload-journal';
 import { SKY_PHOTO_BATCH_LIMIT, releaseSelectedSkyPhotos, skyPhotoScopeKey, type SelectedSkyPhoto, type SkyPhoto } from '@/features/album/sky-photo-repository';
 import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
@@ -52,6 +48,11 @@ export type ProtocolStatus =
   | 'none'
   /** Claimed an id; waiting for a verified device to enrol this one. */
   | 'waiting'
+  /**
+   * Joining, and nothing here has verified the root yet. The screen shows the
+   * fingerprint and asks a human to confirm it before anything is pinned.
+   */
+  | 'unverified'
   /** Established and trusted. */
   | 'ready'
   /** The server could not be reached. Retry. */
@@ -112,16 +113,8 @@ async function resumePendingUploads(bundle: SessionBundle): Promise<void> {
       await uploadProtocolPhoto(
         bundle.protocol,
         { uri: entry.uri, width: entry.width, height: entry.height },
-        {
-          resume: {
-            mediaId: entry.mediaId,
-            manifest: entry.manifest,
-            ciphertext: entry.ciphertext,
-          },
-        }
+        { resume: entry, scopeKey: bundle.scopeKey }
       );
-      // Only now: the manifest published, so the upload is genuinely finished.
-      await forgetPendingUpload(bundle.scopeKey, entry.mediaId);
     } catch {
       // Still unfinished. The journal keeps it for the next run.
     }
@@ -134,11 +127,12 @@ async function resumePendingUploads(bundle: SessionBundle): Promise<void> {
  * media that passed its checks.
  */
 async function loadBundlePhotos(
-  bundle: SessionBundle
-): Promise<{ photos: SkyPhoto[]; incomplete: boolean }> {
+  bundle: SessionBundle,
+  shown: Map<string, SkyPhoto>
+): Promise<{ photos: SkyPhoto[]; missing: string[] }> {
   const records = bundle.session ? await bundle.session.client.list() : [];
   if (!bundle.protocol) {
-    return { photos: await bundle.store.list(records), incomplete: false };
+    return { photos: await bundle.store.list(records), missing: [] };
   }
 
   const read = await readProtocolArchive(bundle.protocol);
@@ -148,8 +142,21 @@ async function loadBundlePhotos(
     bundle.protocolBytes.set(photo.mediaId, photo.bytes);
     bundle.protocolRevisions.set(photo.mediaId, 1);
   }
+
+  // A download that failed keeps the copy this device already showed. It is
+  // neither a deletion nor a rejection, so it must not vanish from the sky —
+  // and keeping it in the revision map is what stops the eviction below.
+  const carried: SkyPhoto[] = [];
+  for (const id of read.missing) {
+    const already = shown.get(id);
+    if (already) {
+      carried.push(already);
+      bundle.protocolRevisions.set(id, 1);
+    }
+  }
+
   const photos = await bundle.store.list([...read.photos.map(protocolRecord), ...records]);
-  return { photos, incomplete: read.incomplete };
+  return { photos: [...photos, ...carried], missing: read.missing };
 }
 
 export function useSkyPhotos() {
@@ -163,6 +170,8 @@ export function useSkyPhotos() {
   const operationRef = useRef<string | null>(null);
   const readSequence = useRef(0);
   const bundleRef = useRef<SessionBundle | null>(null);
+  /** What this device is currently showing, so an outage can keep it. */
+  const shownRef = useRef(new Map<string, SkyPhoto>());
   const [revision, setRevision] = useState(0);
   const [stored, setStored] = useState<PhotoRead>({ scopeKey: null, photos: [], status: 'loading', error: null, revision: 0 });
   const [operation, setOperation] = useState<{ scopeKey: string | null; kind: 'importing' | 'removing' } | null>(null);
@@ -223,13 +232,13 @@ export function useSkyPhotos() {
         };
 
         await resumePendingUploads(bundle);
-        const { photos, incomplete } = await loadBundlePhotos(bundle);
+        const { photos } = await loadBundlePhotos(bundle, shownRef.current);
 
-        // Authenticated deletion evicts the cached plaintext — but only after a
-        // read that was *complete*. A download that failed must never look like
-        // a deletion, or a flaky network would empty the sky.
+        // Authenticated deletion evicts the cached plaintext. A download that
+        // failed is not a deletion — it is carried in `protocolRevisions`, so
+        // the loop below leaves it alone.
         const previous = bundleRef.current;
-        if (!incomplete && previous && previous.scopeKey === scopeKey) {
+        if (previous && previous.scopeKey === scopeKey) {
           for (const id of previous.protocolRevisions.keys()) {
             if (!protocolRevisions.has(id)) await store.removeCached(id);
           }
@@ -240,6 +249,7 @@ export function useSkyPhotos() {
           return;
         }
         bundleRef.current = bundle;
+        shownRef.current = new Map(photos.map((photo) => [photo.id, photo]));
         setStored({
           scopeKey,
           photos,
@@ -291,30 +301,20 @@ export function useSkyPhotos() {
         const prepared = await prepareSkyPhoto(photo.uri);
         if (currentScope.current !== scopeKey) return;
         if (bundle.protocol) {
-          try {
-            await uploadProtocolPhoto(bundle.protocol, prepared);
-          } catch (error) {
-            if (error instanceof ProtocolUploadInterrupted) {
-              // Journal it so a restart finishes the same upload under the same
-              // media id, rather than starting a second one for these bytes.
-              await rememberPendingUpload(scopeKey, {
-                ...error.pending,
-                uri: photo.uri,
-                width: prepared.width,
-                height: prepared.height,
-                createdAt: new Date().toISOString(),
-              });
-            }
-            throw error;
-          }
+          // The archive journals the upload before its first network call, so a
+          // termination at any point leaves enough to resume under this id.
+          await uploadProtocolPhoto(bundle.protocol, prepared, { scopeKey });
         } else if (bundle.session) {
           await sealAndUploadPhoto(bundle.session, prepared);
         } else {
           throw new Error('The shared album is not ready');
         }
       }
-      const { photos } = await loadBundlePhotos(bundle);
-      if (currentScope.current === scopeKey) setStored({ scopeKey, photos, status: 'ready', error: null, revision });
+      const { photos } = await loadBundlePhotos(bundle, shownRef.current);
+      if (currentScope.current === scopeKey) {
+        shownRef.current = new Map(photos.map((photo) => [photo.id, photo]));
+        setStored({ scopeKey, photos, status: 'ready', error: null, revision });
+      }
     } catch {
       if (currentScope.current === scopeKey) setActionError({ scopeKey, message: ADD_ERROR });
     } finally {
@@ -345,8 +345,11 @@ export function useSkyPhotos() {
       if (currentScope.current === scopeKey) {
         setActionError({ scopeKey, message: REMOVE_ERROR });
         try {
-          const { photos } = await loadBundlePhotos(bundle);
-          if (currentScope.current === scopeKey) setStored({ scopeKey, photos, status: 'ready', error: null, revision });
+          const { photos } = await loadBundlePhotos(bundle, shownRef.current);
+          if (currentScope.current === scopeKey) {
+            shownRef.current = new Map(photos.map((photo) => [photo.id, photo]));
+            setStored({ scopeKey, photos, status: 'ready', error: null, revision });
+          }
         } catch {
           if (currentScope.current === scopeKey) setStored((previous) => ({ ...previous, status: 'failed', error: READ_ERROR }));
         }

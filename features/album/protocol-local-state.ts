@@ -39,15 +39,28 @@ async function readJson<T>(key: string): Promise<T | null> {
 
 // ── the pinned trust anchor ──────────────────────────────────────────────
 
-export async function readPinnedAnchor(spaceId: string): Promise<SpaceTrustAnchor | null> {
-  const stored = await readJson<unknown>(`${ANCHOR_PREFIX}${spaceId}`);
-  if (stored === null) return null;
+export type PinnedAnchor =
+  /** This device has never pinned a root for this Space. */
+  | { state: 'none' }
+  /** A pin exists but cannot be read. Never a fresh install. */
+  | { state: 'corrupt' }
+  | { state: 'pinned'; anchor: SpaceTrustAnchor };
+
+/**
+ * The pinned root, and *why* it is absent when it is.
+ *
+ * The distinction is the whole point: "no pin" means this device has never
+ * established trust here, and "corrupt pin" means it did and the record is
+ * unreadable. Collapsing them would let a damaged pin look like a fresh install
+ * and invite the client to adopt whatever root the server offered.
+ */
+export async function readPinnedAnchor(spaceId: string): Promise<PinnedAnchor> {
+  const raw = await AsyncStorage.getItem(`${ANCHOR_PREFIX}${spaceId}`);
+  if (raw === null) return { state: 'none' };
   try {
-    return parseWireSpaceTrustAnchor(stored);
+    return { state: 'pinned', anchor: parseWireSpaceTrustAnchor(JSON.parse(raw)) };
   } catch {
-    // A corrupt pin is not a pin. Refusing is the safe direction: the caller
-    // will not trust a root it cannot read.
-    return null;
+    return { state: 'corrupt' };
   }
 }
 
