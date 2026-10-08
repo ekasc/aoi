@@ -564,13 +564,12 @@ export const deleteAlbumMediaProgram = (
 
     // The soft delete is the user-visible act and is always immediate. Physical
     // removal is only safe once every authorization issued for this row has
-    // expired — the intent's PUT URL lives for `MEDIA_PRESIGN_TTL_SEC` from
-    // `created_at`, and deleting earlier would let a late PUT refill the key
-    // after the row stopped being counted. Quota follows storage, so the row is
-    // marked reclaimed only once the delete is confirmed; otherwise the sweep
+    // expired — and `created_at` predates presigning, so the boundary carries a
+    // safety margin on top of the nominal TTL. Quota follows storage, so the row
+    // is marked reclaimed only once the delete is confirmed; otherwise the sweep
     // retries, with `deleted_at` as the durable marker.
     const store = yield* MediaStore;
-    if (at >= media.created_at + MEDIA_PRESIGN_TTL_SEC * 1000) {
+    if (at >= media.created_at + LEGACY_ALBUM_RECLAIM_AFTER_MS) {
       const confirmed = yield* deleteKeyConfirmed(store, media.storage_key);
       if (confirmed) {
         yield* Effect.tryPromise({
@@ -648,6 +647,20 @@ export const putAlbumBackupProgram = (
 
 /** Generation 1 is the only writable generation until rotation exists. */
 export const ALBUM_WRITABLE_GENERATION = 1;
+
+/**
+ * The earliest moment physical removal is safe for a legacy album row.
+ *
+ * `created_at` is written *before* presigning happens, so the URL the device
+ * holds expires strictly later than `created_at + MEDIA_PRESIGN_TTL_SEC`. The
+ * margin covers that ordering gap plus clock skew, exactly as the signed-media
+ * reservation deadline does. It is one constant used by both the request-time
+ * delete and the scheduled reclamation, so the two can never disagree about
+ * when removal is safe.
+ */
+export const LEGACY_ALBUM_RECLAIM_SAFETY_MS = 15 * 60 * 1000;
+export const LEGACY_ALBUM_RECLAIM_AFTER_MS =
+  MEDIA_PRESIGN_TTL_SEC * 1000 + LEGACY_ALBUM_RECLAIM_SAFETY_MS;
 
 /**
  * How long a reservation outlives its own presigned URL.
@@ -1052,4 +1065,107 @@ export const finalizeAlbumMediaProgram = (
     }
 
     return { ok: true as const };
+  });
+
+// ── Signed media: read the sealed object ─────────────────────────────────
+
+/**
+ * Serve one signed media's sealed ciphertext.
+ *
+ * Authorization is the *reservation*, not the legacy album table: only a
+ * `complete` reservation for this Space and media, with a published manifest,
+ * is readable. Pending, claimed, and failed rows are all absent as far as this
+ * route is concerned, so nothing in flight and nothing reclaimed is ever handed
+ * out.
+ *
+ * The object has to still be the one finalisation pinned. A presigned PUT can
+ * outlive the write that completed it, so the etag and size recorded at
+ * completion are compared and a mismatch is a conflict rather than a silent
+ * substitution — the client would otherwise verify a manifest against bytes it
+ * never received.
+ *
+ * A signed media tombstone is deliberately ignored here. The server cannot
+ * authenticate that signature, so it cannot be permission to withhold or delete
+ * anything; suppression is the client's decision, made after it verifies.
+ */
+export const serveAlbumSignedObjectProgram = (
+  userId: string,
+  mediaId: string
+): Effect.Effect<
+  AlbumServeOutput,
+  BadRequestError | ForbiddenError | NotFoundError | ConflictError | InternalError,
+  DbService | MediaStoreService
+> =>
+  Effect.gen(function* () {
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return yield* Effect.fail(badRequest('You must have an active space to read media'));
+    }
+
+    const db = yield* Db;
+
+    const reservation = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `select state, completed_etag, completed_size from album_media_reservations
+              where space_id = ? and media_id = ?`
+          )
+          .bind(spaceId, mediaId)
+          .first<{
+            state: string;
+            completed_etag: string | null;
+            completed_size: number | null;
+          }>(),
+      catch: () => new InternalError({}),
+    });
+    if (!reservation || reservation.state !== 'complete') {
+      return yield* Effect.fail(notFound('Media not found'));
+    }
+
+    // Without a published manifest the bytes have no authentication handle, so
+    // handing them out would only invite a client to trust unverifiable data.
+    const manifest = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            'select 1 as one from album_media_manifests where space_id = ? and media_id = ?'
+          )
+          .bind(spaceId, mediaId)
+          .first<{ one: number }>(),
+      catch: () => new InternalError({}),
+    });
+    if (!manifest) {
+      return yield* Effect.fail(notFound('Media not found'));
+    }
+
+    const store = yield* MediaStore;
+    const object = yield* Effect.tryPromise({
+      try: () => store.get(albumMediaKey(spaceId, mediaId)),
+      catch: () => new InternalError({}),
+    });
+    if (!object) {
+      return yield* Effect.fail(notFound('Media not found'));
+    }
+
+    const replaced =
+      (reservation.completed_etag !== null && object.httpEtag !== reservation.completed_etag) ||
+      (reservation.completed_size !== null && object.size !== reservation.completed_size);
+    if (replaced) {
+      return yield* Effect.fail(
+        conflict('The stored object no longer matches the one that was finalised')
+      );
+    }
+
+    return {
+      status: 200 as const,
+      headers: {
+        'Content-Type': ALBUM_CONTENT_TYPE,
+        'Content-Length': String(object.size),
+        'Cache-Control': 'private, max-age=86400',
+        'X-Content-Type-Options': 'nosniff',
+        ETag: object.httpEtag,
+      },
+      body: object.body,
+    };
   });

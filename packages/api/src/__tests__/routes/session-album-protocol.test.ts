@@ -513,4 +513,27 @@ describe('the media protocol route', () => {
     });
     expect(anon.status).toBe(401);
   });
+
+  it('serves the sealed object for a completed, manifested media', async () => {
+    const { harness, app } = makeApp();
+    await publishableMedia(harness, app, MEDIA_1);
+    await put(app, `${MEDIA_BASE}/${MEDIA_1}/manifest`, TOKEN_A, manifestBody(MEDIA_1));
+
+    const response = await app.request(`${MEDIA_BASE}/${MEDIA_1}/object`, {
+      headers: auth(TOKEN_A),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/octet-stream');
+    expect((await response.arrayBuffer()).byteLength).toBe(3);
+  });
+
+  it('refuses the object route without a manifest, and without a session', async () => {
+    const { harness, app } = makeApp();
+    await publishableMedia(harness, app, MEDIA_1);
+
+    expect(
+      (await app.request(`${MEDIA_BASE}/${MEDIA_1}/object`, { headers: auth(TOKEN_A) })).status
+    ).toBe(404);
+    expect((await app.request(`${MEDIA_BASE}/${MEDIA_1}/object`)).status).toBe(401);
+  });
 });

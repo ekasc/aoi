@@ -8,6 +8,7 @@ import {
   ALBUM_RESERVATION_LAST_RENEWAL_MS,
   ALBUM_RESERVATION_MAX_LIFETIME_MS,
   ALBUM_RESERVATION_TTL_MS,
+  LEGACY_ALBUM_RECLAIM_AFTER_MS,
   albumMediaKey,
   completeAlbumUploadProgram,
   createAlbumUploadIntentProgram,
@@ -17,8 +18,10 @@ import {
   listAlbumMediaProgram,
   putAlbumBackupProgram,
   reserveAlbumMediaProgram,
+  serveAlbumSignedObjectProgram,
   serveAlbumObjectProgram,
 } from '../../domains/album';
+import { MEDIA_PRESIGN_TTL_SEC } from '../../services/media-store';
 import { mediaPurgeProgram } from '../../programs/cron';
 import { COUNTED_MEDIA_BYTES_SQL } from '../../domains/plus';
 import {
@@ -1318,6 +1321,186 @@ describe('the legacy delete and completion race', () => {
     // can no longer be finalised.
     expect(
       await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, 'legacy-race-2')))
+    ).toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('the legacy delete boundary', () => {
+  it('keeps the object while a presigning delay could still leave its URL live', async () => {
+    const ctx = makeCtx();
+    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
+    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
+    const now = ctx.harness.clock.value();
+    const mediaId = '00000000-0000-4000-8000-0000000000e1';
+    // Exactly the nominal TTL. `created_at` predates presigning, so the issued
+    // URL expires later than this and the object must stay.
+    const key = insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A, {
+      state: 'complete',
+      createdAt: now - MEDIA_PRESIGN_TTL_SEC * 1000,
+    });
+    ctx.harness.r2.putSync(key, new Uint8Array([1]), 'application/octet-stream');
+
+    await run(ctx.provide(deleteAlbumMediaProgram(USER_A, mediaId)));
+
+    expect(ctx.harness.r2.objects.has(key)).toBe(true);
+    const row = ctx.harness.d1.rawDb
+      .prepare('select storage_reclaimed_at from album_media where id = ?')
+      .get(mediaId) as { storage_reclaimed_at: number | null };
+    expect(row.storage_reclaimed_at).toBeNull();
+  });
+
+  it('removes the object once the safe boundary has passed', async () => {
+    const ctx = makeCtx();
+    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
+    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
+    const now = ctx.harness.clock.value();
+    const mediaId = '00000000-0000-4000-8000-0000000000e2';
+    const key = insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A, {
+      state: 'complete',
+      createdAt: now - LEGACY_ALBUM_RECLAIM_AFTER_MS - 1,
+    });
+    ctx.harness.r2.putSync(key, new Uint8Array([1]), 'application/octet-stream');
+
+    await run(ctx.provide(deleteAlbumMediaProgram(USER_A, mediaId)));
+
+    expect(ctx.harness.r2.objects.has(key)).toBe(false);
+    const row = ctx.harness.d1.rawDb
+      .prepare('select storage_reclaimed_at from album_media where id = ?')
+      .get(mediaId) as { storage_reclaimed_at: number | null };
+    expect(row.storage_reclaimed_at).toBeTypeOf('number');
+  });
+});
+
+describe('serving a signed-media object', () => {
+  /** The read only checks that a manifest exists; its payload is not read here. */
+  function publishManifestRow(ctx: ReturnType<typeof couple>, mediaId: string): void {
+    ctx.harness.d1.runSync(
+      `insert into album_media_manifests
+         (space_id, media_id, uploader_device_id, revision, payload, created_at)
+       values (?, ?, 'device-a', 1, '{}', ?)`,
+      SPACE_1,
+      mediaId,
+      T0
+    );
+  }
+
+  async function completedReservation(ctx: ReturnType<typeof couple>, mediaId = MEDIA_1) {
+    await run(
+      ctx.provide(
+        reserveAlbumMediaProgram(USER_A, {
+          mediaId,
+          generation: 1,
+          uploaderDeviceId: 'device-a',
+          byteLength: 3,
+        })
+      )
+    );
+    seedSealed(ctx, mediaId, 3);
+    await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, mediaId)));
+  }
+
+  function withUploader() {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    return ctx;
+  }
+
+  it('serves the sealed bytes for a completed, manifested media', async () => {
+    const ctx = withUploader();
+    await completedReservation(ctx);
+    publishManifestRow(ctx, MEDIA_1);
+
+    const output = await run(ctx.provide(serveAlbumSignedObjectProgram(USER_A, MEDIA_1)));
+    expect(output.status).toBe(200);
+    expect(output.headers['Content-Type']).toBe('application/octet-stream');
+    expect(output.headers['Content-Length']).toBe('3');
+    const body = new Uint8Array(
+      await new Response(output.body as unknown as BodyInit).arrayBuffer()
+    );
+    expect(body.length).toBe(3);
+  });
+
+  it('refuses a reservation that is not complete', async () => {
+    const ctx = withUploader();
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    publishManifestRow(ctx, MEDIA_1);
+
+    expect(
+      await failureOf(ctx.provide(serveAlbumSignedObjectProgram(USER_A, MEDIA_1)))
+    ).toBeInstanceOf(NotFoundError);
+  });
+
+  it('refuses a cleanup-owned reservation', async () => {
+    const ctx = withUploader();
+    await completedReservation(ctx);
+    publishManifestRow(ctx, MEDIA_1);
+    ctx.harness.d1.runSync(
+      `update album_media_reservations set state = 'expiring' where space_id = ? and media_id = ?`,
+      SPACE_1,
+      MEDIA_1
+    );
+
+    expect(
+      await failureOf(ctx.provide(serveAlbumSignedObjectProgram(USER_A, MEDIA_1)))
+    ).toBeInstanceOf(NotFoundError);
+  });
+
+  it('refuses media with no published manifest', async () => {
+    const ctx = withUploader();
+    await completedReservation(ctx);
+
+    // The bytes have no authentication handle without a manifest, so the server
+    // does not hand them out.
+    expect(
+      await failureOf(ctx.provide(serveAlbumSignedObjectProgram(USER_A, MEDIA_1)))
+    ).toBeInstanceOf(NotFoundError);
+  });
+
+  it('refuses an object that no longer matches what finalisation pinned', async () => {
+    const ctx = withUploader();
+    await completedReservation(ctx);
+    publishManifestRow(ctx, MEDIA_1);
+    // A replay replaced the object after it was finalised.
+    seedSealed(ctx, MEDIA_1, 4);
+
+    expect(
+      await failureOf(ctx.provide(serveAlbumSignedObjectProgram(USER_A, MEDIA_1)))
+    ).toBeInstanceOf(ConflictError);
+  });
+
+  it('refuses a missing object', async () => {
+    const ctx = withUploader();
+    await completedReservation(ctx);
+    publishManifestRow(ctx, MEDIA_1);
+    ctx.harness.r2.objects.delete(albumMediaKey(SPACE_1, MEDIA_1));
+
+    expect(
+      await failureOf(ctx.provide(serveAlbumSignedObjectProgram(USER_A, MEDIA_1)))
+    ).toBeInstanceOf(NotFoundError);
+  });
+
+  it('does not authorize the read from the legacy album table', async () => {
+    const ctx = withUploader();
+    // A legacy row for the same id is not a signed-media reservation.
+    insertAlbumMedia(ctx.harness.d1, MEDIA_1, SPACE_1, USER_A, { state: 'complete' });
+    publishManifestRow(ctx, MEDIA_1);
+
+    expect(
+      await failureOf(ctx.provide(serveAlbumSignedObjectProgram(USER_A, MEDIA_1)))
+    ).toBeInstanceOf(NotFoundError);
+  });
+
+  it('refuses a media id reserved in another Space', async () => {
+    const ctx = withUploader();
+    await completedReservation(ctx);
+    publishManifestRow(ctx, MEDIA_1);
+
+    insertUser(ctx.harness.d1, USER_C, 'c@example.com', 'Cara');
+    insertSpace(ctx.harness.d1, OTHER_SPACE, USER_C);
+
+    expect(
+      await failureOf(ctx.provide(serveAlbumSignedObjectProgram(USER_C, MEDIA_1)))
     ).toBeInstanceOf(NotFoundError);
   });
 });

@@ -31,7 +31,11 @@ import {
 import type { RunProgram } from '../create-app';
 import { makeAuthMiddleware } from '../middleware/session';
 import { makeRateLimitMiddleware } from '../middleware/session-rate-limit';
-import { finalizeAlbumMediaProgram, reserveAlbumMediaProgram } from '../domains/album';
+import {
+  finalizeAlbumMediaProgram,
+  reserveAlbumMediaProgram,
+  serveAlbumSignedObjectProgram,
+} from '../domains/album';
 import {
   getAlbumMediaProtocolProgram,
   getAlbumProtocolSnapshotProgram,
@@ -191,6 +195,22 @@ export function albumProtocolRouter(run: RunProgram): Hono {
         finalizeAlbumMediaProgram(c.var.userId, c.req.valid('param').mediaId)
       );
       return c.json(result);
+    }
+  );
+
+  router.get(
+    '/v1/spaces/current/album/protocol/media/:mediaId/object',
+    requireAuth,
+    rateLimit,
+    zValidator('param', mediaIdParamSchema),
+    async (c) => {
+      const output = await run(
+        serveAlbumSignedObjectProgram(c.var.userId, c.req.valid('param').mediaId)
+      );
+      return new Response(output.body as unknown as BodyInit, {
+        status: output.status,
+        headers: output.headers,
+      });
     }
   );
 
