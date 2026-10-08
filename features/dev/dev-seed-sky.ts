@@ -1,5 +1,6 @@
 import { Asset } from 'expo-asset';
 
+import seedPhoto from '@/assets/images/midnight-window.jpg';
 import { sealAlbumMedia } from '@/features/album/album';
 import { establishAlbumSession } from '@/features/album/album-session';
 import { fromBase64, generateMediaKey } from '@/features/album/crypto';
@@ -17,7 +18,6 @@ import { readPhotoBytes } from '@/features/album/photo-bytes';
  * do not pile up duplicates.
  */
 
-const SEED_PHOTO = require('../../assets/images/midnight-window.jpg');
 const SEED_COUNT = 6;
 
 export async function seedDevSkyPhotos(spaceId: string, userId: string): Promise<void> {
@@ -31,7 +31,7 @@ export async function seedDevSkyPhotos(spaceId: string, userId: string): Promise
     return;
   }
 
-  const asset = Asset.fromModule(SEED_PHOTO);
+  const asset = Asset.fromModule(seedPhoto);
   await asset.downloadAsync();
   const uri = asset.localUri ?? asset.uri;
   if (!uri) {
@@ -60,7 +60,9 @@ export async function seedDevSkyPhotos(spaceId: string, userId: string): Promise
       );
       const intent = await session.client.createIntent({
         mimeType: 'image/jpeg',
-        byteLength: bytes.byteLength,
+        // The sealed ciphertext's own length: the reservation, the completion
+        // check, and the stored metadata all mean this number.
+        byteLength: media.byteLength,
         sealedNonce: media.sealed.nonce,
         wrappedKey: media.wrappedKey,
         width: 1600,
