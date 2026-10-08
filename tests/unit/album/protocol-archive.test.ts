@@ -33,6 +33,11 @@ import {
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
 import { signMediaManifest } from '@/features/album/protocol-crypto';
+import {
+  forgetPendingUpload,
+  readPendingUploads,
+  rememberPendingUpload,
+} from '@/features/album/protocol-upload-journal';
 
 /**
  * The product flows, on two simulated devices against an in-memory server that
@@ -58,6 +63,12 @@ vi.mock('@/features/album/photo-bytes', () => ({
 vi.mock('@/features/album/device-id', () => ({ getOrCreateDeviceId: async () => 'device-1' }));
 vi.mock('@/features/album/local-key-store', () => ({
   createLocalKeyStore: () => ({ ensureDevice: vi.fn(), loadDevice: vi.fn(), forgetDevice: vi.fn() }),
+}));
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async () => {},
+  deleteItemAsync: async () => {},
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked-this-device-only',
 }));
 
 class FakeServer implements AlbumProtocolClient {
@@ -420,7 +431,34 @@ describe('the connected signed archive', () => {
       keyStore: keyStoreFor(device('device-alice')),
       now: NOW,
     });
-    expect(again.status).toBe('unavailable');
+    // A trust mismatch is `blocked`, not `unavailable`: retrying will not fix
+    // it, and a caller must surface it rather than quietly using the legacy path.
+    expect(again.status).toBe('blocked');
+  });
+
+  it('does not create a replacement archive when a pinned device sees no anchor', async () => {
+    const { server, alice } = await couple();
+    void alice;
+    const original = server.anchor!;
+
+    // The server withholds the root. Creating a new one here would mint a fresh
+    // archive over the old under the same Space id.
+    server.anchor = null;
+    const again = await establishProtocolArchive({
+      spaceId: server.spaceId,
+      deviceId: 'device-alice',
+      client: server,
+      keyStore: keyStoreFor(device('device-alice')),
+      now: NOW,
+    });
+
+    expect(again.status).toBe('blocked');
+    expect(server.anchor).toBeNull();
+    // The pin is untouched, so the archive is still the one this device trusts.
+    expect(server.records.get('device-alice')).toEqual(
+      expect.objectContaining({ deviceId: 'device-alice' })
+    );
+    void original;
   });
 
   it('keeps one Space out of another Space, including its local state', async () => {
@@ -437,8 +475,7 @@ describe('the connected signed archive', () => {
     expect((await readProtocolArchive(two.bob)).deleted).not.toContain(mediaId);
   });
 
-  it('does not see legacy media, and never touches it', async () => {
-    const { alice, bob } = await couple();
+  it('does not see legacy media, and never touches it', async () => {    const { alice, bob } = await couple();
     await uploadProtocolPhoto(alice, { uri: 'signed.jpg', width: 1, height: 1 }, { now: NOW });
 
     // Legacy rows live in a different table and have no manifest, so the signed
@@ -449,5 +486,69 @@ describe('the connected signed archive', () => {
     expect(read.photos).toHaveLength(1);
     expect(read.photos[0].mediaId).not.toBe('legacy-1');
     expect((bob.client as unknown as { legacy?: unknown }).legacy).toBeUndefined();
+  });
+
+  it('reports a partial read rather than dropping a photo that failed to download', async () => {
+    const { server, alice, bob } = await couple();
+    await uploadProtocolPhoto(alice, { uri: 'flaky.jpg', width: 1, height: 1 }, { now: NOW });
+    const mediaId = (await readProtocolArchive(bob)).photos[0].mediaId;
+
+    const originalFetch = server.fetchMediaObject.bind(server);
+    let failOnce = true;
+    server.fetchMediaObject = async (id: string) => {
+      if (failOnce && id === mediaId) {
+        failOnce = false;
+        throw new ProtocolRequestError(0, 'the network dropped');
+      }
+      return originalFetch(id);
+    };
+
+    // The failure is reported as an incomplete read, not as an absent photo, so
+    // a caller keeps what it already had instead of evicting it.
+    const partial = await readProtocolArchive(bob);
+    expect(partial.photos).toHaveLength(0);
+    expect(partial.incomplete).toBe(true);
+
+    const recovered = await readProtocolArchive(bob);
+    expect(recovered.photos).toHaveLength(1);
+    expect(recovered.incomplete).toBe(false);
+  });
+
+  it('journals an interrupted upload so a restart finishes the same one', async () => {
+    const { alice, bob } = await couple();
+    (alice.client as unknown as FakeServer).failNextPut = true;
+
+    let pending: ProtocolUploadInterrupted | null = null;
+    try {
+      await uploadProtocolPhoto(alice, { uri: 'journal.jpg', width: 1, height: 1 }, { now: NOW });
+    } catch (error) {
+      pending = error as ProtocolUploadInterrupted;
+    }
+    expect(pending).not.toBeNull();
+
+    const scope = 'scope-alice';
+    await rememberPendingUpload(scope, {
+      ...pending!.pending,
+      uri: 'journal.jpg',
+      width: 1,
+      height: 1,
+      createdAt: NOW,
+    });
+    const entries = await readPendingUploads(scope);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].mediaId).toBe(pending!.pending.mediaId);
+
+    // A restart resumes under the same media id, then clears the entry only
+    // once the manifest has actually published.
+    await uploadProtocolPhoto(
+      alice,
+      { uri: entries[0].uri, width: entries[0].width, height: entries[0].height },
+      { resume: entries[0], now: NOW }
+    );
+    await forgetPendingUpload(scope, entries[0].mediaId);
+    expect(await readPendingUploads(scope)).toHaveLength(0);
+    const read = await readProtocolArchive(bob);
+    expect(read.photos).toHaveLength(1);
+    expect(read.photos[0].mediaId).toBe(pending!.pending.mediaId);
   });
 });

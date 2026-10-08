@@ -26,7 +26,6 @@ import { fromBase64, toBase64 } from '@/features/album/crypto';
 
 const ANCHOR_PREFIX = 'aoi.album.anchor.v1.';
 const DELETION_PREFIX = 'aoi.album.deletions.v1.';
-const RECOVERY_PREFIX = 'aoi.album.recovery.v1.';
 
 async function readJson<T>(key: string): Promise<T | null> {
   const raw = await AsyncStorage.getItem(key);
@@ -103,13 +102,52 @@ export async function recordAuthenticatedDeletion(
 
 // ── recovery entropy ─────────────────────────────────────────────────────
 
+const RECOVERY_PREFIX = 'aoi.album.recovery.v1.';
+
+/**
+ * The phrase's bytes live in the platform keystore, not app data.
+ *
+ * Whoever holds them can read the archive and authorise devices, so they are a
+ * secret of the same rank as a device's private key, and they get the same
+ * storage. On web there is no keystore; that fallback exists because the browser
+ * is a development preview and must never be the production path.
+ *
+ * The module is imported lazily so a client that never touches recovery never
+ * loads a native module it has no use for.
+ */
+async function protectedStore(): Promise<{
+  get: (key: string) => Promise<string | null>;
+  set: (key: string, value: string) => Promise<void>;
+  remove: (key: string) => Promise<void>;
+}> {
+  const { Platform } = await import('react-native');
+  if (Platform.OS === 'web') {
+    return {
+      get: (key) => AsyncStorage.getItem(key),
+      set: (key, value) => AsyncStorage.setItem(key, value),
+      remove: (key) => AsyncStorage.removeItem(key),
+    };
+  }
+  const SecureStore = await import('expo-secure-store');
+  return {
+    get: (key) => SecureStore.getItemAsync(key),
+    set: (key, value) =>
+      SecureStore.setItemAsync(key, value, {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      }),
+    remove: (key) => SecureStore.deleteItemAsync(key),
+  };
+}
+
 export async function readRecoveryEntropy(spaceId: string): Promise<Uint8Array | null> {
-  const stored = await AsyncStorage.getItem(`${RECOVERY_PREFIX}${spaceId}`);
+  const store = await protectedStore();
+  const stored = await store.get(`${RECOVERY_PREFIX}${spaceId}`);
   return stored === null ? null : fromBase64(stored);
 }
 
 export async function writeRecoveryEntropy(spaceId: string, entropy: Uint8Array): Promise<void> {
-  await AsyncStorage.setItem(`${RECOVERY_PREFIX}${spaceId}`, toBase64(entropy));
+  const store = await protectedStore();
+  await store.set(`${RECOVERY_PREFIX}${spaceId}`, toBase64(entropy));
 }
 
 /** Leaving a Space, sign-out, account removal: nothing here belongs to anyone else. */
@@ -117,6 +155,7 @@ export async function clearProtocolLocalState(spaceId: string): Promise<void> {
   await AsyncStorage.multiRemove([
     `${ANCHOR_PREFIX}${spaceId}`,
     `${DELETION_PREFIX}${spaceId}`,
-    `${RECOVERY_PREFIX}${spaceId}`,
   ]);
+  const store = await protectedStore();
+  await store.remove(`${RECOVERY_PREFIX}${spaceId}`);
 }

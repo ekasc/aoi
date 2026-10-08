@@ -34,6 +34,7 @@ export function usePreviewSkyPhotos(variant: PreviewVariant): ReturnType<typeof 
     readError: variant === 'failed' ? 'Could not open your local photos. Please try again.' : null,
     actionError: null,
     operation: null,
+    protocolStatus: 'none' as const,
     reload: () => {},
     choosePhotos: async () => { setPhotos(fixtures); },
     removePhoto: async (id) => { setPhotos((current) => current.filter((photo) => photo.id !== id)); },

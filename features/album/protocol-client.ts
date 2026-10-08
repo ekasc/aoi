@@ -79,14 +79,31 @@ export interface AlbumProtocolClient {
   fetchMediaObject(mediaId: string): Promise<Uint8Array>;
 }
 
+/**
+ * `apiFetch` throws ordinary `Error`s carrying a `status`; callers here need to
+ * tell "already done" from "failed", so every protocol request is normalised to
+ * one error type with the status preserved.
+ */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    return await apiFetch<T>(path, init);
+  } catch (error) {
+    const status = (error as { status?: number }).status ?? 0;
+    throw new ProtocolRequestError(
+      status,
+      error instanceof Error ? error.message : 'The request failed'
+    );
+  }
+}
+
 function remoteClient(): AlbumProtocolClient {
   return {
     async getSnapshot() {
-      return wireAlbumProtocolSnapshotSchema.parse(await apiFetch<unknown>(PROTOCOL));
+      return wireAlbumProtocolSnapshotSchema.parse(await request<unknown>(PROTOCOL));
     },
     async putAnchor(anchor) {
       wireAlbumTrustAnchorResponseSchema.parse(
-        await apiFetch<unknown>(`${PROTOCOL}/anchor`, {
+        await request<unknown>(`${PROTOCOL}/anchor`, {
           method: 'PUT',
           body: JSON.stringify(anchor),
         })
@@ -94,7 +111,7 @@ function remoteClient(): AlbumProtocolClient {
     },
     async claimDevice(claim) {
       wireDeviceClaimResponseSchema.parse(
-        await apiFetch<unknown>(`${PROTOCOL}/device-claims`, {
+        await request<unknown>(`${PROTOCOL}/device-claims`, {
           method: 'POST',
           body: JSON.stringify(claim),
         })
@@ -102,7 +119,7 @@ function remoteClient(): AlbumProtocolClient {
     },
     async putDeviceRecord(record) {
       wireAlbumDeviceRecordResponseSchema.parse(
-        await apiFetch<unknown>(`${PROTOCOL}/devices/${encodeURIComponent(record.deviceId)}`, {
+        await request<unknown>(`${PROTOCOL}/devices/${encodeURIComponent(record.deviceId)}`, {
           method: 'PUT',
           body: JSON.stringify(record),
         })
@@ -110,7 +127,7 @@ function remoteClient(): AlbumProtocolClient {
     },
     async putSpaceKeyEnvelope(envelope) {
       wireAlbumSpaceKeyEnvelopeResponseSchema.parse(
-        await apiFetch<unknown>(`${PROTOCOL}/envelopes`, {
+        await request<unknown>(`${PROTOCOL}/envelopes`, {
           method: 'PUT',
           body: JSON.stringify(envelope),
         })
@@ -118,7 +135,7 @@ function remoteClient(): AlbumProtocolClient {
     },
     async putRecoveryEnvelope(generation, envelope) {
       wireAlbumRecoveryEnvelopeResponseSchema.parse(
-        await apiFetch<unknown>(`${PROTOCOL}/recovery-envelopes/${generation}`, {
+        await request<unknown>(`${PROTOCOL}/recovery-envelopes/${generation}`, {
           method: 'PUT',
           body: JSON.stringify(envelope),
         })
@@ -126,7 +143,7 @@ function remoteClient(): AlbumProtocolClient {
     },
     async reserveMedia(input) {
       return wireAlbumMediaReservationResponseSchema.parse(
-        await apiFetch<unknown>(MEDIA, { method: 'POST', body: JSON.stringify(input) })
+        await request<unknown>(MEDIA, { method: 'POST', body: JSON.stringify(input) })
       );
     },
     async putObject(uploadUrl, headers, bytes) {
@@ -142,14 +159,14 @@ function remoteClient(): AlbumProtocolClient {
       }
     },
     async finalizeMedia(mediaId) {
-      await apiFetch<unknown>(`${MEDIA}/${encodeURIComponent(mediaId)}/complete`, {
+      await request<unknown>(`${MEDIA}/${encodeURIComponent(mediaId)}/complete`, {
         method: 'POST',
         body: JSON.stringify({}),
       });
     },
     async putManifest(mediaId, manifest) {
       wireAlbumMediaManifestResponseSchema.parse(
-        await apiFetch<unknown>(`${MEDIA}/${encodeURIComponent(mediaId)}/manifest`, {
+        await request<unknown>(`${MEDIA}/${encodeURIComponent(mediaId)}/manifest`, {
           method: 'PUT',
           body: JSON.stringify(manifest),
         })
@@ -157,7 +174,7 @@ function remoteClient(): AlbumProtocolClient {
     },
     async postMediaTombstone(tombstone) {
       wireAlbumMediaTombstoneResponseSchema.parse(
-        await apiFetch<unknown>(`${PROTOCOL}/media-tombstones`, {
+        await request<unknown>(`${PROTOCOL}/media-tombstones`, {
           method: 'POST',
           body: JSON.stringify(tombstone),
         })
@@ -165,7 +182,7 @@ function remoteClient(): AlbumProtocolClient {
     },
     async fetchMediaProtocol(cursor) {
       const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`;
-      return wireAlbumMediaProtocolSchema.parse(await apiFetch<unknown>(`${MEDIA}${query}`));
+      return wireAlbumMediaProtocolSchema.parse(await request<unknown>(`${MEDIA}${query}`));
     },
     async fetchMediaObject(mediaId) {
       const result = await apiFetchBytes(`${MEDIA}/${encodeURIComponent(mediaId)}/object`);

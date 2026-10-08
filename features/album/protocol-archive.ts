@@ -5,6 +5,7 @@ import {
   encodeMediaContext,
   parseWireDeviceRecord,
   parseWireDeviceTombstone,
+  parseWireRecoveryEnvelope,
   parseWireSpaceKeyEnvelope,
   parseWireSpaceTrustAnchor,
   toWireDeviceRecord,
@@ -24,6 +25,7 @@ import {
 } from '@aoi/shared';
 
 import { generateMediaKey } from '@/features/album/crypto';
+import { verificationFingerprint } from '@/features/album/keys';
 import type { LocalKeyStore } from '@/features/album/local-key-store';
 import { readPhotoBytes } from '@/features/album/photo-bytes';
 import {
@@ -55,6 +57,7 @@ import {
   recordAuthenticatedDeletion,
   writeRecoveryEntropy,
 } from '@/features/album/protocol-local-state';
+import { recoverSpaceFromPhrase } from '@/features/album/protocol-recovery';
 import {
   authenticateMediaTombstones,
   collectMediaPages,
@@ -101,9 +104,14 @@ export type ProtocolArchiveReady = {
 export type ProtocolArchive =
   | ProtocolArchiveReady
   /** This device has claimed an id and nobody has authorised it yet. */
-  | { status: 'waiting' }
-  /** The server offered a root this device does not trust, or is unreachable. */
-  | { status: 'unavailable' };
+  | { status: 'waiting' }  /** The server could not be reached, or failed. Try again. */
+  | { status: 'unavailable' }
+  /**
+   * The protocol state is wrong in a way retrying will not fix: a root this
+   * device did not pin, a pinned root the server withheld, or a malformed
+   * object. Callers must surface this rather than fall back to legacy.
+   */
+  | { status: 'blocked' };
 
 function highestRevision(records: readonly DeviceRecord[], deviceId: string): DeviceRecord | null {
   let best: DeviceRecord | null = null;
@@ -162,18 +170,43 @@ export async function establishProtocolArchive(
   const material = materialOf(device);
 
   if (snapshot.anchor === null) {
-    return createSpace({ spaceId: input.spaceId, deviceId, material, client, now });
+    // An absent anchor means "no Space yet" only when this device has never
+    // pinned one. Once it has, a missing anchor is the server withholding the
+    // root, and creating a replacement would mint a fresh archive over the old
+    // one under the same Space id.
+    if ((await readPinnedAnchor(input.spaceId)) !== null) {
+      return { status: 'blocked' };
+    }
+    try {
+      return await createSpace({ spaceId: input.spaceId, deviceId, material, client, now });
+    } catch {
+      return { status: 'unavailable' };
+    }
   }
 
-  const anchor = parseWireSpaceTrustAnchor(snapshot.anchor);
+  let anchor: SpaceTrustAnchor;
+  try {
+    anchor = parseWireSpaceTrustAnchor(snapshot.anchor);
+  } catch {
+    // A malformed anchor is not a root anyone should reason about.
+    return { status: 'blocked' };
+  }
+
   const pinned = await readPinnedAnchor(input.spaceId);
   if (pinned !== null && !anchorsMatch(pinned, anchor)) {
     // A different root is a different Space wearing this one's id.
-    return { status: 'unavailable' };
+    return { status: 'blocked' };
   }
 
-  const records = snapshot.records.map(parseWireDeviceRecord);
-  const deviceTombstones = snapshot.tombstones.map(parseWireDeviceTombstone);
+  let records: DeviceRecord[];
+  let deviceTombstones: ReturnType<typeof parseWireDeviceTombstone>[];
+  try {
+    records = snapshot.records.map(parseWireDeviceRecord);
+    deviceTombstones = snapshot.tombstones.map(parseWireDeviceTombstone);
+  } catch {
+    return { status: 'blocked' };
+  }
+
   const mine = highestRevision(records, deviceId);
 
   if (mine && verifyDeviceProvenance(deviceId, anchor, records).trusted) {
@@ -450,12 +483,14 @@ export async function uploadProtocolPhoto(
     await session.client.putObject(reservation.uploadUrl, reservation.headers, pending.ciphertext);
     await session.client.finalizeMedia(pending.mediaId);
   } catch (error) {
-    // A completed reservation refuses a second authorisation, which means the
-    // bytes already landed and only the manifest is missing. Anything else is
-    // genuinely unfinished and the caller retries with the same id.
-    const completed =
-      error instanceof ProtocolRequestError && (error.status === 409 || error.status === 412);
-    if (!completed) {
+    // A refusal here means the server is further along than this attempt — not
+    // that the upload is finished. Whether it is finished is decided below, by
+    // whether the manifest publishes, which is the only proof the whole
+    // sequence completed.
+    const recoverable =
+      error instanceof ProtocolRequestError &&
+      (error.status === 400 || error.status === 409 || error.status === 412);
+    if (!recoverable) {
       throw new ProtocolUploadInterrupted(
         pending,
         'The upload was interrupted. Retry with the same media id.'
@@ -463,7 +498,15 @@ export async function uploadProtocolPhoto(
     }
   }
 
-  await session.client.putManifest(pending.mediaId, toWireMediaManifest(pending.manifest));
+  try {
+    await session.client.putManifest(pending.mediaId, toWireMediaManifest(pending.manifest));
+  } catch {
+    throw new ProtocolUploadInterrupted(
+      pending,
+      'The upload could not be finished. Retry with the same media id.'
+    );
+  }
+
   return { mediaId: pending.mediaId };
 }
 
@@ -483,6 +526,13 @@ export type ProtocolArchiveRead = {
   deleted: string[];
   /** Manifests the server listed that did not verify, with the reason. */
   rejected: { mediaId: string; reason: string }[];
+  /**
+   * True when an object could not be fetched, so `photos` is known to be
+   * missing at least one entry that might otherwise be visible. A caller must
+   * not treat this list as the whole archive, and must not evict a cached photo
+   * because it is absent from it.
+   */
+  incomplete: boolean;
 };
 
 export async function readProtocolArchive(
@@ -529,6 +579,7 @@ export async function readProtocolArchive(
   const photos: ProtocolPhoto[] = [];
   const deleted: string[] = [];
   const rejected: { mediaId: string; reason: string }[] = [];
+  let incomplete = false;
 
   for (const wire of manifests) {
     const verified = verifyArchiveManifest({
@@ -558,8 +609,10 @@ export async function readProtocolArchive(
     try {
       bytes = await session.client.fetchMediaObject(manifest.mediaId);
     } catch {
-      // A fetch that failed is not a photo that was deleted. Leave it out of
-      // this pass so the caller retries rather than evicts.
+      // A fetch that failed is not a photo that was deleted, and not a photo
+      // that is absent: the archive is simply not fully known this pass. The
+      // caller keeps whatever it already had and tries again.
+      incomplete = true;
       continue;
     }
 
@@ -595,7 +648,7 @@ export async function readProtocolArchive(
     await recordAuthenticatedDeletion(session.spaceId, tombstone.mediaId, tombstone.revision);
   }
 
-  return { photos, deleted, rejected };
+  return { photos, deleted, rejected, incomplete };
 }
 
 // ── remove ───────────────────────────────────────────────────────────────
@@ -619,4 +672,130 @@ export async function removeProtocolPhoto(
   await session.client.postMediaTombstone(toWireMediaTombstone(tombstone));
   // Our own tombstone is authenticated by construction: we signed it.
   await recordAuthenticatedDeletion(session.spaceId, input.mediaId, tombstoneInput.revision);
+}
+
+// ── enrolment ────────────────────────────────────────────────────────────
+
+/**
+ * The code two people compare out of band before a device is trusted.
+ *
+ * It covers both signing keys, so each side learns exactly which key it is
+ * trusting, and `verificationFingerprint` sorts them, so both people read the
+ * same string whichever phone is showing it.
+ */
+export function enrolmentFingerprint(
+  session: ProtocolArchiveReady,
+  targetSigningPublicKey: Uint8Array
+): string {
+  return verificationFingerprint(session.device.signingPublicKey, targetSigningPublicKey);
+}
+
+// ── recovery ─────────────────────────────────────────────────────────────
+
+export type RecoveryOutcome =
+  | { status: 'ready'; session: ProtocolArchiveReady }
+  | { status: 'failed'; reason: string };
+
+/**
+ * Rebuild the archive on a device that has nothing, from the phrase alone.
+ *
+ * The trust decision is the phrase's, and `recoverSpaceFromPhrase` makes it:
+ * the anchor's recovery key, the anchor's own signature over it, and the
+ * recovery envelope. Nothing here accepts a root because a server offered one.
+ *
+ * The keys the recovery mints are stored *before* the record is published,
+ * because a record describing keys this device no longer has is an archive it
+ * cannot open — a recovery that half-succeeds is worse than one that fails.
+ */
+export async function recoverProtocolArchive(input: {
+  spaceId: string;
+  phrase: string;
+  deviceId?: string;
+  client?: AlbumProtocolClient;
+  keyStore?: LocalKeyStore;
+  now?: string;
+}): Promise<RecoveryOutcome> {
+  const client = input.client ?? getAlbumProtocolClient();
+
+  let snapshot;
+  try {
+    snapshot = await client.getSnapshot();
+  } catch {
+    return { status: 'failed', reason: 'unreachable' };
+  }
+  if (snapshot.anchor === null) {
+    return { status: 'failed', reason: 'no-anchor' };
+  }
+
+  let anchor: SpaceTrustAnchor;
+  let recoveryEnvelope;
+  try {
+    anchor = parseWireSpaceTrustAnchor(snapshot.anchor);
+    const found = snapshot.recoveryEnvelopes.find(
+      (candidate) => candidate.generation === SIGNED_ALBUM_GENERATION
+    );
+    if (!found) return { status: 'failed', reason: 'no-recovery-envelope' };
+    recoveryEnvelope = parseWireRecoveryEnvelope(found);
+  } catch {
+    return { status: 'failed', reason: 'invalid-protocol-state' };
+  }
+
+  const store =
+    input.keyStore ?? (await import('@/features/album/local-key-store')).createLocalKeyStore();
+  const deviceId =
+    input.deviceId ?? (await (await import('@/features/album/device-id')).getOrCreateDeviceId());
+  const now = input.now ?? new Date().toISOString();
+
+  const recovered = recoverSpaceFromPhrase({
+    phrase: input.phrase,
+    expectedSpaceId: input.spaceId,
+    anchor,
+    recoveryEnvelope,
+    deviceId,
+    createdAt: now,
+  });
+  if (!recovered.recovered) {
+    return { status: 'failed', reason: recovered.reason };
+  }
+
+  await store.saveDevice(input.spaceId, {
+    deviceId,
+    signing: {
+      privateKey: recovered.device.signingPrivateKey,
+      publicKey: recovered.device.signingPublicKey,
+    },
+    agreement: {
+      privateKey: recovered.device.agreementPrivateKey,
+      publicKey: recovered.device.agreementPublicKey,
+    },
+    createdAt: new Date(now),
+  });
+
+  try {
+    await client.claimDevice({
+      deviceId,
+      signingPublicKey: encodeBase64(recovered.device.signingPublicKey),
+      agreementPublicKey: encodeBase64(recovered.device.agreementPublicKey),
+    });
+    await client.putDeviceRecord(toWireDeviceRecord(recovered.record));
+  } catch {
+    return { status: 'failed', reason: 'could-not-publish' };
+  }
+
+  await pinAnchor(input.spaceId, anchor);
+
+  return {
+    status: 'ready',
+    session: {
+      status: 'ready',
+      spaceId: input.spaceId,
+      generation: SIGNED_ALBUM_GENERATION,
+      spaceKey: recovered.spaceKey,
+      deviceId,
+      device: recovered.device,
+      anchor,
+      records: [recovered.record],
+      client,
+    },
+  };
 }
