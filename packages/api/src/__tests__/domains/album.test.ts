@@ -737,6 +737,22 @@ describe('reserving signed media', () => {
     ).toBeInstanceOf(ConflictError);
   });
 
+  it('never re-authorises an abandoned reservation', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    ctx.harness.d1.runSync(
+      `update album_media_reservations set state = 'failed' where space_id = ? and media_id = ?`,
+      SPACE_1,
+      MEDIA_1
+    );
+    // Same guard as the completed case: anything that is no longer `pending`
+    // is refused rather than handed a fresh authorization.
+    expect(
+      await failureOf(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())))
+    ).toBeInstanceOf(ConflictError);
+  });
+
   it('draws on the same budget as ordinary media and the legacy album', async () => {
     const ctx = couple();
     enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
