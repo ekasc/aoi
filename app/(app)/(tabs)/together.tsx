@@ -116,7 +116,21 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
         </View>
         <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[24] + SYSTEM_TAB_BAR_IOS_CLEARANCE }]}>
           <View accessibilityLiveRegion="polite" style={styles.discovery}>
-            {album.status === 'loading' ? <ThemedText type="caption" style={styles.hint}>Loading photos…</ThemedText>
+            {album.protocolStatus === 'unverified' || album.protocolStatus === 'waiting' ? (
+              <>
+                <ThemedText type="caption" style={styles.hint}>
+                  {album.protocolStatus === 'waiting'
+                    ? 'Waiting for the other person to approve this device.'
+                    : 'This device has not joined the shared album yet.'}
+                </ThemedText>
+                <Button
+                  label="Join this album"
+                  tone="sky"
+                  variant="muted"
+                  onPress={() => router.push('/(app)/album/enroll')}
+                />
+              </>
+            ) : album.status === 'loading' ? <ThemedText type="caption" style={styles.hint}>Loading photos…</ThemedText>
               : album.readError ? <><ThemedText accessibilityRole="alert" type="caption" style={styles.hint}>{album.readError}</ThemedText><Button label="Try again" onPress={album.reload} tone="sky" variant="muted" /></>
               : busy ? <ThemedText type="caption" style={styles.hint}>{album.operation === 'importing' ? 'Adding photos…' : 'Updating photos…'}</ThemedText>
               : canDiscover || showEmptyPrompt || helpOpen ? null

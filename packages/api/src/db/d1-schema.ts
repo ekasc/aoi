@@ -976,6 +976,34 @@ export const albumMediaTombstones = sqliteTable(
   ]
 );
 
+/**
+ * One enrolment offer per device: the signed record an authoriser produced for
+ * a device it did not own.
+ *
+ * This exists only because of an ownership rule. A device record row belongs to
+ * the account that claimed the device, so the authoriser cannot write it — and
+ * it must not, because that row is what the recipient later revises. The
+ * authoriser therefore leaves the signed record here, the recipient reads it,
+ * verifies the signature, and publishes it under its own account. The server
+ * only relays; it can no more manufacture an authorisation than it could before.
+ *
+ * One row per device, newest revision winning, so a repeated approval replaces
+ * its predecessor rather than accumulating.
+ */
+export const albumEnrollmentOffers = sqliteTable(
+  'album_enrollment_offers',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    deviceId: text('device_id').notNull(),
+    revision: integer('revision').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.spaceId, table.deviceId] })]
+);
+
 // ── User Preferences ───────────────────────────────────────────────────────
 
 export const userPreferences = sqliteTable(

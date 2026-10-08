@@ -24,7 +24,7 @@ import {
   type WireMediaTombstone,
 } from '@aoi/shared';
 
-import { generateMediaKey } from '@/features/album/crypto';
+import { generateMediaKey, fromBase64 } from '@/features/album/crypto';
 import { verificationFingerprint } from '@/features/album/keys';
 import type { LocalKeyStore } from '@/features/album/local-key-store';
 import { readPhotoBytes } from '@/features/album/photo-bytes';
@@ -46,6 +46,7 @@ import {
   signMediaTombstone,
   signSpaceTrustAnchor,
   signSpaceTrustAnchorRecovery,
+  verifyDeviceRecord,
   wrapMediaKey,
   type DeviceKeyMaterial,
 } from '@/features/album/protocol-crypto';
@@ -756,6 +757,134 @@ export function enrolmentFingerprint(
   targetSigningPublicKey: Uint8Array
 ): string {
   return verificationFingerprint(session.device.signingPublicKey, targetSigningPublicKey);
+}
+
+/**
+ * The same string, from the joining device's side.
+ *
+ * `verificationFingerprint` sorts its inputs, so both people read the same code
+ * whichever phone is showing it — which is what makes comparing it out loud
+ * work at all.
+ */
+export function joiningFingerprint(
+  ownSigningPublicKey: Uint8Array,
+  rootSigningPublicKey: Uint8Array
+): string {
+  return verificationFingerprint(ownSigningPublicKey, rootSigningPublicKey);
+}
+
+export type PendingEnrolmentClaim = {
+  deviceId: string;
+  signingPublicKey: Uint8Array;
+  agreementPublicKey: Uint8Array;
+  createdAt: string;
+};
+
+/** Devices that have asked to join this Space and are not enrolled yet. */
+export async function pendingEnrolmentClaims(
+  session: ProtocolArchiveReady
+): Promise<PendingEnrolmentClaim[]> {
+  const snapshot = await session.client.getSnapshot();
+  return snapshot.claims.map((claim) => ({
+    deviceId: claim.deviceId,
+    signingPublicKey: fromBase64(claim.signingPublicKey),
+    agreementPublicKey: fromBase64(claim.agreementPublicKey),
+    createdAt: claim.createdAt,
+  }));
+}
+
+/**
+ * Approve a claim: sign the record, seal the envelope, leave the offer.
+ *
+ * The envelope goes to the server under this account; the signed record goes to
+ * the offer relay, because the recipient owns its own device row and must
+ * publish it itself.
+ */
+export async function approveEnrolmentClaim(
+  session: ProtocolArchiveReady,
+  claim: PendingEnrolmentClaim,
+  now: string
+): Promise<DeviceRecord> {
+  const record = await authoriseProtocolDevice(
+    session,
+    {
+      deviceId: claim.deviceId,
+      signingPublicKey: claim.signingPublicKey,
+      agreementPublicKey: claim.agreementPublicKey,
+    },
+    now
+  );
+  await session.client.putEnrollmentOffer(toWireDeviceRecord(record));
+  return record;
+}
+
+/**
+ * Collect an approval this device was given, verify it, and publish it.
+ *
+ * Verification is not optional and not the server's: the authoriser's signature
+ * is checked against the authoriser's key, and that key has to descend from the
+ * anchor this device has pinned. Only then is the record written under this
+ * account, and only then does the ordinary establishment path run.
+ */
+export async function acceptEnrolmentOffer(input: {
+  spaceId: string;
+  deviceId?: string;
+  client?: AlbumProtocolClient;
+  keyStore?: LocalKeyStore;
+  now?: string;
+}): Promise<ProtocolArchive> {
+  const client = input.client ?? getAlbumProtocolClient();
+
+  let snapshot;
+  try {
+    snapshot = await client.getSnapshot();
+  } catch {
+    return { status: 'unavailable' };
+  }
+
+  const deviceId =
+    input.deviceId ?? (await (await import('@/features/album/device-id')).getOrCreateDeviceId());
+
+  const pinned = await readPinnedAnchor(input.spaceId);
+  if (pinned.state !== 'pinned') {
+    // Nothing is accepted for a root this device has not itself verified.
+    return { status: 'blocked' };
+  }
+
+  let records: DeviceRecord[];
+  let offers: DeviceRecord[];
+  try {
+    records = snapshot.records.map(parseWireDeviceRecord);
+    offers = snapshot.offers.map(parseWireDeviceRecord);
+  } catch {
+    return { status: 'blocked' };
+  }
+
+  const offer = offers.find((candidate) => candidate.deviceId === deviceId);
+  if (!offer) {
+    return { status: 'waiting' };
+  }
+
+  const authoriser = offer.authorisedBy;
+  if (authoriser.kind !== 'device') {
+    return { status: 'blocked' };
+  }
+  const signer = highestRevision(records, authoriser.deviceId);
+  if (
+    !signer ||
+    !verifyDeviceProvenance(authoriser.deviceId, pinned.anchor, records).trusted ||
+    !verifyDeviceRecord(offer, signer.signingPublicKey)
+  ) {
+    return { status: 'blocked' };
+  }
+
+  try {
+    await client.putDeviceRecord(toWireDeviceRecord(offer));
+  } catch {
+    return { status: 'unavailable' };
+  }
+
+  return establishProtocolArchive(input);
 }
 
 // ── recovery ─────────────────────────────────────────────────────────────

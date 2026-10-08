@@ -166,6 +166,18 @@ export default function AccountScreen() {
 		router.push("/(app)/album/local-photos");
 	}, [router]);
 
+	const handleOpenDevices = useCallback(() => {
+		router.push("/(app)/album/devices");
+	}, [router]);
+
+	const handleOpenRecoveryPhrase = useCallback(() => {
+		router.push("/(app)/album/recovery-phrase");
+	}, [router]);
+
+	const handleOpenRestore = useCallback(() => {
+		router.push("/(app)/album/restore");
+	}, [router]);
+
 	const handleEditRelationship = useCallback(() => {
 		router.push("/(app)/profile/edit-relationship");
 	}, [router]);
@@ -361,6 +373,31 @@ export default function AccountScreen() {
 						label="Local photo copies"
 						muted={muted}
 						onPress={handleOpenLocalPhotos}
+					/>
+				</View>
+			</View>
+
+			<Divider />
+
+			<View style={styles.section}>
+				<SectionHeading title="Shared album" muted={muted} />
+				<ThemedText type="body">
+					Who can read this album, and the words that bring it back if every
+					phone is lost.
+				</ThemedText>
+				<View style={styles.group}>
+					<NavRow label="Devices" muted={muted} onPress={handleOpenDevices} />
+					<NavRow
+						label="Recovery phrase"
+						muted={muted}
+						dividerColor={border}
+						onPress={handleOpenRecoveryPhrase}
+					/>
+					<NavRow
+						label="Restore from phrase"
+						muted={muted}
+						dividerColor={border}
+						onPress={handleOpenRestore}
 					/>
 				</View>
 			</View>

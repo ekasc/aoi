@@ -47,7 +47,7 @@ function insertMember(
 }
 
 describe('D1 baseline', () => {
-  it('applies the migration with all 36 tables', () => {    const d1 = createTestD1();
+  it('applies the migration with all 37 tables', () => {    const d1 = createTestD1();
     const rows = d1.rawDb
       .prepare("select name from sqlite_master where type = 'table' and name not like 'sqlite_%'")
       .all() as Array<{ name: string }>;
@@ -57,6 +57,7 @@ describe('D1 baseline', () => {
         'album_device_claims',
         'album_device_records',
         'album_device_tombstones',
+        'album_enrollment_offers',
         'album_media',
         'album_media_manifests',
         'album_media_reservations',

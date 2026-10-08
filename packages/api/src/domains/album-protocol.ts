@@ -9,6 +9,7 @@ import {
   PROTOCOL_MEDIA_TOMBSTONE_BASE,
   PROTOCOL_MEDIA_TOMBSTONES_PER_MEDIA,
   wireDeviceClaimRequestSchema,
+  wireDeviceClaimSchema,
   wireDeviceRecordSchema,
   wireDeviceTombstoneSchema,
   wireMediaManifestSchema,
@@ -163,6 +164,8 @@ const insertWithinCeiling = (
 const EMPTY_SNAPSHOT: WireAlbumProtocolSnapshot = {
   anchor: null,
   records: [],
+  claims: [],
+  offers: [],
   tombstones: [],
   envelopes: [],
   recoveryEnvelopes: [],
@@ -212,10 +215,50 @@ export const getAlbumProtocolSnapshotProgram = (
       'select payload from album_recovery_envelopes where space_id = ? order by generation asc',
       spaceId
     );
+    // Devices that claimed an id and have not been enrolled yet. This is what an
+    // authorising device lists; it is a relay, not a trust decision.
+    const claimRows = yield* all<{
+      space_id: string;
+      device_id: string;
+      signing_public_key: string;
+      agreement_public_key: string;
+      created_at: number;
+    }>(
+      `select c.space_id, c.device_id, c.signing_public_key, c.agreement_public_key, c.created_at
+         from album_device_claims c
+        where c.space_id = ?
+          and not exists (
+            select 1 from album_device_records r
+             where r.space_id = c.space_id and r.device_id = c.device_id
+          )
+        order by c.created_at asc, c.device_id asc limit ${PROTOCOL_MAX_DEVICES}`,
+      spaceId
+    );
+    const offerRows = yield* all<{ payload: string }>(
+      `select payload from album_enrollment_offers where space_id = ?
+        order by device_id asc limit ${PROTOCOL_MAX_DEVICES}`,
+      spaceId
+    );
 
     return {
       anchor: anchorRow ? yield* readPayload(wireSpaceTrustAnchorSchema, anchorRow.payload) : null,
       records: yield* Effect.forEach(recordRows, (row) => readPayload(wireDeviceRecordSchema, row.payload)),
+      claims: yield* Effect.forEach(claimRows, (row) =>
+        Effect.try({
+          try: () =>
+            wireDeviceClaimSchema.parse({
+              spaceId: row.space_id,
+              deviceId: row.device_id,
+              signingPublicKey: row.signing_public_key,
+              agreementPublicKey: row.agreement_public_key,
+              createdAt: new Date(row.created_at).toISOString(),
+            }),
+          catch: () => new InternalError({}),
+        })
+      ),
+      offers: yield* Effect.forEach(offerRows, (row) =>
+        readPayload(wireDeviceRecordSchema, row.payload)
+      ),
       tombstones: yield* Effect.forEach(tombstoneRows, (row) =>
         readPayload(wireDeviceTombstoneSchema, row.payload)
       ),
@@ -716,6 +759,94 @@ export const putAlbumRecoveryEnvelopeProgram = (
       return yield* Effect.fail(conflict('That generation already has a recovery envelope'));
     }
     return persisted;
+  });
+
+// ── enrolment offers ─────────────────────────────────────────────────────
+
+/**
+ * Leave a signed record for a device this account does not own.
+ *
+ * The recipient owns its device row, so the authoriser cannot write it — and
+ * must not, because that row is what the recipient later revises. This stores
+ * the signed record where the recipient can pick it up and publish it itself.
+ *
+ * The server checks ownership of the *authorising* device and that the recipient
+ * has claimed its id. It does not judge the signature, and it never turns this
+ * row into an authorisation: the recipient verifies before it publishes.
+ */
+export const putAlbumEnrollmentOfferProgram = (
+  userId: string,
+  deviceId: string,
+  input: unknown
+): Effect.Effect<
+  WireDeviceRecord,
+  BadRequestError | ForbiddenError | InternalError,
+  DbService | ClockService
+> =>
+  Effect.gen(function* () {
+    const parsed = wireDeviceRecordSchema.safeParse(input);
+    if (!parsed.success) {
+      return yield* Effect.fail(badRequest('Invalid enrolment offer'));
+    }
+    const record = parsed.data;
+
+    if (record.deviceId !== deviceId) {
+      return yield* Effect.fail(badRequest('That offer is for a different device'));
+    }
+
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return yield* Effect.fail(
+        badRequest('You must have an active space to authorise a device')
+      );
+    }
+    if (record.spaceId !== spaceId) {
+      return yield* Effect.fail(forbidden('That device belongs to another Space'));
+    }
+
+    const authoriser = record.authorisedBy;
+    if (authoriser.kind !== 'device') {
+      // `self` is the root's own record and `recovery` is the phrase's; neither
+      // is an offer to another device, and neither belongs here.
+      return yield* Effect.fail(badRequest('That offer is not a device authorisation'));
+    }
+    const owner = yield* deviceOwner(spaceId, authoriser.deviceId);
+    if (owner === null) {
+      return yield* Effect.fail(
+        badRequest('The authorising device is not registered in this Space')
+      );
+    }
+    if (owner !== userId) {
+      return yield* Effect.fail(forbidden('You do not own the authorising device'));
+    }
+
+    // An offer for a device nobody claimed is one nobody can accept.
+    const claim = yield* one<{ device_id: string }>(
+      'select device_id from album_device_claims where space_id = ? and device_id = ?',
+      spaceId,
+      deviceId
+    );
+    if (!claim) {
+      return yield* Effect.fail(badRequest('That device has not claimed its id yet'));
+    }
+
+    const at = yield* nowMs;
+    yield* execute(
+      `insert into album_enrollment_offers (space_id, device_id, revision, payload, created_at)
+       values (?, ?, ?, ?, ?)
+       on conflict(space_id, device_id) do update set
+         revision = excluded.revision,
+         payload = excluded.payload,
+         created_at = excluded.created_at
+       where album_enrollment_offers.revision < excluded.revision`,
+      spaceId,
+      deviceId,
+      record.revision,
+      JSON.stringify(record),
+      at
+    );
+
+    return record;
   });
 
 // ── media manifests ──────────────────────────────────────────────────────

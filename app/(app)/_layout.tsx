@@ -203,6 +203,13 @@ export default function AuthenticatedAppLayout() {
 									<Stack.Screen name="collection/[id]/edit" options={{ title: "Edit list" }} />
 									<Stack.Screen name="collection/[id]/item/new" options={{ title: "Add a thing" }} />
 									<Stack.Screen name="collection/[id]/item/[itemId]" options={{ title: "Thing" }} />
+									<Stack.Screen name="album/enroll" options={{ title: "Join this album" }} />
+									<Stack.Screen name="album/devices" options={{ title: "Devices" }} />
+									<Stack.Screen
+										name="album/recovery-phrase"
+										options={{ title: "Recovery phrase" }}
+									/>
+									<Stack.Screen name="album/restore" options={{ title: "Restore album" }} />
 									<Stack.Screen
 										name="question"
 										options={{

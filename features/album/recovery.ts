@@ -1,5 +1,4 @@
-import { generateMnemonic, mnemonicToEntropy } from '@scure/bip39';
-// Pinned in-repo rather than read from the package. See that file for why:
+import { entropyToMnemonic, generateMnemonic, mnemonicToEntropy } from '@scure/bip39';// Pinned in-repo rather than read from the package. See that file for why:
 // a wordlist that can change underneath a phrase someone wrote on paper is a
 // way to lose an archive quietly. It is also the only language offered,
 // because a phrase typed on a keyboard in two languages is a phrase that
@@ -74,4 +73,20 @@ export function spaceKeyFromPhrase(phrase: string): Uint8Array {
 /** Group the words so a phrase can be written down, and read back reliably. */
 export function formatPhraseForDisplay(phrase: string): string {
   return phrase.trim().toLowerCase().replace(/\s+/g, ' ').split(' ').join(' ');
+}
+
+/**
+ * The phrase for entropy this device already holds.
+ *
+ * The inverse of `recoveryEntropyFromPhrase`, and the only way a creator can
+ * ever see the phrase it generated: the entropy is what is stored, and the
+ * words are a rendering of it. Round-tripping is asserted in the tests, because
+ * a rendering that does not decode back to the same entropy is a phrase that
+ * silently restores nothing.
+ */
+export function phraseFromRecoveryEntropy(entropy: Uint8Array): string {
+  if (entropy.length !== 32) {
+    throw new Error('Recovery entropy must be 32 bytes');
+  }
+  return entropyToMnemonic(entropy, wordlist);
 }

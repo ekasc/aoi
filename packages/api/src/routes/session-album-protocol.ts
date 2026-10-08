@@ -7,6 +7,7 @@ import {
   PROTOCOL_MAX_ID_LENGTH,
   wireAlbumDeviceRecordResponseSchema,
   wireAlbumDeviceTombstoneResponseSchema,
+  wireAlbumEnrollmentOfferResponseSchema,
   wireAlbumMediaManifestResponseSchema,
   wireAlbumMediaPageQuerySchema,
   wireAlbumMediaProtocolSchema,
@@ -43,6 +44,7 @@ import {
   postAlbumMediaTombstoneProgram,
   putAlbumDeviceClaimProgram,
   putAlbumDeviceRecordProgram,
+  putAlbumEnrollmentOfferProgram,
   putAlbumMediaManifestProgram,
   putAlbumRecoveryEnvelopeProgram,
   putAlbumSpaceKeyEnvelopeProgram,
@@ -158,6 +160,24 @@ export function albumProtocolRouter(run: RunProgram): Hono {
         )
       );
       return c.json(wireAlbumRecoveryEnvelopeResponseSchema.parse({ recoveryEnvelope: result }), 201);
+    }
+  );
+
+  router.put(
+    '/v1/spaces/current/album/protocol/enrollment-offers/:deviceId',
+    requireAuth,
+    rateLimit,
+    zValidator('param', deviceIdParamSchema),
+    zValidator('json', wireDeviceRecordSchema),
+    async (c) => {
+      const result = await run(
+        putAlbumEnrollmentOfferProgram(
+          c.var.userId,
+          c.req.valid('param').deviceId,
+          c.req.valid('json')
+        )
+      );
+      return c.json(wireAlbumEnrollmentOfferResponseSchema.parse({ offer: result }), 201);
     }
   );
 

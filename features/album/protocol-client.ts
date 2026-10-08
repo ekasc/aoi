@@ -1,5 +1,6 @@
 import {
   wireAlbumDeviceRecordResponseSchema,
+  wireAlbumEnrollmentOfferResponseSchema,
   wireAlbumMediaManifestResponseSchema,
   wireAlbumMediaProtocolSchema,
   wireAlbumMediaReservationResponseSchema,
@@ -64,6 +65,7 @@ export interface AlbumProtocolClient {
   putAnchor(anchor: WireSpaceTrustAnchor): Promise<void>;
   claimDevice(claim: DeviceClaimRequest): Promise<void>;
   putDeviceRecord(record: WireDeviceRecord): Promise<void>;
+  putEnrollmentOffer(record: WireDeviceRecord): Promise<void>;
   putSpaceKeyEnvelope(envelope: WireSpaceKeyEnvelope): Promise<void>;
   putRecoveryEnvelope(generation: number, envelope: WireRecoveryEnvelope): Promise<void>;
   reserveMedia(input: MediaReservationRequest): Promise<WireAlbumMediaReservationResponse>;
@@ -123,6 +125,14 @@ function remoteClient(): AlbumProtocolClient {
           method: 'PUT',
           body: JSON.stringify(record),
         })
+      );
+    },
+    async putEnrollmentOffer(record) {
+      wireAlbumEnrollmentOfferResponseSchema.parse(
+        await request<unknown>(
+          `${PROTOCOL}/enrollment-offers/${encodeURIComponent(record.deviceId)}`,
+          { method: 'PUT', body: JSON.stringify(record) }
+        )
       );
     },
     async putSpaceKeyEnvelope(envelope) {
@@ -206,6 +216,7 @@ function unavailableClient(): AlbumProtocolClient {
     putAnchor: async () => refuse(),
     claimDevice: async () => refuse(),
     putDeviceRecord: async () => refuse(),
+    putEnrollmentOffer: async () => refuse(),
     putSpaceKeyEnvelope: async () => refuse(),
     putRecoveryEnvelope: async () => refuse(),
     reserveMedia: async () => refuse(),

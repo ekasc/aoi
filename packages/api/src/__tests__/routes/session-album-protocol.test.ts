@@ -138,6 +138,8 @@ describe('the protocol snapshot route', () => {
     expect(await response.json()).toEqual({
       anchor: null,
       records: [],
+      claims: [],
+      offers: [],
       tombstones: [],
       envelopes: [],
       recoveryEnvelopes: [],

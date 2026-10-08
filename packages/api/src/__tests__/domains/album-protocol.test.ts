@@ -465,6 +465,8 @@ describe('the snapshot', () => {
     expect(await run(ctx.provide(getAlbumProtocolSnapshotProgram(USER_A)))).toEqual({
       anchor: null,
       records: [],
+      claims: [],
+      offers: [],
       tombstones: [],
       envelopes: [],
       recoveryEnvelopes: [],
@@ -477,6 +479,8 @@ describe('the snapshot', () => {
     expect(await run(ctx.provide(getAlbumProtocolSnapshotProgram(USER_A)))).toEqual({
       anchor: null,
       records: [],
+      claims: [],
+      offers: [],
       tombstones: [],
       envelopes: [],
       recoveryEnvelopes: [],
