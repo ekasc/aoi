@@ -676,7 +676,7 @@ export const albumMedia = sqliteTable(
     index('idx_album_media_space').on(table.spaceId),
     check(
       'ck_album_media_upload_state',
-      sql`${table.uploadState} in ('pending', 'complete', 'failed')`
+      sql`${table.uploadState} in ('pending', 'expiring', 'complete', 'failed')`
     ),
     check(
       'ck_album_media_person_tag',

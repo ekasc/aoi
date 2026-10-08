@@ -230,6 +230,121 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     if (deleted > 0) softDeletedPurged += 1;
   }
 
+  // 2b. Abandoned legacy album uploads (fail-closed per row).
+  //
+  // `pending` (never completed) and `expiring` (claimed by a failed completion
+  // or a size mismatch). Both are past every authorization once `created_at` is
+  // older than the staged TTL, so deleting the object cannot race a late PUT.
+  // The object goes first and the row second, so a failed delete leaves the row
+  // — still counted — for the next sweep.
+  const albumStaged = yield* Effect.tryPromise({
+    try: () =>
+      db.d1
+        .prepare(
+          `select id, storage_key from album_media
+           where upload_state in ('pending', 'expiring') and created_at < ?`
+        )
+        .bind(now - MEDIA_STAGED_TTL_MS)
+        .all<{ id: string; storage_key: string }>(),
+    catch: () => new Error('cron: album staged query failed'),
+  }).pipe(
+    Effect.catchAll(() =>
+      Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album staged query failed');
+        return Effect.succeed({ results: [] as { id: string; storage_key: string }[] });
+      })
+    )
+  );
+
+  const albumStagedRows = albumStaged.results ?? [];
+  let albumStagedPurged = 0;
+  for (const row of albumStagedRows) {
+    const confirmed = yield* deleteKeyConfirmed(store, row.storage_key);
+    if (!confirmed) {
+      yield* Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album staged storage delete uncertain — retaining row for retry');
+        return Effect.void;
+      });
+      continue;
+    }
+    const deleted = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `delete from album_media
+             where id = ? and upload_state in ('pending', 'expiring') and created_at < ?`
+          )
+          .bind(row.id, now - MEDIA_STAGED_TTL_MS)
+          .run(),
+      catch: () => new Error('cron: album staged row delete failed'),
+    }).pipe(
+      Effect.map((res) => res.meta?.changes ?? 0),
+      Effect.catchAll(() =>
+        Effect.flatMap(Logger, (l) => {
+          l.warn('cron: album staged row delete failed');
+          return Effect.succeed(0);
+        })
+      )
+    );
+    if (deleted > 0) albumStagedPurged += 1;
+  }
+
+  // 2c. Soft-deleted legacy album rows (fail-closed per row).
+  //
+  // A delete is immediate for the person and durable for us: `deleted_at` is
+  // the marker, and this is the retry that reclaims storage the request could
+  // not remove. Objects go first, then the row.
+  const albumDeleted = yield* Effect.tryPromise({
+    try: () =>
+      db.d1
+        .prepare(
+          `select id, storage_key from album_media
+           where deleted_at is not null and deleted_at < ?`
+        )
+        .bind(now - MEDIA_SOFT_DELETE_PURGE_MS)
+        .all<{ id: string; storage_key: string }>(),
+    catch: () => new Error('cron: album soft-delete query failed'),
+  }).pipe(
+    Effect.catchAll(() =>
+      Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album soft-delete query failed');
+        return Effect.succeed({ results: [] as { id: string; storage_key: string }[] });
+      })
+    )
+  );
+
+  const albumDeletedRows = albumDeleted.results ?? [];
+  let albumDeletedPurged = 0;
+  for (const row of albumDeletedRows) {
+    const confirmed = yield* deleteKeyConfirmed(store, row.storage_key);
+    if (!confirmed) {
+      yield* Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album soft-delete storage delete uncertain — retaining row for retry');
+        return Effect.void;
+      });
+      continue;
+    }
+    const deleted = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `delete from album_media where id = ? and deleted_at is not null and deleted_at < ?`
+          )
+          .bind(row.id, now - MEDIA_SOFT_DELETE_PURGE_MS)
+          .run(),
+      catch: () => new Error('cron: album soft-delete row delete failed'),
+    }).pipe(
+      Effect.map((res) => res.meta?.changes ?? 0),
+      Effect.catchAll(() =>
+        Effect.flatMap(Logger, (l) => {
+          l.warn('cron: album soft-delete row delete failed');
+          return Effect.succeed(0);
+        })
+      )
+    );
+    if (deleted > 0) albumDeletedPurged += 1;
+  }
+
   // 3. Orphan R2 sweep (bounded cursor pagination, fail-closed).
   let orphanScanned = 0;
   let orphansDeleted = 0;
@@ -368,13 +483,117 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     // R2 list failure is already fail-closed (zero deletes); nothing to do.
   }
 
+  // 3b. Orphan R2 sweep for the album prefix, with the same discipline as
+  // `media/` and a simpler known set: every album object is named by exactly
+  // one row — a legacy album row's storage key, or a signed-media reservation's
+  // (space, media) pair. Rows are removed before their objects everywhere else,
+  // so this exists for objects no row can name at all, which cascade deletes
+  // produce.
+  let albumOrphanScanned = 0;
+  let albumOrphansDeleted = 0;
+
+  const albumKnownOutcome = yield* Effect.tryPromise({
+    try: async () => {
+      const media = await db.d1
+        .prepare('select storage_key from album_media')
+        .all<{ storage_key: string }>();
+      // Only reservations that can still name a live object. A `failed` one has
+      // had its object deleted, so anything sitting at that key is unaccounted —
+      // which is what lets this sweep reclaim a late PUT after cleanup.
+      const reservations = await db.d1
+        .prepare(
+          `select space_id, media_id from album_media_reservations where state != 'failed'`
+        )
+        .all<{ space_id: string; media_id: string }>();
+      const known = new Set<string>();
+      for (const row of media.results ?? []) known.add(row.storage_key);
+      for (const row of reservations.results ?? []) {
+        known.add(albumMediaKey(row.space_id, row.media_id));
+      }
+      return known;
+    },
+    catch: () => new Error('cron: album known-keys query failed'),
+  }).pipe(
+    Effect.map((known) => ({ ok: true as const, known })),
+    Effect.catchAll(() =>
+      Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album known-keys query failed — skipping album orphan sweep (fail-closed)');
+        return Effect.succeed({ ok: false as const, known: new Set<string>() });
+      })
+    )
+  );
+
+  if (albumKnownOutcome.ok) {
+    const firstAlbumPage = yield* Effect.tryPromise({
+      try: () => store.list({ prefix: 'album/', limit: ORPHAN_SWEEP_PAGE_LIMIT }),
+      catch: () => new Error('cron: album r2 list failed'),
+    }).pipe(
+      Effect.map((listing) => ({ ok: true as const, listing })),
+      Effect.catchAll(() =>
+        Effect.flatMap(Logger, (l) => {
+          l.warn('cron: album r2 list failed');
+          return Effect.succeed({ ok: false as const, listing: null as null });
+        })
+      )
+    );
+
+    if (firstAlbumPage.ok && firstAlbumPage.listing) {
+      let current = firstAlbumPage.listing;
+      let pages = 0;
+      while (current && pages < ORPHAN_SWEEP_MAX_PAGES) {
+        pages += 1;
+        const objects = current.objects ?? [];
+        albumOrphanScanned += objects.length;
+        for (const object of objects) {
+          if (albumKnownOutcome.known.has(object.key)) continue;
+          if (!isOrphanAgedEnough(object.uploaded, now)) continue;
+          const deleted = yield* Effect.tryPromise({
+            try: () => store.delete(object.key),
+            catch: () => new Error('cron: album orphan delete failed'),
+          }).pipe(
+            Effect.map(() => true),
+            Effect.catchAll(() =>
+              Effect.flatMap(Logger, (l) => {
+                l.warn('cron: album orphan delete failed — will retry next run');
+                return Effect.succeed(false);
+              })
+            )
+          );
+          if (deleted) albumOrphansDeleted += 1;
+        }
+
+        if (!current.truncated) break;
+        const cursor = current.cursor;
+        if (!cursor || pages >= ORPHAN_SWEEP_MAX_PAGES) break;
+        const next = yield* Effect.tryPromise({
+          try: () => store.list({ prefix: 'album/', limit: ORPHAN_SWEEP_PAGE_LIMIT, cursor }),
+          catch: () => new Error('cron: album r2 list failed'),
+        }).pipe(
+          Effect.map((listing) => ({ ok: true as const, listing })),
+          Effect.catchAll(() =>
+            Effect.flatMap(Logger, (l) => {
+              l.warn('cron: album r2 list failed mid-sweep — stopping (fail-closed)');
+              return Effect.succeed({ ok: false as const, listing: null as null });
+            })
+          )
+        );
+        if (!next.ok || !next.listing) break;
+        current = next.listing;
+      }
+      yield* logInfo('cron: album orphan sweep done', {
+        scanned: albumOrphanScanned,
+        orphaned: albumOrphansDeleted,
+      });
+    }
+  }
+
   // 4. Stale push tokens.
   const staleTokens = yield* guardedUpdate(
     'delete from push_tokens where last_seen_at < ?',
     now - PUSH_TOKEN_STALE_MS
   );
 
-  // 4. Abandoned signed-media reservations (claim first, delete second).
+  // 5. Abandoned signed-media reservations (claim first, delete second).
   //
   // The order is the safety property. The sweep CLAIMS a reservation
   // (`pending → expiring`) before it touches storage, so finalisation can no
@@ -470,8 +689,12 @@ export const mediaPurgeProgram = Effect.gen(function* () {
   yield* logInfo('cron: media purge done', {
     stagedPurged,
     softDeletedPurged,
+    albumStagedPurged,
+    albumDeletedPurged,
     orphanScanned,
     orphansDeleted,
+    albumOrphanScanned,
+    albumOrphansDeleted,
     reservationsExpired,
     staleTokensPruned: staleTokens.changes,
   });
@@ -479,8 +702,12 @@ export const mediaPurgeProgram = Effect.gen(function* () {
   return {
     stagedPurged,
     softDeletedPurged,
+    albumStagedPurged,
+    albumDeletedPurged,
     orphanScanned,
     orphansDeleted,
+    albumOrphanScanned,
+    albumOrphansDeleted,
     reservationsExpired,
     staleTokensPruned: staleTokens.changes,
   };

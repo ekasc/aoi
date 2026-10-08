@@ -18,7 +18,6 @@ import { Db, type DbService } from '../effects/d1';
 import {
   MEDIA_PRESIGN_TTL_SEC,
   MediaStore,
-  deleteKeyConfirmed,
   type MediaStoreService,
 } from '../services/media-store';
 import {
@@ -358,14 +357,23 @@ export const completeAlbumUploadProgram = (
       head.httpMetadata?.contentType === undefined ||
       head.httpMetadata.contentType === ALBUM_CONTENT_TYPE;
     if (head.size !== media.byte_length || !contentTypeOk) {
-      // The object exists but is not what was reserved. `failed` releases the
-      // reservation, so the bytes have to be gone first; if the delete cannot
-      // be confirmed the row stays `pending` and the staged purge retries,
-      // rather than freeing quota for storage that is still there.
-      const confirmed = yield* deleteKeyConfirmed(store, media.storage_key);
-      if (confirmed) {
-        yield* markFailed();
-      }
+      // The object exists but is not what was reserved. Claim it rather than
+      // deleting now: the presigned PUT that reserved this row may still be
+      // valid, and an empty key is not protected by the conditional PUT, so a
+      // late upload could refill it after the row stopped counting. The staged
+      // album sweep removes the object and the row once no authorization can
+      // still land, and quota stays held until then.
+      yield* Effect.tryPromise({
+        try: () =>
+          db.d1
+            .prepare(
+              `update album_media set upload_state = 'expiring'
+                where id = ? and upload_state = 'pending'`
+            )
+            .bind(mediaId)
+            .run(),
+        catch: () => new InternalError({}),
+      });
       return yield* Effect.fail(
         badRequest('Uploaded content does not match the reserved size')
       );
@@ -529,9 +537,16 @@ export const deleteAlbumMediaProgram = (
     const media = yield* Effect.tryPromise({
       try: () =>
         db.d1
-          .prepare('select id, space_id, storage_key from album_media where id = ? and deleted_at is null')
+          .prepare(
+            'select id, space_id, storage_key, created_at from album_media where id = ? and deleted_at is null'
+          )
           .bind(mediaId)
-          .first<{ id: string; space_id: string; storage_key: string }>(),
+          .first<{
+            id: string;
+            space_id: string;
+            storage_key: string;
+            created_at: number;
+          }>(),
       catch: () => new InternalError({}),
     });
     if (!media) {
@@ -555,15 +570,22 @@ export const deleteAlbumMediaProgram = (
       return yield* Effect.fail(notFound('Photo not found'));
     }
 
-    // Best-effort storage cleanup: the tombstone is authoritative, a failed
-    // R2 delete must not fail the request (a later purge can retry).
+    // The soft delete is the user-visible act and is always immediate. Physical
+    // removal is only safe once every authorization issued for this row has
+    // expired — the intent's PUT URL lives for `MEDIA_PRESIGN_TTL_SEC` from
+    // `created_at`, and deleting earlier would let a late PUT refill the key
+    // after the row stopped being counted. When it is not safe yet, the album
+    // soft-delete sweep reclaims it after the grace period instead; `deleted_at`
+    // is the durable marker that makes the retry possible.
     const store = yield* MediaStore;
-    yield* Effect.promise(() =>
-      store.delete(media.storage_key).then(
-        () => true,
-        () => false
-      )
-    );
+    if (at >= media.created_at + MEDIA_PRESIGN_TTL_SEC * 1000) {
+      yield* Effect.promise(() =>
+        store.delete(media.storage_key).then(
+          () => true,
+          () => false
+        )
+      );
+    }
 
     return { ok: true as const };
   });
@@ -646,6 +668,18 @@ export const ALBUM_RESERVATION_TTL_MS =
  * upload with a new id.
  */
 export const ALBUM_RESERVATION_MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The last moment a fresh authorization may be issued.
+ *
+ * A new PUT URL is valid for `MEDIA_PRESIGN_TTL_SEC`, and the reservation must
+ * outlive it by the safety margin. A renewal is therefore only allowed while
+ * `now + ALBUM_RESERVATION_TTL_MS` still fits inside the hard deadline; past
+ * this instant no URL can be issued that cleanup is guaranteed to outlast, so
+ * the client starts a new upload with a new id instead.
+ */
+export const ALBUM_RESERVATION_LAST_RENEWAL_MS =
+  ALBUM_RESERVATION_MAX_LIFETIME_MS - ALBUM_RESERVATION_TTL_MS;
 
 interface AlbumReservationRow {
   space_id: string;
@@ -809,28 +843,39 @@ export const reserveAlbumMediaProgram = (
     }
 
     // Pending and identical: a retry of the same reservation. A fresh URL is
-    // issued below, so the reservation has to be extended to outlive it — but
-    // never past the hard bound, and never if cleanup has claimed it in the
-    // meantime. The guarded extend is what decides that: if it touches no row,
-    // this caller no longer owns the reservation and gets no authorization.
-    const extended = yield* Effect.tryPromise({
+    // issued below, so the reservation must be extended to outlive it — and the
+    // extension is what decides whether this caller still owns it. Three guards,
+    // all inside the statement:
+    //
+    //   state = 'pending'              cleanup has not claimed it
+    //   expires_at > now               it has not already lapsed
+    //   now <= created_at + LAST       the new URL fits inside the hard deadline
+    //
+    // The last one is the point: capping `expires_at` alone would leave a URL
+    // whose own hour ran past the deadline, so cleanup could delete an object
+    // the URL could still refill. If any guard fails, no URL is returned.
+    const renewed = yield* Effect.tryPromise({
       try: () =>
         db.d1
           .prepare(
             `update album_media_reservations
-                set expires_at = min(?, created_at + ?)
-              where space_id = ? and media_id = ? and state = 'pending'`
+                set expires_at = ?
+              where space_id = ? and media_id = ? and state = 'pending'
+                and expires_at > ?
+                and ? <= created_at + ?`
           )
           .bind(
             at + ALBUM_RESERVATION_TTL_MS,
-            ALBUM_RESERVATION_MAX_LIFETIME_MS,
             spaceId,
-            request.mediaId
+            request.mediaId,
+            at,
+            at,
+            ALBUM_RESERVATION_LAST_RENEWAL_MS
           )
           .run(),
       catch: () => new InternalError({}),
     });
-    if ((extended.meta?.changes ?? 0) === 0) {
+    if ((renewed.meta?.changes ?? 0) === 0) {
       return yield* Effect.fail(conflict('That media id can no longer be uploaded'));
     }
 
@@ -856,23 +901,23 @@ export const reserveAlbumMediaProgram = (
   });
 
 /**
- * Abandon a reservation: claim it, then remove the object and release its bytes.
+ * Claim a reservation for cleanup — without deleting anything yet.
  *
- * The claim (`pending → expiring`) is what makes this safe. Once it lands,
- * finalisation can no longer complete the reservation, so the delete below can
- * never destroy an object that was just finalised. The row reaches `failed` —
- * the state that releases quota — only after storage positively confirms the
- * object is gone; otherwise it stays `expiring` for the sweep to retry, so a
- * failed delete never silently frees bytes that are still there.
+ * The claim is immediate (`pending → expiring`) so finalisation can no longer
+ * complete it. The deletion is deliberately NOT: a previously issued presigned
+ * PUT stays valid for its full hour, and `If-None-Match: *` does not protect an
+ * empty key against it. Deleting now would let the object reappear after the row
+ * had stopped counting it. The sweep reclaims the object only once `expires_at`
+ * has passed — which is later than every authorization ever issued for this
+ * reservation — and the reservation keeps holding its quota until then.
  */
-const abandonReservation = (
+const claimForCleanup = (
   db: DbService,
-  store: MediaStoreService,
   spaceId: string,
   mediaId: string
 ): Effect.Effect<boolean, InternalError> =>
-  Effect.gen(function* () {
-    const claimed = yield* Effect.tryPromise({
+  Effect.map(
+    Effect.tryPromise({
       try: () =>
         db.d1
           .prepare(
@@ -882,27 +927,9 @@ const abandonReservation = (
           .bind(spaceId, mediaId)
           .run(),
       catch: () => new InternalError({}),
-    });
-    if ((claimed.meta?.changes ?? 0) === 0) {
-      return false;
-    }
-    const confirmed = yield* deleteKeyConfirmed(store, albumMediaKey(spaceId, mediaId));
-    if (!confirmed) {
-      return false;
-    }
-    yield* Effect.tryPromise({
-      try: () =>
-        db.d1
-          .prepare(
-            `update album_media_reservations set state = 'failed'
-              where space_id = ? and media_id = ? and state = 'expiring'`
-          )
-          .bind(spaceId, mediaId)
-          .run(),
-      catch: () => new InternalError({}),
-    });
-    return true;
-  });
+    }),
+    (result) => (result.meta?.changes ?? 0) > 0
+  );
 
 /**
  * Finalise a reserved upload.
@@ -974,9 +1001,11 @@ export const finalizeAlbumMediaProgram = (
     }
     if (head.size !== reservation.byte_length) {
       // Not the object that was reserved, and a conditional PUT means it can
-      // never be replaced. Abandon it rather than hold quota for bytes that can
-      // never be finalised.
-      yield* abandonReservation(db, store, reservation.space_id, mediaId);
+      // never be replaced. Claim it for cleanup, but do not delete: a PUT URL
+      // issued for this reservation may still be live, and an empty key is not
+      // protected by the conditional PUT. Quota stays held until the sweep can
+      // reclaim the object safely.
+      yield* claimForCleanup(db, spaceId, mediaId);
       return yield* Effect.fail(badRequest('Uploaded content does not match the reserved size'));
     }
 

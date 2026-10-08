@@ -330,6 +330,8 @@ describe('media purge program (fail-closed)', () => {
     let listCalls = 0;
     const origList = harness.r2.list.bind(harness.r2);
     harness.r2.list = async (opts) => {
+      // Only the media prefix is under test; the album pass is its own sweep.
+      if (opts?.prefix !== 'media/') return origList(opts);
       listCalls += 1;
       return origList({ ...opts, limit: 2 });
     };
@@ -347,7 +349,8 @@ describe('media purge program (fail-closed)', () => {
     const harness2 = makeTestHarness();
     seedUserSpace(harness2.d1);
     let infiniteCalls = 0;
-    harness2.r2.list = async () => {
+    harness2.r2.list = async (opts) => {
+      if (opts?.prefix !== 'media/') return { objects: [], truncated: false, cursor: undefined };
       infiniteCalls += 1;
       const n = infiniteCalls;
       return {
@@ -370,13 +373,13 @@ describe('media purge program (fail-closed)', () => {
   });
 });
 
-describe('album reservation cleanup', () => {
+describe('album cleanup', () => {
   const ALBUM_MEDIA = '00000000-0000-4000-8000-000000000101';
   const albumKey = `album/s1/${ALBUM_MEDIA}.bin`;
 
   function insertReservation(
     d1: ReturnType<typeof makeTestHarness>['d1'],
-    state: 'pending' | 'complete' | 'failed',
+    state: 'pending' | 'expiring' | 'complete' | 'failed',
     expiresAt: number
   ): void {
     d1.rawDb
@@ -387,6 +390,24 @@ describe('album reservation cleanup', () => {
          values ('s1', ?, 'u1', 'device-a', 1, 10, ?, ?, ?)`
       )
       .run(ALBUM_MEDIA, state, expiresAt - 1000, expiresAt);
+  }
+
+  /** A legacy album row, with the one object its storage key names. */
+  function insertLegacyAlbum(
+    d1: ReturnType<typeof makeTestHarness>['d1'],
+    id: string,
+    opts: { state?: string; createdAt: number; deletedAt?: number | null }
+  ): string {
+    const key = `album/s1/${id}.bin`;
+    d1.rawDb
+      .prepare(
+        `insert into album_media
+           (id, space_id, created_by_user_id, mime_type, byte_length, sealed_nonce,
+            wrapped_key_nonce, wrapped_key_ciphertext, storage_key, upload_state, created_at, deleted_at)
+         values (?, 's1', 'u1', 'image/jpeg', 10, 'n', 'n', 'c', ?, ?, ?, ?)`
+      )
+      .run(id, key, opts.state ?? 'pending', opts.createdAt, opts.deletedAt ?? null);
+    return key;
   }
 
   function reservationState(d1: ReturnType<typeof makeTestHarness>['d1']): string {
@@ -439,5 +460,116 @@ describe('album reservation cleanup', () => {
     expect(harness.r2.objects.has(albumKey)).toBe(true);
     // Claimed but not finished, so it still holds its bytes for the next sweep.
     expect(reservationState(harness.d1)).toBe('expiring');
+  });
+
+  it('does not reclaim a claimed reservation while its PUT URL can still land', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    // Claimed, but the authorization it was issued under has not lapsed yet —
+    // deleting now would let a late PUT refill the key after the row stopped
+    // counting it.
+    insertReservation(harness.d1, 'expiring', now + 60_000);
+    harness.r2.putSync(albumKey, new Uint8Array(10), 'application/octet-stream');
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.reservationsExpired).toBe(0);
+    expect(harness.r2.objects.has(albumKey)).toBe(true);
+    expect(reservationState(harness.d1)).toBe('expiring');
+  });
+
+  it('purges a stale legacy pending upload, object first', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    const key = insertLegacyAlbum(harness.d1, 'legacy-stale', {
+      createdAt: now - MEDIA_STAGED_TTL_MS - 1,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream');
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.albumStagedPurged).toBe(1);
+    expect(harness.r2.objects.has(key)).toBe(false);
+    expect(harness.d1.rawDb.prepare('select id from album_media').all()).toHaveLength(0);
+  });
+
+  it('keeps a stale legacy row when its object cannot be removed, and recovers next run', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    const key = insertLegacyAlbum(harness.d1, 'legacy-stuck', {
+      createdAt: now - MEDIA_STAGED_TTL_MS - 1,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream');
+
+    const originalDelete = harness.r2.delete.bind(harness.r2);
+    harness.r2.delete = async () => {
+      throw new Error('r2 down');
+    };
+    const blocked = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+    expect(blocked.albumStagedPurged).toBe(0);
+    // The row is retained, so its bytes stay accounted for.
+    expect(harness.d1.rawDb.prepare('select id from album_media').all()).toHaveLength(1);
+
+    harness.r2.delete = originalDelete;
+    const recovered = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+    expect(recovered.albumStagedPurged).toBe(1);
+    expect(harness.r2.objects.has(key)).toBe(false);
+    expect(harness.d1.rawDb.prepare('select id from album_media').all()).toHaveLength(0);
+  });
+
+  it('reclaims a soft-deleted legacy row after the grace period', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    const stale = now - MEDIA_SOFT_DELETE_PURGE_MS - 1;
+    const key = insertLegacyAlbum(harness.d1, 'legacy-deleted', {
+      state: 'complete',
+      createdAt: stale,
+      deletedAt: stale,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream');
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.albumDeletedPurged).toBe(1);
+    expect(harness.r2.objects.has(key)).toBe(false);
+    expect(harness.d1.rawDb.prepare('select id from album_media').all()).toHaveLength(0);
+  });
+
+  it('sweeps an album object no row names, and leaves a named one alone', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    const named = insertLegacyAlbum(harness.d1, 'legacy-named', {
+      state: 'complete',
+      createdAt: now,
+    });
+    harness.r2.putSync(named, new Uint8Array(10), 'application/octet-stream', new Date(0));
+    const orphan = 'album/s1/orphan.bin';
+    harness.r2.putSync(orphan, new Uint8Array(10), 'application/octet-stream', new Date(0));
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.albumOrphansDeleted).toBe(1);
+    expect(harness.r2.objects.has(orphan)).toBe(false);
+    expect(harness.r2.objects.has(named)).toBe(true);
+  });
+
+  it('reclaims an object at a failed reservation key, so a late PUT cannot persist', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    insertReservation(harness.d1, 'failed', now - 1);
+    // The reservation released this key when it failed, so whatever is there now
+    // is unaccounted — the sweep is the net that catches it.
+    harness.r2.putSync(albumKey, new Uint8Array(10), 'application/octet-stream', new Date(0));
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.albumOrphansDeleted).toBe(1);
+    expect(harness.r2.objects.has(albumKey)).toBe(false);
   });
 });

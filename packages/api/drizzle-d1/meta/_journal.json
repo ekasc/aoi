@@ -162,6 +162,13 @@
       "when": 1791430220561,
       "tag": "0022_pale_sister_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791449423302,
+      "tag": "0023_chunky_lester",
+      "breakpoints": true
     }
   ]
 }
