@@ -854,6 +854,71 @@ export const albumDeviceTombstones = sqliteTable(
   ]
 );
 
+/**
+ * One immutable signed manifest per media.
+ *
+ * The manifest is what makes the metadata authentic: the server currently holds
+ * `createdAt`, dimensions, `byteLength`, the wrapped-key association and the
+ * uploader in the clear and unauthenticated, so it can remix the archive
+ * without reading a pixel. The uploader signs the canonical bytes, and any
+ * device verifies them instead of trusting this row.
+ *
+ * There is no second revision. A delete does not rewrite it, because the device
+ * deleting is usually not the device that uploaded: removal is its own signed
+ * object. The primary key is the identity, so an exact retry is a no-op and a
+ * different payload for the same `mediaId` is refused.
+ *
+ * `uploader_device_id` and `revision` are extracted from the signed payload for
+ * routing and ordering only; they are not a second source of truth.
+ */
+export const albumMediaManifests = sqliteTable(
+  'album_media_manifests',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    mediaId: text('media_id').notNull(),
+    uploaderDeviceId: text('uploader_device_id').notNull(),
+    revision: integer('revision').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.spaceId, table.mediaId] })]
+);
+
+/**
+ * Append-only media tombstone candidates.
+ *
+ * A tombstone is a claim, not a fact: the server cannot verify the signature,
+ * so it stores every candidate and lets clients decide. One row per target with
+ * last-write-wins would let a forged tombstone displace a valid one, and
+ * tracking only the highest revision would let a bogus huge revision block a
+ * legitimate one forever. So: one row per distinct tombstone, no monotonicity.
+ *
+ * The unique index makes an exact retry idempotent rather than a second row.
+ * Distinct tombstones still accumulate, which is why the write path also
+ * enforces a ceiling.
+ *
+ * Nothing here deletes ciphertext. A submitted tombstone is only a candidate
+ * until a client authenticates it, so it must never trigger physical removal.
+ */
+export const albumMediaTombstones = sqliteTable(
+  'album_media_tombstones',
+  {
+    id: text('id').primaryKey(),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    mediaId: text('media_id').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    index('idx_album_media_tombstones_media').on(table.spaceId, table.mediaId),
+    uniqueIndex('uq_album_media_tombstones_payload').on(table.spaceId, table.payload),
+  ]
+);
+
 // ── User Preferences ───────────────────────────────────────────────────────
 
 export const userPreferences = sqliteTable(

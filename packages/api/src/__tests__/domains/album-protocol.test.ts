@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { Effect, Exit } from 'effect';
 
-import { encodeBase64 } from '@aoi/shared';
+import {
+  PROTOCOL_MAX_COUNTER,
+  PROTOCOL_MAX_TOMBSTONES,
+  encodeBase64,
+} from '@aoi/shared';
 
 import { makeTestHarness, type ShimD1 } from '../../effects/test-harness';
+import { albumMediaKey } from '../../domains/album';
 import {
+  getAlbumMediaProtocolProgram,
   getAlbumProtocolSnapshotProgram,
   postAlbumDeviceTombstoneProgram,
+  postAlbumMediaTombstoneProgram,
   putAlbumDeviceClaimProgram,
   putAlbumDeviceRecordProgram,
+  putAlbumMediaManifestProgram,
   putAlbumRecoveryEnvelopeProgram,
   putAlbumSpaceKeyEnvelopeProgram,
   putAlbumTrustAnchorProgram,
@@ -763,5 +771,332 @@ describe('the write is the check', () => {
     );
 
     expect(await run(ctx.provide(putAlbumSpaceKeyEnvelopeProgram(USER_A, body)))).toEqual(body);
+  });
+});
+
+/**
+ * Media manifests and tombstones. The server stores signed objects it cannot
+ * verify; these tests are about the structural facts it *can* enforce — who owns
+ * the row, that the ciphertext exists at the declared size, and that nothing a
+ * tombstone says can destroy anything.
+ */
+
+const MANIFEST_SIZE = 3;
+
+const manifest = (mediaId: string, overrides: Record<string, unknown> = {}) => ({
+  mediaId,
+  spaceId: SPACE_1,
+  generation: 1,
+  revision: 1,
+  wrappedKey: { nonce: NONCE, ciphertext: WRAPPED },
+  sealedNonce: NONCE,
+  byteLength: MANIFEST_SIZE,
+  mimeType: 'image/jpeg',
+  uploaderDeviceId: 'device-a',
+  createdAt: AT,
+  signature: SIG,
+  ...overrides,
+});
+
+const mediaTombstone = (mediaId: string, overrides: Record<string, unknown> = {}) => ({
+  spaceId: SPACE_1,
+  mediaId,
+  revision: 2,
+  deletedAt: AT,
+  deletedByDeviceId: 'device-a',
+  signature: SIG,
+  ...overrides,
+});
+
+/** A couple with the uploader device enrolled for USER_A. */
+async function withUploader() {
+  const ctx = couple();
+  await run(ctx.provide(enrolProgram(USER_A, 'device-a', record('device-a'))));
+  return ctx;
+}
+
+function seedObject(ctx: ReturnType<typeof couple>, mediaId: string, size: number): void {
+  ctx.harness.r2.putSync(
+    albumMediaKey(SPACE_1, mediaId),
+    new Uint8Array(size).fill(9),
+    'application/octet-stream'
+  );
+}
+
+/**
+ * Seed the sealed object and return the write as an effect, so a failure test
+ * observes the typed error instead of a rejected promise.
+ */
+function manifestEffect(
+  ctx: ReturnType<typeof couple>,
+  mediaId: string,
+  overrides: Record<string, unknown> = {},
+  userId = USER_A
+) {
+  const body = manifest(mediaId, overrides);
+  seedObject(ctx, mediaId, body.byteLength as number);
+  return ctx.provide(putAlbumMediaManifestProgram(userId, mediaId, body));
+}
+
+async function publishManifest(
+  ctx: ReturnType<typeof couple>,
+  mediaId: string,
+  overrides: Record<string, unknown> = {},
+  userId = USER_A
+) {
+  return run(manifestEffect(ctx, mediaId, overrides, userId));
+}
+
+describe('media manifests', () => {
+  it('stores an immutable manifest and reads it back', async () => {
+    const ctx = await withUploader();
+    const written = await publishManifest(ctx, 'media-1');
+    expect(written.mediaId).toBe('media-1');
+
+    const read = await run(ctx.provide(getAlbumMediaProtocolProgram(USER_A)));
+    expect(read.manifests).toEqual([manifest('media-1')]);
+  });
+
+  it('returns the same manifest on an identical retry', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+    expect(await publishManifest(ctx, 'media-1')).toEqual(manifest('media-1'));
+  });
+
+  it('refuses a different payload for the same media rather than overwriting it', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+    const err = await failureOf(manifestEffect(ctx, 'media-1', { revision: 2 }));
+    expect(err).toBeInstanceOf(ConflictError);
+  });
+
+  it('refuses a manifest whose sealed object was never uploaded', async () => {
+    const ctx = await withUploader();
+    // A failed or interrupted upload leaves no object, so it can never be
+    // described as valid media.
+    const err = await failureOf(
+      ctx.provide(putAlbumMediaManifestProgram(USER_A, 'media-1', manifest('media-1')))
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a manifest whose declared size is not the object that exists', async () => {
+    const ctx = await withUploader();
+    seedObject(ctx, 'media-1', MANIFEST_SIZE + 1);
+    const err = await failureOf(
+      ctx.provide(putAlbumMediaManifestProgram(USER_A, 'media-1', manifest('media-1')))
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a manifest for another Space', async () => {
+    const ctx = await withUploader();
+    const err = await failureOf(manifestEffect(ctx, 'media-1', { spaceId: OTHER_SPACE }));
+    expect(err).toBeInstanceOf(ForbiddenError);
+  });
+
+  it('refuses a manifest whose uploader device the caller does not own', async () => {
+    const ctx = await withUploader();
+    await run(ctx.provide(enrolProgram(USER_B, 'device-b', record('device-b'))));
+    const err = await failureOf(
+      manifestEffect(ctx, 'media-1', { uploaderDeviceId: 'device-b' })
+    );
+    expect(err).toBeInstanceOf(ForbiddenError);
+  });
+
+  it('refuses a manifest signed by a device that is not registered', async () => {
+    const ctx = await withUploader();
+    const err = await failureOf(
+      manifestEffect(ctx, 'media-1', { uploaderDeviceId: 'device-ghost' })
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a manifest whose mediaId does not match the path', async () => {
+    const ctx = await withUploader();
+    const err = await failureOf(
+      ctx.provide(putAlbumMediaManifestProgram(USER_A, 'media-2', manifest('media-1')))
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a malformed manifest', async () => {
+    const ctx = await withUploader();
+    const err = await failureOf(
+      ctx.provide(putAlbumMediaManifestProgram(USER_A, 'media-1', { mediaId: 'media-1' }))
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a member who has been removed', async () => {
+    const ctx = await withUploader();
+    await run(ctx.provide(enrolProgram(USER_B, 'device-b', record('device-b'))));
+    ctx.harness.d1.runSync(
+      `update space_members set state = 'left' where space_id = ? and user_id = ?`,
+      SPACE_1,
+      USER_B
+    );
+    const err = await failureOf(
+      manifestEffect(ctx, 'media-1', { uploaderDeviceId: 'device-b' }, USER_B)
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+});
+
+describe('media tombstones', () => {
+  it('stores a candidate and leaves the manifest and ciphertext untouched', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+
+    const written = await run(
+      ctx.provide(postAlbumMediaTombstoneProgram(USER_A, mediaTombstone('media-1')))
+    );
+    expect(written.mediaId).toBe('media-1');
+
+    const read = await run(ctx.provide(getAlbumMediaProtocolProgram(USER_A)));
+    expect(read.tombstones).toEqual([mediaTombstone('media-1')]);
+    // A tombstone is a claim, not a deletion: the manifest stays and the object
+    // is still in storage.
+    expect(read.manifests).toHaveLength(1);
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, 'media-1'))).toBe(true);
+  });
+
+  it('treats an identical retry as one row', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+    await run(ctx.provide(postAlbumMediaTombstoneProgram(USER_A, mediaTombstone('media-1'))));
+    await run(ctx.provide(postAlbumMediaTombstoneProgram(USER_A, mediaTombstone('media-1'))));
+    const read = await run(ctx.provide(getAlbumMediaProtocolProgram(USER_A)));
+    expect(read.tombstones).toHaveLength(1);
+  });
+
+  it('keeps distinct candidates for one media rather than one row per target', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+    await run(ctx.provide(postAlbumMediaTombstoneProgram(USER_A, mediaTombstone('media-1'))));
+    await run(
+      ctx.provide(
+        postAlbumMediaTombstoneProgram(
+          USER_A,
+          mediaTombstone('media-1', {
+            revision: 3,
+            deletedAt: '2026-01-16T00:00:00.000Z',
+          })
+        )
+      )
+    );
+    const read = await run(ctx.provide(getAlbumMediaProtocolProgram(USER_A)));
+    expect(read.tombstones).toHaveLength(2);
+  });
+
+  it('refuses a tombstone for media this Space does not have', async () => {
+    const ctx = await withUploader();
+    const err = await failureOf(
+      ctx.provide(postAlbumMediaTombstoneProgram(USER_A, mediaTombstone('media-ghost')))
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a tombstone signed by a device the caller does not own', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+    await run(ctx.provide(enrolProgram(USER_B, 'device-b', record('device-b'))));
+    const err = await failureOf(
+      ctx.provide(
+        postAlbumMediaTombstoneProgram(
+          USER_A,
+          mediaTombstone('media-1', { deletedByDeviceId: 'device-b' })
+        )
+      )
+    );
+    expect(err).toBeInstanceOf(ForbiddenError);
+  });
+
+  it('refuses a tombstone for another Space', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+    const err = await failureOf(
+      ctx.provide(
+        postAlbumMediaTombstoneProgram(USER_A, mediaTombstone('media-1', { spaceId: OTHER_SPACE }))
+      )
+    );
+    expect(err).toBeInstanceOf(ForbiddenError);
+  });
+
+  it('stores a forged huge-revision candidate without acting on it, and refuses one past the bound', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+
+    // Within the counter bound the server stores it and does nothing else: it
+    // cannot tell a forged revision from a real one and must not try.
+    await run(
+      ctx.provide(
+        postAlbumMediaTombstoneProgram(
+          USER_A,
+          mediaTombstone('media-1', { revision: PROTOCOL_MAX_COUNTER })
+        )
+      )
+    );
+    const read = await run(ctx.provide(getAlbumMediaProtocolProgram(USER_A)));
+    expect(read.tombstones).toHaveLength(1);
+    expect(read.manifests).toHaveLength(1);
+
+    // Past the counter bound is a structural failure, refused at the boundary.
+    const err = await failureOf(
+      ctx.provide(
+        postAlbumMediaTombstoneProgram(
+          USER_A,
+          mediaTombstone('media-1', { revision: PROTOCOL_MAX_COUNTER + 1 })
+        )
+      )
+    );
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a new candidate at the ceiling but still accepts an exact retry, and reads every candidate back', async () => {
+    const ctx = await withUploader();
+    await publishManifest(ctx, 'media-1');
+
+    const body = mediaTombstone('media-1');
+    for (let index = 0; index < PROTOCOL_MAX_TOMBSTONES - 1; index += 1) {
+      // Valid wire objects: the read parses every candidate back, so a filler
+      // that is not a tombstone would make the read fail rather than fill it.
+      ctx.harness.d1.runSync(
+        `insert into album_media_tombstones (id, space_id, media_id, payload, created_at)
+         values (?, ?, ?, ?, ?)`,
+        `t-${index}`,
+        SPACE_1,
+        'media-1',
+        JSON.stringify(mediaTombstone('media-1', { revision: index + 3 })),
+        T0
+      );
+    }
+    ctx.harness.d1.runSync(
+      `insert into album_media_tombstones (id, space_id, media_id, payload, created_at)
+       values (?, ?, ?, ?, ?)`,
+      't-full',
+      SPACE_1,
+      'media-1',
+      JSON.stringify(body),
+      T0
+    );
+
+    // At the ceiling a distinct candidate is refused...
+    const err = await failureOf(
+      ctx.provide(
+        postAlbumMediaTombstoneProgram(
+          USER_A,
+          mediaTombstone('media-1', { revision: 3, deletedAt: '2026-01-17T00:00:00.000Z' })
+        )
+      )
+    );
+    expect(err).toBeInstanceOf(ConflictError);
+
+    // ...an exact retry is not a new object, so it succeeds...
+    expect(await run(ctx.provide(postAlbumMediaTombstoneProgram(USER_A, body)))).toEqual(body);
+
+    // ...and the read returns every candidate rather than truncating to fit.
+    const read = await run(ctx.provide(getAlbumMediaProtocolProgram(USER_A)));
+    expect(read.tombstones).toHaveLength(PROTOCOL_MAX_TOMBSTONES);
   });
 });

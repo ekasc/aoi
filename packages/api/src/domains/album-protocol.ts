@@ -7,13 +7,18 @@ import {
   wireDeviceClaimRequestSchema,
   wireDeviceRecordSchema,
   wireDeviceTombstoneSchema,
+  wireMediaManifestSchema,
+  wireMediaTombstoneSchema,
   wireRecoveryEnvelopeSchema,
   wireSpaceKeyEnvelopeSchema,
   wireSpaceTrustAnchorSchema,
+  type WireAlbumMediaProtocol,
   type WireAlbumProtocolSnapshot,
   type WireDeviceClaim,
   type WireDeviceRecord,
   type WireDeviceTombstone,
+  type WireMediaManifest,
+  type WireMediaTombstone,
   type WireRecoveryEnvelope,
   type WireSpaceKeyEnvelope,
   type WireSpaceTrustAnchor,
@@ -22,6 +27,8 @@ import {
 import { nowMs, type ClockService } from '../effects/clock';
 import { newId, type IdService } from '../effects/id';
 import { Db, type DbService } from '../effects/d1';
+import { MediaStore, type MediaStoreService } from '../services/media-store';
+import { albumMediaKey } from './album';
 import { getActiveSpaceId } from './spaces';
 import {
   BadRequestError,
@@ -157,6 +164,11 @@ const EMPTY_SNAPSHOT: WireAlbumProtocolSnapshot = {
   tombstones: [],
   envelopes: [],
   recoveryEnvelopes: [],
+};
+
+const EMPTY_MEDIA_PROTOCOL: WireAlbumMediaProtocol = {
+  manifests: [],
+  tombstones: [],
 };
 
 // ── snapshot ─────────────────────────────────────────────────────────────
@@ -701,4 +713,236 @@ export const putAlbumRecoveryEnvelopeProgram = (
       return yield* Effect.fail(conflict('That generation already has a recovery envelope'));
     }
     return persisted;
+  });
+
+// ── media manifests ──────────────────────────────────────────────────────
+
+/**
+ * One immutable row per media, written by the account that owns the uploader.
+ *
+ * The server cannot verify the signature and does not try. What it checks is
+ * structural: the manifest names this Space, the uploading device belongs to the
+ * caller, and the ciphertext object already exists at the deterministic key at
+ * exactly the declared size. That last check is why the length is measured
+ * against the object rather than a second metadata row — an upload that failed,
+ * was truncated, or never happened has no object and so cannot be described as
+ * valid media.
+ *
+ * Immutable: the first payload for a `mediaId` wins. An identical retry returns
+ * it; a different payload for the same id is refused rather than overwritten.
+ */
+export const putAlbumMediaManifestProgram = (
+  userId: string,
+  mediaId: string,
+  input: unknown
+): Effect.Effect<
+  WireMediaManifest,
+  BadRequestError | ForbiddenError | ConflictError | InternalError,
+  DbService | ClockService | MediaStoreService
+> =>
+  Effect.gen(function* () {
+    const parsed = wireMediaManifestSchema.safeParse(input);
+    if (!parsed.success) {
+      return yield* Effect.fail(badRequest('Invalid media manifest'));
+    }
+    const manifest = parsed.data;
+
+    if (manifest.mediaId !== mediaId) {
+      return yield* Effect.fail(badRequest('That manifest is for a different media'));
+    }
+
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return yield* Effect.fail(badRequest('You must have an active space to publish a manifest'));
+    }
+    if (manifest.spaceId !== spaceId) {
+      return yield* Effect.fail(forbidden('That manifest belongs to another Space'));
+    }
+
+    // The uploader is who signs it, so the row belongs to the account that owns
+    // that device. The server does not judge whether the device was authorised;
+    // it only refuses to let one member's account speak as another's device.
+    const uploaderOwner = yield* deviceOwner(spaceId, manifest.uploaderDeviceId);
+    if (uploaderOwner === null) {
+      return yield* Effect.fail(
+        badRequest('The uploading device is not registered in this Space')
+      );
+    }
+    if (uploaderOwner !== userId) {
+      return yield* Effect.fail(forbidden('You do not own the uploading device'));
+    }
+
+    const store = yield* MediaStore;
+    const object = yield* Effect.tryPromise({
+      try: () => store.head(albumMediaKey(spaceId, mediaId)),
+      catch: () => new InternalError({}),
+    });
+    if (object === null) {
+      return yield* Effect.fail(badRequest('The sealed object has not been uploaded yet'));
+    }
+    if (object.size !== manifest.byteLength) {
+      return yield* Effect.fail(
+        badRequest('The sealed object does not match the manifest size')
+      );
+    }
+
+    const at = yield* nowMs;
+    yield* execute(
+      `insert into album_media_manifests
+         (space_id, media_id, uploader_device_id, revision, payload, created_at)
+       values (?, ?, ?, ?, ?, ?)
+       on conflict(space_id, media_id) do nothing`,
+      spaceId,
+      mediaId,
+      manifest.uploaderDeviceId,
+      manifest.revision,
+      JSON.stringify(manifest),
+      at
+    );
+
+    const stored = yield* one<{ payload: string }>(
+      'select payload from album_media_manifests where space_id = ? and media_id = ?',
+      spaceId,
+      mediaId
+    );
+    if (!stored) {
+      return yield* Effect.fail(new InternalError({}));
+    }
+    const persisted = yield* readPayload(wireMediaManifestSchema, stored.payload);
+    if (!samePayload(persisted, manifest)) {
+      return yield* Effect.fail(conflict('That media already has a different manifest'));
+    }
+    return persisted;
+  });
+
+// ── media tombstones ─────────────────────────────────────────────────────
+
+/**
+ * Append-only candidates, exactly like the device tombstones.
+ *
+ * A submitted tombstone is a claim the server cannot verify. It is stored as a
+ * candidate and nothing else happens: no row is deleted, no object is removed.
+ * Physical reclamation is a separate problem, and letting a forged deletion
+ * destroy ciphertext would be the worst possible reading of "either member may
+ * remove shared media".
+ *
+ * The ceiling is in the insert and the read-back decides the answer, so an exact
+ * retry still succeeds when nothing further may be created.
+ */
+export const postAlbumMediaTombstoneProgram = (
+  userId: string,
+  input: unknown
+): Effect.Effect<
+  WireMediaTombstone,
+  BadRequestError | ForbiddenError | ConflictError | InternalError,
+  DbService | ClockService | IdService
+> =>
+  Effect.gen(function* () {
+    const parsed = wireMediaTombstoneSchema.safeParse(input);
+    if (!parsed.success) {
+      return yield* Effect.fail(badRequest('Invalid media tombstone'));
+    }
+    const tombstone = parsed.data;
+
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return yield* Effect.fail(badRequest('You must have an active space to remove media'));
+    }
+    if (tombstone.spaceId !== spaceId) {
+      return yield* Effect.fail(forbidden('That tombstone belongs to another Space'));
+    }
+
+    // Whoever signed it must be a device this account owns. Any active member
+    // may remove shared media, so the account check is the whole ownership rule;
+    // whether the device was authorised to sign is the client's question.
+    const owner = yield* deviceOwner(spaceId, tombstone.deletedByDeviceId);
+    if (owner === null) {
+      return yield* Effect.fail(badRequest('That device is not registered in this Space'));
+    }
+    if (owner !== userId) {
+      return yield* Effect.fail(
+        forbidden('You do not own the device that signed this tombstone')
+      );
+    }
+
+    // A tombstone names a media this Space has a manifest for. The server cannot
+    // tell whether the deletion is legitimate, but it can tell whether the
+    // subject exists, and rejecting an invented id keeps the append-only set
+    // from filling with rows no client could ever apply.
+    const manifest = yield* one<{ media_id: string }>(
+      'select media_id from album_media_manifests where space_id = ? and media_id = ?',
+      spaceId,
+      tombstone.mediaId
+    );
+    if (!manifest) {
+      return yield* Effect.fail(badRequest('That media is not in this Space'));
+    }
+
+    const id = yield* newId;
+    const at = yield* nowMs;
+    const payload = JSON.stringify(tombstone);
+
+    yield* insertWithinCeiling(
+      'album_media_tombstones',
+      'id, space_id, media_id, payload, created_at',
+      '?, ?, ?, ?, ?',
+      'on conflict(space_id, payload) do nothing',
+      spaceId,
+      PROTOCOL_MAX_TOMBSTONES,
+      id,
+      spaceId,
+      tombstone.mediaId,
+      payload,
+      at
+    );
+
+    const stored = yield* one<{ id: string }>(
+      'select id from album_media_tombstones where space_id = ? and payload = ?',
+      spaceId,
+      payload
+    );
+    if (!stored) {
+      return yield* Effect.fail(conflict('This Space has reached its tombstone limit'));
+    }
+    return tombstone;
+  });
+
+// ── media protocol read ──────────────────────────────────────────────────
+
+/**
+ * The media half of the protocol, in one read.
+ *
+ * Deliberately not folded into the startup snapshot: manifests are one row per
+ * media and grow with the library, while the snapshot is the bounded trust state
+ * a device needs before anything else. Tombstones come back whole — the write
+ * path enforces the ceiling, so this never drops a candidate to fit.
+ */
+export const getAlbumMediaProtocolProgram = (
+  userId: string
+): Effect.Effect<WireAlbumMediaProtocol, InternalError, DbService> =>
+  Effect.gen(function* () {
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return EMPTY_MEDIA_PROTOCOL;
+    }
+
+    const manifestRows = yield* all<{ payload: string }>(
+      `select payload from album_media_manifests where space_id = ?
+        order by media_id asc`,
+      spaceId
+    );
+    const tombstoneRows = yield* all<{ payload: string }>(
+      `select payload from album_media_tombstones where space_id = ?
+        order by created_at asc, id asc limit ${PROTOCOL_MAX_TOMBSTONES}`,
+      spaceId
+    );
+
+    return {
+      manifests: yield* Effect.forEach(manifestRows, (row) =>
+        readPayload(wireMediaManifestSchema, row.payload)
+      ),
+      tombstones: yield* Effect.forEach(tombstoneRows, (row) =>
+        readPayload(wireMediaTombstoneSchema, row.payload)
+      ),
+    };
   });

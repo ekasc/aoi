@@ -300,6 +300,29 @@ export const wireAlbumSpaceKeyEnvelopeResponseSchema = z
 export const wireAlbumRecoveryEnvelopeResponseSchema = z
   .object({ recoveryEnvelope: wireRecoveryEnvelopeSchema })
   .strict();
+export const wireAlbumMediaManifestResponseSchema = z
+  .object({ manifest: wireMediaManifestSchema })
+  .strict();
+export const wireAlbumMediaTombstoneResponseSchema = z
+  .object({ tombstone: wireMediaTombstoneSchema })
+  .strict();
+
+/**
+ * The media protocol state for a Space, in one read.
+ *
+ * The pair a client reads to authenticate metadata and deletions. Manifests are
+ * one immutable row per media, so the count is the media count itself; the
+ * tombstone array is capped at the ceiling the write path already enforces, so
+ * a read never has to drop a candidate to fit.
+ */
+export const wireAlbumMediaProtocolSchema = z
+  .object({
+    manifests: z.array(wireMediaManifestSchema),
+    tombstones: z.array(wireMediaTombstoneSchema).max(PROTOCOL_MAX_TOMBSTONES),
+  })
+  .strict();
+
+export type WireAlbumMediaProtocol = z.infer<typeof wireAlbumMediaProtocolSchema>;
 
 /**
  * A device's claim on its own id and keys, made by the device itself before
