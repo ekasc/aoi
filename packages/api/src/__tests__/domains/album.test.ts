@@ -1108,6 +1108,23 @@ describe('reservation expiry and retries', () => {
     expect(reservationState(ctx)).toBe('pending');
   });
 
+  it('refuses a retry once cleanup has claimed the row', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    ctx.harness.d1.runSync(
+      `update album_media_reservations set state = 'expiring' where space_id = ? and media_id = ?`,
+      SPACE_1,
+      MEDIA_1
+    );
+
+    // The claim owns the row, so the renewal's `state = 'pending'` guard cannot
+    // match and no new authorization is minted for a reservation cleanup owns.
+    expect(
+      await failureOf(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())))
+    ).toBeInstanceOf(ConflictError);
+  });
+
   it('refuses to finalise an expired reservation', async () => {
     const ctx = couple();
     enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
