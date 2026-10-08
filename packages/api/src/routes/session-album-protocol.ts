@@ -8,7 +8,10 @@ import {
   wireAlbumDeviceRecordResponseSchema,
   wireAlbumDeviceTombstoneResponseSchema,
   wireAlbumMediaManifestResponseSchema,
+  wireAlbumMediaPageQuerySchema,
   wireAlbumMediaProtocolSchema,
+  wireAlbumMediaReservationRequestSchema,
+  wireAlbumMediaReservationResponseSchema,
   wireAlbumMediaTombstoneResponseSchema,
   wireAlbumProtocolSnapshotSchema,
   wireAlbumRecoveryEnvelopeResponseSchema,
@@ -28,6 +31,7 @@ import {
 import type { RunProgram } from '../create-app';
 import { makeAuthMiddleware } from '../middleware/session';
 import { makeRateLimitMiddleware } from '../middleware/session-rate-limit';
+import { finalizeAlbumMediaProgram, reserveAlbumMediaProgram } from '../domains/album';
 import {
   getAlbumMediaProtocolProgram,
   getAlbumProtocolSnapshotProgram,
@@ -153,10 +157,42 @@ export function albumProtocolRouter(run: RunProgram): Hono {
     }
   );
 
-  router.get('/v1/spaces/current/album/protocol/media', requireAuth, rateLimit, async (c) => {
-    const result = await run(getAlbumMediaProtocolProgram(c.var.userId));
-    return c.json(wireAlbumMediaProtocolSchema.parse(result));
-  });
+  router.get(
+    '/v1/spaces/current/album/protocol/media',
+    requireAuth,
+    rateLimit,
+    zValidator('query', wireAlbumMediaPageQuerySchema),
+    async (c) => {
+      const result = await run(
+        getAlbumMediaProtocolProgram(c.var.userId, c.req.valid('query'))
+      );
+      return c.json(wireAlbumMediaProtocolSchema.parse(result));
+    }
+  );
+
+  router.post(
+    '/v1/spaces/current/album/protocol/media',
+    requireAuth,
+    rateLimit,
+    zValidator('json', wireAlbumMediaReservationRequestSchema),
+    async (c) => {
+      const result = await run(reserveAlbumMediaProgram(c.var.userId, c.req.valid('json')));
+      return c.json(wireAlbumMediaReservationResponseSchema.parse(result), 201);
+    }
+  );
+
+  router.post(
+    '/v1/spaces/current/album/protocol/media/:mediaId/complete',
+    requireAuth,
+    rateLimit,
+    zValidator('param', mediaIdParamSchema),
+    async (c) => {
+      const result = await run(
+        finalizeAlbumMediaProgram(c.var.userId, c.req.valid('param').mediaId)
+      );
+      return c.json(result);
+    }
+  );
 
   router.put(
     '/v1/spaces/current/album/protocol/media/:mediaId/manifest',

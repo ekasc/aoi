@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   AES_GCM_NONCE_BYTES,
+  ALBUM_MEDIA_PAGE_MAX,
   ED25519_PUBLIC_KEY_BYTES,
   ED25519_SIGNATURE_BYTES,
   PROTOCOL_MAX_COUNTER,
@@ -9,6 +10,7 @@ import {
   PROTOCOL_MAX_ENVELOPES,
   PROTOCOL_MAX_ID_LENGTH,
   PROTOCOL_MAX_MEDIA_CIPHERTEXT_BYTES,
+  PROTOCOL_MAX_MEDIA_TOMBSTONES,
   PROTOCOL_MAX_MIME_TYPE_LENGTH,
   PROTOCOL_MAX_RECOVERY_ENVELOPES,
   PROTOCOL_MAX_TOMBSTONES,
@@ -308,21 +310,73 @@ export const wireAlbumMediaTombstoneResponseSchema = z
   .strict();
 
 /**
- * The media protocol state for a Space, in one read.
+ * Reserve one signed-media upload — the single pre-upload call.
  *
- * The pair a client reads to authenticate metadata and deletions. Manifests are
- * one immutable row per media, so the count is the media count itself; the
- * tombstone array is capped at the ceiling the write path already enforces, so
- * a read never has to drop a candidate to fit.
+ * The media id is the client's own UUIDv4, generated once per upload and reused
+ * across retries, because the ciphertext's AAD binds it: the identity has to
+ * exist before the bytes are sealed. The declared length is the exact
+ * ciphertext size the client will upload, so the presigned request and the
+ * quota reservation are both bound to it.
+ */
+export const wireAlbumMediaReservationRequestSchema = z
+  .object({
+    mediaId: z.string().uuid(),
+    generation: counterSchema,
+    uploaderDeviceId: idSchema,
+    byteLength: z.number().int().min(1).max(PROTOCOL_MAX_MEDIA_CIPHERTEXT_BYTES),
+  })
+  .strict();
+
+export const wireAlbumMediaReservationResponseSchema = z
+  .object({
+    mediaId: idSchema,
+    generation: counterSchema,
+    uploadUrl: z.string(),
+    expiresInSec: z.number(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+
+export const wireAlbumMediaReservationSchema = z
+  .object({
+    mediaId: idSchema,
+    generation: counterSchema,
+    uploaderDeviceId: idSchema,
+    byteLength: z.number().int().positive(),
+  })
+  .strict();
+
+/** Bounded, deterministic pagination for the manifest read. */
+export const wireAlbumMediaPageQuerySchema = z
+  .object({
+    cursor: z.string().min(1).max(PROTOCOL_MAX_ID_LENGTH).optional(),
+    limit: z.coerce.number().int().min(1).max(ALBUM_MEDIA_PAGE_MAX).optional(),
+  })
+  .strict();
+
+/**
+ * The media protocol state for a Space, in one page.
+ *
+ * Manifests are paged deterministically by `mediaId`; `nextCursor` is non-null
+ * whenever more exist, so a client can never mistake a partial history for the
+ * whole one. Tombstones are returned whole — the write path enforces the
+ * ceiling, which is what keeps this from having to drop a candidate to fit.
  */
 export const wireAlbumMediaProtocolSchema = z
   .object({
     manifests: z.array(wireMediaManifestSchema),
-    tombstones: z.array(wireMediaTombstoneSchema).max(PROTOCOL_MAX_TOMBSTONES),
+    nextCursor: z.string().nullable(),
+    tombstones: z.array(wireMediaTombstoneSchema).max(PROTOCOL_MAX_MEDIA_TOMBSTONES),
   })
   .strict();
 
 export type WireAlbumMediaProtocol = z.infer<typeof wireAlbumMediaProtocolSchema>;
+export type WireAlbumMediaReservationRequest = z.infer<
+  typeof wireAlbumMediaReservationRequestSchema
+>;
+export type WireAlbumMediaReservationResponse = z.infer<
+  typeof wireAlbumMediaReservationResponseSchema
+>;
 
 /**
  * A device's claim on its own id and keys, made by the device itself before

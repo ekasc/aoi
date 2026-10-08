@@ -855,6 +855,53 @@ export const albumDeviceTombstones = sqliteTable(
 );
 
 /**
+ * The signed-media upload lifecycle: one row per media, from reservation to
+ * completion.
+ *
+ * It is the storage-accounting row for signed media — the single place those
+ * bytes are counted — and the only thing that authorises an upload. It is
+ * separate from `album_media` (the pre-cutover flow) so signed media stays
+ * invisible to the legacy list and the legacy delete, which read that table.
+ *
+ *   pending  → complete   finalised, object pinned, quota held
+ *   pending  → failed     abandoned: object deleted, quota released
+ *
+ * `expires_at` is set past the presigned URL's own expiry, so a reservation
+ * never dies while its URL is still usable. Cleanup deletes the object before
+ * flipping the row to `failed`, so a `failed` row never leaves untracked
+ * storage behind.
+ */
+export const albumMediaReservations = sqliteTable(
+  'album_media_reservations',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    mediaId: text('media_id').notNull(),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    uploaderDeviceId: text('uploader_device_id').notNull(),
+    generation: integer('generation').notNull(),
+    byteLength: integer('byte_length').notNull(),
+    state: text('state').notNull().default('pending'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    completedEtag: text('completed_etag'),
+    completedSize: integer('completed_size'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.mediaId] }),
+    index('idx_album_media_reservations_state').on(table.spaceId, table.state),
+    check(
+      'ck_album_media_reservations_state',
+      sql`${table.state} in ('pending', 'complete', 'failed')`
+    ),
+  ]
+);
+
+/**
  * One immutable signed manifest per media.
  *
  * The manifest is what makes the metadata authentic: the server currently holds

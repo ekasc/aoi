@@ -5,6 +5,7 @@ import { Db, guardedUpdate, type DbService } from '../effects/d1';
 import { nowMs } from '../effects/clock';
 import { Logger, logInfo, type LoggerService } from '../effects/logger';
 import { MediaStore, type MediaStoreService } from '../services/media-store';
+import { albumMediaKey } from '../domains/album';
 import { mediaDisplayKey, mediaThumbKey } from '../domains/media';
 
 /**
@@ -400,11 +401,73 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     now - PUSH_TOKEN_STALE_MS
   );
 
+  // 4. Abandoned signed-media reservations (fail-closed per row).
+  //
+  // A reservation outlives its own presigned URL, so by the time one is past
+  // `expires_at` no upload can still be in flight. The object is deleted before
+  // the row flips to `failed`: a `failed` row has released its quota, and that
+  // is only honest once the bytes are actually gone. A delete that cannot be
+  // confirmed leaves the row `pending`, still holding its bytes, for the next
+  // sweep. A completed reservation is never touched, and neither is an object
+  // with a published manifest.
+  const expired = yield* Effect.tryPromise({
+    try: () =>
+      db.d1
+        .prepare(
+          `select space_id, media_id from album_media_reservations
+           where state = 'pending' and expires_at < ?`
+        )
+        .bind(now)
+        .all<{ space_id: string; media_id: string }>(),
+    catch: () => new Error('cron: album reservation query failed'),
+  }).pipe(
+    Effect.catchAll(() =>
+      Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album reservation query failed');
+        return Effect.succeed({ results: [] as { space_id: string; media_id: string }[] });
+      })
+    )
+  );
+
+  const expiredRows = expired.results ?? [];
+  let reservationsExpired = 0;
+  for (const row of expiredRows) {
+    const confirmed = yield* deleteKeyConfirmed(store, albumMediaKey(row.space_id, row.media_id));
+    if (!confirmed) {
+      yield* Effect.flatMap(Logger, (l) => {
+        l.warn('cron: album reservation storage delete uncertain — retaining row for retry');
+        return Effect.void;
+      });
+      continue;
+    }
+    const updated = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `update album_media_reservations set state = 'failed'
+             where space_id = ? and media_id = ? and state = 'pending' and expires_at < ?`
+          )
+          .bind(row.space_id, row.media_id, now)
+          .run(),
+      catch: () => new Error('cron: album reservation update failed'),
+    }).pipe(
+      Effect.map((res) => res.meta?.changes ?? 0),
+      Effect.catchAll(() =>
+        Effect.flatMap(Logger, (l) => {
+          l.warn('cron: album reservation update failed');
+          return Effect.succeed(0);
+        })
+      )
+    );
+    if (updated > 0) reservationsExpired += 1;
+  }
+
   yield* logInfo('cron: media purge done', {
     stagedPurged,
     softDeletedPurged,
     orphanScanned,
     orphansDeleted,
+    reservationsExpired,
     staleTokensPruned: staleTokens.changes,
   });
 
@@ -413,6 +476,7 @@ export const mediaPurgeProgram = Effect.gen(function* () {
     softDeletedPurged,
     orphanScanned,
     orphansDeleted,
+    reservationsExpired,
     staleTokensPruned: staleTokens.changes,
   };
 });

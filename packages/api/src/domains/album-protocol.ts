@@ -1,9 +1,13 @@
 import { Effect } from 'effect';
 
 import {
+  ALBUM_MEDIA_PAGE_DEFAULT,
   PROTOCOL_MAX_DEVICES,
   PROTOCOL_MAX_ENVELOPES,
+  PROTOCOL_MAX_MEDIA_TOMBSTONES,
   PROTOCOL_MAX_TOMBSTONES,
+  PROTOCOL_MEDIA_TOMBSTONE_BASE,
+  PROTOCOL_MEDIA_TOMBSTONES_PER_MEDIA,
   wireDeviceClaimRequestSchema,
   wireDeviceRecordSchema,
   wireDeviceTombstoneSchema,
@@ -27,8 +31,6 @@ import {
 import { nowMs, type ClockService } from '../effects/clock';
 import { newId, type IdService } from '../effects/id';
 import { Db, type DbService } from '../effects/d1';
-import { MediaStore, type MediaStoreService } from '../services/media-store';
-import { albumMediaKey } from './album';
 import { getActiveSpaceId } from './spaces';
 import {
   BadRequestError,
@@ -168,6 +170,7 @@ const EMPTY_SNAPSHOT: WireAlbumProtocolSnapshot = {
 
 const EMPTY_MEDIA_PROTOCOL: WireAlbumMediaProtocol = {
   manifests: [],
+  nextCursor: null,
   tombstones: [],
 };
 
@@ -722,11 +725,10 @@ export const putAlbumRecoveryEnvelopeProgram = (
  *
  * The server cannot verify the signature and does not try. What it checks is
  * structural: the manifest names this Space, the uploading device belongs to the
- * caller, and the ciphertext object already exists at the deterministic key at
- * exactly the declared size. That last check is why the length is measured
- * against the object rather than a second metadata row — an upload that failed,
- * was truncated, or never happened has no object and so cannot be described as
- * valid media.
+ * caller, and the media is a *finalised* reservation matching this Space, id,
+ * generation, uploader and exact length. A matching object alone is not enough —
+ * the reservation is the row the server authorised, size-checked and pinned, so
+ * a manifest can only describe an upload the server actually accepted.
  *
  * Immutable: the first payload for a `mediaId` wins. An identical retry returns
  * it; a different payload for the same id is refused rather than overwritten.
@@ -738,7 +740,7 @@ export const putAlbumMediaManifestProgram = (
 ): Effect.Effect<
   WireMediaManifest,
   BadRequestError | ForbiddenError | ConflictError | InternalError,
-  DbService | ClockService | MediaStoreService
+  DbService | ClockService
 > =>
   Effect.gen(function* () {
     const parsed = wireMediaManifestSchema.safeParse(input);
@@ -772,18 +774,31 @@ export const putAlbumMediaManifestProgram = (
       return yield* Effect.fail(forbidden('You do not own the uploading device'));
     }
 
-    const store = yield* MediaStore;
-    const object = yield* Effect.tryPromise({
-      try: () => store.head(albumMediaKey(spaceId, mediaId)),
-      catch: () => new InternalError({}),
-    });
-    if (object === null) {
-      return yield* Effect.fail(badRequest('The sealed object has not been uploaded yet'));
+    const reservation = yield* one<{
+      uploader_device_id: string;
+      generation: number;
+      byte_length: number;
+      state: string;
+    }>(
+      `select uploader_device_id, generation, byte_length, state
+         from album_media_reservations where space_id = ? and media_id = ?`,
+      spaceId,
+      mediaId
+    );
+    if (!reservation) {
+      return yield* Effect.fail(badRequest('That media has not been reserved in this Space'));
     }
-    if (object.size !== manifest.byteLength) {
-      return yield* Effect.fail(
-        badRequest('The sealed object does not match the manifest size')
-      );
+    if (reservation.state !== 'complete') {
+      return yield* Effect.fail(badRequest('That media upload has not been finalised'));
+    }
+    if (reservation.uploader_device_id !== manifest.uploaderDeviceId) {
+      return yield* Effect.fail(badRequest('That manifest names a different uploading device'));
+    }
+    if (reservation.generation !== manifest.generation) {
+      return yield* Effect.fail(badRequest('That manifest is for a different generation'));
+    }
+    if (reservation.byte_length !== manifest.byteLength) {
+      return yield* Effect.fail(badRequest('That manifest does not match the reserved size'));
     }
 
     const at = yield* nowMs;
@@ -882,18 +897,28 @@ export const postAlbumMediaTombstoneProgram = (
     const at = yield* nowMs;
     const payload = JSON.stringify(tombstone);
 
-    yield* insertWithinCeiling(
-      'album_media_tombstones',
-      'id, space_id, media_id, payload, created_at',
-      '?, ?, ?, ?, ?',
-      'on conflict(space_id, payload) do nothing',
-      spaceId,
-      PROTOCOL_MAX_TOMBSTONES,
+    // The ceiling scales with the archive: `BASE + PER_MEDIA * completedMedia`,
+    // capped absolutely. A flat cap would block a legitimate deletion in a large
+    // archive without any attacker; an uncapped one would let a member grow the
+    // snapshot without limit. Both counts are subqueries of the insert, so
+    // concurrent writes cannot both pass a read-time check.
+    yield* execute(
+      `insert into album_media_tombstones (id, space_id, media_id, payload, created_at)
+       select ?, ?, ?, ?, ?
+       where (select count(*) from album_media_tombstones where space_id = ?)
+             < min(?, ? + ? * (select count(*) from album_media_reservations
+                                where space_id = ? and state = 'complete'))
+       on conflict(space_id, payload) do nothing`,
       id,
       spaceId,
       tombstone.mediaId,
       payload,
-      at
+      at,
+      spaceId,
+      PROTOCOL_MAX_MEDIA_TOMBSTONES,
+      PROTOCOL_MEDIA_TOMBSTONE_BASE,
+      PROTOCOL_MEDIA_TOMBSTONES_PER_MEDIA,
+      spaceId
     );
 
     const stored = yield* one<{ id: string }>(
@@ -918,7 +943,8 @@ export const postAlbumMediaTombstoneProgram = (
  * path enforces the ceiling, so this never drops a candidate to fit.
  */
 export const getAlbumMediaProtocolProgram = (
-  userId: string
+  userId: string,
+  query: { cursor?: string; limit?: number } = {}
 ): Effect.Effect<WireAlbumMediaProtocol, InternalError, DbService> =>
   Effect.gen(function* () {
     const spaceId = yield* getActiveSpaceId(userId);
@@ -926,21 +952,37 @@ export const getAlbumMediaProtocolProgram = (
       return EMPTY_MEDIA_PROTOCOL;
     }
 
-    const manifestRows = yield* all<{ payload: string }>(
-      `select payload from album_media_manifests where space_id = ?
-        order by media_id asc`,
-      spaceId
+    const limit = query.limit ?? ALBUM_MEDIA_PAGE_DEFAULT;
+    const cursor = query.cursor ?? '';
+
+    // One row past the page says whether more exist, so `nextCursor` is never
+    // null while a manifest is unread — a client cannot mistake a partial
+    // history for the whole one. `media_id > ''` matches every id, so the first
+    // page needs no special case.
+    const manifestRows = yield* all<{ media_id: string; payload: string }>(
+      `select media_id, payload from album_media_manifests
+        where space_id = ? and media_id > ?
+        order by media_id asc limit ?`,
+      spaceId,
+      cursor,
+      limit + 1
     );
+    const page = manifestRows.slice(0, limit);
+    const hasMore = manifestRows.length > limit;
+
+    // Tombstones come back whole. The write path enforces the ceiling, which is
+    // what keeps this from ever having to drop a candidate to fit.
     const tombstoneRows = yield* all<{ payload: string }>(
       `select payload from album_media_tombstones where space_id = ?
-        order by created_at asc, id asc limit ${PROTOCOL_MAX_TOMBSTONES}`,
+        order by created_at asc, id asc limit ${PROTOCOL_MAX_MEDIA_TOMBSTONES}`,
       spaceId
     );
 
     return {
-      manifests: yield* Effect.forEach(manifestRows, (row) =>
+      manifests: yield* Effect.forEach(page, (row) =>
         readPayload(wireMediaManifestSchema, row.payload)
       ),
+      nextCursor: hasMore && page.length > 0 ? page[page.length - 1].media_id : null,
       tombstones: yield* Effect.forEach(tombstoneRows, (row) =>
         readPayload(wireMediaTombstoneSchema, row.payload)
       ),

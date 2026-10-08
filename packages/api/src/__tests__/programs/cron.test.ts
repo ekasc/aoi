@@ -369,3 +369,75 @@ describe('media purge program (fail-closed)', () => {
     expect(infiniteCalls).toBe(ORPHAN_SWEEP_MAX_PAGES);
   });
 });
+
+describe('album reservation cleanup', () => {
+  const ALBUM_MEDIA = '00000000-0000-4000-8000-000000000101';
+  const albumKey = `album/s1/${ALBUM_MEDIA}.bin`;
+
+  function insertReservation(
+    d1: ReturnType<typeof makeTestHarness>['d1'],
+    state: 'pending' | 'complete' | 'failed',
+    expiresAt: number
+  ): void {
+    d1.rawDb
+      .prepare(
+        `insert into album_media_reservations
+           (space_id, media_id, created_by_user_id, uploader_device_id, generation,
+            byte_length, state, created_at, expires_at)
+         values ('s1', ?, 'u1', 'device-a', 1, 10, ?, ?, ?)`
+      )
+      .run(ALBUM_MEDIA, state, expiresAt - 1000, expiresAt);
+  }
+
+  function reservationState(d1: ReturnType<typeof makeTestHarness>['d1']): string {
+    const row = d1.rawDb
+      .prepare('select state from album_media_reservations where media_id = ?')
+      .get(ALBUM_MEDIA) as { state: string };
+    return row.state;
+  }
+
+  it('deletes an abandoned object and only then releases its reservation', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    insertReservation(harness.d1, 'pending', now - 1);
+    harness.r2.putSync(albumKey, new Uint8Array(10), 'application/octet-stream');
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.reservationsExpired).toBe(1);
+    expect(harness.r2.objects.has(albumKey)).toBe(false);
+    expect(reservationState(harness.d1)).toBe('failed');
+  });
+
+  it('leaves a completed reservation and its object alone', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    insertReservation(harness.d1, 'complete', now - 1);
+    harness.r2.putSync(albumKey, new Uint8Array(10), 'application/octet-stream');
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.reservationsExpired).toBe(0);
+    expect(harness.r2.objects.has(albumKey)).toBe(true);
+  });
+
+  it('retains the reservation when the storage delete cannot be confirmed', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    insertReservation(harness.d1, 'pending', now - 1);
+    harness.r2.putSync(albumKey, new Uint8Array(10), 'application/octet-stream');
+    harness.r2.delete = async () => {
+      throw new Error('r2 down');
+    };
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.reservationsExpired).toBe(0);
+    expect(harness.r2.objects.has(albumKey)).toBe(true);
+    // Still pending, so its bytes are still counted: no untracked storage.
+    expect(reservationState(harness.d1)).toBe('pending');
+  });
+});

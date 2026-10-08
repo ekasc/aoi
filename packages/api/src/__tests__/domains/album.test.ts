@@ -9,15 +9,18 @@ import {
   completeAlbumUploadProgram,
   createAlbumUploadIntentProgram,
   deleteAlbumMediaProgram,
+  finalizeAlbumMediaProgram,
   getAlbumBackupProgram,
   listAlbumMediaProgram,
   putAlbumBackupProgram,
+  reserveAlbumMediaProgram,
   serveAlbumObjectProgram,
 } from '../../domains/album';
 import {
   BadRequestError,
   ConflictError,
   ForbiddenError,
+  LimitExceededError,
   NotFoundError,
 } from '../../domains/errors';
 
@@ -170,6 +173,13 @@ describe('createAlbumUploadIntentProgram', () => {
     expect(result.headers?.['If-None-Match']).toBe('*');
     const signedHeaders = new URL(result.uploadUrl).searchParams.get('X-Amz-SignedHeaders') ?? '';
     expect(signedHeaders).toContain('if-none-match');
+    // The exact-size contract stays signed.
+    expect(signedHeaders).toContain('content-length');
+    // Presigning must not invent a checksum for the empty body: the device
+    // uploads real bytes, so an empty-body CRC32 could never match.
+    const url = new URL(result.uploadUrl);
+    expect(url.searchParams.get('x-amz-checksum-crc32')).toBeNull();
+    expect(url.searchParams.get('x-amz-sdk-checksum-algorithm')).toBeNull();
 
     const expectedKey = albumMediaKey(SPACE_1, result.mediaId);
     const row = ctx.harness.d1.rawDb
@@ -583,5 +593,265 @@ describe('album backup', () => {
     insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
     const err = await failureOf(ctx.provide(putAlbumBackupProgram(USER_A, backup)));
     expect(err).toBeInstanceOf(BadRequestError);
+  });
+});
+
+// ── Signed media: reserve → finalise ──────────────────────────────────────
+
+const MEDIA_1 = '00000000-0000-4000-8000-000000000101';
+const MEDIA_2 = '00000000-0000-4000-8000-000000000102';
+const MIB = 1024 * 1024;
+
+/** The reservation program reads device ownership straight from the record. */
+function enrolDevice(d1: ShimD1, spaceId: string, deviceId: string, userId: string): void {
+  d1.runSync(
+    `insert into album_device_records (space_id, device_id, owner_user_id, revision, payload, updated_at)
+     values (?, ?, ?, 1, '{}', ?)`,
+    spaceId,
+    deviceId,
+    userId,
+    T0
+  );
+}
+
+function couple() {
+  const ctx = makeCtx();
+  insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
+  insertUser(ctx.harness.d1, USER_B, 'b@example.com', 'Bob');
+  insertSpace(ctx.harness.d1, SPACE_1, USER_A);
+  insertMember(ctx.harness.d1, SPACE_1, USER_B, 'partner');
+  return ctx;
+}
+
+const reservation = (overrides: Record<string, unknown> = {}) => ({
+  mediaId: MEDIA_1,
+  generation: 1,
+  uploaderDeviceId: 'device-a',
+  byteLength: 3,
+  ...overrides,
+});
+
+function seedSealed(ctx: ReturnType<typeof couple>, mediaId: string, size: number): void {
+  ctx.harness.r2.putSync(
+    albumMediaKey(SPACE_1, mediaId),
+    new Uint8Array(size).fill(9),
+    'application/octet-stream'
+  );
+}
+
+function reservationState(ctx: ReturnType<typeof couple>): string {
+  const row = ctx.harness.d1.rawDb
+    .prepare('select state from album_media_reservations where media_id = ?')
+    .get(MEDIA_1) as { state: string };
+  return row.state;
+}
+
+describe('reserving signed media', () => {
+  it('reserves, then finalises, an exact-size upload', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+
+    const reserved = await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    expect(reserved.mediaId).toBe(MEDIA_1);
+    expect(reserved.generation).toBe(1);
+    expect(reserved.uploadUrl).toContain('X-Amz-Signature');
+    expect(reserved.headers?.['If-None-Match']).toBe('*');
+
+    seedSealed(ctx, MEDIA_1, 3);
+    expect(await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toEqual({
+      ok: true,
+    });
+
+    const row = ctx.harness.d1.rawDb
+      .prepare('select state, completed_size from album_media_reservations where media_id = ?')
+      .get(MEDIA_1) as { state: string; completed_size: number };
+    expect(row.state).toBe('complete');
+    expect(row.completed_size).toBe(3);
+  });
+
+  it('rejects a malformed id and an unsupported generation', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    expect(
+      await failureOf(
+        ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ mediaId: 'media-1' })))
+      )
+    ).toBeInstanceOf(BadRequestError);
+    expect(
+      await failureOf(
+        ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ generation: 2 })))
+      )
+    ).toBeInstanceOf(BadRequestError);
+  });
+
+  it('refuses a device the caller does not own, or one that is not registered', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-b', USER_B);
+    expect(
+      await failureOf(
+        ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ uploaderDeviceId: 'device-b' })))
+      )
+    ).toBeInstanceOf(ForbiddenError);
+    expect(
+      await failureOf(
+        ctx.provide(
+          reserveAlbumMediaProgram(USER_A, reservation({ uploaderDeviceId: 'device-ghost' }))
+        )
+      )
+    ).toBeInstanceOf(BadRequestError);
+  });
+
+  it('is retryable while pending, conflicts on a different request, and never re-authorises a used id', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    // Identical retry: same id, another short-lived URL.
+    expect(
+      (await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())))).mediaId
+    ).toBe(MEDIA_1);
+    // A different request for the same id is a conflict, not an overwrite.
+    expect(
+      await failureOf(
+        ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: 4 })))
+      )
+    ).toBeInstanceOf(ConflictError);
+
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)));
+    // Completed: never mint a fresh authorisation.
+    expect(
+      await failureOf(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())))
+    ).toBeInstanceOf(ConflictError);
+  });
+
+  it('refuses an id a legacy album row already owns', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    insertAlbumMedia(ctx.harness.d1, MEDIA_1, SPACE_1, USER_A);
+    expect(
+      await failureOf(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())))
+    ).toBeInstanceOf(ConflictError);
+  });
+
+  it('draws on the same budget as ordinary media and the legacy album', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    // A legacy album row at the Free ceiling leaves no room for a reservation.
+    insertAlbumMedia(ctx.harness.d1, 'legacy-1', SPACE_1, USER_A, { byteLength: 250 * MIB });
+    expect(
+      await failureOf(
+        ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: MIB })))
+      )
+    ).toBeInstanceOf(LimitExceededError);
+  });
+});
+
+describe('finalising signed media', () => {
+  it('refuses a size that is not the reserved one, and releases the reservation', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: 3 }))));
+    seedSealed(ctx, MEDIA_1, 4);
+    expect(await failureOf(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toBeInstanceOf(
+      BadRequestError
+    );
+    expect(reservationState(ctx)).toBe('failed');
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, MEDIA_1))).toBe(false);
+  });
+
+  it('leaves the reservation pending when nothing has been uploaded', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    expect(await failureOf(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toBeInstanceOf(
+      BadRequestError
+    );
+    expect(reservationState(ctx)).toBe('pending');
+  });
+
+  it('is idempotent, and refuses a caller who does not own the reservation', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)));
+    expect(await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toEqual({
+      ok: true,
+    });
+    expect(await failureOf(ctx.provide(finalizeAlbumMediaProgram(USER_B, MEDIA_1)))).toBeInstanceOf(
+      ForbiddenError
+    );
+  });
+
+  it('refuses a member who has been removed', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    ctx.harness.d1.runSync(
+      `update space_members set state = 'left' where space_id = ? and user_id = ?`,
+      SPACE_1,
+      USER_A
+    );
+    expect(await failureOf(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)))).toBeInstanceOf(
+      ForbiddenError
+    );
+  });
+});
+
+describe('signed media isolation and quota transitions', () => {
+  it('cannot be reached by the legacy album delete', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    await run(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation())));
+    seedSealed(ctx, MEDIA_1, 3);
+    await run(ctx.provide(finalizeAlbumMediaProgram(USER_A, MEDIA_1)));
+
+    // The legacy delete reads `album_media`, which signed media never touches.
+    expect(await failureOf(ctx.provide(deleteAlbumMediaProgram(USER_A, MEDIA_1)))).toBeInstanceOf(
+      NotFoundError
+    );
+    expect(ctx.harness.r2.objects.has(albumMediaKey(SPACE_1, MEDIA_1))).toBe(true);
+  });
+
+  it('refuses a second reservation once the first has spent the room', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    insertAlbumMedia(ctx.harness.d1, 'legacy-1', SPACE_1, USER_A, { byteLength: 249 * MIB });
+    await run(
+      ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ mediaId: MEDIA_1, byteLength: MIB })))
+    );
+    expect(
+      await failureOf(
+        ctx.provide(
+          reserveAlbumMediaProgram(USER_A, reservation({ mediaId: MEDIA_2, byteLength: MIB }))
+        )
+      )
+    ).toBeInstanceOf(LimitExceededError);
+  });
+
+  it('lets a Free→Plus upgrade admit a reservation the Free limit refused', async () => {
+    const ctx = couple();
+    enrolDevice(ctx.harness.d1, SPACE_1, 'device-a', USER_A);
+    insertAlbumMedia(ctx.harness.d1, 'legacy-1', SPACE_1, USER_A, { byteLength: 250 * MIB });
+    expect(
+      await failureOf(ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: MIB }))))
+    ).toBeInstanceOf(LimitExceededError);
+
+    ctx.harness.d1.runSync(
+      `insert into space_plus_entitlements
+         (space_id, purchaser_user_id, provider, entitlement_id, product_id, expires_at,
+          status, last_event_id, last_event_at_ms, created_at, updated_at)
+       values (?, ?, 'revenuecat', 'plus', null, null, 'active', 'e1', ?, ?, ?)`,
+      SPACE_1,
+      USER_A,
+      T0,
+      T0,
+      T0
+    );
+    const reserved = await run(
+      ctx.provide(reserveAlbumMediaProgram(USER_A, reservation({ byteLength: MIB })))
+    );
+    expect(reserved.mediaId).toBe(MEDIA_1);
   });
 });

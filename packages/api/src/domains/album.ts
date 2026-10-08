@@ -1,12 +1,15 @@
 import { Effect } from 'effect';
 
 import {
+  PLUS_MEDIA_BYTES,
   albumUploadIntentRequestSchema,
   spaceBackupSchema,
+  wireAlbumMediaReservationRequestSchema,
   type AlbumMediaRecord,
   type AlbumUploadIntentRequest,
   type AlbumUploadIntentResponse,
   type SpaceBackup,
+  type WireAlbumMediaReservationResponse,
 } from '@aoi/shared';
 
 import { nowMs, type ClockService } from '../effects/clock';
@@ -22,12 +25,15 @@ import {
   ConflictError,
   ForbiddenError,
   InternalError,
+  LimitExceededError,
   NotFoundError,
   badRequest,
   conflict,
   forbidden,
+  limitExceeded,
   notFound,
 } from './errors';
+import { COUNTED_MEDIA_BYTES_SQL, readSpaceUsage } from './plus';
 import { getActiveSpaceId } from './spaces';
 
 /**
@@ -583,4 +589,338 @@ export const putAlbumBackupProgram = (
     });
 
     return bounded.data;
+  });
+
+// ── Signed media: reserve → finalise ──────────────────────────────────────
+
+/** Generation 1 is the only writable generation until rotation exists. */
+export const ALBUM_WRITABLE_GENERATION = 1;
+
+/**
+ * How long a reservation outlives its own presigned URL.
+ *
+ * A reservation must never expire while its URL can still be used, or a device
+ * could land an object no row accounts for. The margin covers clock skew and a
+ * request that started just before expiry.
+ */
+export const ALBUM_RESERVATION_SAFETY_MS = 15 * 60 * 1000;
+export const ALBUM_RESERVATION_TTL_MS =
+  MEDIA_PRESIGN_TTL_SEC * 1000 + ALBUM_RESERVATION_SAFETY_MS;
+
+interface AlbumReservationRow {
+  space_id: string;
+  media_id: string;
+  created_by_user_id: string;
+  uploader_device_id: string;
+  generation: number;
+  byte_length: number;
+  state: 'pending' | 'complete' | 'failed';
+}
+
+const RESERVATION_SELECT = `
+  select space_id, media_id, created_by_user_id, uploader_device_id,
+         generation, byte_length, state
+  from album_media_reservations
+`;
+
+/**
+ * Reserve one signed-media upload — the single pre-upload call.
+ *
+ * The id is the client's, because the ciphertext's AAD binds it and the
+ * identity therefore has to exist before the bytes are sealed. The declared
+ * length is the exact ciphertext size, so the presigned request and the quota
+ * reservation are bound to it in the same breath.
+ *
+ * The quota guard and the insert are one statement, so two concurrent
+ * reservations cannot both pass a read-time check and together exceed the
+ * shared budget.
+ */
+export const reserveAlbumMediaProgram = (
+  userId: string,
+  input: unknown
+): Effect.Effect<
+  WireAlbumMediaReservationResponse,
+  BadRequestError | ForbiddenError | ConflictError | LimitExceededError | InternalError,
+  DbService | MediaStoreService | ClockService
+> =>
+  Effect.gen(function* () {
+    const parsed = wireAlbumMediaReservationRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      return yield* Effect.fail(badRequest('Invalid media reservation'));
+    }
+    const request = parsed.data;
+
+    if (request.generation !== ALBUM_WRITABLE_GENERATION) {
+      return yield* Effect.fail(
+        badRequest('Only generation 1 may be written until key rotation exists')
+      );
+    }
+
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return yield* Effect.fail(badRequest('You must have an active space to upload media'));
+    }
+
+    const db = yield* Db;
+
+    // The uploader is who signs the manifest, so the row belongs to the account
+    // that owns that device. The server never judges whether it was authorised.
+    const uploader = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            'select owner_user_id from album_device_records where space_id = ? and device_id = ?'
+          )
+          .bind(spaceId, request.uploaderDeviceId)
+          .first<{ owner_user_id: string }>(),
+      catch: () => new InternalError({}),
+    });
+    if (!uploader) {
+      return yield* Effect.fail(
+        badRequest('The uploading device is not registered in this Space')
+      );
+    }
+    if (uploader.owner_user_id !== userId) {
+      return yield* Effect.fail(forbidden('You do not own the uploading device'));
+    }
+
+    // The id is the client's, so it can collide with a legacy album row. A
+    // legacy id would let the legacy delete reach a signed object, so the
+    // collision is refused rather than shared.
+    const legacy = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare('select 1 as one from album_media where id = ?')
+          .bind(request.mediaId)
+          .first<{ one: number }>(),
+      catch: () => new InternalError({}),
+    });
+    if (legacy) {
+      return yield* Effect.fail(conflict('That media id is already in use'));
+    }
+
+    const at = yield* nowMs;
+    const usage = yield* readSpaceUsage(db.d1, spaceId, at);
+
+    yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `insert into album_media_reservations
+               (space_id, media_id, created_by_user_id, uploader_device_id, generation,
+                byte_length, state, created_at, expires_at)
+             select ?, ?, ?, ?, ?, ?, 'pending', ?, ?
+             where ${COUNTED_MEDIA_BYTES_SQL} + ? <= ?
+             on conflict(space_id, media_id) do nothing`
+          )
+          .bind(
+            spaceId,
+            request.mediaId,
+            userId,
+            request.uploaderDeviceId,
+            request.generation,
+            request.byteLength,
+            at,
+            at + ALBUM_RESERVATION_TTL_MS,
+            spaceId,
+            spaceId,
+            spaceId,
+            request.byteLength,
+            usage.mediaLimitBytes
+          )
+          .run(),
+      catch: () => new InternalError({}),
+    });
+
+    const existing = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(`${RESERVATION_SELECT} where space_id = ? and media_id = ?`)
+          .bind(spaceId, request.mediaId)
+          .first<AlbumReservationRow>(),
+      catch: () => new InternalError({}),
+    });
+
+    if (!existing) {
+      // Nothing inserted and nothing stored: the shared budget refused it.
+      return yield* Effect.fail(
+        limitExceeded('This space is out of media room', {
+          kind: 'media_quota',
+          usedBytes: usage.mediaUsedBytes,
+          limitBytes: usage.mediaLimitBytes,
+          plusLimitBytes: PLUS_MEDIA_BYTES,
+        })
+      );
+    }
+
+    const sameRequest =
+      existing.created_by_user_id === userId &&
+      existing.uploader_device_id === request.uploaderDeviceId &&
+      existing.generation === request.generation &&
+      existing.byte_length === request.byteLength;
+    if (!sameRequest) {
+      return yield* Effect.fail(conflict('That media id is reserved for a different upload'));
+    }
+    if (existing.state !== 'pending') {
+      // Completed or abandoned. Never mint a fresh authorisation for an id that
+      // has already been used.
+      return yield* Effect.fail(conflict('That media id can no longer be uploaded'));
+    }
+
+    // Pending and identical: a retry of the same reservation. Same key, so
+    // re-presigning hands back an equivalent short-lived URL.
+    const store = yield* MediaStore;
+    const presigned = yield* Effect.tryPromise({
+      try: () =>
+        store.presignPutUrl(
+          albumMediaKey(spaceId, request.mediaId),
+          ALBUM_CONTENT_TYPE,
+          request.byteLength,
+          { ifNoneMatch: true }
+        ),
+      catch: () => new InternalError({}),
+    });
+
+    return {
+      mediaId: request.mediaId,
+      generation: request.generation,
+      uploadUrl: presigned.url,
+      expiresInSec: MEDIA_PRESIGN_TTL_SEC,
+      headers: presigned.headers,
+    };
+  });
+
+/**
+ * Abandon a pending reservation: remove the object, then release its bytes.
+ *
+ * Fail-closed. The row stays `pending` — still holding its quota — unless
+ * storage positively confirms the object is gone, so a failed delete leaves
+ * durable state for the cleanup sweep to retry instead of leaking untracked
+ * storage.
+ */
+const abandonReservation = (
+  db: DbService,
+  store: MediaStoreService,
+  spaceId: string,
+  mediaId: string
+): Effect.Effect<boolean, InternalError> =>
+  Effect.gen(function* () {
+    const deleted: boolean = yield* Effect.promise(() =>
+      store.delete(albumMediaKey(spaceId, mediaId)).then(
+        () => true,
+        () => false
+      )
+    );
+    if (!deleted) {
+      return false;
+    }
+    yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `update album_media_reservations set state = 'failed'
+              where space_id = ? and media_id = ? and state = 'pending'`
+          )
+          .bind(spaceId, mediaId)
+          .run(),
+      catch: () => new InternalError({}),
+    });
+    return true;
+  });
+
+/**
+ * Finalise a reserved upload.
+ *
+ * Requires the owned reservation, active membership, an exact ciphertext-size
+ * match, and an object whose identity can be pinned. Idempotent: a lost
+ * response is retried, and a concurrent finalisation that won is success rather
+ * than a conflict.
+ */
+export const finalizeAlbumMediaProgram = (
+  userId: string,
+  mediaId: string
+): Effect.Effect<
+  { ok: true },
+  BadRequestError | ForbiddenError | NotFoundError | InternalError,
+  DbService | MediaStoreService | ClockService
+> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    const reservation = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(`${RESERVATION_SELECT} where media_id = ?`)
+          .bind(mediaId)
+          .first<AlbumReservationRow>(),
+      catch: () => new InternalError({}),
+    });
+    if (!reservation) {
+      return yield* Effect.fail(notFound('Media not found'));
+    }
+    if (reservation.created_by_user_id !== userId) {
+      return yield* Effect.fail(forbidden('You can only confirm your own uploads'));
+    }
+    if (reservation.state === 'complete') {
+      return { ok: true as const };
+    }
+    if (reservation.state !== 'pending') {
+      return yield* Effect.fail(badRequest('That upload was abandoned'));
+    }
+    if (!(yield* isActiveMember(db, reservation.space_id, userId))) {
+      return yield* Effect.fail(forbidden('You are no longer a member of this Space'));
+    }
+
+    const store = yield* MediaStore;
+    const head = yield* Effect.tryPromise({
+      try: () => store.head(albumMediaKey(reservation.space_id, mediaId)),
+      catch: () => new InternalError({}),
+    });
+    if (head === null) {
+      // Nothing has landed yet. The client may still PUT; leave it pending.
+      return yield* Effect.fail(badRequest('The uploaded object was not found'));
+    }
+    if (head.size !== reservation.byte_length) {
+      // Not the object that was reserved, and a conditional PUT means it can
+      // never be replaced. Abandon it rather than hold quota for bytes that can
+      // never be finalised.
+      yield* abandonReservation(db, store, reservation.space_id, mediaId);
+      return yield* Effect.fail(badRequest('Uploaded content does not match the reserved size'));
+    }
+
+    const at = yield* nowMs;
+    const transition = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `update album_media_reservations
+                set state = 'complete', completed_at = ?, completed_etag = ?, completed_size = ?
+              where space_id = ? and media_id = ? and state = 'pending'
+                and exists (
+                  select 1 from space_members
+                   where space_id = album_media_reservations.space_id
+                     and user_id = ? and state = 'active'
+                )`
+          )
+          .bind(at, head.httpEtag, head.size, reservation.space_id, mediaId, userId)
+          .run(),
+      catch: () => new InternalError({}),
+    });
+    if ((transition.meta?.changes ?? 0) === 0) {
+      const fresh = yield* Effect.tryPromise({
+        try: () =>
+          db.d1
+            .prepare('select state from album_media_reservations where media_id = ?')
+            .bind(mediaId)
+            .first<{ state: string }>(),
+        catch: () => new InternalError({}),
+      });
+      if (!fresh || fresh.state !== 'pending') {
+        // A concurrent finalisation won. Success, not a conflict.
+        return { ok: true as const };
+      }
+      return yield* Effect.fail(forbidden('You are no longer a member of this Space'));
+    }
+
+    return { ok: true as const };
   });
