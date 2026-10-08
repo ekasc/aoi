@@ -24,7 +24,7 @@ import {
   type WireMediaTombstone,
 } from '@aoi/shared';
 
-import { generateMediaKey, fromBase64 } from '@/features/album/crypto';
+import { generateMediaKey, fromBase64, toBase64 } from '@/features/album/crypto';
 import { verificationFingerprint } from '@/features/album/keys';
 import type { LocalKeyStore } from '@/features/album/local-key-store';
 import { readPhotoBytes } from '@/features/album/photo-bytes';
@@ -57,11 +57,15 @@ import {
 } from '@/features/album/protocol-client';
 import {
   anchorsMatch,
+  clearCreationBootstrap,
   pinAnchor,
+  readCreationBootstrap,
   readDeletionState,
   readPinnedAnchor,
   recordAuthenticatedDeletion,
+  writeCreationBootstrap,
   writeRecoveryEntropy,
+  type CreationBootstrap,
 } from '@/features/album/protocol-local-state';
 import { recoverSpaceFromPhrase } from '@/features/album/protocol-recovery';
 import {
@@ -212,6 +216,28 @@ export async function establishProtocolArchive(
     if (pinned.state === 'pinned') {
       return { status: 'blocked' };
     }
+    const bootstrap = await readCreationBootstrap(input.spaceId);
+    if (bootstrap && bootstrap.deviceId === deviceId) {
+      // An earlier attempt wrote its bootstrap but never finished. Resume it
+      // rather than minting a second root beside it. A null resume means the
+      // bootstrap is not ours to resume, and creation starts fresh over it —
+      // safe only because no anchor exists yet, so nothing is being replaced.
+      try {
+        const resumed = await resumeCreation({
+          spaceId: input.spaceId,
+          deviceId,
+          material,
+          client,
+          snapshot,
+          bootstrap,
+        });
+        if (resumed) {
+          return resumed;
+        }
+      } catch {
+        return { status: 'unavailable' };
+      }
+    }
     try {
       return await createSpace({ spaceId: input.spaceId, deviceId, material, client, now });
     } catch {
@@ -247,6 +273,28 @@ export async function establishProtocolArchive(
     // like that. Nothing is pinned and no signed media is shown until a human
     // compares the root's fingerprint out of band, or the recovery phrase
     // authenticates the anchor.
+    //
+    // Unless this device started this creation and never finished it: then the
+    // anchor above is ours, and the remaining rows are resumed rather than
+    // re-minted.
+    const bootstrap = await readCreationBootstrap(input.spaceId);
+    if (bootstrap && bootstrap.deviceId === deviceId) {
+      try {
+        const resumed = await resumeCreation({
+          spaceId: input.spaceId,
+          deviceId,
+          material,
+          client,
+          snapshot,
+          bootstrap,
+        });
+        if (resumed) {
+          return resumed;
+        }
+      } catch {
+        return { status: 'unavailable' };
+      }
+    }
     return { status: 'unverified', anchor, records };
   }
 
@@ -329,8 +377,6 @@ async function createSpace(input: {
     rootSignature: signSpaceTrustAnchor(anchorInput, material.signingPrivateKey),
     recoverySignature: signSpaceTrustAnchorRecovery(anchorInput, deriveRecoverySigningKey(entropy)),
   };
-  await client.putAnchor(toWireSpaceTrustAnchor(anchor));
-
   const recordInput = {
     deviceId,
     spaceId,
@@ -344,45 +390,58 @@ async function createSpace(input: {
     ...recordInput,
     authorisation: signDeviceRecord(recordInput, material.signingPrivateKey),
   };
+  const envelope = sealSpaceKeyForDevice({
+    spaceKey,
+    spaceId,
+    generation: SIGNED_ALBUM_GENERATION,
+    recipientDeviceId: deviceId,
+    authoriserDeviceId: deviceId,
+    recipientRevision: 1,
+    authoriserAgreementPrivateKey: material.agreementPrivateKey,
+    recipientAgreementPublicKey: material.agreementPublicKey,
+  });
+  const recoveryEnvelope = sealSpaceKeyForRecovery({
+    spaceKey,
+    spaceId,
+    generation: SIGNED_ALBUM_GENERATION,
+    entropy,
+  });
+
+  // Frozen before the first network call. The anchor publication below is the
+  // irreversible step; everything after it can be retried from this bootstrap,
+  // which republishes byte-identical rows rather than minting a second root.
+  const wireAnchor = toWireSpaceTrustAnchor(anchor);
+  const wireRecord = toWireDeviceRecord(record);
+  const wireEnvelope = toWireSpaceKeyEnvelope(envelope);
+  const wireRecoveryEnvelope = toWireRecoveryEnvelope(recoveryEnvelope);
+  await writeCreationBootstrap(spaceId, {
+    deviceId,
+    spaceKey: toBase64(spaceKey),
+    entropy: toBase64(entropy),
+    anchor: wireAnchor,
+    record: wireRecord,
+    envelope: wireEnvelope,
+    recoveryEnvelope: wireRecoveryEnvelope,
+    createdAt: now,
+  });
+
+  await client.putAnchor(wireAnchor);
   await client.claimDevice({
     deviceId,
     signingPublicKey: encodeBase64(material.signingPublicKey),
     agreementPublicKey: encodeBase64(material.agreementPublicKey),
   });
-  await client.putDeviceRecord(toWireDeviceRecord(record));
+  await client.putDeviceRecord(wireRecord);
 
   // The root seals the key to itself as well. It holds the key already, but an
   // envelope is how *every* device re-derives it after a restart, and having
   // the root take the same path means one restore path rather than two.
-  await client.putSpaceKeyEnvelope(
-    toWireSpaceKeyEnvelope(
-      sealSpaceKeyForDevice({
-        spaceKey,
-        spaceId,
-        generation: SIGNED_ALBUM_GENERATION,
-        recipientDeviceId: deviceId,
-        authoriserDeviceId: deviceId,
-        recipientRevision: 1,
-        authoriserAgreementPrivateKey: material.agreementPrivateKey,
-        recipientAgreementPublicKey: material.agreementPublicKey,
-      })
-    )
-  );
-
-  await client.putRecoveryEnvelope(
-    SIGNED_ALBUM_GENERATION,
-    toWireRecoveryEnvelope(
-      sealSpaceKeyForRecovery({
-        spaceKey,
-        spaceId,
-        generation: SIGNED_ALBUM_GENERATION,
-        entropy,
-      })
-    )
-  );
+  await client.putSpaceKeyEnvelope(wireEnvelope);
+  await client.putRecoveryEnvelope(SIGNED_ALBUM_GENERATION, wireRecoveryEnvelope);
 
   await pinAnchor(spaceId, anchor);
   await writeRecoveryEntropy(spaceId, entropy);
+  await clearCreationBootstrap(spaceId);
 
   return {
     status: 'ready',
@@ -393,6 +452,186 @@ async function createSpace(input: {
     device: material,
     anchor,
     records: [record],
+    client,
+  };
+}
+
+/**
+ * Canonical form for comparing a stored payload with a server row.
+ *
+ * Both sides are already parsed, so key order and `Uint8Array` instances are
+ * the only things that can differ between two identical payloads. Sorting keys
+ * and spelling bytes as base64 removes both without touching the semantics.
+ */
+function canonicalize(value: unknown): unknown {
+  if (value instanceof Uint8Array) {
+    return toBase64(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      out[key] = canonicalize((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Finish a creation this device started but did not complete.
+ *
+ * Every remote step is reconciled against the snapshot rather than blindly
+ * re-sent: the record PUT is the one the server rejects on an identical retry,
+ * so a stored row that already matches is skipped instead of rewritten.
+ * Anything the server holds that is *different* from the bootstrap is someone
+ * else's creation, and resuming stops there.
+ *
+ * Returns null when there is nothing of this device's to resume, so the caller
+ * falls through to the normal path (a fresh creation, or an unverified join).
+ * Corrupt content is the only thing that blocks: it can be neither resumed
+ * nor safely ignored.
+ */
+async function resumeCreation(input: {
+  spaceId: string;
+  deviceId: string;
+  material: DeviceKeyMaterial;
+  client: AlbumProtocolClient;
+  snapshot: Awaited<ReturnType<AlbumProtocolClient['getSnapshot']>>;
+  bootstrap: CreationBootstrap;
+}): Promise<ProtocolArchive | null> {
+  const { spaceId, deviceId, material, client, snapshot, bootstrap } = input;
+
+  let anchor: SpaceTrustAnchor;
+  let record: DeviceRecord;
+  let envelope: ReturnType<typeof parseWireSpaceKeyEnvelope>;
+  let recoveryEnvelope: ReturnType<typeof parseWireRecoveryEnvelope>;
+  try {
+    anchor = parseWireSpaceTrustAnchor(bootstrap.anchor);
+    record = parseWireDeviceRecord(bootstrap.record);
+    envelope = parseWireSpaceKeyEnvelope(bootstrap.envelope);
+    recoveryEnvelope = parseWireRecoveryEnvelope(bootstrap.recoveryEnvelope);
+  } catch {
+    return { status: 'blocked' };
+  }
+
+  // The bootstrap only resumes its own creation: the anchor must name this
+  // device's keys, or these signatures are not ours to republish. Anything
+  // else falls through — a fresh creation when no anchor exists, an unverified
+  // join when one does — and the stale bootstrap is overwritten or ignored
+  // there, never resumed.
+  if (
+    anchor.rootDeviceId !== deviceId ||
+    toBase64(anchor.rootSigningPublicKey) !== toBase64(material.signingPublicKey)
+  ) {
+    return null;
+  }
+
+  // A server anchor that is not ours is someone else's Space, not an
+  // interruption of ours.
+  if (snapshot.anchor !== null) {
+    let serverAnchor: SpaceTrustAnchor;
+    try {
+      serverAnchor = parseWireSpaceTrustAnchor(snapshot.anchor);
+    } catch {
+      return { status: 'blocked' };
+    }
+    if (!anchorsMatch(serverAnchor, anchor)) {
+      return null;
+    }
+  }
+
+  const samePayload = (left: unknown, right: unknown): boolean =>
+    JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+
+  let records: DeviceRecord[];
+  try {
+    records = snapshot.records.map(parseWireDeviceRecord);
+  } catch {
+    return { status: 'blocked' };
+  }
+
+  const hasClaim = snapshot.claims.some(
+    (claim) =>
+      claim.deviceId === deviceId &&
+      claim.signingPublicKey === encodeBase64(material.signingPublicKey) &&
+      claim.agreementPublicKey === encodeBase64(material.agreementPublicKey)
+  );
+  const hasRecord = records.some(
+    (candidate) => candidate.deviceId === deviceId && samePayload(candidate, record)
+  );
+  let envelopes: ReturnType<typeof parseWireSpaceKeyEnvelope>[];
+  try {
+    envelopes = snapshot.envelopes.map(parseWireSpaceKeyEnvelope);
+  } catch {
+    return { status: 'blocked' };
+  }
+  const hasEnvelope = envelopes.some(
+    (candidate) =>
+      candidate.recipientDeviceId === deviceId &&
+      candidate.generation === SIGNED_ALBUM_GENERATION &&
+      samePayload(candidate, envelope)
+  );
+  let recoveryEnvelopes: ReturnType<typeof parseWireRecoveryEnvelope>[];
+  try {
+    recoveryEnvelopes = snapshot.recoveryEnvelopes.map(parseWireRecoveryEnvelope);
+  } catch {
+    return { status: 'blocked' };
+  }
+  const hasRecoveryEnvelope = recoveryEnvelopes.some(
+    (candidate) =>
+      candidate.generation === SIGNED_ALBUM_GENERATION && samePayload(candidate, recoveryEnvelope)
+  );
+
+  // A stored row that differs from the bootstrap is not an interruption of
+  // this creation — it belongs to someone else — so resume stops instead of
+  // overwriting it. The record PUT is the sharp edge: the server rejects an
+  // identical retry, hence the skip above; a *different* record for our id is
+  // a conflict we must not resolve by writing over it.
+  const conflictingRecord = records.some(
+    (candidate) => candidate.deviceId === deviceId && !samePayload(candidate, record)
+  );
+  if (conflictingRecord) {
+    return { status: 'blocked' };
+  }
+
+  await client.putAnchor(toWireSpaceTrustAnchor(anchor));
+  if (!hasClaim) {
+    await client.claimDevice({
+      deviceId,
+      signingPublicKey: encodeBase64(material.signingPublicKey),
+      agreementPublicKey: encodeBase64(material.agreementPublicKey),
+    });
+  }
+  if (!hasRecord) {
+    await client.putDeviceRecord(toWireDeviceRecord(record));
+    records = [...records, record];
+  }
+  if (!hasEnvelope) {
+    await client.putSpaceKeyEnvelope(toWireSpaceKeyEnvelope(envelope));
+  }
+  if (!hasRecoveryEnvelope) {
+    await client.putRecoveryEnvelope(
+      SIGNED_ALBUM_GENERATION,
+      toWireRecoveryEnvelope(recoveryEnvelope)
+    );
+  }
+
+  await pinAnchor(spaceId, anchor);
+  await writeRecoveryEntropy(spaceId, fromBase64(bootstrap.entropy));
+  await clearCreationBootstrap(spaceId);
+
+  return {
+    status: 'ready',
+    spaceId,
+    generation: SIGNED_ALBUM_GENERATION,
+    spaceKey: fromBase64(bootstrap.spaceKey),
+    deviceId,
+    device: material,
+    anchor,
+    records,
     client,
   };
 }
@@ -1055,6 +1294,37 @@ export async function recoverProtocolArchive(input: {
       // Our own half-finished recovery: the claim is reserved with these keys
       // but the record never published. Resume from the keys on disk rather
       // than minting new ones the claim would reject.
+      return publishResumedRecovery({
+        spaceId: input.spaceId,
+        anchor,
+        spaceKey: recovered.spaceKey,
+        device: {
+          signingPrivateKey: existing.signing.privateKey,
+          signingPublicKey: existing.signing.publicKey,
+          agreementPrivateKey: existing.agreement.privateKey,
+          agreementPublicKey: existing.agreement.publicKey,
+        },
+        deviceId,
+        phrase: input.phrase,
+        now,
+        client,
+      });
+    }
+    if (!ownClaim) {
+      // Keys this phone made by opening Us: never enrolled, never claimed.
+      // Reuse them instead of refusing: claim under these keys, then publish a
+      // recovery-authorized record for them. Nothing is overwritten — these
+      // keys stay on disk exactly as they are — and a conflicting claim fails
+      // below without touching them.
+      try {
+        await client.claimDevice({
+          deviceId,
+          signingPublicKey: encodeBase64(existing.signing.publicKey),
+          agreementPublicKey: encodeBase64(existing.agreement.publicKey),
+        });
+      } catch {
+        return { status: 'failed', reason: 'could-not-publish' };
+      }
       return publishResumedRecovery({
         spaceId: input.spaceId,
         anchor,

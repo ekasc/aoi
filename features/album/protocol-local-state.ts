@@ -171,4 +171,81 @@ export async function clearProtocolLocalState(spaceId: string): Promise<void> {
   ]);
   const store = await protectedStore();
   await store.remove(`${RECOVERY_PREFIX}${spaceId}`);
+  await store.remove(`${BOOTSTRAP_PREFIX}${spaceId}`);
+}
+
+// ── creation bootstrap ───────────────────────────────────────────────────
+
+/**
+ * An interrupted first-time creation, resumable without minting a new root.
+ *
+ * Written to the protected store *before* the anchor is published, because the
+ * anchor publication is the irreversible step: everything after it can be
+ * retried, but only if this device still knows the space key, the recovery
+ * entropy, and the exact payloads it already sent. The payloads are frozen
+ * wire JSON so a retry republishes byte-identical rows rather than minting a
+ * second root, a second record, or a second envelope.
+ *
+ * The bootstrap authenticates itself on read: the anchor must name this
+ * device's keys, and the server's anchor — when one exists — must match it.
+ * Anything else is a different creation and is not resumed.
+ */
+const BOOTSTRAP_PREFIX = 'aoi.album.creation.v1.';
+
+export type CreationBootstrap = {
+  deviceId: string;
+  /** base64 space key. */
+  spaceKey: string;
+  /** base64 recovery entropy. */
+  entropy: string;
+  /** Frozen wire payloads, republished verbatim on resume. */
+  anchor: unknown;
+  record: unknown;
+  envelope: unknown;
+  recoveryEnvelope: unknown;
+  createdAt: string;
+};
+
+function isCreationBootstrap(value: unknown): value is CreationBootstrap {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.deviceId === 'string' &&
+    typeof candidate.spaceKey === 'string' &&
+    typeof candidate.entropy === 'string' &&
+    candidate.anchor !== null &&
+    typeof candidate.anchor === 'object' &&
+    candidate.record !== null &&
+    typeof candidate.record === 'object' &&
+    candidate.envelope !== null &&
+    typeof candidate.envelope === 'object' &&
+    candidate.recoveryEnvelope !== null &&
+    typeof candidate.recoveryEnvelope === 'object' &&
+    typeof candidate.createdAt === 'string'
+  );
+}
+
+export async function readCreationBootstrap(spaceId: string): Promise<CreationBootstrap | null> {
+  const store = await protectedStore();
+  const raw = await store.get(`${BOOTSTRAP_PREFIX}${spaceId}`);
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isCreationBootstrap(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeCreationBootstrap(
+  spaceId: string,
+  bootstrap: CreationBootstrap
+): Promise<void> {
+  const store = await protectedStore();
+  await store.set(`${BOOTSTRAP_PREFIX}${spaceId}`, JSON.stringify(bootstrap));
+}
+
+export async function clearCreationBootstrap(spaceId: string): Promise<void> {
+  const store = await protectedStore();
+  await store.remove(`${BOOTSTRAP_PREFIX}${spaceId}`);
 }

@@ -820,3 +820,180 @@ describe('the enrolment fingerprint', () => {
     expect(wrong).not.toBe(fromApprover);
   });
 });
+
+describe('replacement-phone recovery', () => {
+  /** A phone with empty storage: opening Us mints fresh keys and keeps them. */
+  function freshKeyStore() {
+    let current: DeviceKeys | null = null;
+    return {
+      ensureDevice: async (_spaceId: string, deviceId: string) => {
+        if (!current) current = generateDeviceKeys(deviceId, new Date(NOW));
+        return current;
+      },
+      loadDevice: async () => current,
+      forgetDevice: async () => {
+        current = null;
+      },
+      saveDevice: async (_spaceId: string, next: DeviceKeys) => {
+        current = next;
+      },
+    };
+  }
+
+  it('recovers after opening Us on a new phone, reusing the keys Us created', async () => {
+    const server = new FakeServer(SPACE);
+    const aliceKeys = device('device-alice');
+    const alice = await establishProtocolArchive({
+      spaceId: server.spaceId,
+      deviceId: 'device-alice',
+      client: server,
+      keyStore: keyStoreFor(aliceKeys),
+      now: NOW,
+    });
+    expect(alice.status).toBe('ready');
+    const aliceReady = alice as ProtocolArchiveReady;
+    const { mediaId } = await uploadProtocolPhoto(
+      aliceReady,
+      { uri: 'alice.jpg', width: 10, height: 20 },
+      { now: NOW }
+    );
+
+    // The user wrote the phrase down before losing the phone.
+    const phrase = phraseFromRecoveryEntropy((await readRecoveryEntropy(SPACE))!);
+
+    // New phone: storage starts empty. Opening Us mints keys and reports an
+    // unverified archive — it must not enroll or trust anything yet.
+    await globalThis.__mockAsyncStorage.clear();
+    const phone = freshKeyStore();
+    const seen = await establishProtocolArchive({
+      spaceId: server.spaceId,
+      deviceId: 'device-replacement',
+      client: server,
+      keyStore: phone,
+      now: NOW,
+    });
+    expect(seen.status).toBe('unverified');
+    const keysBefore = await phone.loadDevice(SPACE);
+    expect(keysBefore).not.toBeNull();
+
+    // Restore with the valid phrase: the keys Us created are reused, never
+    // replaced, and the archive opens.
+    const recovered = await recoverProtocolArchive({
+      spaceId: server.spaceId,
+      phrase,
+      deviceId: 'device-replacement',
+      client: server,
+      keyStore: phone,
+      now: NOW,
+    });
+    expect(recovered.status).toBe('ready');
+    if (recovered.status !== 'ready') return;
+
+    const keysAfter = await phone.loadDevice(SPACE);
+    expect(Buffer.from(keysAfter!.signing.privateKey)).toEqual(
+      Buffer.from(keysBefore!.signing.privateKey)
+    );
+    expect(Buffer.from(keysAfter!.agreement.privateKey)).toEqual(
+      Buffer.from(keysBefore!.agreement.privateKey)
+    );
+
+    const read = await readProtocolArchive(recovered.session);
+    expect(read.photos.map((photo) => photo.mediaId)).toContain(mediaId);
+    expect(text(read.photos.find((photo) => photo.mediaId === mediaId)!.bytes)).toBe(
+      'photo:alice.jpg'
+    );
+  });
+});
+
+describe('resumable creation', () => {
+  const CREATOR = 'device-creator';
+  const REMOTE_WRITES = [
+    'putAnchor',
+    'claimDevice',
+    'putDeviceRecord',
+    'putSpaceKeyEnvelope',
+    'putRecoveryEnvelope',
+  ] as const;
+
+  /** Throw after this many successful remote writes, then restore the server. */
+  function interruptAfter(server: FakeServer, writes: number): () => void {
+    const target = server as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+    let count = 0;
+    const originals = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+    for (const method of REMOTE_WRITES) {
+      const original = target[method].bind(server);
+      originals.set(method, original);
+      target[method] = async (...args: unknown[]) => {
+        count += 1;
+        if (count > writes) throw new ProtocolRequestError(0, 'interrupted');
+        return original(...args);
+      };
+    }
+    return () => {
+      for (const [method, original] of originals) {
+        target[method] = original;
+      }
+    };
+  }
+
+  function creatorInput(server: FakeServer, spaceId: string, store: ReturnType<typeof keyStoreFor>) {
+    return {
+      spaceId,
+      deviceId: CREATOR,
+      client: server,
+      keyStore: store,
+      now: NOW,
+    };
+  }
+
+  // Interruption after each of the five remote writes: the next open resumes
+  // the exact original archive — same root, same recovery secret — instead of
+  // minting a second one beside it.
+  for (let writes = 0; writes <= 4; writes += 1) {
+    it(`resumes after interruption following write ${writes + 1} of 5`, async () => {
+      const spaceId = `space-create-${writes}`;
+      const server = new FakeServer(spaceId);
+      // One phone, one keystore: the same keys must come back on every open.
+      const store = keyStoreFor(device(CREATOR));
+
+      const restore = interruptAfter(server, writes);
+      let first;
+      try {
+        first = await establishProtocolArchive(creatorInput(server, spaceId, store));
+      } finally {
+        restore();
+      }
+      expect(first.status).toBe('unavailable');
+      const anchorBefore = server.anchor ? JSON.stringify(server.anchor) : null;
+
+      const second = await establishProtocolArchive(creatorInput(server, spaceId, store));
+      expect(second.status).toBe('ready');
+      if (second.status !== 'ready') return;
+
+      // No second root: the anchor is the one the first attempt published, or
+      // the one the resume just published from the same bootstrap.
+      expect(server.anchor).toBeTruthy();
+      if (anchorBefore !== null) {
+        expect(JSON.stringify(server.anchor)).toBe(anchorBefore);
+      }
+
+      // The creator is pinned, the phrase is stored, and the bootstrap is gone.
+      expect((await readPinnedAnchor(spaceId)).state).toBe('pinned');
+      const phrase = phraseFromRecoveryEntropy((await readRecoveryEntropy(spaceId))!);
+
+      // And the phrase recovers this exact root on a fresh device.
+      await globalThis.__mockAsyncStorage.clear();
+      const recovered = await recoverProtocolArchive({
+        spaceId,
+        phrase,
+        deviceId: 'device-recovered',
+        client: server,
+        keyStore: keyStoreFor(device('device-recovered')),
+        now: NOW,
+      });
+      expect(recovered.status).toBe('ready');
+      if (recovered.status !== 'ready') return;
+      expect(recovered.session.anchor.rootDeviceId).toBe(CREATOR);
+    });
+  }
+});
