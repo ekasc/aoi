@@ -111,6 +111,11 @@ export function makeMediaStoreService(
           accessKeyId: creds.accessKeyId,
           secretAccessKey: creds.secretAccessKey,
         },
+        // The default (WHEN_SUPPORTED) computes a request checksum at presign
+        // time from the empty body and puts `x-amz-checksum-crc32` in the URL.
+        // The device then uploads real bytes, so the service would validate a
+        // checksum that can never match. Presigning must not invent one.
+        requestChecksumCalculation: 'WHEN_REQUIRED',
       });
     }
     const command = new PutObjectCommand({
