@@ -94,7 +94,13 @@ describe('establishing the album session', () => {
     await sealAndUploadPhoto(session, { uri: 'prepared://photo.jpg', width: 100, height: 200 });
 
     const input = client.createIntent.mock.calls[0][0];
-    expect(input).toMatchObject({ mimeType: 'image/jpeg', byteLength: 10, width: 100, height: 200 });
+    // The declared length is the ciphertext object's, not the plaintext's: the
+    // reservation, the completion check, and the stored metadata all mean the
+    // same number now. Asserted against the bytes actually uploaded rather than
+    // against a tag size, so it stays true if the framing ever changes.
+    expect(input).toMatchObject({ mimeType: 'image/jpeg', width: 100, height: 200 });
+    expect(input.byteLength).toBe(client.putObject.mock.calls[0][1].length);
+    expect(input.byteLength).toBeGreaterThan(10);
     expect(input.sealedNonce).toBeTruthy();
     expect(client.putObject).toHaveBeenCalledOnce();
     expect(client.complete).toHaveBeenCalledWith('m-1');

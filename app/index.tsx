@@ -31,5 +31,10 @@ export default function Index() {
 		return <Redirect href="/(auth)/space-setup" />;
 	}
 
-	return <Redirect href="/(app)/(tabs)/(memories)" />;
+	// The dev seed opens on Us so the seeded screen is one launch away.
+	return (
+		<Redirect
+			href={process.env.EXPO_PUBLIC_DEV_SEED ? "/(app)/(tabs)/together" : "/(app)/(tabs)/(memories)"}
+		/>
+	);
 }

@@ -16,6 +16,7 @@ import {
 } from '../../domains/album';
 import {
   BadRequestError,
+  ConflictError,
   ForbiddenError,
   NotFoundError,
 } from '../../domains/errors';
@@ -205,25 +206,86 @@ describe('createAlbumUploadIntentProgram', () => {
 });
 
 describe('completeAlbumUploadProgram', () => {
-  it('head-verifies the object and transitions pending→complete with completed_at', async () => {
+  const idFor = (suffix: string) => `00000000-0000-4000-8000-0000000000${suffix}`;
+
+  function setup(bytes: Uint8Array, declared?: number) {
     const ctx = makeCtx();
     insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
     insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    const mediaId = '00000000-0000-4000-8000-0000000000a1';
-    const key = insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A);
-    ctx.harness.r2.putSync(key, new Uint8Array([1, 2, 3, 4]), 'application/octet-stream');
+    const mediaId = idFor('a1');
+    const key = insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A, {
+      byteLength: declared ?? bytes.length,
+    });
+    if (bytes.length > 0) {
+      ctx.harness.r2.putSync(key, bytes, 'application/octet-stream');
+    }
+    return { ctx, mediaId, key };
+  }
 
-    const result = await run(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
-    expect(result).toEqual({ ok: true });
+  const rowFor = (ctx: ReturnType<typeof makeCtx>, mediaId: string) =>
+    ctx.harness.d1.rawDb
+      .prepare(
+        'select upload_state, completed_at, completed_etag, completed_size from album_media where id = ?'
+      )
+      .get(mediaId) as {
+      upload_state: string;
+      completed_at: number | null;
+      completed_etag: string | null;
+      completed_size: number | null;
+    };
 
-    const row = ctx.harness.d1.rawDb
-      .prepare('select upload_state, completed_at from album_media where id = ?')
-      .get(mediaId) as { upload_state: string; completed_at: number | null };
+  it('head-verifies the exact size and pins the object identity', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const { ctx, mediaId } = setup(bytes);
+
+    expect(await run(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)))).toEqual({ ok: true });
+
+    const row = rowFor(ctx, mediaId);
     expect(row.upload_state).toBe('complete');
     expect(row.completed_at).toBe(T0);
+    // The pinned identity is what lets the serve path notice a replayed PUT.
+    expect(row.completed_size).toBe(bytes.length);
+    expect(row.completed_etag).toBeTruthy();
   });
 
-  it('404s for unknown media and 403s for another user’s upload', async () => {
+  it('refuses a truncated object', async () => {
+    // Four bytes reserved and one stored. This used to pass: the old check only
+    // had an upper bound, so a short object looked like a complete upload.
+    const { ctx, mediaId } = setup(new Uint8Array([1]), 4);
+
+    const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
+    expect(err).toBeInstanceOf(BadRequestError);
+    expect(rowFor(ctx, mediaId).upload_state).toBe('failed');
+  });
+
+  it('refuses an oversized object', async () => {
+    const { ctx, mediaId } = setup(new Uint8Array(64 * 1024), 8);
+
+    const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
+    expect(err).toBeInstanceOf(BadRequestError);
+    expect(rowFor(ctx, mediaId).upload_state).toBe('failed');
+  });
+
+  it('refuses a missing object', async () => {
+    const { ctx, mediaId } = setup(new Uint8Array(0));
+
+    const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
+    expect(err).toBeInstanceOf(BadRequestError);
+    expect(rowFor(ctx, mediaId).upload_state).toBe('failed');
+  });
+
+  it('400s when the upload is already complete', async () => {
+    const ctx = makeCtx();
+    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
+    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
+    const mediaId = idFor('a3');
+    insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A, { state: 'complete' });
+
+    const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
+    expect(err).toBeInstanceOf(BadRequestError);
+  });
+
+  it('404s for unknown media and 403s for another user\u2019s upload', async () => {
     const ctx = makeCtx();
     insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
     insertUser(ctx.harness.d1, USER_B, 'b@example.com', 'Bob');
@@ -235,56 +297,45 @@ describe('completeAlbumUploadProgram', () => {
     );
     expect(missing).toBeInstanceOf(NotFoundError);
 
-    const key = insertAlbumMedia(ctx.harness.d1, '00000000-0000-4000-8000-0000000000a2', SPACE_1, USER_A);
+    const key = insertAlbumMedia(ctx.harness.d1, idFor('a2'), SPACE_1, USER_A, { byteLength: 1 });
     ctx.harness.r2.putSync(key, new Uint8Array([1]), 'application/octet-stream');
-    const other = await failureOf(
-      ctx.provide(completeAlbumUploadProgram(USER_B, '00000000-0000-4000-8000-0000000000a2'))
-    );
+    const other = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_B, idFor('a2'))));
     expect(other).toBeInstanceOf(ForbiddenError);
   });
 
-  it('400s when the upload is already complete', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    const mediaId = '00000000-0000-4000-8000-0000000000a3';
-    insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A, { state: 'complete' });
+  it('refuses to finalise once the uploader has left the Space', async () => {
+    const { ctx, mediaId } = setup(new Uint8Array([1, 2, 3, 4]));
+    ctx.harness.d1.runSync(
+      "update space_members set state = 'left' where space_id = ? and user_id = ?",
+      SPACE_1,
+      USER_A
+    );
 
     const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
-    expect(err).toBeInstanceOf(BadRequestError);
+    expect(err).toBeInstanceOf(ForbiddenError);
+    // Nothing was finalised, so the object cannot become archive media.
+    expect(rowFor(ctx, mediaId).upload_state).toBe('pending');
   });
 
-  it('marks the row failed and 400s on a head-verify size mismatch', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    const mediaId = '00000000-0000-4000-8000-0000000000a4';
-    const key = insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A, { byteLength: 8 });
-    // Stored object is far larger than the declared reservation.
-    ctx.harness.r2.putSync(key, new Uint8Array(64 * 1024), 'application/octet-stream');
+  it('refuses when membership is removed between the check and the write', async () => {
+    const { ctx, mediaId } = setup(new Uint8Array([1, 2, 3, 4]));
+
+    // The membership check happens before the storage read, so removing the
+    // member from inside that read is exactly the window a concurrent removal
+    // would land in. The condition on the write is what has to catch it.
+    const realHead = ctx.harness.r2.head.bind(ctx.harness.r2);
+    (ctx.harness.r2 as { head: typeof realHead }).head = async (key: string) => {
+      ctx.harness.d1.runSync(
+        "update space_members set state = 'left' where space_id = ? and user_id = ?",
+        SPACE_1,
+        USER_A
+      );
+      return realHead(key);
+    };
 
     const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
-    expect(err).toBeInstanceOf(BadRequestError);
-
-    const row = ctx.harness.d1.rawDb
-      .prepare('select upload_state from album_media where id = ?')
-      .get(mediaId) as { upload_state: string };
-    expect(row.upload_state).toBe('failed');
-  });
-
-  it('400s when the object never landed', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    const mediaId = '00000000-0000-4000-8000-0000000000a5';
-    insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A); // no R2 object
-
-    const err = await failureOf(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
-    expect(err).toBeInstanceOf(BadRequestError);
-    const row = ctx.harness.d1.rawDb
-      .prepare('select upload_state from album_media where id = ?')
-      .get(mediaId) as { upload_state: string };
-    expect(row.upload_state).toBe('failed');
+    expect(err).toBeInstanceOf(ForbiddenError);
+    expect(rowFor(ctx, mediaId).upload_state).toBe('pending');
   });
 });
 
@@ -331,6 +382,24 @@ describe('listAlbumMediaProgram', () => {
 });
 
 describe('serveAlbumObjectProgram', () => {
+  it('refuses an object that was replaced after finalisation', async () => {
+    const ctx = makeCtx();
+    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
+    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
+    const mediaId = '00000000-0000-4000-8000-0000000000c5';
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const key = insertAlbumMedia(ctx.harness.d1, mediaId, SPACE_1, USER_A, { byteLength: bytes.length });
+    ctx.harness.r2.putSync(key, bytes, 'application/octet-stream');
+    await run(ctx.provide(completeAlbumUploadProgram(USER_A, mediaId)));
+
+    // A replayed presigned PUT: same length, different bytes. The pinned etag is
+    // what turns that from a silent swap into a refusal.
+    ctx.harness.r2.putSync(key, new Uint8Array([5, 6, 7, 8]), 'application/octet-stream');
+
+    const err = await failureOf(ctx.provide(serveAlbumObjectProgram(USER_A, mediaId)));
+    expect(err).toBeInstanceOf(ConflictError);
+  });
+
   it('returns the sealed bytes for a member with privacy-safe headers', async () => {
     const ctx = makeCtx();
     insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');

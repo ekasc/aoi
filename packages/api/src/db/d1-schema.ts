@@ -658,6 +658,17 @@ export const albumMedia = sqliteTable(
     uploadState: text('upload_state').notNull().default('pending'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
     completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    /**
+     * The object's identity at the moment it was finalised.
+     *
+     * A presigned PUT stays usable until it expires, so a replay can rewrite a
+     * completed object. Conditional writes would prevent that at the storage
+     * layer and the binding does not expose them, so the object's etag and size
+     * are pinned here instead and the serve path refuses anything that no longer
+     * matches. That turns a silent replacement into a refusal.
+     */
+    completedEtag: text('completed_etag'),
+    completedSize: integer('completed_size'),
     deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
   },
   (table) => [

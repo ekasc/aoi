@@ -33,6 +33,7 @@ import {
   type PreviewVariant,
 } from '@/features/dev/preview';
 import { seedDevCollections } from '@/features/dev/dev-seed-collections';
+import { seedDevSkyPhotos } from '@/features/dev/dev-seed-sky';
 import type { RelationshipSpace } from '@/features/space/types';
 
 const SESSION_STORAGE_KEY = 'aoi.session.v1';
@@ -107,6 +108,9 @@ export function ensureDevSeed(): Promise<void> {
       // deterministically rather than racing the provider.
       if (variant !== 'empty' && variant !== 'setup') {
         await seedDevCollections(DEV_SEED_SPACE_ID);
+        // The Us sky reads the encrypted album, so the mock photos must go
+        // through the real session/seal/upload path to appear there.
+        await seedDevSkyPhotos(DEV_SEED_SPACE_ID, DEV_SEED_USER_ID);
       }
       // Pending rows (unsent/failed memories) live in the composer store,
       // which the composer provider hydrates on mount — seed it here so the

@@ -19,10 +19,12 @@ import {
 } from '../services/media-store';
 import {
   BadRequestError,
+  ConflictError,
   ForbiddenError,
   InternalError,
   NotFoundError,
   badRequest,
+  conflict,
   forbidden,
   notFound,
 } from './errors';
@@ -57,13 +59,6 @@ export const albumMediaKey = (spaceId: string, mediaId: string): string =>
 /** Sealed ciphertext is opaque; R2 always stores it as octet-stream. */
 export const ALBUM_CONTENT_TYPE = 'application/octet-stream';
 
-/**
- * Completion-time size slack. The declared byte length reserves the upload;
- * the actual object may differ by a transport-level rounding at most. Anything
- * beyond this is a lie and fails the transition.
- */
-export const ALBUM_COMPLETE_SIZE_TOLERANCE_BYTES = 4096;
-
 interface AlbumMediaRow {
   id: string;
   space_id: string;
@@ -80,12 +75,15 @@ interface AlbumMediaRow {
   upload_state: 'pending' | 'complete' | 'failed';
   created_at: number;
   completed_at: number | null;
+  completed_etag: string | null;
+  completed_size: number | null;
 }
 
 const ALBUM_MEDIA_ROW_SELECT = `
   select id, space_id, created_by_user_id, mime_type, byte_length, width, height,
          person_tag, sealed_nonce, wrapped_key_nonce, wrapped_key_ciphertext,
-         storage_key, upload_state, created_at, completed_at
+         storage_key, upload_state, created_at, completed_at,
+         completed_etag, completed_size
   from album_media
 `;
 
@@ -291,22 +289,21 @@ export const completeAlbumUploadProgram = (
       return yield* Effect.fail(badRequest('Upload is already completed'));
     }
 
+    // A member who has left cannot finalise what they reserved. This is the
+    // early refusal; the condition on the write below is the authority, so a
+    // removal that lands between the two cannot slip through.
+    if (!(yield* isActiveMember(db, media.space_id, userId))) {
+      return yield* Effect.fail(forbidden('You are no longer a member of this Space'));
+    }
+
     const store = yield* MediaStore;
     const head = yield* Effect.tryPromise({
       try: () => store.head(media.storage_key),
       catch: () => new InternalError({}),
     });
 
-    const verified =
-      head !== null &&
-      head.size <= media.byte_length + ALBUM_COMPLETE_SIZE_TOLERANCE_BYTES &&
-      (head.httpMetadata?.contentType === undefined ||
-        head.httpMetadata.contentType === ALBUM_CONTENT_TYPE);
-
-    if (!verified) {
-      // The object never landed or its size does not match the reservation.
-      // Terminal: pending → failed, caller gets a 400.
-      yield* Effect.tryPromise({
+    const markFailed = () =>
+      Effect.tryPromise({
         try: () =>
           db.d1
             .prepare(
@@ -316,8 +313,22 @@ export const completeAlbumUploadProgram = (
             .run(),
         catch: () => new InternalError({}),
       });
+
+    if (head === null) {
+      yield* markFailed();
+      return yield* Effect.fail(badRequest('The uploaded object was not found'));
+    }
+
+    // Exact equality, with no allowance. The declared length is the ciphertext
+    // object's own length now, so a different size means this is not the object
+    // that was reserved. Nothing here has to know how the ciphertext was framed.
+    const contentTypeOk =
+      head.httpMetadata?.contentType === undefined ||
+      head.httpMetadata.contentType === ALBUM_CONTENT_TYPE;
+    if (head.size !== media.byte_length || !contentTypeOk) {
+      yield* markFailed();
       return yield* Effect.fail(
-        badRequest('Uploaded content size does not match the declared size')
+        badRequest('Uploaded content does not match the reserved size')
       );
     }
 
@@ -327,15 +338,20 @@ export const completeAlbumUploadProgram = (
         db.d1
           .prepare(
             `update album_media
-                set upload_state = 'complete', completed_at = ?
-              where id = ? and upload_state = 'pending'`
+                set upload_state = 'complete', completed_at = ?,
+                    completed_etag = ?, completed_size = ?
+              where id = ? and upload_state = 'pending'
+                and exists (
+                  select 1 from space_members
+                   where space_id = album_media.space_id
+                     and user_id = ? and state = 'active'
+                )`
           )
-          .bind(at, mediaId)
+          .bind(at, head.httpEtag, head.size, mediaId, userId)
           .run(),
       catch: () => new InternalError({}),
     });
     if ((transition.meta?.changes ?? 0) === 0) {
-      // A concurrent complete won, or the row moved to failed meanwhile.
       const fresh = yield* Effect.tryPromise({
         try: () =>
           db.d1
@@ -345,9 +361,12 @@ export const completeAlbumUploadProgram = (
         catch: () => new InternalError({}),
       });
       if (!fresh || fresh.upload_state !== 'pending') {
+        // A concurrent complete won, or the row moved to failed meanwhile.
         return yield* Effect.fail(badRequest('Upload is already completed'));
       }
-      return yield* Effect.fail(new InternalError({}));
+      // Still pending, so membership is what refused the write: the member was
+      // removed after the check above and before this statement.
+      return yield* Effect.fail(forbidden('You are no longer a member of this Space'));
     }
 
     return { ok: true as const };
@@ -392,7 +411,7 @@ export const serveAlbumObjectProgram = (
   mediaId: string
 ): Effect.Effect<
   AlbumServeOutput,
-  ForbiddenError | NotFoundError | InternalError,
+  ForbiddenError | NotFoundError | ConflictError | InternalError,
   DbService | MediaStoreService
 > =>
   Effect.gen(function* () {
@@ -425,6 +444,20 @@ export const serveAlbumObjectProgram = (
     });
     if (!object) {
       return yield* Effect.fail(notFound('Photo not found'));
+    }
+
+    // The object has to still be the one that was finalised. A presigned PUT
+    // stays usable until it expires, so a replay can replace a completed
+    // object; the etag and size pinned at completion turn that from a silent
+    // swap into a refusal. Preventing the write itself would need conditional
+    // PUT support at the storage layer, which this binding does not expose.
+    const replaced =
+      (media.completed_etag !== null && object.httpEtag !== media.completed_etag) ||
+      (media.completed_size !== null && object.size !== media.completed_size);
+    if (replaced) {
+      return yield* Effect.fail(
+        conflict('The stored object no longer matches the one that was finalised')
+      );
     }
 
     return {

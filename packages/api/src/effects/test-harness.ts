@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -210,6 +211,18 @@ const TEST_AUTH_CONFIG: Record<string, string | undefined> = {
  * In-memory R2 shim — implements the structural R2Bucket interface so the
  * media pipeline (head/get/put/delete/list + range) runs in node tests.
  */
+/**
+ * An etag that behaves like object storage's own: a hash of the object's bytes,
+ * so it changes when the content changes even at the same size.
+ *
+ * The shim cannot be the place that proves anything about real R2, but a fake
+ * that derived its etag from the key and size alone would make same-size
+ * replacement undetectable in the tests that exist to detect it.
+ */
+function shimEtag(bytes: Uint8Array): string {
+  return `etag-${createHash('md5').update(bytes).digest('hex')}`;
+}
+
 export class ShimR2 implements R2Bucket {
   readonly objects = new Map<string, { bytes: Uint8Array; contentType?: string; uploaded?: Date }>();
   readonly puts: Array<{ key: string; contentType?: string }> = [];
@@ -225,7 +238,7 @@ export class ShimR2 implements R2Bucket {
     return {
       key,
       size,
-      httpEtag: `etag-${key}-${size}`,
+      httpEtag: shimEtag(entry.bytes),
       uploaded: entry.uploaded ? new Date(entry.uploaded) : new Date(0),
       httpMetadata: entry.contentType ? { contentType: entry.contentType } : undefined,
       writeHttpMetadata() {},
@@ -244,7 +257,7 @@ export class ShimR2 implements R2Bucket {
     return {
       key,
       size: entry.bytes.byteLength,
-      httpEtag: `etag-${key}-${entry.bytes.byteLength}`,
+      httpEtag: shimEtag(entry.bytes),
       uploaded: entry.uploaded ? new Date(entry.uploaded) : new Date(0),
       httpMetadata: entry.contentType ? { contentType: entry.contentType } : undefined,
       writeHttpMetadata() {},

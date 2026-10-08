@@ -142,7 +142,9 @@ describe('what the server can see', () => {
     // But the metadata is plainly visible, and pretending otherwise would be
     // the actual privacy failure.
     expect(sealed.createdAt).toBe(when.toISOString());
-    expect(sealed.byteLength).toBe(photo.length);
+    // The declared length is the sealed ciphertext's own, not the plaintext's.
+    expect(sealed.byteLength).toBe(fromB64(sealed.sealed.ciphertext).length);
+    expect(sealed.byteLength).toBeGreaterThan(photo.length);
     expect(sealed.mimeType).toBe('image/jpeg');
   });
 });
