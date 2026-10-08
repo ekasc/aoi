@@ -25,16 +25,20 @@ import {
 import {
   ProtocolUploadInterrupted,
   authoriseProtocolDevice,
+  enrolmentFingerprint,
   establishProtocolArchive,
+  joiningFingerprint,
   pinVerifiedAnchor,
   publishProtocolDeviceRecord,
   readProtocolArchive,
+  recoverProtocolArchive,
   removeProtocolPhoto,
   uploadProtocolPhoto,
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
 import { signMediaManifest } from '@/features/album/protocol-crypto';
-import { readPinnedAnchor } from '@/features/album/protocol-local-state';
+import { phraseFromRecoveryEntropy } from '@/features/album/recovery';
+import { readPinnedAnchor, readRecoveryEntropy } from '@/features/album/protocol-local-state';
 import {
   forgetPendingUpload,
   readPendingUploads,
@@ -71,12 +75,19 @@ vi.mock('@/features/album/device-id', () => ({ getOrCreateDeviceId: async () => 
 vi.mock('@/features/album/local-key-store', () => ({
   createLocalKeyStore: () => ({ ensureDevice: vi.fn(), loadDevice: vi.fn(), forgetDevice: vi.fn() }),
 }));
-vi.mock('expo-secure-store', () => ({
-  getItemAsync: async () => null,
-  setItemAsync: async () => {},
-  deleteItemAsync: async () => {},
-  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked-this-device-only',
-}));
+vi.mock('expo-secure-store', () => {
+  const memory = new Map<string, string>();
+  return {
+    getItemAsync: async (key: string) => (memory.has(key) ? memory.get(key)! : null),
+    setItemAsync: async (key: string, value: string) => {
+      memory.set(key, value);
+    },
+    deleteItemAsync: async (key: string) => {
+      memory.delete(key);
+    },
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked-this-device-only',
+  };
+});
 
 class FakeServer implements AlbumProtocolClient {
   anchor: WireSpaceTrustAnchor | null = null;
@@ -96,6 +107,7 @@ class FakeServer implements AlbumProtocolClient {
   readonly objects = new Map<string, { bytes: Uint8Array; etag: string }>();
   readonly manifests = new Map<string, WireMediaManifest>();
   readonly tombstones: WireMediaTombstone[] = [];
+  readonly offers = new Map<string, WireDeviceRecord>();
   withholdTombstones = false;
   failNextPut = false;
 
@@ -105,6 +117,14 @@ class FakeServer implements AlbumProtocolClient {
     return {
       anchor: this.anchor,
       records: [...this.records.values()],
+      claims: [...this.claims.values()].map((claim) => ({
+        spaceId: this.spaceId,
+        deviceId: claim.deviceId,
+        signingPublicKey: claim.signingPublicKey,
+        agreementPublicKey: claim.agreementPublicKey,
+        createdAt: '2026-01-15T00:00:00.000Z',
+      })),
+      offers: [...this.offers.values()],
       tombstones: [],
       envelopes: this.envelopes,
       recoveryEnvelopes: this.recoveryEnvelopes,
@@ -132,6 +152,10 @@ class FakeServer implements AlbumProtocolClient {
       throw new ProtocolRequestError(409, 'not newer');
     }
     this.records.set(record.deviceId, record);
+  }
+
+  async putEnrollmentOffer(record: WireDeviceRecord) {
+    this.offers.set(record.deviceId, record);
   }
 
   async putSpaceKeyEnvelope(envelope: WireSpaceKeyEnvelope) {
@@ -305,7 +329,7 @@ async function couple(server = new FakeServer(SPACE)) {
   });
   expect(bob.status).toBe('ready');
 
-  return { server, alice: aliceReady, bob: bob as ProtocolArchiveReady };
+  return { server, alice: aliceReady, bob: bob as ProtocolArchiveReady, aliceKeys, bobKeys };
 }
 
 function text(bytes: Uint8Array): string {
@@ -651,5 +675,148 @@ describe('the connected signed archive', () => {
     const read = await readProtocolArchive(bob);
     expect(read.photos).toHaveLength(1);
     expect(read.photos[0].mediaId).toBe(pending!.pending.mediaId);
+  });
+});
+
+describe('recovery without destruction', () => {
+  function b64(bytes: Uint8Array): string {
+    return Buffer.from(bytes).toString('base64');
+  }
+
+  function spyingKeyStore(device: DeviceKeys) {
+    const slot = { current: device };
+    const saveDevice = vi.fn(async (_spaceId: string, next: DeviceKeys) => {
+      slot.current = next;
+    });
+    return {
+      store: {
+        ensureDevice: async () => slot.current,
+        loadDevice: async () => slot.current,
+        forgetDevice: async () => {},
+        saveDevice,
+      },
+      slot,
+      saveDevice,
+    };
+  }
+
+  async function alicePhrase(server: FakeServer): Promise<string> {
+    const entropy = await readRecoveryEntropy(SPACE);
+    expect(entropy).not.toBeNull();
+    return phraseFromRecoveryEntropy(entropy!);
+  }
+
+  it('refuses Restore on an enrolled device without touching its keys', async () => {
+    const { server, alice, aliceKeys } = await couple();
+    const keys = spyingKeyStore(aliceKeys);
+    const phrase = await alicePhrase(server);
+    void alice;
+
+    const before = await keys.store.loadDevice(SPACE);
+    const result = await recoverProtocolArchive({
+      spaceId: SPACE,
+      phrase,
+      deviceId: 'device-alice',
+      client: server,
+      keyStore: keys.store,
+      now: NOW,
+    });
+
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') expect(result.reason).toBe('device-already-enrolled');
+    // Nothing was written: the working keys are byte-identical.
+    expect(keys.saveDevice).not.toHaveBeenCalled();
+    const after = await keys.store.loadDevice(SPACE);
+    expect(Buffer.from(after!.signing.privateKey)).toEqual(Buffer.from(before!.signing.privateKey));
+    expect(Buffer.from(after!.agreement.privateKey)).toEqual(
+      Buffer.from(before!.agreement.privateKey)
+    );
+    // And the archive still opens with those keys.
+    const again = await establishProtocolArchive({
+      spaceId: SPACE,
+      deviceId: 'device-alice',
+      client: server,
+      keyStore: keys.store,
+      now: NOW,
+    });
+    expect(again.status).toBe('ready');
+  });
+
+  it('does not write keys when the claim conflicts', async () => {
+    const { server } = await couple();
+    const phrase = await alicePhrase(server);
+
+    // Someone else already claimed this id with different keys.
+    const squatter = device('device-cl');
+    await server.claimDevice({
+      deviceId: 'device-cl',
+      signingPublicKey: b64(squatter.signing.publicKey),
+      agreementPublicKey: b64(squatter.agreement.publicKey),
+    });
+
+    const mine = device('device-cl');
+    const keys = spyingKeyStore(mine);
+    const result = await recoverProtocolArchive({
+      spaceId: SPACE,
+      phrase,
+      deviceId: 'device-cl',
+      client: server,
+      keyStore: keys.store,
+      now: NOW,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(keys.saveDevice).not.toHaveBeenCalled();
+    const kept = await keys.store.loadDevice(SPACE);
+    expect(Buffer.from(kept!.signing.privateKey)).toEqual(
+      Buffer.from(mine.signing.privateKey)
+    );
+  });
+
+  it('resumes a half-finished recovery from the keys on disk', async () => {
+    const { server } = await couple();
+    const phrase = await alicePhrase(server);
+
+    // A previous attempt claimed and saved but never published the record.
+    const retry = device('device-retry');
+    await server.claimDevice({
+      deviceId: 'device-retry',
+      signingPublicKey: b64(retry.signing.publicKey),
+      agreementPublicKey: b64(retry.agreement.publicKey),
+    });
+    const keys = spyingKeyStore(retry);
+
+    const result = await recoverProtocolArchive({
+      spaceId: SPACE,
+      phrase,
+      deviceId: 'device-retry',
+      client: server,
+      keyStore: keys.store,
+      now: NOW,
+    });
+
+    expect(result.status).toBe('ready');
+    // The record went up for the on-disk keys — no fresh identity was minted.
+    expect(server.records.get('device-retry')).toBeTruthy();
+  });
+});
+
+describe('the enrolment fingerprint', () => {
+  it('reads the same on both sides even when the approver is not the root', async () => {
+    const { alice, bob } = await couple();
+    const carol = device('device-carol');
+
+    // Bob is enrolled but is not the root. Both sides derive the code from the
+    // joining key and the anchor's root key, so they agree anyway.
+    const fromApprover = enrolmentFingerprint(bob, carol.signing.publicKey);
+    const fromJoiner = joiningFingerprint(
+      carol.signing.publicKey,
+      alice.anchor.rootSigningPublicKey
+    );
+    expect(fromApprover).toBe(fromJoiner);
+
+    // And a different key is a different code: there is no near-miss to accept.
+    const wrong = enrolmentFingerprint(bob, device('device-other').signing.publicKey);
+    expect(wrong).not.toBe(fromApprover);
   });
 });

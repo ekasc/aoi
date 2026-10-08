@@ -748,15 +748,20 @@ export async function removeProtocolPhoto(
 /**
  * The code two people compare out of band before a device is trusted.
  *
- * It covers both signing keys, so each side learns exactly which key it is
- * trusting, and `verificationFingerprint` sorts them, so both people read the
- * same string whichever phone is showing it.
+ * It covers the joining device's key and the anchor's root key — the two keys
+ * both sides already know — so the approving device and the joining device
+ * always read the same string, whoever the approver is. Comparing the
+ * approver's own key instead would give a different code on each side whenever
+ * the approver is not the original root.
  */
 export function enrolmentFingerprint(
   session: ProtocolArchiveReady,
   targetSigningPublicKey: Uint8Array
 ): string {
-  return verificationFingerprint(session.device.signingPublicKey, targetSigningPublicKey);
+  return verificationFingerprint(
+    session.anchor.rootSigningPublicKey,
+    targetSigningPublicKey
+  );
 }
 
 /**
@@ -894,15 +899,78 @@ export type RecoveryOutcome =
   | { status: 'failed'; reason: string };
 
 /**
+ * Publish a recovery record from keys already on disk.
+ *
+ * This is the second half of a half-finished recovery: the claim is reserved
+ * with exactly these keys, so the record is built from them — not from freshly
+ * minted ones the claim would reject — and signed by the recovery key the
+ * phrase derives.
+ */
+async function publishResumedRecovery(input: {
+  spaceId: string;
+  anchor: SpaceTrustAnchor;
+  spaceKey: Uint8Array;
+  device: DeviceKeyMaterial;
+  deviceId: string;
+  phrase: string;
+  now: string;
+  client: AlbumProtocolClient;
+}): Promise<RecoveryOutcome> {
+  let entropy: Uint8Array;
+  try {
+    entropy = recoveryEntropyFromPhrase(input.phrase);
+  } catch {
+    return { status: 'failed', reason: 'invalid-phrase' };
+  }
+  const recordInput = {
+    deviceId: input.deviceId,
+    spaceId: input.spaceId,
+    signingPublicKey: input.device.signingPublicKey,
+    agreementPublicKey: input.device.agreementPublicKey,
+    authorisedBy: { kind: 'recovery' as const },
+    revision: 1,
+    createdAt: input.now,
+  };
+  const record: DeviceRecord = {
+    ...recordInput,
+    authorisation: signDeviceRecord(recordInput, deriveRecoverySigningKey(entropy)),
+  };
+  try {
+    await input.client.putDeviceRecord(toWireDeviceRecord(record));
+  } catch {
+    return { status: 'failed', reason: 'could-not-publish' };
+  }
+  await pinAnchor(input.spaceId, input.anchor);
+  return {
+    status: 'ready',
+    session: {
+      status: 'ready',
+      spaceId: input.spaceId,
+      generation: SIGNED_ALBUM_GENERATION,
+      spaceKey: input.spaceKey,
+      deviceId: input.deviceId,
+      device: input.device,
+      anchor: input.anchor,
+      records: [record],
+      client: input.client,
+    },
+  };
+}
+
+/**
  * Rebuild the archive on a device that has nothing, from the phrase alone.
  *
  * The trust decision is the phrase's, and `recoverSpaceFromPhrase` makes it:
  * the anchor's recovery key, the anchor's own signature over it, and the
  * recovery envelope. Nothing here accepts a root because a server offered one.
  *
- * The keys the recovery mints are stored *before* the record is published,
- * because a record describing keys this device no longer has is an archive it
- * cannot open — a recovery that half-succeeds is worse than one that fails.
+ * Key material is never overwritten blindly. The publication sequence is
+ * claim → save → publish: the claim reserves the identity without destroying
+ * anything, the save keeps the keys this device will need, and only then is
+ * the record published. A device that is already enrolled is refused outright
+ * — recovery must not destroy working keys — and a half-finished recovery
+ * whose claim matches the keys on disk resumes from those keys rather than
+ * minting new ones.
  */
 export async function recoverProtocolArchive(input: {
   spaceId: string;
@@ -943,6 +1011,17 @@ export async function recoverProtocolArchive(input: {
     input.deviceId ?? (await (await import('@/features/album/device-id')).getOrCreateDeviceId());
   const now = input.now ?? new Date().toISOString();
 
+  let records: DeviceRecord[];
+  try {
+    records = snapshot.records.map(parseWireDeviceRecord);
+  } catch {
+    return { status: 'failed', reason: 'invalid-protocol-state' };
+  }
+
+  const existing = await store.loadDevice(input.spaceId);
+
+  // Pure: validates the phrase and derives the space key without writing
+  // anything, so every path below can use it.
   const recovered = recoverSpaceFromPhrase({
     phrase: input.phrase,
     expectedSpaceId: input.spaceId,
@@ -953,6 +1032,59 @@ export async function recoverProtocolArchive(input: {
   });
   if (!recovered.recovered) {
     return { status: 'failed', reason: recovered.reason };
+  }
+
+  if (existing && existing.deviceId !== deviceId) {
+    // Keys for a different identity live here. Recovery must never silently
+    // replace them.
+    return { status: 'failed', reason: 'device-already-enrolled' };
+  }
+  if (existing && existing.deviceId === deviceId) {
+    const enrolled = records.find((record) => record.deviceId === deviceId);
+    if (enrolled) {
+      // Already enrolled: this device works, and recovery must not touch it.
+      // Selecting Restore on a working phone is a mistake, not a migration.
+      return { status: 'failed', reason: 'device-already-enrolled' };
+    }
+    const ownClaim = snapshot.claims.find((claim) => claim.deviceId === deviceId);
+    if (
+      ownClaim &&
+      ownClaim.signingPublicKey === encodeBase64(existing.signing.publicKey) &&
+      ownClaim.agreementPublicKey === encodeBase64(existing.agreement.publicKey)
+    ) {
+      // Our own half-finished recovery: the claim is reserved with these keys
+      // but the record never published. Resume from the keys on disk rather
+      // than minting new ones the claim would reject.
+      return publishResumedRecovery({
+        spaceId: input.spaceId,
+        anchor,
+        spaceKey: recovered.spaceKey,
+        device: {
+          signingPrivateKey: existing.signing.privateKey,
+          signingPublicKey: existing.signing.publicKey,
+          agreementPrivateKey: existing.agreement.privateKey,
+          agreementPublicKey: existing.agreement.publicKey,
+        },
+        deviceId,
+        phrase: input.phrase,
+        now,
+        client,
+      });
+    }
+    // Keys on disk that the server does not know under this id. They may be
+    // unpublished, but overwriting them silently is exactly the destruction
+    // this sequence exists to prevent.
+    return { status: 'failed', reason: 'device-already-enrolled' };
+  }
+
+  try {
+    await client.claimDevice({
+      deviceId,
+      signingPublicKey: encodeBase64(recovered.device.signingPublicKey),
+      agreementPublicKey: encodeBase64(recovered.device.agreementPublicKey),
+    });
+  } catch {
+    return { status: 'failed', reason: 'could-not-publish' };
   }
 
   await store.saveDevice(input.spaceId, {
@@ -969,13 +1101,10 @@ export async function recoverProtocolArchive(input: {
   });
 
   try {
-    await client.claimDevice({
-      deviceId,
-      signingPublicKey: encodeBase64(recovered.device.signingPublicKey),
-      agreementPublicKey: encodeBase64(recovered.device.agreementPublicKey),
-    });
     await client.putDeviceRecord(toWireDeviceRecord(recovered.record));
   } catch {
+    // The claim is reserved and the keys are on disk, so this is retryable:
+    // a second attempt finds the same claim with the same keys and resumes.
     return { status: 'failed', reason: 'could-not-publish' };
   }
 

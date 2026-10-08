@@ -643,9 +643,20 @@ export const putAlbumSpaceKeyEnvelopeProgram = (
       return yield* Effect.fail(forbidden('You do not own the authorising device'));
     }
 
-    const recipient = yield* deviceOwner(spaceId, envelope.recipientDeviceId);
-    if (recipient === null) {
-      return yield* Effect.fail(badRequest('The recipient device is not registered in this Space'));
+    const recipientRecordOwner = yield* deviceOwner(spaceId, envelope.recipientDeviceId);
+    if (recipientRecordOwner === null) {
+      // A joining recipient has claimed its id but cannot publish a device
+      // record until the offer arrives — which is exactly what this envelope is
+      // part of. Accept a claimed recipient so the cycle closes; the claim is
+      // what fixes the id to its keys, checked where the record is offered.
+      const recipientClaim = yield* one<{ device_id: string }>(
+        'select device_id from album_device_claims where space_id = ? and device_id = ?',
+        spaceId,
+        envelope.recipientDeviceId
+      );
+      if (!recipientClaim) {
+        return yield* Effect.fail(badRequest('The recipient device is not registered in this Space'));
+      }
     }
 
     const at = yield* nowMs;
@@ -820,14 +831,22 @@ export const putAlbumEnrollmentOfferProgram = (
       return yield* Effect.fail(forbidden('You do not own the authorising device'));
     }
 
-    // An offer for a device nobody claimed is one nobody can accept.
-    const claim = yield* one<{ device_id: string }>(
-      'select device_id from album_device_claims where space_id = ? and device_id = ?',
+    // An offer for a device nobody claimed is one nobody can accept — and the
+    // offered keys must be the claimed keys, so the authoriser cannot bind a
+    // victim's id to keys it holds.
+    const claim = yield* one<{ device_id: string; signing_public_key: string; agreement_public_key: string }>(
+      'select device_id, signing_public_key, agreement_public_key from album_device_claims where space_id = ? and device_id = ?',
       spaceId,
       deviceId
     );
     if (!claim) {
       return yield* Effect.fail(badRequest('That device has not claimed its id yet'));
+    }
+    if (
+      claim.signing_public_key !== record.signingPublicKey ||
+      claim.agreement_public_key !== record.agreementPublicKey
+    ) {
+      return yield* Effect.fail(badRequest('That offer does not match the claimed device keys'));
     }
 
     const at = yield* nowMs;

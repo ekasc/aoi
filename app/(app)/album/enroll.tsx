@@ -12,6 +12,7 @@ import {
   pinVerifiedAnchor,
   type ProtocolArchive,
 } from '@/features/album/protocol-archive';
+import type { SpaceTrustAnchor } from '@aoi/shared';
 import { createLocalKeyStore } from '@/features/album/local-key-store';
 import { getOrCreateDeviceId } from '@/features/album/device-id';
 import { useSpace } from '@/features/space/space-context';
@@ -27,7 +28,7 @@ import { useSpace } from '@/features/space/space-context';
 
 type Step =
   | { kind: 'checking' }
-  | { kind: 'unverified'; fingerprint: string }
+  | { kind: 'unverified'; fingerprint: string; anchor: SpaceTrustAnchor }
   | { kind: 'waiting'; fingerprint: string }
   | { kind: 'failed'; message: string };
 
@@ -40,7 +41,7 @@ export default function EnrolDeviceRoute() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (pinIfUnverified: boolean) => {
+    async (pinIfUnverified: boolean, shownAnchor?: SpaceTrustAnchor) => {
       if (!spaceId) return;
       // Yield once before touching state: an effect that sets state
       // synchronously cascades renders, and this runs from one.
@@ -59,10 +60,31 @@ export default function EnrolDeviceRoute() {
             archive.anchor.rootSigningPublicKey
           );
           if (!pinIfUnverified) {
-            setStep({ kind: 'unverified', fingerprint });
+            // The anchor travels with the step: confirmation pins exactly the
+            // root this code was computed from, never a refetched one.
+            setStep({ kind: 'unverified', fingerprint, anchor: archive.anchor });
             return;
           }
-          await pinVerifiedAnchor(spaceId, archive.anchor);
+          // Confirmation was for the anchor shown before, not for whatever the
+          // server returns now. Revalidate the candidate rather than pinning it
+          // blind.
+          const fresh: ProtocolArchive = await establishProtocolArchive({ spaceId, deviceId });
+          if (fresh.status !== 'unverified' || !shownAnchor) {
+            setStep({
+              kind: 'failed',
+              message: 'This Space changed while you were comparing. Start over.',
+            });
+            return;
+          }
+          const { anchorsMatch } = await import('@/features/album/protocol-local-state');
+          if (!anchorsMatch(shownAnchor, fresh.anchor)) {
+            setStep({
+              kind: 'failed',
+              message: 'This Space changed while you were comparing. Start over.',
+            });
+            return;
+          }
+          await pinVerifiedAnchor(spaceId, shownAnchor);
           archive = await establishProtocolArchive({ spaceId, deviceId });
         }
 
@@ -158,7 +180,11 @@ export default function EnrolDeviceRoute() {
             <Button
               label="The codes match"
               disabled={busy}
-              onPress={() => void load(true)}
+              onPress={() =>
+                step.kind === 'unverified'
+                  ? void load(true, step.anchor)
+                  : void load(true)
+              }
               accessibilityHint="Accepts this Space's root and asks to join"
             />
             <Button
