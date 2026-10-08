@@ -661,11 +661,12 @@ export const albumMedia = sqliteTable(
     /**
      * The object's identity at the moment it was finalised.
      *
-     * A presigned PUT stays usable until it expires, so a replay can rewrite a
-     * completed object. Conditional writes would prevent that at the storage
-     * layer and the binding does not expose them, so the object's etag and size
-     * are pinned here instead and the serve path refuses anything that no longer
-     * matches. That turns a silent replacement into a refusal.
+     * The presigned PUT is a conditional create, so a replay cannot rewrite a
+     * completed object. That defence lives in object storage, and whether it
+     * enforces the condition is not something this server can prove, so the
+     * object's etag and size are pinned here as well and the serve path refuses
+     * anything that no longer matches. The pin is the read-side check that holds
+     * even when the condition is not honoured.
      */
     completedEtag: text('completed_etag'),
     completedSize: integer('completed_size'),

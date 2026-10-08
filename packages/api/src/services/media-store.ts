@@ -23,11 +23,36 @@ import type { R2Bucket, R2GetOptions, R2Object, R2ObjectBody, R2PutOptions } fro
 
 export const MEDIA_PRESIGN_TTL_SEC = 3600;
 
+/**
+ * A presigned direct upload and the headers its signature covers.
+ *
+ * The headers are not advisory. SigV4 signs the ones the URL lists in
+ * `X-Amz-SignedHeaders`, so a request that omits or alters one fails
+ * authentication. Returning them beside the URL keeps the request's contract in
+ * one place rather than split between the store and every caller.
+ */
+export interface PresignedPut {
+  readonly url: string;
+  readonly headers: Record<string, string>;
+}
+
 export interface MediaStoreService {
   readonly bucket: R2Bucket;
   readonly bucketName: string;
-  /** Short-lived presigned PUT for the direct device upload. */
-  readonly presignPutUrl: (key: string, contentType: string, sizeBytes: number) => Promise<string>;
+  /**
+   * Short-lived presigned PUT for the direct device upload.
+   *
+   * `ifNoneMatch` makes it a conditional create: the request is refused when
+   * the key already holds an object, which is what stops a replayed PUT from
+   * replacing stored ciphertext. The condition travels as a signed header, so a
+   * caller cannot drop it to bypass the check.
+   */
+  readonly presignPutUrl: (
+    key: string,
+    contentType: string,
+    sizeBytes: number,
+    options?: { ifNoneMatch?: boolean }
+  ) => Promise<PresignedPut>;
   readonly head: (key: string) => Promise<R2Object | null>;
   readonly get: (key: string, options?: R2GetOptions) => Promise<R2ObjectBody | null>;
   readonly put: (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string, options?: R2PutOptions) => Promise<R2Object>;
@@ -65,7 +90,12 @@ export function makeMediaStoreService(
   let s3Client: S3Client | null = null;
   let creds: R2Creds | null = null;
 
-  const presignPutUrl = async (key: string, contentType: string, sizeBytes: number): Promise<string> => {
+  const presignPutUrl = async (
+    key: string,
+    contentType: string,
+    sizeBytes: number,
+    options?: { ifNoneMatch?: boolean }
+  ): Promise<PresignedPut> => {
     // Resolve credentials lazily so reads/serves never need them.
     if (!creds) {
       creds = readR2Creds(config);
@@ -88,8 +118,18 @@ export function makeMediaStoreService(
       Key: key,
       ContentType: contentType,
       ContentLength: sizeBytes,
+      // A conditional create. The presigner signs the header, so it is part of
+      // the request's identity rather than a hint the caller may omit.
+      ...(options?.ifNoneMatch ? { IfNoneMatch: '*' } : {}),
     });
-    return getSignedUrl(s3Client, command, { expiresIn: MEDIA_PRESIGN_TTL_SEC });
+    const url = await getSignedUrl(s3Client, command, { expiresIn: MEDIA_PRESIGN_TTL_SEC });
+    return {
+      url,
+      headers: {
+        'Content-Type': contentType,
+        ...(options?.ifNoneMatch ? { 'If-None-Match': '*' } : {}),
+      },
+    };
   };
 
   return {

@@ -142,6 +142,9 @@ describe('createUploadIntentProgram', () => {
     expect(result.uploadUrl).toMatch(/^https:\/\//);
     expect(result.uploadUrl).toContain('X-Amz-Signature');
     expect(result.headers?.['Content-Type']).toBe('image/jpeg');
+    // The album's conditional create is album-specific; the general media
+    // pipeline keeps an unconditional PUT.
+    expect(result.headers?.['If-None-Match']).toBeUndefined();
 
     // Deterministic key: derived from the media id, not a random uuid.
     const expectedKey = mediaOriginalKey(result.mediaId, 'image/jpeg');

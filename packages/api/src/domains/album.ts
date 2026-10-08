@@ -244,17 +244,19 @@ export const createAlbumUploadIntentProgram = (
     });
 
     const store = yield* MediaStore;
-    const uploadUrl = yield* Effect.tryPromise({
+    const presigned = yield* Effect.tryPromise({
       try: () =>
-        store.presignPutUrl(storageKey, ALBUM_CONTENT_TYPE, request.byteLength),
+        store.presignPutUrl(storageKey, ALBUM_CONTENT_TYPE, request.byteLength, {
+          ifNoneMatch: true,
+        }),
       catch: () => new InternalError({}),
     });
 
     return {
       mediaId,
-      uploadUrl,
+      uploadUrl: presigned.url,
       expiresInSec: MEDIA_PRESIGN_TTL_SEC,
-      headers: { 'Content-Type': ALBUM_CONTENT_TYPE },
+      headers: presigned.headers,
     };
   });
 
@@ -446,11 +448,12 @@ export const serveAlbumObjectProgram = (
       return yield* Effect.fail(notFound('Photo not found'));
     }
 
-    // The object has to still be the one that was finalised. A presigned PUT
-    // stays usable until it expires, so a replay can replace a completed
-    // object; the etag and size pinned at completion turn that from a silent
-    // swap into a refusal. Preventing the write itself would need conditional
-    // PUT support at the storage layer, which this binding does not expose.
+    // The object has to still be the one that was finalised. The presigned PUT
+    // is a conditional create (`If-None-Match: *`), which is the write-side
+    // defence; this etag and size pin is the read-side one, and it still earns
+    // its place because the condition's enforcement is object storage's
+    // behaviour rather than something the server can prove. Between them a
+    // silent swap becomes a refusal at both ends.
     const replaced =
       (media.completed_etag !== null && object.httpEtag !== media.completed_etag) ||
       (media.completed_size !== null && object.size !== media.completed_size);

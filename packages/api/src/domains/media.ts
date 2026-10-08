@@ -207,16 +207,16 @@ export const createUploadIntentProgram = (
     }
 
     const store = yield* MediaStore;
-    const uploadUrl = yield* Effect.tryPromise({
+    const presigned = yield* Effect.tryPromise({
       try: () => store.presignPutUrl(storageKey, input.mimeType, input.sizeBytes),
       catch: () => new InternalError({}),
     });
 
     return {
       mediaId,
-      uploadUrl,
+      uploadUrl: presigned.url,
       expiresInSec: MEDIA_PRESIGN_TTL_SEC,
-      headers: { 'Content-Type': input.mimeType },
+      headers: presigned.headers,
     };
   });
 

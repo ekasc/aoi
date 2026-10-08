@@ -165,6 +165,11 @@ describe('createAlbumUploadIntentProgram', () => {
     expect(result.uploadUrl).toMatch(/^https:\/\//);
     expect(result.uploadUrl).toContain('X-Amz-Signature');
     expect(result.headers?.['Content-Type']).toBe('application/octet-stream');
+    // A conditional create, and the condition is signed: dropping or altering
+    // the header fails the request's signature rather than skipping the check.
+    expect(result.headers?.['If-None-Match']).toBe('*');
+    const signedHeaders = new URL(result.uploadUrl).searchParams.get('X-Amz-SignedHeaders') ?? '';
+    expect(signedHeaders).toContain('if-none-match');
 
     const expectedKey = albumMediaKey(SPACE_1, result.mediaId);
     const row = ctx.harness.d1.rawDb
