@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
 
@@ -9,7 +10,10 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type SegmentedOption<T extends string> = {
   value: T;
+  /** Names the tab. Shown as text only when the option carries no `icon`. */
   label: string;
+  /** An Ionicon drawn in place of the label. The label still names the tab. */
+  icon?: ComponentProps<typeof Ionicons>['name'];
   accessibilityHint?: string;
 };
 
@@ -38,6 +42,8 @@ export type SegmentedControlProps<T extends string> = {
 const TRACK_PADDING = Spacing[4];
 const TRACK_GAP = Spacing[4];
 const THUMB_DURATION_MS = 220;
+/** Icon size for icon-only segments; sits inside the 44/36pt segment. */
+const SEGMENT_ICON_SIZE = 18;
 
 /** Visible segment height; hitSlop pads the touch target back to 44pt. */
 const SEGMENT_MIN_HEIGHT: Record<NonNullable<SegmentedControlProps<string>['size']>, number> = {
@@ -152,12 +158,22 @@ export function SegmentedControl<T extends string>({
                 : null,
             ]}
           >
-            <ThemedText
-              type={size === 'compact' ? 'supporting' : 'bodyEmphasis'}
-              style={{ color: selected ? text : muted }}
-            >
-              {option.label}
-            </ThemedText>
+            {option.icon ? (
+              <Ionicons
+                accessible={false}
+                aria-hidden
+                color={selected ? text : muted}
+                name={option.icon}
+                size={SEGMENT_ICON_SIZE}
+              />
+            ) : (
+              <ThemedText
+                type={size === 'compact' ? 'supporting' : 'bodyEmphasis'}
+                style={{ color: selected ? text : muted }}
+              >
+                {option.label}
+              </ThemedText>
+            )}
           </Pressable>
         );
       })}

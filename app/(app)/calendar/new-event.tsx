@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -20,6 +20,7 @@ import { addDays, initialEventStart, startOfDay } from '@/features/calendar/cale
 import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
 import type { CalendarPresetLabel } from '@/features/calendar/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { usePreventLeave } from '@/hooks/use-prevent-leave';
 
 function datePlusOneHour(date: Date) {
   return new Date(date.getTime() + 60 * 60 * 1000);
@@ -85,7 +86,14 @@ export default function NewCalendarEventScreen() {
   const [allDay, setAllDay] = useState(false);
   const [together, setTogether] = useState(false);
   const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submission, setSubmission] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const isSubmitting = submission === 'saving';
+  const submittingRef = useRef(false);
+  const blockLeave = useCallback(() => {}, []);
+  usePreventLeave(isSubmitting, blockLeave);
+  useEffect(() => {
+    if (submission === 'saved') router.back();
+  }, [submission, router]);
 
   const effectiveStart = useMemo(
     () => (allDay ? startOfDay(startsAt) : startsAt),
@@ -101,6 +109,7 @@ export default function NewCalendarEventScreen() {
   // stretch it independently.
   const handleStartChange = useCallback(
     (next: Date) => {
+      if (submittingRef.current) return;
       setStartsAt(next);
       setEndsAt((current) => {
         const duration = Math.max(
@@ -115,11 +124,13 @@ export default function NewCalendarEventScreen() {
   );
 
   const handleEndChange = useCallback((next: Date) => {
+    if (submittingRef.current) return;
     setEndsAt(next);
     setError('');
   }, []);
 
   const handleToggleAllDay = useCallback(() => {
+    if (submittingRef.current) return;
     setAllDay((current) => {
       if (!current) {
         setStartsAt((value) => startOfDay(value));
@@ -130,10 +141,12 @@ export default function NewCalendarEventScreen() {
   }, []);
 
   const handleToggleTogether = useCallback(() => {
+    if (submittingRef.current) return;
     setTogether((current) => !current);
   }, []);
 
   const handleSave = useCallback(async () => {
+    if (submittingRef.current || submission === 'saved') return;
     const trimmedTitle = title.trim();
 
     if (!trimmedTitle) {
@@ -146,7 +159,8 @@ export default function NewCalendarEventScreen() {
       return;
     }
 
-    setIsSubmitting(true);
+    submittingRef.current = true;
+    setSubmission('saving');
     setError('');
     try {
       await addEvent({
@@ -163,11 +177,12 @@ export default function NewCalendarEventScreen() {
         recurrence: 'none',
       });
 
-      router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create event');
+      setSubmission('saved');
+    } catch {
+      setError('Could not save this event. Please try again.');
+      setSubmission('idle');
     } finally {
-      setIsSubmitting(false);
+      submittingRef.current = false;
     }
   }, [
     addEvent,
@@ -176,10 +191,10 @@ export default function NewCalendarEventScreen() {
     effectiveStart,
     location,
     presetLabel,
-    router,
     title,
     together,
     isRangeInvalid,
+    submission,
   ]);
 
   const titleInputStyle = useMemo(
@@ -219,6 +234,7 @@ export default function NewCalendarEventScreen() {
             <ThemedText type="meta">The event</ThemedText>
             <TextInput
               accessibilityLabel="Event title"
+              editable={!isSubmitting}
               autoCapitalize="sentences"
               autoFocus
               onChangeText={(value) => {
@@ -239,6 +255,7 @@ export default function NewCalendarEventScreen() {
             <TextInput
               accessibilityHint="Optional"
               accessibilityLabel="Event location"
+              editable={!isSubmitting}
               autoCapitalize="words"
               onChangeText={setLocation}
               placeholder="Crystal Pavilion"
@@ -254,7 +271,9 @@ export default function NewCalendarEventScreen() {
               <Pressable
                 accessibilityLabel="Toggle all day"
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: allDay }}
+                accessibilityState={{ checked: allDay, disabled: isSubmitting }}
+                aria-checked={allDay}
+                disabled={isSubmitting}
                 onPress={handleToggleAllDay}
                 style={[
                   styles.choiceChip,
@@ -271,7 +290,9 @@ export default function NewCalendarEventScreen() {
               <Pressable
                 accessibilityLabel="Mark as time together"
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: together }}
+                accessibilityState={{ checked: together, disabled: isSubmitting }}
+                aria-checked={together}
+                disabled={isSubmitting}
                 onPress={handleToggleTogether}
                 style={[
                   styles.choiceChip,
@@ -290,6 +311,7 @@ export default function NewCalendarEventScreen() {
             <View style={[styles.rowGroup, { borderColor: border }]}>
               <NativeDateTimeField
                 accessibilityLabel="Choose start"
+                disabled={isSubmitting}
                 label="Starts"
                 mode={allDay ? 'date' : 'datetime'}
                 onChange={handleStartChange}
@@ -299,6 +321,7 @@ export default function NewCalendarEventScreen() {
               <View style={[styles.rowDivider, { backgroundColor: border }]} />
               <NativeDateTimeField
                 accessibilityLabel="Choose end"
+                disabled={isSubmitting}
                 label="Ends"
                 minimumDate={startsAt}
                 mode={allDay ? 'date' : 'datetime'}
@@ -326,9 +349,11 @@ export default function NewCalendarEventScreen() {
                     <Pressable
                       accessibilityLabel={`Set label ${label}`}
                       accessibilityRole="radio"
-                      accessibilityState={{ selected: selected }}
+                      accessibilityState={{ checked: selected, disabled: isSubmitting }}
+                      aria-checked={selected}
+                      disabled={isSubmitting}
                       key={label}
-                      onPress={() => setPresetLabel(label)}
+                      onPress={() => { if (!submittingRef.current) setPresetLabel(label); }}
                       style={[
                         styles.choiceChip,
                         {
@@ -363,7 +388,7 @@ export default function NewCalendarEventScreen() {
             label={isSubmitting ? 'Saving…' : 'Save event'}
             onPress={handleSave}
           />
-          <Button label="Cancel" variant="secondary" onPress={() => router.back()} />
+          <Button disabled={isSubmitting} label="Cancel" variant="secondary" onPress={() => { if (!submittingRef.current) router.back(); }} />
         </View>
       </KeyboardAvoidingView>
     </>

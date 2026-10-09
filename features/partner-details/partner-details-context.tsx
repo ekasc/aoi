@@ -3,10 +3,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
+import { createPartnerDetailRequestSchema } from '@aoi/shared';
 
 import { partnerDetailsRepository } from '@/features/partner-details/partner-details-repository';
 import type {
@@ -18,6 +21,8 @@ import { useSession } from '@/features/session/session-context';
 export type PartnerDetailsContextValue = {
   details: PartnerDetail[];
   isLoading: boolean;
+  error: string | null;
+  reload: () => void;
   addDetail: (input: CreatePartnerDetailInput) => Promise<void>;
   removeDetail: (detailId: string) => Promise<void>;
 };
@@ -29,18 +34,29 @@ const PartnerDetailsContext = createContext<
 /**
  * The little things: small, concrete details about the partner (their
  * coffee order, the song that's theirs, the way they laugh). Stored
- * device-locally until the API grows a partner-details surface.
+ * privately for the signed-in user. Stub mode keeps device-local storage;
+ * remote mode uses the authenticated partner-details API.
  */
 export function PartnerDetailsProvider({ children }: PropsWithChildren) {
   const { user } = useSession();
   const userId = user?.id;
-  const [details, setDetails] = useState<PartnerDetail[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const activeUserId = useRef(userId);
+  useLayoutEffect(() => { activeUserId.current = userId; }, [userId]);
+  const [revision, setRevision] = useState(0);
+  const [stored, setStored] = useState<{
+    userId: string | undefined;
+    details: PartnerDetail[];
+    error: string | null;
+    revision: number;
+  }>({ userId: undefined, details: [], error: null, revision: 0 });
+  const sameUser = stored.userId === userId;
+  const details = useMemo(() => sameUser ? stored.details : [], [sameUser, stored.details]);
+  const isLoading = Boolean(userId) && (!sameUser || stored.revision !== revision);
+  const error = sameUser && !isLoading ? stored.error : null;
+  const reload = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
     if (!userId) {
-      setDetails([]);
-      setIsLoading(false);
       return;
     }
 
@@ -51,15 +67,11 @@ export function PartnerDetailsProvider({ children }: PropsWithChildren) {
         const loaded = await partnerDetailsRepository.list(userId);
 
         if (!cancelled) {
-          setDetails(loaded);
+          setStored({ userId, details: loaded, error: null, revision });
         }
       } catch {
         if (!cancelled) {
-          setDetails([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
+          setStored((current) => ({ userId, details: current.userId === userId ? current.details : [], error: 'Could not load your details.', revision }));
         }
       }
     })();
@@ -67,7 +79,7 @@ export function PartnerDetailsProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, revision]);
 
   const addDetail = useCallback(
     async (input: CreatePartnerDetailInput) => {
@@ -76,18 +88,21 @@ export function PartnerDetailsProvider({ children }: PropsWithChildren) {
       if (!text || !userId) {
         return;
       }
+      const parsed = createPartnerDetailRequestSchema.parse({ text, category: input.category });
 
       const detail: PartnerDetail = {
         id: `detail_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-        text,
-        category: input.category ?? 'other',
+        text: parsed.text,
+        category: parsed.category,
         createdAt: new Date().toISOString(),
       };
 
-      setDetails((current) => [detail, ...current]);
-      await partnerDetailsRepository.add(userId, detail);
+      const saved = await partnerDetailsRepository.add(userId, detail);
+      if (activeUserId.current === userId) {
+        setStored((current) => ({ userId, details: [saved, ...(current.userId === userId ? current.details : [])], error: null, revision }));
+      }
     },
-    [userId]
+    [userId, revision]
   );
 
   const removeDetail = useCallback(
@@ -96,17 +111,18 @@ export function PartnerDetailsProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      setDetails((current) =>
-        current.filter((detail) => detail.id !== detailId)
-      );
       await partnerDetailsRepository.remove(userId, detailId);
+      if (activeUserId.current !== userId) return;
+      setStored((current) => current.userId === userId
+        ? { ...current, details: current.details.filter((detail) => detail.id !== detailId) }
+        : current);
     },
     [userId]
   );
 
   const value = useMemo(
-    () => ({ details, isLoading, addDetail, removeDetail }),
-    [addDetail, details, isLoading, removeDetail]
+    () => ({ details, isLoading, error, reload, addDetail, removeDetail }),
+    [addDetail, details, error, isLoading, reload, removeDetail]
   );
 
   return (

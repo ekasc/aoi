@@ -3,29 +3,32 @@ import { describe, expect, it } from 'vitest';
 
 const PREVIEW = readFileSync('app/dev-calendar.tsx', 'utf8');
 const PLANS = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
+const PLANS_PREVIEW = readFileSync('app/dev-plans.tsx', 'utf8');
 
 /** Every context hook the calendar screen reads, and the provider that feeds it. */
 const PROVIDERS: Record<string, string> = {
   useCalendar: 'CalendarProvider',
   useMoments: 'MomentsProvider',
-  useProposals: 'ProposalsProvider',
   useSomeday: 'SomedayProvider',
   useSpace: 'SpaceContext.Provider',
 };
 
 describe('Calendar dev preview', () => {
+  it('lets the Plans preview request an empty variant instead of forcing samples', () => {
+    expect(PLANS_PREVIEW).toContain('useApplyPreviewVariant(parsePreviewVariant(variant))');
+    expect(PLANS_PREVIEW).toContain('useLocalSearchParams');
+    expect(PLANS_PREVIEW).not.toContain('useApplyPreviewVariant("full")');
+  });
   it('is development only and cannot be reached in a production build', () => {
     expect(PREVIEW).toContain('if (!__DEV__)');
     expect(PREVIEW).toContain('return <Redirect href="/" />');
   });
 
-  it('offers every calendar screen, including the ones without a tab', () => {
+  it('offers the calendar screens that have no tab', () => {
     expect(PREVIEW).toContain("'plans'");
     expect(PREVIEW).toContain("'year'");
-    expect(PREVIEW).toContain("'search'");
     expect(PREVIEW).toContain('<PlansScreen />');
     expect(PREVIEW).toContain('<CalendarYearScreen />');
-    expect(PREVIEW).toContain('<CalendarSearchScreen />');
   });
 
   it('feeds every provider the calendar screen reads', () => {
@@ -46,6 +49,5 @@ describe('Calendar dev preview', () => {
   it('renders the same screen components the app does, not copies', () => {
     expect(PREVIEW).toContain('@/app/(app)/(tabs)/plans');
     expect(PREVIEW).toContain('@/app/(app)/calendar/year');
-    expect(PREVIEW).toContain('@/app/(app)/calendar/search');
   });
 });

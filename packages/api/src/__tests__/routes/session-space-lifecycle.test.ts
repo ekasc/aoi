@@ -96,18 +96,22 @@ async function currentSpace(app: ReturnType<typeof makeApp>['app'], token: strin
 }
 
 describe('waiting vs joined space state', () => {
-  it('solo space reports waiting: no fake partner, live invite, no expiry guess', async () => {
+  it('solo space reports waiting: the named partner, a live invite, no expiry guess', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
-    expect(created.space.partnerName).toBeNull();
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
+    // The name the creator typed is what every screen addresses, so it is
+    // stored from the create rather than waiting for the join to fill it.
+    expect(created.space.partnerName).toBe('Partner');
+    // `partnerJoined` is the honest waiting signal, and it is independent of
+    // the name: the partner is named but has not arrived.
     expect(created.space.partnerJoined).toBe(false);
 
     const current = await currentSpace(app, TOKEN_A);
     expect(current.space?.partnerJoined).toBe(false);
-    expect(current.space?.partnerName).toBeNull();
+    expect(current.space?.partnerName).toBe('Partner');
     expect(typeof current.space?.inviteCode).toBe('string');
     expect((current.space?.inviteCode as string).length).toBeGreaterThan(0);
     expect(typeof current.space?.inviteExpiresAt).toBe('string');
@@ -120,7 +124,7 @@ describe('waiting vs joined space state', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     const joined = await joinSpace(app, TOKEN_B, created.inviteCode);
     expect(joined.status).toBe(200);
 
@@ -140,7 +144,7 @@ describe('waiting vs joined space state', () => {
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     const spaceId = created.space.id as string;
     harness.d1.runSync('update space_invites set expires_at = ? where space_id = ?', NOW - 1000, spaceId);
 
@@ -157,7 +161,7 @@ describe('waiting vs joined space state', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     await joinSpace(app, TOKEN_B, created.inviteCode);
 
     const regen = await app.request('/v1/spaces/current/invite', {
@@ -184,7 +188,7 @@ describe('leave space contract', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     const spaceId = created.space.id as string;
     await joinSpace(app, TOKEN_B, created.inviteCode);
     insertMoment(harness.d1, 'm1', spaceId, USER_A, NOW);
@@ -204,7 +208,7 @@ describe('leave space contract', () => {
     expect(moment).toBeTruthy();
 
     // Freed slot: the leaver can immediately create a new space.
-    const recreated = await app.request('/v1/spaces', json(auth(TOKEN_B), { name: 'New Space' }));
+    const recreated = await app.request('/v1/spaces', json(auth(TOKEN_B), { name: 'New Space', partnerName: 'Partner' }));
     expect(recreated.status).toBe(201);
   });
 
@@ -215,7 +219,7 @@ describe('leave space contract', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-c', USER_C, TOKEN_C);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     const spaceId = created.space.id as string;
     const code = created.inviteCode;
 
@@ -250,7 +254,7 @@ describe('delete account contract', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     const spaceId = created.space.id as string;
     await joinSpace(app, TOKEN_B, created.inviteCode);
     insertMoment(harness.d1, 'm1', spaceId, USER_A, NOW);
@@ -298,7 +302,7 @@ describe('delete account contract', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-c', USER_C, TOKEN_C);
 
-    const created = await createSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await createSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     const spaceId = created.space.id as string;
     const code = created.inviteCode;
 

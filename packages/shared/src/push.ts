@@ -8,6 +8,7 @@ export type PushTokenPlatform = z.infer<typeof pushTokenPlatformSchema>;
 
 export const PUSH_NOTIFICATION_KINDS = [
   'squeeze',
+  'partner_joined',
   'moment_added',
   'moment_edited',
   'moment_deleted',
@@ -18,9 +19,6 @@ export const PUSH_NOTIFICATION_KINDS = [
   'event_added',
   'event_updated',
   'event_deleted',
-  'proposal_received',
-  'proposal_accepted',
-  'proposal_declined',
 ] as const;
 
 export const pushNotificationKindSchema = z.enum(PUSH_NOTIFICATION_KINDS);

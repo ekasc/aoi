@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -18,6 +18,8 @@ export type MediaPickerProps = {
   onClear: () => void;
   selectedUri?: string | null;
   disabled?: boolean;
+  /** What the picker is for, e.g. "Cover". Defaults to "Media". */
+  label?: string;
 };
 
 export function MediaPicker({
@@ -25,21 +27,13 @@ export function MediaPicker({
   onClear,
   selectedUri,
   disabled,
+  label = 'Media',
 }: MediaPickerProps) {
   const accent = useThemeColor({}, 'accent');
   const onAccent = useThemeColor({}, 'onAccent');
   const surface2 = useThemeColor({}, 'surface2');
   const border = useThemeColor({}, 'border');
   const muted = useThemeColor({}, 'muted');
-  const [permissionDenied, setPermissionDenied] = useState(false);
-
-  useEffect(() => {
-    ImagePicker.requestMediaLibraryPermissionsAsync().then((result) => {
-      if (!result.granted) {
-        setPermissionDenied(true);
-      }
-    });
-  }, []);
 
   const handlePick = useCallback(async () => {
     if (disabled) return;
@@ -58,12 +52,17 @@ export function MediaPicker({
         mimeType: asset.mimeType ?? (asset.uri.endsWith('.png') ? 'image/png' : 'image/jpeg'),
       });
     }
+    // No permission error is possible here and that is the point: the system
+    // picker hands back only what the reader chose, so the app never holds
+    // standing access to their library. The old pre-request made this screen
+    // ask for all of it, and its "permission denied" state was reachable only
+    // because of that.
   }, [disabled, onMediaSelected]);
 
   if (selectedUri) {
     return (
       <Surface style={styles.container}>
-        <ThemedText type="meta">Media</ThemedText>
+        <ThemedText type="meta">{label}</ThemedText>
         <View style={styles.previewContainer}>
           <View
             style={[
@@ -102,31 +101,25 @@ export function MediaPicker({
 
   return (
     <Surface style={styles.container}>
-      <ThemedText type="meta">Media</ThemedText>
-      {permissionDenied ? (
-        <ThemedText type="caption" style={{ color: muted }}>
-          Photo library access denied. Enable in Settings to attach photos.
+      <ThemedText type="meta">{label}</ThemedText>
+      <Pressable
+        accessibilityLabel="Select image from library"
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={handlePick}
+        style={({ pressed }) => [
+          styles.pickButton,
+          {
+            borderColor: accent,
+            backgroundColor: accent,
+            opacity: pressed ? 0.92 : 1,
+          },
+        ]}
+      >
+        <ThemedText type="caption" style={{ color: onAccent, fontWeight: '600' }}>
+          Pick from library
         </ThemedText>
-      ) : (
-        <Pressable
-          accessibilityLabel="Select image from library"
-          accessibilityRole="button"
-          disabled={disabled}
-          onPress={handlePick}
-          style={({ pressed }) => [
-            styles.pickButton,
-            {
-              borderColor: accent,
-              backgroundColor: accent,
-              opacity: pressed ? 0.92 : 1,
-            },
-          ]}
-        >
-          <ThemedText type="caption" style={{ color: onAccent, fontWeight: '600' }}>
-            Pick from library
-          </ThemedText>
-        </Pressable>
-      )}
+      </Pressable>
     </Surface>
   );
 }

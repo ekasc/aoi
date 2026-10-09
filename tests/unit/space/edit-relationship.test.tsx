@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spaceMock = vi.hoisted(() => ({
   space: {
@@ -20,6 +20,13 @@ const spaceMock = vi.hoisted(() => ({
 }));
 
 const backSpy = vi.fn();
+const scrollProps = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
+const keyboardMock = vi.hoisted(() => ({
+  visible: false,
+  didHide: () => {},
+  dismiss: vi.fn(),
+  remove: vi.fn(),
+}));
 
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -72,7 +79,25 @@ vi.mock('react-native', () => {
     View,
     Text,
     TextInput,
-    ScrollView: View,
+    Keyboard: {
+      dismiss: keyboardMock.dismiss,
+      isVisible: () => keyboardMock.visible,
+      addListener: (_event: string, listener: () => void) => {
+        keyboardMock.didHide = listener;
+        return { remove: keyboardMock.remove };
+      },
+    },
+    Pressable: (props: Record<string, unknown>) => {
+      const { children, accessibilityLabel, accessibilityState, onPress, disabled } = props;
+      const expanded = accessibilityState && typeof accessibilityState === 'object' && 'expanded' in accessibilityState
+        ? accessibilityState.expanded : undefined;
+      return createElement('button', { 'aria-label': accessibilityLabel, 'aria-expanded': expanded, onClick: onPress, disabled }, children);
+    },
+    ScrollView: (props: Record<string, unknown>) => {
+      scrollProps.current = props;
+      const { testID, ...rest } = props;
+      return View({ ...rest, 'data-testid': testID });
+    },
     KeyboardAvoidingView: View,
   };
 });
@@ -102,19 +127,25 @@ vi.mock('@/components/ui/button', () => ({
     createElement('button', { onClick: onPress }, label),
 }));
 
-vi.mock('@/components/forms/native-date-time-field', () => ({
-  NativeDateTimeField: ({
-    accessibilityLabel,
+vi.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+
+vi.mock('@/components/ui/native-sheet', () => ({
+  NativeSheet: ({ visible, children, onClose }: { visible: boolean; children: React.ReactNode; onClose: () => void }) =>
+    visible ? createElement('div', { role: 'dialog', 'aria-label': 'Date picker' }, children,
+      createElement('button', { onClick: onClose }, 'Dismiss date picker')) : null,
+}));
+
+vi.mock('@react-native-community/datetimepicker', () => ({
+  default: ({
     onChange,
   }: {
-    accessibilityLabel: string;
-    onChange: (date: Date) => void;
+    onChange: (event: { type: string }, date: Date) => void;
   }) =>
     createElement(
       'button',
       {
-        'aria-label': accessibilityLabel,
-        onClick: () => onChange(new Date(2024, 6, 8, 12)),
+        'aria-label': 'Select date',
+        onClick: () => onChange({ type: 'set' }, new Date(2024, 6, 8, 12)),
       },
       'Choose date',
     ),
@@ -141,9 +172,24 @@ beforeEach(() => {
   spaceMock.updateSpace.mockReset();
   spaceMock.updateSpace.mockResolvedValue(null);
   backSpy.mockReset();
+  keyboardMock.visible = false;
+  keyboardMock.dismiss.mockClear();
+  vi.stubEnv('EXPO_OS', 'ios');
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe('Edit relationship screen', () => {
+  it('gives the native form sheet a root scroll view containing both inputs and actions, with keyboard inset handling', async () => {
+    const tree = await renderScreen();
+    const form = screen.getByTestId('relationship-form');
+    expect(tree.container.firstElementChild).toBe(form);
+    expect(form.contains(screen.getByLabelText('Space name'))).toBe(true);
+    expect(form.contains(screen.getByLabelText('Partner name'))).toBe(true);
+    expect(form.contains(screen.getByText('Save changes'))).toBe(true);
+    expect(scrollProps.current.automaticallyAdjustKeyboardInsets).toBe(true);
+    expect(scrollProps.current.contentInsetAdjustmentBehavior).toBe('automatic');
+  });
   it('shows the missing date action and omits relationshipStartDate when saving', async () => {
     await renderScreen();
 
@@ -172,8 +218,9 @@ describe('Edit relationship screen', () => {
     spaceMock.space.relationshipStartDate = '2021-03-04T00:00:00.000Z';
     await renderScreen();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Choose relationship start date' }));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Choose relationship start date' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Select date' }));
     });
     await saveWithName('Dated space');
 
@@ -182,5 +229,34 @@ describe('Edit relationship screen', () => {
       partnerName: 'June',
       relationshipStartDate: '2024-07-08',
     });
+  });
+
+  it('opens and closes the separate iOS picker without saving or clearing the relationship form', async () => {
+    spaceMock.space.relationshipStartDate = '2021-03-04';
+    await renderScreen();
+    const toggle = screen.getByRole('button', { name: 'Choose relationship start date' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('dialog', { name: 'Date picker' }).contains(screen.getByRole('button', { name: 'Select date' }))).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Select date' })).toBeNull();
+    expect(spaceMock.updateSpace).not.toHaveBeenCalled();
+  });
+
+  it('waits for the keyboard to finish dismissing before presenting the date sheet', async () => {
+    spaceMock.space.relationshipStartDate = '2021-03-04';
+    keyboardMock.visible = true;
+    await renderScreen();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose relationship start date' }));
+    expect(keyboardMock.dismiss).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    act(() => keyboardMock.didHide());
+    expect(screen.getByRole('dialog', { name: 'Date picker' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss date picker' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByLabelText('Space name')).toHaveProperty('value', 'Our space');
+    expect(spaceMock.updateSpace).not.toHaveBeenCalled();
   });
 });

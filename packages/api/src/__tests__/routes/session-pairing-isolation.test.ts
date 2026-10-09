@@ -89,7 +89,7 @@ async function setupAdversarialHistory(
   insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
   insertSession(harness.d1, 'sess-c', USER_C, TOKEN_C);
 
-  const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+  const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
   expect(created.status).toBe(201);
   const createdBody = (await created.json()) as { space: { id: string }; inviteCode: string };
   const spaceId = createdBody.space.id;
@@ -136,15 +136,6 @@ async function setupAdversarialHistory(
     json(TOKEN_B, { answer: 'Blake weekly words' }, 'PUT')
   );
   expect(answer.status).toBe(200);
-  harness.d1.runSync(
-    `insert into imported_milestones (id, space_id, created_by_user_id, type, title, body,
-       occurred_at, target_at, created_at)
-     values ('00000000-0000-4000-8000-0000000000e5', ?, ?, 'goal', 'Blake imported goal', '', ?, null, ?)`,
-    spaceId,
-    USER_B,
-    T0,
-    T0
-  );
 
   // Plans surfaces via direct inserts (B-authored rows in B's space; the
   // read-denial paths under test are identical to HTTP-created rows).
@@ -159,15 +150,6 @@ async function setupAdversarialHistory(
     T0 + 10 * 24 * 60 * 60 * 1000,
     T0 + 10 * 24 * 60 * 60 * 1000 + 3600000,
     T0,
-    T0
-  );
-  harness.d1.runSync(
-    `insert into event_proposals (id, space_id, proposer_user_id, title, proposed_start, proposed_end, created_at)
-     values ('00000000-0000-4000-8000-0000000000e2', ?, ?, 'Blake proposal', ?, ?, ?)`,
-    spaceId,
-    USER_B,
-    T0 + 11 * 24 * 60 * 60 * 1000,
-    T0 + 11 * 24 * 60 * 60 * 1000 + 3600000,
     T0
   );
   harness.d1.runSync(
@@ -281,12 +263,6 @@ describe('adversarial pairing isolation (A/B/C over HTTP)', () => {
     });
     expect([403, 404]).toContain(eventById.status);
 
-    const proposals = await app.request('/v1/spaces/current/proposals', {
-      headers: auth(TOKEN_C),
-    });
-    expect(proposals.status).toBe(200);
-    expect(JSON.stringify(await proposals.json())).not.toContain('Blake proposal');
-
     const someday = await app.request('/v1/spaces/current/someday', {
       headers: auth(TOKEN_C),
     });
@@ -349,7 +325,7 @@ describe('invite rotation semantics', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     expect(created.status).toBe(201);
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
 
@@ -380,7 +356,7 @@ describe('invite rotation semantics', () => {
     insertUser(harness.d1, USER_A, 'a@example.com', 'Aoi');
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
     const r2 = await app.request('/v1/spaces/current/invite', { method: 'POST', headers: auth(TOKEN_A) });
     const code2 = ((await r2.json()) as { inviteCode: string }).inviteCode;
@@ -405,7 +381,7 @@ describe('invite rotation semantics', () => {
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
     insertSession(harness.d1, 'sess-c', USER_C, TOKEN_C);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
 
     // Rotation and redemption race on the same code: exactly one wins, and
@@ -439,7 +415,7 @@ describe('invite rotation semantics', () => {
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-d', USER_D, TOKEN_D);
 
-    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_A, { name: 'Our Space', partnerName: 'Partner' }));
     const code1 = ((await created.json()) as { inviteCode: string }).inviteCode;
 
     // Sole member leaves → archive (P7A last-member rule).
@@ -463,12 +439,6 @@ describe('pairing isolation closure gaps (findings #1/#5)', () => {
     const question = await app.request('/v1/spaces/current/question', { headers: auth(TOKEN_C) });
     expect(question.status).toBe(200);
     expect(JSON.stringify(await question.json())).not.toContain('Blake weekly words');
-
-    const milestones = await app.request('/v1/spaces/current/imported-milestones', {
-      headers: auth(TOKEN_C),
-    });
-    expect(milestones.status).toBe(200);
-    expect(JSON.stringify(await milestones.json())).not.toContain('Blake imported goal');
 
     const activity = await app.request('/v1/spaces/current/activity', { headers: auth(TOKEN_C) });
     expect(activity.status).toBe(200);
@@ -494,7 +464,7 @@ describe('pairing isolation closure gaps (findings #1/#5)', () => {
     insertSession(harness.d1, 'sess-d', USER_D, TOKEN_D);
 
     // C creates a fresh space and D joins: unrelated pairing unaffected.
-    const created = await app.request('/v1/spaces', json(TOKEN_C, { name: 'C Space' }));
+    const created = await app.request('/v1/spaces', json(TOKEN_C, { name: 'C Space', partnerName: 'Partner' }));
     expect(created.status).toBe(201);
     const freshCode = ((await created.json()) as { inviteCode: string }).inviteCode;
     const joined = await app.request('/v1/spaces/join', json(TOKEN_D, { inviteCode: freshCode }));
@@ -510,7 +480,7 @@ describe('pairing isolation closure gaps (findings #1/#5)', () => {
     expect((await rejoin.json()).error.code).toBe('CONFLICT');
   });
 
-  it('A retains B-authored answers, milestones, and activity', async () => {
+  it('A retains B-authored answers and activity', async () => {
     const { harness, app } = makeApp();
     await setupAdversarialHistory(app, harness);
 
@@ -523,17 +493,10 @@ describe('pairing isolation closure gaps (findings #1/#5)', () => {
     const question = await app.request('/v1/spaces/current/question', { headers: auth(TOKEN_A) });
     expect(question.status).toBe(200);
     expect(JSON.stringify(await question.json())).toContain('Blake weekly words');
-
-    const milestones = await app.request('/v1/spaces/current/imported-milestones', {
-      headers: auth(TOKEN_A),
-    });
-    expect(milestones.status).toBe(200);
-    expect(JSON.stringify(await milestones.json())).toContain('Blake imported goal');
   });
 });
 
 describe('pairing isolation mutation sweep (C cannot alter B history)', () => {
-  const E2 = '00000000-0000-4000-8000-0000000000e2';
   const E3 = '00000000-0000-4000-8000-0000000000e3';
 
   it("C's writes against B history fail closed and change nothing", async () => {
@@ -551,18 +514,6 @@ describe('pairing isolation mutation sweep (C cannot alter B history)', () => {
       headers: auth(TOKEN_C),
     });
     expect([403, 404]).toContain(deleteMoment.status);
-
-    const accept = await app.request(`/v1/proposals/${E2}/accept`, {
-      method: 'POST',
-      headers: auth(TOKEN_C),
-    });
-    expect([403, 404]).toContain(accept.status);
-
-    const decline = await app.request(`/v1/proposals/${E2}/decline`, {
-      method: 'POST',
-      headers: auth(TOKEN_C),
-    });
-    expect([403, 404]).toContain(decline.status);
 
     const patchSomeday = await app.request(
       `/v1/someday/${E3}`,
@@ -600,16 +551,11 @@ describe('pairing isolation mutation sweep (C cannot alter B history)', () => {
     );
     expect([400, 403, 404]).toContain(seal.status);
 
-    // Nothing changed: A reads the original titles, pending proposal, space.
+    // Nothing changed: A reads the original titles and space.
     const list = (await (
       await app.request('/v1/spaces/current/moments', { headers: auth(TOKEN_A) })
     ).json()) as { moments: { id: string; title: string }[] };
     expect(list.moments.find((m) => m.id === s.noteId)?.title).toBe('Blake note');
-
-    const proposals = (await (
-      await app.request('/v1/spaces/current/proposals', { headers: auth(TOKEN_A) })
-    ).json()) as { proposals: { id: string; status: string }[] };
-    expect(proposals.proposals.find((p) => p.id === E2)?.status).toBe('pending');
 
     const someday = (await (
       await app.request('/v1/spaces/current/someday', { headers: auth(TOKEN_A) })

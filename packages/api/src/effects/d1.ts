@@ -13,7 +13,7 @@ export type D1Schema = typeof schema;
  * - `batch` — D1's atomic multi-statement write (all-or-nothing),
  * - `guardedUpdate` — conditional UPDATE via raw SQL returning affected rows
  *   (the race-free way to implement guarded transitions such as one-time
- *   invite redemption or proposal accept),
+ *   invite redemption),
  * - `assertForeignKeys` — pins `PRAGMA foreign_keys = ON` (D1 default).
  */
 export interface DbService {

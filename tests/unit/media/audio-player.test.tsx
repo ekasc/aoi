@@ -38,12 +38,13 @@ vi.mock('@expo/vector-icons', () => ({
 vi.mock('react-native', () => {
   const React = require('react');
   const View = ({ children }: any) => React.createElement('div', {}, children);
-  const Pressable = ({ children, onPress, accessibilityLabel }: any) =>
+  const Pressable = ({ children, onPress, accessibilityLabel, style }: any) =>
     React.createElement(
       'div',
       {
         ...(typeof accessibilityLabel === 'string' ? { 'aria-label': accessibilityLabel } : {}),
         ...(onPress ? { onClick: onPress } : {}),
+        style: Object.assign({}, ...style),
       },
       children
     );
@@ -68,7 +69,9 @@ describe('AudioPlayer staged URIs', () => {
   it('still renders its toggle control', async () => {
     const { AudioPlayer } = await import('@/components/media/audio-player');
     render(createElement(AudioPlayer, { uri: 'composer/v/s/staged/staged_v1.m4a' }));
-    expect(screen.getByLabelText('Play voice note')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Play voice note'));
+    const toggle = screen.getByLabelText('Play voice note');
+    expect(toggle.style.width).toBe('44px');
+    expect(toggle.style.height).toBe('44px');
+    fireEvent.click(toggle);
   });
 });

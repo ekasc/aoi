@@ -189,10 +189,10 @@ function assertValidSealInput(input: SealLetterInput): {
 
 /**
  * Device-local letters for stub mode. Storage is keyed per user
- * (single-author on one device, like the Someday list). The partner letter
- * seeded here exists only so the reveal ceremony can be felt offline.
+ * (single-author on one device, like the Someday list). Preview fixtures are
+ * opt-in; normal shelves never invent a partner letter.
  */
-export function createLocalLettersRepository(userId: string): LettersRepository {
+export function createLocalLettersRepository(userId: string, previewSeed = false): LettersRepository {
   const key = storageKey(userId);
 
   async function loadOrCreate(): Promise<StoredLettersPayload> {
@@ -204,7 +204,7 @@ export function createLocalLettersRepository(userId: string): LettersRepository 
 
     const seeded: StoredLettersPayload = {
       seededAt: new Date().toISOString(),
-      letters: [createPartnerSeedLetter(new Date())],
+      letters: previewSeed ? [createPartnerSeedLetter(new Date())] : [],
     };
 
     await writePayload(key, seeded);

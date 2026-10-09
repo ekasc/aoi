@@ -15,15 +15,17 @@ import { spacesRouter } from './routes/session-spaces';
 import { momentsRouter } from './routes/session-moments';
 import { pushRouter } from './routes/session-push';
 import { mediaRouter } from './routes/session-media';
+import { albumRouter } from './routes/session-album';
 import { calendarRouter } from './routes/session-calendar';
-import { proposalsRouter } from './routes/session-proposals';
 import { lettersRouter } from './routes/session-letters';
 import { questionRouter } from './routes/session-question';
 import { somedayRouter } from './routes/session-someday';
+import { collectionsRouter } from './routes/session-collections';
 import { locationRouter } from './routes/session-location';
 import { preferencesRouter } from './routes/session-preferences';
-import { milestonesRouter } from './routes/session-milestones';
 import { squeezesRouter } from './routes/session-squeezes';
+import { responsesRouter } from './routes/session-responses';
+import { partnerDetailsRouter } from './routes/session-partner-details';
 
 export interface AppEnv {
   Bindings: WorkerEnv;
@@ -181,15 +183,17 @@ export function createApp(layers: RuntimeLayer): OpenAPIHono<AppEnv> {
   app.route('/', momentsRouter(run));
   app.route('/', pushRouter(run));
   app.route('/', mediaRouter(run));
+  app.route('/', albumRouter(run));
   app.route('/', calendarRouter(run));
-  app.route('/', proposalsRouter(run));
   app.route('/', lettersRouter(run));
   app.route('/', questionRouter(run));
   app.route('/', somedayRouter(run));
+  app.route('/', collectionsRouter(run));
   app.route('/', locationRouter(run));
   app.route('/', preferencesRouter(run));
-  app.route('/', milestonesRouter(run));
   app.route('/', squeezesRouter(run));
+  app.route('/', responsesRouter(run));
+  app.route('/', partnerDetailsRouter(run));
 
   // ── Per-request observability (after routing; 404s count too) ─────────
   app.use('*', async (c, next) => {

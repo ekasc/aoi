@@ -19,7 +19,7 @@ export default function VerifyCodeScreen() {
         styles.root,
         {
           backgroundColor: background,
-          paddingTop: insets.top + Spacing[16],
+          paddingTop: Spacing[24],
           paddingBottom: insets.bottom + Spacing[40],
         },
       ]}

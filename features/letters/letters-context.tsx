@@ -12,6 +12,7 @@ import { AppState } from 'react-native';
 
 import { isStubMode } from '@/features/api-client';
 import { createLocalLettersRepository } from '@/features/letters/local-letters-repository';
+import { usePreviewVariant } from '@/features/dev/preview';
 import { remoteLettersRepository } from '@/features/letters/remote-letters-repository';
 import type {
   LettersContextValue,
@@ -26,14 +27,16 @@ const LettersContext = createContext<LettersContextValue | undefined>(undefined)
  * Letters / time capsule: write a letter, seal it to a future day. Sealed
  * letters are immutable and unreadable — the body never appears in the list
  * for anyone, author included, until it is opened. Stub mode keeps letters
- * device-local (AsyncStorage, with one plainly-simulated partner letter so
- * the reveal can be tried offline); remote mode talks to the API, where the
+ * device-local (AsyncStorage, empty by default; populated previews opt in to
+ * a simulated partner letter); remote mode talks to the API, where the
  * lock is enforced server-side. Partner letters land quietly on the next
  * focus (remote mode).
  */
 export function LettersProvider({ children }: PropsWithChildren) {
   const { user } = useSession();
   const userId = user?.id;
+  const preview = usePreviewVariant();
+  const previewSeed = preview.active && preview.variant !== 'empty' && preview.variant !== 'setup';
   const [letters, setLetters] = useState<Letter[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,9 +48,9 @@ export function LettersProvider({ children }: PropsWithChildren) {
     }
 
     return isStubMode()
-      ? createLocalLettersRepository(userId)
+      ? createLocalLettersRepository(userId, previewSeed)
       : remoteLettersRepository;
-  }, [userId]);
+  }, [userId, previewSeed]);
 
   useEffect(() => {
     if (!repository) {

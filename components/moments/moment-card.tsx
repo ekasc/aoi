@@ -41,6 +41,17 @@ export type MomentCardProps = {
 	 */
 	actionsInset?: number;
 	/**
+	 * Definite width for the timeline row, in points.
+	 *
+	 * The Memories feed needs this: on iOS an own-moment row is wrapped in the
+	 * native context menu, whose host measures its own children and reports the
+	 * width back. The row's `flex: 1` then resolves against that measured
+	 * width rather than the screen, so a long line never finds an edge to wrap
+	 * at and runs off the display. A number the screen already knows gives the
+	 * row a real constraint the host cannot override.
+	 */
+	rowWidth?: number;
+	/**
 	 * Article keeps the existing detail/chapter look (full date, larger
 	 * type). Timeline is the compact Memories row: day separators own the
 	 * date, so the caption shows author + local time with smaller shared
@@ -92,7 +103,7 @@ function formatGoalTargetLabel(targetAt?: string | null) {
 	return formatMomentDate(targetAt, "Someday");
 }
 
-function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsInset = 0, onPhotoPress, presentation = "article" }: MomentCardProps) {
+function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsInset = 0, onPhotoPress, presentation = "article", rowWidth }: MomentCardProps) {
 	const isTimeline = presentation === "timeline";
 	const secondary = useThemeColor({}, "textSecondary");
 	const accentInk = useThemeColor({}, "accentInk");
@@ -374,7 +385,12 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsI
 		) : null;
 		return (
 			<View style={[styles.timelineEntry, { borderBottomColor: border }]}>
-				<View style={styles.timelineRow}>
+				<View
+					style={[
+						styles.timelineRow,
+						rowWidth !== undefined ? { width: rowWidth } : null,
+					]}
+				>
 					<View
 						accessible={false}
 						accessibilityElementsHidden

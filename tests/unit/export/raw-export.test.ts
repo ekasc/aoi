@@ -106,9 +106,9 @@ function fixtures() {
     '/v1/spaces/current/calendar/events?from=2000-01-01T00%3A00%3A00.000Z&to=2100-01-01T00%3A00%3A00.000Z': [
       { id: 'e-1', title: 'Anniversary' },
     ],
-    '/v1/spaces/current/proposals': { proposals: [{ id: 'p-1', title: 'Dinner' }] },
+    '/v1/users/me/partner-details': { details: [] },
+    '/v1/spaces/current/responses?limit=100': { responses: [] },
     '/v1/spaces/current/someday': { items: [{ id: 's-1', title: 'Kyoto' }] },
-    '/v1/spaces/current/imported-milestones': [{ id: 'g-1', type: 'goal', title: 'Save more' }],
     '/v1/spaces/current/question': { weekKey: '2026-W03', answers: [{ answer: 'our song' }] },
     '/v1/spaces/current/letters': {
       letters: [
@@ -287,6 +287,28 @@ const decode = (entries: Map<string, Uint8Array>, name: string): unknown =>
   JSON.parse(new TextDecoder().decode(entries.get(name) ?? new Uint8Array()));
 
 describe('exportRawArchive', () => {
+  it('includes private details, shared responses, and every unique attached media object', async () => {
+    const json = fixtures();
+    json['/v1/users/me/partner-details'] = { details: [{ id: 'detail', text: 'Tea', category: 'favorite', createdAt: '2026-01-01T00:00:00.000Z' }] };
+    const response = { id: 'response', momentId: 'm-photo', authorId: 'user-b', authorRole: 'partner', authorName: 'June', kind: 'photo', body: null, mediaPreview: '/v1/media/response-photo/object?variant=display', audioUri: null, createdAt: '2026-01-01T00:00:00.000Z' };
+    json['/v1/spaces/current/responses?limit=100'] = { responses: [response], nextCursor: '00000000-0000-4000-8000-000000000001' };
+    json['/v1/spaces/current/responses?limit=100&cursor=00000000-0000-4000-8000-000000000001'] = { responses: [] };
+    const first = json['/v1/spaces/current/moments?limit=100'] as { moments: Record<string, unknown>[] };
+    first.moments[0].attachments = [{ mediaId: 'media-1' }, { mediaId: 'second-photo' }];
+    const { deps, calls, sink } = makeDeps({ json });
+    expect(await exportRawArchive({ userId: 'user-a' }, deps)).toEqual({ status: 'shared', mediaErrors: 0 });
+    const entries = zipEntries(sink.bytes);
+    expect(decode(entries, 'responses.json')).toEqual([response]);
+    expect(decode(entries, 'partner-details.json')).toEqual((json['/v1/users/me/partner-details'] as { details: unknown[] }).details);
+    expect(calls.downloads).toEqual(['media-1', 'second-photo', 'response-photo'].map((id) => `${API}${rawMediaServePath(id)}`));
+    expect((decode(entries, 'manifest.json') as RawExportManifest).datasets).toMatchObject({ responses: 1, partnerDetails: 1, mediaFiles: 3 });
+  });
+
+  it.each(['/v1/spaces/current/responses?limit=100', '/v1/users/me/partner-details'])('does not share an incomplete archive when %s fails', async (path) => {
+    const { deps, calls } = makeDeps({ failJsonPaths: [path] });
+    expect((await exportRawArchive({ userId: 'user-a' }, deps)).status).toBe('failed');
+    expect(calls.shared).toEqual([]);
+  });
   it('archives every dataset with manifest/version and original media bytes', async () => {
     const { deps, calls, sink, store, zipUri, tmpUri } = makeDeps();
     const result = await exportRawArchive({ userId: 'user-a' }, deps);
@@ -297,23 +319,20 @@ describe('exportRawArchive', () => {
       'space.json',
       'moments.json',
       'calendar-events.json',
-      'proposals.json',
       'someday.json',
-      'milestones.json',
       'question.json',
       'letters.json',
+      'responses.json',
+      'partner-details.json',
       'manifest.json',
     ]) {
       expect(entries.has(name), name).toBe(true);
     }
 
-    // Paging reached the second page; goal + milestone-goal represented.
+    // Paging reached the second page; the goal is represented.
     const moments = decode(entries, 'moments.json') as { id: string; type: string }[];
     expect(moments.map((m) => m.id)).toEqual(['m-photo', 'm-goal', 'm-note']);
     expect(moments.map((m) => m.type)).toContain('goal');
-    expect(decode(entries, 'milestones.json') as { type: string }[]).toEqual([
-      expect.objectContaining({ type: 'goal' }),
-    ]);
 
     // Invite credential is not archive data.
     expect(JSON.stringify(decode(entries, 'space.json'))).not.toContain('SECRET-INVITE-CODE');
@@ -335,10 +354,10 @@ describe('exportRawArchive', () => {
     expect(manifest.datasets).toMatchObject({
       moments: 3,
       calendarEvents: 1,
-      proposals: 1,
       somedayItems: 1,
-      importedMilestones: 1,
       letters: 2,
+      responses: 0,
+      partnerDetails: 0,
       mediaFiles: 1,
     });
 

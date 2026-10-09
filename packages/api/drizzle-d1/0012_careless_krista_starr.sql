@@ -1,0 +1,1 @@
+DROP TABLE `imported_milestones`;

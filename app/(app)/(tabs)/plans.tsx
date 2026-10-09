@@ -46,7 +46,6 @@ import {
 	monthStripsPerCell,
 	monthStripTitlesFit,
 } from "@/features/calendar/month-cell-layout";
-import { useProposals } from "@/features/proposals/proposals-context";
 import {
 	MemorySky,
 	headerSkyHeightForWindow,
@@ -59,7 +58,10 @@ import { MotiView } from "moti";
 import { useReducedMotion } from "react-native-reanimated";
 import { DayTimeline } from "@/components/calendar/day-timeline";
 import { PlansAgenda } from "@/components/calendar/plans-agenda";
+import { PlansSomeday } from "@/components/calendar/plans-someday";
 import { GlassSurface } from "@/components/ui/glass-surface";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ScreenHeader } from "@/components/ui/screen-header";
 import { AccentWash, Elevation, Radii, Spacing, Springs, shadow, withAlpha } from "@/constants/theme";
 import { getDaysTogether } from "@/features/time-together/time-together";
 import { useSpace } from "@/features/space/space-context";
@@ -343,7 +345,7 @@ const MonthGrid = memo(function MonthGrid({
 												{`+${dayStrips.length - maxStrips} more`}
 											</ThemedText>
 										) : null}
-										{/* A day marked only by suggestions or goals has no strip to
+										{/* A day marked only by goals has no strip to
 										    draw, so it gets the same dot an anniversary does: the
 										    label already says "has plans", and now the grid shows
 										    it too. */}
@@ -412,11 +414,17 @@ export default function PlansScreen() {
 	const [listHeight, setListHeight] = useState(0);
 	// The month grid is the landing: the first question this screen answers is
 	// "when are we free", and a day is a step into one of its cells.
-	const [viewMode, setViewMode] = useState<'month' | 'agenda'>('month');
+	const [viewMode, setViewMode] = useState<'month' | 'agenda' | 'someday'>('month');
 	// The context's visible month is the month on screen: one source of truth
 	// for the header, the loaded window and the pager's anchor. A month set from
 	// outside this screen (the year view) is therefore the month it shows.
 	const currentMonth = visibleMonth;
+	const hasPlansThisMonth = useMemo(() => {
+		const monthKey = toDayKey(currentMonth).slice(0, 7);
+		return Object.entries(eventsForDay).some(([day, events]) =>
+			day.startsWith(monthKey) && events.length > 0,
+		);
+	}, [currentMonth, eventsForDay]);
 	// The window's anchor only moves when the visible month escapes it: a
 	// year jump, or a swipe reaching its edge. Rebuilding around every
 	// settled month paints the wrong month for a frame — the native offset
@@ -432,7 +440,6 @@ export default function PlansScreen() {
 			),
 		[monthAnchor],
 	);
-	const { proposals } = useProposals();
 	const { moments, loadGoals } = useMoments();
 	const { space } = useSpace();
 	const [goals, setGoals] = useState<Moment[] | null>(null);
@@ -504,7 +511,7 @@ export default function PlansScreen() {
 	const nowMinutes = useNowMinutes(todayInDayWindow);
 	// Which layer is live. The sheet is not a layer: it floats over whichever
 	// one is showing and never unmounts it.
-	const agendaOpen = viewMode === 'agenda';
+	const somedayOpen = viewMode === 'someday';
 
 	const daysTogether = useMemo(
 		() => getDaysTogether(space?.relationshipStartDate, now),
@@ -570,32 +577,22 @@ export default function PlansScreen() {
 		return () => subscription.remove();
 	}, [goals, loadGoals]);
 
-	const pendingProposals = useMemo(
-		() => proposals.filter((proposal) => proposal.status === "pending"),
-		[proposals],
-	);
-	// A day whose only plans are still suggestions or goals has no events to
-	// draw, but it is not free: the grid marks it, so the day view has to offer
-	// the list where they can be answered instead of calling the day empty.
-	// Each pager page asks for its own day: the centre page is the selection,
-	// its neighbours are already mounted for the swipe.
-	const dayHasSuggestions = useCallback(
+	// A day whose only plans are still goals has no events to draw, but it is
+	// not free: the grid marks it, so the day view has to offer the list where
+	// they can be seen instead of calling the day empty. Each pager page asks
+	// for its own day: the centre page is the selection, its neighbours are
+	// already mounted for the swipe.
+	const dayHasGoals = useCallback(
 		(date: Date) => {
 			const dayKey = toDayKey(date);
-			const hasProposal = pendingProposals.some(
-				(proposal) => toDayKey(new Date(proposal.proposedStart)) === dayKey,
-			);
-			const hasGoal = (goals ?? []).some(
+			return (goals ?? []).some(
 				(goal) => goal.targetAt && toDayKey(new Date(goal.targetAt)) === dayKey,
 			);
-			return hasProposal || hasGoal;
 		},
-		[pendingProposals, goals],
+		[goals],
 	);
-	// Suggestions are only ever answerable when they are the partner's and
-	// still pending, yours wait for them, quietly.
-	// Dots for every date carrying plans: events, pending proposals, and
-	// dated future goals, plus the anniversary mark.
+	// Dots for every date carrying plans: events and dated future goals, plus
+	// the anniversary mark.
 	// What each day holds, for the strips inside the month grid.
 	const stripsByDay = useMemo(() => {
 		const strips: Record<string, Strip[]> = {};
@@ -625,9 +622,6 @@ export default function PlansScreen() {
 				touch(key);
 			}
 		}
-		for (const proposal of pendingProposals) {
-			touch(toDayKey(new Date(proposal.proposedStart)));
-		}
 		for (const goal of goals ?? []) {
 			if (goal.targetAt) {
 				touch(toDayKey(new Date(goal.targetAt)));
@@ -638,7 +632,7 @@ export default function PlansScreen() {
 			marks[key].anniversary = true;
 		}
 		return marks;
-	}, [eventsForDay, pendingProposals, goals, anniversaryMarkersByDay]);
+	}, [eventsForDay, goals, anniversaryMarkersByDay]);
 
 	// A grid cell lifts its day over the month: the month underneath never
 	// moves, so dismissing the sheet returns to exactly where it was.
@@ -663,13 +657,6 @@ export default function PlansScreen() {
 	const handleCloseSheet = useCallback(() => {
 		setSheetDate(null);
 	}, []);
-	// The agenda reads the same upcoming plans the grid marks, listed rather
-	// than placed in time. Opening it from the sheet closes the sheet first,
-	// so the two never stack.
-	const handleToggleAgenda = useCallback(() => {
-		setSheetDate(null);
-		setViewMode(viewMode === 'agenda' ? 'month' : 'agenda');
-	}, [viewMode]);
 	/** Back to today, from whatever day the sheet is showing. */
 	const handleGoToday = useCallback(() => {
 		handleSelectDate(new Date());
@@ -901,10 +888,10 @@ export default function PlansScreen() {
 			styles.headerBlock,
 			{
 				minHeight: headerSkyHeightForWindow(windowHeight) + Spacing[8],
-				paddingTop: insets.top + Spacing[8],
+				paddingTop: insets.top + Spacing[8] + Math.max(56, 26 * (fontScale ?? 1)) + Spacing[12],
 			},
 		],
-		[insets.top, windowHeight],
+		[insets.top, windowHeight, fontScale],
 	);
 
 	const dayBody = (
@@ -939,7 +926,7 @@ export default function PlansScreen() {
 					const pageKey = toDayKey(pageDate);
 					const pageEvents = eventsForDay[pageKey] ?? [];
 					const pageIsToday = isSameDay(pageDate, now);
-					const pageHasSuggestions = dayHasSuggestions(pageDate);
+					const pageHasGoals = dayHasGoals(pageDate);
 					return (
 						<View
 							accessibilityElementsHidden={pageIndex !== 1}
@@ -989,8 +976,7 @@ export default function PlansScreen() {
 						    same: say which one this is. Under an error the notice
 						    above already spoke, so this stays quiet. */}
 						{!calendarError &&
-						pageEvents.length === 0 &&
-						(calendarLoading || !pageHasSuggestions) ? (
+						pageEvents.length === 0 ? (
 							<ThemedText
 								accessibilityLiveRegion="polite"
 								type="caption"
@@ -998,17 +984,22 @@ export default function PlansScreen() {
 							>
 								{calendarLoading
 									? 'Loading plans…'
+									: pageHasGoals
+										? 'No confirmed plans for this day.'
 									: pageIsToday
 										? `No plans for today. ${adaptiveCopy.planEmpty}`
 										: 'No plans for this day.'}
 							</ThemedText>
 						) : null}
-						{pageHasSuggestions ? (
+						{pageHasGoals ? (
 							<Pressable
-								accessibilityHint="Shows suggestions and goals as a list"
-								accessibilityLabel="View suggestions and goals"
+								accessibilityHint="Shows goals as a list"
+								accessibilityLabel="View goals"
 								accessibilityRole="button"
-								onPress={handleToggleAgenda}
+								onPress={() => {
+									setSheetDate(null);
+									setViewMode('agenda');
+								}}
 								style={({ pressed }) => [
 									styles.daySuggestions,
 									{ borderColor: border },
@@ -1016,7 +1007,7 @@ export default function PlansScreen() {
 								]}
 							>
 								<ThemedText type="caption" style={{ color: accentInk }}>
-									View suggestions and goals
+									View goals
 								</ThemedText>
 							</Pressable>
 						) : null}
@@ -1038,6 +1029,11 @@ export default function PlansScreen() {
 	);
 	const monthBody = (
 		<>
+			{!calendarError && (calendarLoading || !hasPlansThisMonth) ? (
+				<ThemedText accessibilityLiveRegion="polite" type="caption" style={[styles.monthStatus, { color: muted }]}>
+					{calendarLoading ? 'Loading plans…' : 'No confirmed plans this month.'}
+				</ThemedText>
+			) : null}
 			{/* The weekday row belongs to the grid, not to the padded header, so its
 			    columns line up with the date columns instead of being inset. */}
 			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
@@ -1113,11 +1109,28 @@ export default function PlansScreen() {
 			<PlansAgenda now={now} />
 		</ScrollView>
 	);
+	// The someday list owns its scroll too, with the same FAB clearance: the
+	// add-event FAB is hidden here, but the tail keeps the shared bottom
+	// padding so switching modes does not shift the content up.
+	const somedayBody = (
+		<ScrollView
+			contentContainerStyle={{ paddingBottom: fabBottom + Spacing[8] }}
+			keyboardShouldPersistTaps="handled"
+			showsVerticalScrollIndicator={false}
+			style={styles.agendaScroll}
+			testID="someday-scroll"
+		>
+			<PlansSomeday />
+		</ScrollView>
+	);
 	return (
 		<View style={rootStyle}>
       <FrostedBackdrop />
 			<View style={headerBlockStyle}>
 				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
+				<View style={[styles.pageHeader, { top: insets.top + Spacing[8] }]}>
+					<ScreenHeader title="Plans" />
+				</View>
 				<View style={styles.pillRow}>
 					{/* Month first, then the view control against the right edge,
 					    where a thumb reaches for it. */}
@@ -1133,28 +1146,21 @@ export default function PlansScreen() {
 							<Ionicons color={textColor} name="chevron-down" size={16} />
 						</Pressable>
 					</GlassSurface>
-					<View style={styles.pillActions}>
-					{/* One control, two meanings: it opens the agenda from either
-					    calendar mode, and once the agenda is the screen it is the
-					    Calendar button that puts the month back. */}
-					<GlassSurface style={styles.pill}>
-						<Pressable
-							accessibilityHint={
-								agendaOpen
-									? 'Shows the month grid'
-									: 'Shows upcoming plans as a list'
-							}
-							accessibilityLabel={agendaOpen ? 'Calendar' : 'Agenda'}
-							accessibilityRole="button"
-							accessibilityState={{ selected: agendaOpen }}
-							onPress={handleToggleAgenda}
-							style={styles.pillTap}
-						>
-							<ThemedText type="bodyEmphasis">
-								{agendaOpen ? 'Calendar' : 'Agenda'}
-							</ThemedText>
-						</Pressable>
-					</GlassSurface>
+					<View style={styles.viewSwitch}>
+					{/* One control, three ways to see the same plans. It replaces
+					    the old two-state Calendar/Agenda toggle: a mode is chosen
+					    here, never toggled from inside another mode. */}
+					<SegmentedControl
+						accessibilityLabel="Plans view"
+						onChange={setViewMode}
+						options={[
+							{ value: 'month', label: 'Month', icon: 'calendar-outline' },
+							{ value: 'agenda', label: 'Agenda', icon: 'list-outline' },
+							{ value: 'someday', label: 'Someday', icon: 'moon-outline' },
+						]}
+						size="compact"
+						value={viewMode}
+					/>
 					</View>
 				</View>
 			</View>
@@ -1200,16 +1206,20 @@ export default function PlansScreen() {
 				// Keyed by the mode, so the swap mounts a fresh layer and the
 				// offset above actually plays. Without it React reuses the same
 				// element and the arrival is invisible.
-				key={agendaOpen ? "agenda" : "month"}
+				key={viewMode}
 				style={styles.modeLayer}
-				testID={agendaOpen ? "agenda-surface" : "month-surface"}
+				testID={`${viewMode}-surface`}
 				transition={
 					reduceMotion
 						? { duration: 0, type: "timing" }
 						: { ...Springs.rest, type: "spring" }
 				}
 			>
-				{agendaOpen ? agendaBody : monthBody}
+				{viewMode === 'agenda'
+					? agendaBody
+					: viewMode === 'someday'
+						? somedayBody
+						: monthBody}
 			</MotiView>
 			</View>
 			{/* A grid cell lifts its day over the month in the platform sheet:
@@ -1249,7 +1259,9 @@ export default function PlansScreen() {
 			) : null}
 			{/* Creation sits where a thumb lands, the same FAB the Memories tab
 			    uses: tinted glass over a shaped container, since the material
-			    itself cannot be shaped from here. */}
+			    itself cannot be shaped from here. Someday has its own quick-add
+			    in the list, so the event FAB stands down while it is showing. */}
+			{!somedayOpen ? (
 			<Pressable
 				accessibilityHint="Creates an event on the selected day"
 				accessibilityLabel="Add an event"
@@ -1282,6 +1294,7 @@ export default function PlansScreen() {
 					<Ionicons color={accent} name="add" size={26} />
 				</GlassSurface>
 			</Pressable>
+			) : null}
 
 		</View>
 	);
@@ -1316,12 +1329,14 @@ const styles = StyleSheet.create({
 		// inset here put this row's chrome 16pt inside the other tabs'.
 		paddingVertical: Spacing[8],
 	},
-	pillActions: {
-		alignItems: 'center',
-		flexDirection: 'row',
-		// The same action gap every header uses, so the buttons sit the same
-		// distance apart whichever tab is open.
-		gap: Spacing[12],
+	viewSwitch: {
+		alignItems: 'stretch',
+		// It takes the width the month pill leaves, capped so a tablet does
+		// not stretch three small segments across the whole header.
+		flex: 1,
+		marginLeft: Spacing[12],
+		maxWidth: 160,
+		minWidth: 0,
 	},
 	pillTap: {
 		alignItems: 'center',
@@ -1408,6 +1423,11 @@ const styles = StyleSheet.create({
 	root: {
 		flex: 1,
 	},
+	pageHeader: {
+		position: "absolute",
+		left: Spacing[24],
+		right: Spacing[24],
+	},
 	headerBlock: {
 		justifyContent: "flex-end",
 		overflow: "hidden",
@@ -1424,6 +1444,10 @@ const styles = StyleSheet.create({
 		paddingBottom: Spacing[4],
 		paddingHorizontal: Spacing[16],
 		paddingTop: Spacing[12],
+	},
+	monthStatus: {
+		paddingHorizontal: Spacing[24],
+		paddingBottom: Spacing[8],
 	},
 	weekdayRow: {
 		borderBottomWidth: StyleSheet.hairlineWidth,

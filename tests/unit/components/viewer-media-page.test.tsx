@@ -68,6 +68,7 @@ vi.mock('@/components/themed-text', () => ({
 }));
 
 vi.mock('@/hooks/use-theme-color', () => ({ useThemeColor: () => '#000000' }));
+vi.mock('@/components/ui/button', () => ({ Button: () => null }));
 
 vi.mock('@/features/composer/staged-uri', () => ({
   resolveStagedUri: (uri: string) => `resolved:${uri}`,
@@ -87,8 +88,19 @@ vi.mock('react-native-reanimated', () => {
     __esModule: true,
     default: { View, createAnimatedComponent },
     Animated: { View, createAnimatedComponent },
-    useSharedValue: (initial: any) =>
-      React.useRef({ value: typeof initial === 'function' ? initial() : initial }).current,
+    useSharedValue: (initial: any) => {
+      const shared = React.useRef<any>(null);
+      if (!shared.current) {
+        const value = typeof initial === 'function' ? initial() : initial;
+        const self = {
+          value,
+          get: () => self.value,
+          set: (next: any) => { self.value = typeof next === 'function' ? next(self.value) : next; },
+        };
+        shared.current = self;
+      }
+      return shared.current;
+    },
     useAnimatedStyle: (fn: () => any) => {
       // Keep the worklet itself: a bar only re-reads its shared value on the
       // UI thread, so evaluating the function later is what the device does.
@@ -139,9 +151,16 @@ function barScales(): number[] {
     .filter((scale): scale is number => typeof scale === 'number');
 }
 
-/** Shared values, as plain objects: the worklets only read `.value`. */
-function shared(value: number) {
-  return { value } as any;
+/** Shared values, as plain objects: the worklets read them through get(). */
+function shared<T>(value: T) {
+  const self = {
+    value,
+    get: () => self.value,
+    set: (next: T | ((current: T) => T)) => {
+      self.value = typeof next === 'function' ? (next as (current: T) => T)(self.value) : next;
+    },
+  };
+  return self as any;
 }
 
 const morph = {
@@ -159,7 +178,7 @@ const home = {
   width: shared(0),
   height: shared(0),
   radius: shared(0),
-  valid: { value: false } as any,
+  valid: shared(false),
 } as any;
 
 const voiceProps: ViewerVoicePageProps = {

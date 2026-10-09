@@ -8,7 +8,7 @@ vi.mock('expo-haptics', () => ({
   impactAsync: (style: string) => impactSpy(style),
   notificationAsync: (type: string) => notificationSpy(type),
   selectionAsync: () => selectionSpy(),
-  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy', Soft: 'soft' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 
@@ -29,6 +29,7 @@ describe('haptics helper', () => {
 
     haptics.select();
     haptics.tap();
+    haptics.soft();
     haptics.impact();
     haptics.success();
     haptics.warning();
@@ -36,6 +37,7 @@ describe('haptics helper', () => {
 
     expect(selectionSpy).toHaveBeenCalledTimes(1);
     expect(impactSpy).toHaveBeenCalledWith('light');
+    expect(impactSpy).toHaveBeenCalledWith('soft');
     expect(impactSpy).toHaveBeenCalledWith('medium');
     expect(notificationSpy).toHaveBeenCalledWith('success');
     expect(notificationSpy).toHaveBeenCalledWith('warning');
@@ -48,6 +50,7 @@ describe('haptics helper', () => {
 
     haptics.select();
     haptics.tap();
+    haptics.soft();
     haptics.success();
 
     expect(selectionSpy).not.toHaveBeenCalled();

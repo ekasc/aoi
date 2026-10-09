@@ -1,4 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
+import { useRouter } from "expo-router";
 import { Stack } from "expo-router/stack";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -8,12 +9,16 @@ import { LaunchSplash } from "@/components/launch-splash";
 import { notificationsModule } from "@/features/notifications/notifications-module";
 import { DebugHarness } from "@/components/dev/debug-harness";
 import { ensureDevSeed } from "@/features/dev/dev-seed";
+import { installGlobalCrypto } from "@/features/crypto/global-crypto";
 import { MomentsProvider } from "@/features/moments/moments-context";
 import { SessionProvider, useSession } from "@/features/session/session-context";
 import { SpaceProvider, useSpace } from "@/features/space/space-context";
+import { useInviteLink } from "@/features/space/use-invite-link";
 import { SubscriptionProvider } from "@/features/subscription/subscription-context";
 import { AoiThemeProvider, useAoiTheme } from "@/features/theme/theme-context";
 import { useAoiFonts } from "@/hooks/use-aoi-fonts";
+import { SkyEntryProvider } from "@/components/home/sky-entry-provider";
+import { Typography } from "@/constants/typography";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -31,6 +36,12 @@ if (notifications) {
 		}),
 	});
 }
+
+// Hermes has no `crypto` global, and `@noble/curves` cannot generate a key
+// without one. Installed at module scope, before any screen renders, because
+// the first thing that touches it happens inside a `useState` initializer and
+// a throw there takes down the whole tree rather than one screen.
+installGlobalCrypto();
 
 // React Navigation's own theme provider (imported via expo-router since
 // SDK 56 forbids `@react-navigation/*` imports in app code), fed from Aoi's
@@ -79,11 +90,17 @@ type RootNavigationProps = {
 };
 
 function RootNavigation({ fontsLoaded }: RootNavigationProps) {
+	const router = useRouter();
 	const {
 		isHydrated: isSessionHydrated,
+		user,
 	} = useSession();
 	const { isHydrated: isSpaceHydrated } = useSpace();
 	const { mode, colors, isHydrated } = useAoiTheme();
+	// An invite link can arrive before sign-in, after it, or while the app is
+	// already open. It is held here rather than acted on in the join screen so
+	// the code survives the session and space providers hydrating underneath it.
+	const pendingInvite = useInviteLink();
 	const themeName = mode === "dark" ? "dark" : "light";
 	const [showLaunchSplash, setShowLaunchSplash] = useState(true);
 
@@ -131,6 +148,16 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 		};
 	}, [fontsLoaded, isHydrated]);
 
+	// The link is only acted on once the app is actually up, and only for a
+	// signed-in reader: a link that arrives during sign-in is held by the hook
+	// and taken up here, when there is a space for it to belong to.
+	useEffect(() => {
+		if (!pendingInvite) {
+			return;
+		}
+		router.replace({ pathname: '/(auth)/space-setup', params: { code: pendingInvite } });
+	}, [pendingInvite, router]);
+
 	if (
 		!fontsLoaded ||
 		!isHydrated ||
@@ -144,9 +171,16 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 	return (
 		<ThemeProvider value={navigationTheme}>
 			<DebugHarness>
+				<SkyEntryProvider key={user?.id ?? 'signed-out'}>
 				<Stack
 					screenOptions={{
 						contentStyle: { backgroundColor: colors.background },
+						headerStyle: { backgroundColor: colors.background },
+						headerTintColor: colors.text,
+						headerTitleStyle: Typography.navigationTitle,
+						headerTitleAlign: "center",
+						headerBackButtonDisplayMode: "minimal",
+						headerShadowVisible: false,
 					}}
 				>
 					<Stack.Screen
@@ -154,10 +188,14 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 						options={{ headerShown: false }}
 					/>
 					<Stack.Screen name="(auth)" options={{ headerShown: false }} />
-					<Stack.Screen name="(app)" options={{ headerShown: false }} />
+					<Stack.Screen
+						name="(app)"
+						// Memories carries the outgoing form until its sky can be revealed.
+						options={{ animation: "none", headerShown: false }}
+					/>
 					<Stack.Screen
 						name="dev-story"
-						options={{ headerShown: false }}
+						options={{ animation: "none", headerShown: false }}
 					/>
 					<Stack.Screen
 						name="dev-chapter"
@@ -167,7 +205,12 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 						name="dev-composer"
 						options={{ headerShown: false }}
 					/>
+					<Stack.Screen
+						name="dev-setup"
+						options={{ headerShown: false }}
+					/>
 				</Stack>
+				</SkyEntryProvider>
 				<StatusBar
 					style={themeName === "dark" ? "light" : "dark"}
 				/>

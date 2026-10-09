@@ -31,6 +31,10 @@ export const haptics = {
   tap() {
     fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light));
   },
+  /** A physical transition settling into place. */
+  soft() {
+    fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft));
+  },
   /** A medium, deliberate impact (record start). */
   impact() {
     fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));

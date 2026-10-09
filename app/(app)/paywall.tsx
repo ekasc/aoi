@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,6 +10,7 @@ import { NativeSheet } from '@/components/ui/native-sheet';
 import { Surface } from '@/components/ui/surface';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
 import { PLUS_FEATURES } from '@/features/subscription/limits';
+import { SKY_HISTORY_PLUS } from '@/features/home/sky-history';
 import { useSubscription } from '@/features/subscription/subscription-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -19,14 +20,20 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * is reachable, themeable and announced properly.
  */
 const PLUS_EXPLANATION =
-  'Plus raises the limits on your shared Space: more room for photos and voice, more letters for the future, and PDF chapter keepsakes. One purchase covers both of you.';
+  'Plus gives your shared archive more storage, more letters for the future, PDF chapter keepsakes, and Sky History — the ability to rewind your sky to any month you have been together. Your live sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
 
 export default function PaywallScreen() {
   const router = useRouter();
+  // Which lock sent the reader here. One line about the feature they were
+  // trying to use, above the unchanged plan shelf — not a second paywall.
+  const { feature } = useLocalSearchParams<{ feature?: string }>();
+  const soughtFeature = feature === 'sky-history' ? SKY_HISTORY_PLUS : null;
   const insets = useSafeAreaInsets();
-  const { status, isPlus, isAvailable, plans, purchase, restore, activationPending } = useSubscription();
+  const { status, isPlus, isAvailable, plans, purchase, restore, refresh, activationPending } = useSubscription();
   const [selected, setSelected] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<'purchase' | 'restore' | 'refresh' | null>(null);
+  const operationRef = useRef(false);
+  const busy = operation !== null;
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [explaining, setExplaining] = useState(false);
@@ -44,45 +51,73 @@ export default function PaywallScreen() {
   // as a trick once someone notices it.
   const selectedPlan = plans.find((p) => p.id === selected) ?? null;
   const storeUnavailable = status === 'unavailable';
-  const canPurchase = isAvailable && !storeUnavailable && Boolean(selectedPlan) && !busy;
+  const canPurchase = isAvailable && !storeUnavailable && Boolean(selectedPlan) && !busy && !activationPending;
 
   const handlePurchase = async () => {
-    if (!selectedPlan || busy || storeUnavailable) return;
-    setBusy(true);
+    if (!canPurchase || !selectedPlan || operationRef.current) return;
+    operationRef.current = true;
+    setOperation('purchase');
     setError('');
     setNotice('');
-    const result = await purchase(selectedPlan.id);
-    setBusy(false);
-    if (result.ok) {
-      router.back();
-    } else if (result.error && result.error !== 'Purchase canceled.') {
-      setError(result.error);
+    try {
+      const result = await purchase(selectedPlan.id);
+      if (result.ok) {
+        router.back();
+      } else if (result.reason !== 'cancelled' && result.error !== 'Purchase canceled.') {
+        setError(result.error);
+      }
+    } catch {
+      setError('Could not complete your purchase. Please try again.');
+    } finally {
+      operationRef.current = false;
+      setOperation(null);
     }
   };
 
   const handleRestore = async () => {
-    if (busy || storeUnavailable) return;
-    setBusy(true);
+    if (operationRef.current || storeUnavailable || !isAvailable || activationPending) return;
+    operationRef.current = true;
+    setOperation('restore');
     setError('');
     setNotice('');
-    const result = await restore();
-    setBusy(false);
-    if (!result.ok) {
-      setError(result.error ?? 'Could not restore purchases.');
-      return;
+    try {
+      const result = await restore();
+      if (!result.ok) {
+        setError(result.error ?? 'Could not restore purchases.');
+      } else if (result.isPlus) {
+        router.back();
+      } else {
+        setNotice('Restore completed, no active Plus found on this account.');
+      }
+    } catch {
+      setError('Could not restore purchases. Please try again.');
+    } finally {
+      operationRef.current = false;
+      setOperation(null);
     }
-    if (result.isPlus) {
-      router.back();
-      return;
+  };
+
+  const handleRefresh = async () => {
+    if (operationRef.current) return;
+    operationRef.current = true;
+    setOperation('refresh');
+    setError('');
+    setNotice('');
+    try {
+      await refresh();
+    } catch {
+      setError('Could not load plans. Please try again.');
+    } finally {
+      operationRef.current = false;
+      setOperation(null);
     }
-    setNotice('Restore completed, no active Plus found on this account.');
   };
 
   const handleCloseExplanation = useCallback(() => setExplaining(false), []);
 
   if (isPlus) {
     return (
-      <View style={[styles.center, { backgroundColor: background, paddingTop: insets.top + Spacing[24] }]}>
+      <View style={[styles.center, { backgroundColor: background, paddingTop: Spacing[24] }]}>
         <ThemedText type="title">You have Aoi Plus</ThemedText>
         <ThemedText type="body" style={styles.sub}>
           Plus is active on this account.
@@ -97,7 +132,7 @@ export default function PaywallScreen() {
       contentContainerStyle={[
         styles.content,
         {
-          paddingTop: insets.top + Spacing[24],
+          paddingTop: Spacing[24],
           paddingBottom: insets.bottom + Spacing[32],
         },
       ]}
@@ -105,9 +140,8 @@ export default function PaywallScreen() {
       showsVerticalScrollIndicator={false}
       style={{ backgroundColor: background }}
     >
-      <ThemedText type="display">Aoi Plus</ThemedText>
       <ThemedText type="body" style={styles.sub}>
-        One Plus covers your whole shared Space, both of you enjoy it.
+        More room to preserve what you share. One Plus covers your shared Space.
       </ThemedText>
 
       {storeUnavailable ? (
@@ -129,6 +163,15 @@ export default function PaywallScreen() {
         ))}
       </Surface>
 
+      {soughtFeature ? (
+        <Surface style={styles.sought}>
+          <ThemedText type="subheading">{soughtFeature.title}</ThemedText>
+          <ThemedText type="caption" style={{ color: textSecondary }}>
+            {soughtFeature.body}
+          </ThemedText>
+        </Surface>
+      ) : null}
+
       {plans.length > 0 ? (
         <View accessibilityRole="radiogroup" style={styles.plans}>
           {plans.map((plan) => {
@@ -136,10 +179,12 @@ export default function PaywallScreen() {
             return (
               <Pressable
                 accessibilityRole="radio"
+                aria-checked={isSelected}
                 accessibilityLabel={`${plan.title}, ${plan.priceString}`}
-                accessibilityState={{ checked: isSelected, disabled: busy }}
+                accessibilityState={{ checked: isSelected, disabled: busy || activationPending }}
+                disabled={busy || activationPending}
                 key={plan.id}
-                onPress={() => setSelected(plan.id)}
+                onPress={() => { if (!operationRef.current && !activationPending) setSelected(plan.id); }}
                 style={({ pressed }) => [
                   styles.plan,
                   {
@@ -188,9 +233,13 @@ export default function PaywallScreen() {
       <View style={styles.actions}>
         <Button
           disabled={!canPurchase}
+          accessibilityState={{ busy: operation === 'purchase', disabled: !canPurchase }}
+          accessibilityLiveRegion="polite"
           label={
-            busy
-              ? 'Working…'
+            operation === 'purchase'
+              ? 'Purchasing…'
+              : activationPending
+                ? 'Confirming Plus…'
               : status === 'loading'
                 ? 'Loading plans…'
                 : storeUnavailable
@@ -202,11 +251,22 @@ export default function PaywallScreen() {
           onPress={handlePurchase}
         />
         <Button
-          disabled={busy || storeUnavailable}
-          label={busy ? 'Working…' : 'Restore purchase'}
+          disabled={busy || storeUnavailable || !isAvailable || activationPending}
+          accessibilityState={{ busy: operation === 'restore', disabled: busy || storeUnavailable || !isAvailable || activationPending }}
+          accessibilityLiveRegion="polite"
+          label={operation === 'restore' ? 'Restoring…' : 'Restore purchase'}
           onPress={handleRestore}
           variant="secondary"
         />
+        {(storeUnavailable || plans.length === 0) && status !== 'loading' && !activationPending ? (
+          <Button
+            label={operation === 'refresh' ? 'Loading plans…' : 'Retry plans'}
+            disabled={busy}
+            accessibilityState={{ busy: operation === 'refresh', disabled: busy }}
+            onPress={handleRefresh}
+            variant="ghost"
+          />
+        ) : null}
       </View>
 
       <View style={styles.fine}>
@@ -268,6 +328,9 @@ const styles = StyleSheet.create({
   },
   featureText: {
     flex: 1,
+  },
+  sought: {
+    gap: Spacing[4],
   },
   plans: {
     flexDirection: 'row',

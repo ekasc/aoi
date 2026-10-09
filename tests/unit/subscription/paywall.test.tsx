@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 
 const pushSpy = vi.fn();
 const backSpy = vi.fn();
 const purchaseSpy = vi.fn(async () => ({ ok: true }));
 const restoreSpy = vi.fn(async () => ({ ok: true, isPlus: false }));
+const refreshSpy = vi.fn(async () => {});
+let activationPending = false;
 
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: pushSpy, back: backSpy, replace: vi.fn() }),
@@ -28,7 +30,8 @@ vi.mock('@/features/subscription/subscription-context', () => ({
     plans: mockPlans,
     purchase: purchaseSpy,
     restore: restoreSpy,
-    refresh: vi.fn(async () => {}),
+    refresh: refreshSpy,
+    activationPending,
     serverPlus: null,
     refreshServerPlus: vi.fn(async () => {}),
   }),
@@ -120,6 +123,9 @@ beforeEach(() => {
   backSpy.mockClear();
   purchaseSpy.mockClear();
   purchaseSpy.mockResolvedValue({ ok: true });
+  restoreSpy.mockReset().mockResolvedValue({ ok: true, isPlus: false });
+  refreshSpy.mockReset();
+  activationPending = false;
   mockPlans = [
     { id: MONTHLY_ID, title: 'Monthly', priceString: '€3.99', period: 'monthly' },
     { id: YEARLY_ID, title: 'Yearly', priceString: '€29.99', period: 'yearly' },
@@ -132,10 +138,53 @@ async function renderPaywall() {
 }
 
 describe('paywall (v1 benefit contract)', () => {
+  it('keeps the selected package fixed while purchasing and reports only that operation as busy', async () => {
+    let finish: (value: { ok: boolean }) => void = () => {};
+    purchaseSpy.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await renderPaywall();
+    fireEvent.click(screen.getByLabelText('Monthly, €3.99'));
+    fireEvent.click(screen.getByText('Continue, €3.99'));
+    expect(screen.getByText('Purchasing…')).toBeTruthy();
+    expect(screen.getByText('Restore purchase')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Yearly, €29.99'));
+    fireEvent.click(screen.getByText('Restore purchase'));
+    expect(purchaseSpy).toHaveBeenCalledOnce();
+    expect(restoreSpy).not.toHaveBeenCalled();
+    await act(async () => finish({ ok: true }));
+    expect(backSpy).toHaveBeenCalledOnce();
+  });
+
+  it('clears an unexpected purchase failure and allows another attempt', async () => {
+    purchaseSpy.mockRejectedValueOnce(new Error('private SDK details'));
+    await renderPaywall();
+    fireEvent.click(screen.getByLabelText('Monthly, €3.99'));
+    await act(async () => fireEvent.click(screen.getByText('Continue, €3.99')));
+    expect(screen.getByText('Could not complete your purchase. Please try again.')).toBeTruthy();
+    expect(screen.queryByText('private SDK details')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByText('Continue, €3.99')));
+    expect(purchaseSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not start another purchase while the existing purchase is awaiting activation', async () => {
+    activationPending = true;
+    await renderPaywall();
+    fireEvent.click(screen.getByLabelText('Monthly, €3.99'));
+    fireEvent.click(screen.getByText('Confirming Plus…'));
+    expect(purchaseSpy).not.toHaveBeenCalled();
+    expect(screen.getByText('Purchase received, confirming Plus on your Space…')).toBeTruthy();
+  });
+
+  it('provides a plan reload action after a successful empty offering read', async () => {
+    mockPlans = [];
+    await renderPaywall();
+    expect(screen.getByText('No plans available yet. Please try again later.')).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByText('Retry plans')));
+    expect(refreshSpy).toHaveBeenCalledOnce();
+  });
   it('advertises exactly the three real benefits', async () => {
     const { container } = await renderPaywall();
 
-    expect(screen.getByText(/More room for photos and voice memories/)).toBeTruthy();
+    expect(screen.getByText(/More storage for your shared archive/)).toBeTruthy();
     expect(screen.getByText(/More letters for the future/)).toBeTruthy();
     expect(screen.getByText(/PDF chapter keepsakes/)).toBeTruthy();
     const copy = container.textContent ?? '';
@@ -191,7 +240,7 @@ describe('paywall (v1 benefit contract)', () => {
 
     fireEvent.click(screen.getByLabelText('Why Plus?'));
     // The sheet's own copy, mounted by the platform sheet.
-    expect(await screen.findByText(/raises the limits on your shared Space/)).toBeTruthy();
+    expect(await screen.findByText(/Plus gives your shared archive more storage/)).toBeTruthy();
   });
 
   it('gives the explanation a real touch target', async () => {

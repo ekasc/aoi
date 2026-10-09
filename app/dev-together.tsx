@@ -1,7 +1,8 @@
 import { Redirect, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 
-import TogetherScreen from "@/app/(app)/(tabs)/together";
+import { UsPhotoSky } from "@/app/(app)/(tabs)/together";
+import { usePreviewSkyPhotos } from "@/features/dev/sky-photo-preview";
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { ComposerProvider } from "@/features/composer/composer-context";
 import {
@@ -15,7 +16,6 @@ import {
 } from "@/features/dev/preview";
 import { LettersProvider } from "@/features/letters/letters-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
-import { ProposalsProvider } from "@/features/proposals/proposals-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
 import { ResponsesProvider } from "@/features/responses/responses-context";
@@ -37,6 +37,11 @@ export default function DevTogether() {
 		return <Redirect href="/" />;
 	}
 	return <DevTogetherPreview />;
+}
+
+function PreviewSky({ variant }: { variant: PreviewVariant }) {
+	const album = usePreviewSkyPhotos(variant);
+	return <UsPhotoSky album={album} />;
 }
 
 function DevTogetherPreview() {
@@ -76,19 +81,17 @@ function DevTogetherPreview() {
 						<SomedayProvider>
 							<QuestionProvider>
 								<SqueezeProvider>
-									<ProposalsProvider>
 										<LettersProvider>
 											<PushProvider>
 												<ResponsesProvider>
 													<ComposerProvider>
 														<DevErrorBoundary label="TogetherScreen">
-															<TogetherScreen />
+															<PreviewSky key={selected} variant={selected} />
 														</DevErrorBoundary>
 													</ComposerProvider>
 												</ResponsesProvider>
 											</PushProvider>
 										</LettersProvider>
-									</ProposalsProvider>
 								</SqueezeProvider>
 							</QuestionProvider>
 						</SomedayProvider>

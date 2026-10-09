@@ -5,8 +5,7 @@ appId: com.ekasc.aoi
 - launchApp:
     clearState: true
 - tapOn: "Continue with Google"
-- assertVisible: "Save the little things"
-- tapOn: "Create a Space"
+- tapOn: "Create our space"
 - assertVisible: "About you two"
 - tapOn: "What should Aoi call you?"
 - inputText: "Maestro"

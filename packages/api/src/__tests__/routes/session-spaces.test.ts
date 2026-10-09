@@ -148,7 +148,8 @@ describe('worker spaces routes (exactly-two membership over HTTP)', () => {
     });
     expect(join.status).toBe(200);
     const joinBody = await join.json();
-    expect(joinBody.space.partnerName).toBe('Partner');
+    // The joiner reads the creator's name, not the creator's guess at theirs.
+    expect(joinBody.space.partnerName).toBe('Aoi');
 
     // A third user (none exists) — the partner slot is full; simulate a
     // third member via a second join attempt by another user.
@@ -242,15 +243,17 @@ describe('optional partner name / start date (P3 nullable contract)', () => {
     });
   }
 
-  it('creates with neither partner name nor start date; absence stays null', async () => {
+  it('creates with a partner and no start date; the absent date stays null', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
 
-    const res = await postSpace(app, TOKEN_A, { name: 'Our Space' });
+    const res = await postSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'June' });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.space.partnerName).toBeNull();
+    expect(body.space.partnerName).toBe('June');
+    // The start date is genuinely optional: the sky falls back rather than
+    // refusing the space.
     expect(body.space.relationshipStartDate).toBeNull();
     expect(body.space.name).toBe('Our Space');
 
@@ -258,14 +261,27 @@ describe('optional partner name / start date (P3 nullable contract)', () => {
     const current = await app.request('/v1/spaces/current', { headers: auth(TOKEN_A) });
     expect(current.status).toBe(200);
     const currentBody = await current.json();
-    expect(currentBody.space.partnerName).toBeNull();
+    expect(currentBody.space.partnerName).toBe('June');
     expect(currentBody.space.relationshipStartDate).toBeNull();
 
     const row = harness.d1.rawDb
       .prepare('select partner_name, relationship_start_date from spaces where id = ?')
       .get(body.space.id) as { partner_name: unknown; relationship_start_date: unknown };
-    expect(row.partner_name).toBeNull();
+    expect(row.partner_name).toBe('June');
     expect(row.relationship_start_date).toBeNull();
+  });
+
+  it('trims the partner name the client sent with padding', async () => {
+    const { harness, app } = makeApp();
+    insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
+    insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
+
+    const res = await postSpace(app, TOKEN_A, { name: 'Our Space', partnerName: '  June  ' });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    // A stored name reaches headings and comparisons, so padding must not
+    // survive into it.
+    expect(body.space.partnerName).toBe('June');
   });
 
   it('creates with a partner name but no start date', async () => {
@@ -280,16 +296,41 @@ describe('optional partner name / start date (P3 nullable contract)', () => {
     expect(body.space.relationshipStartDate).toBeNull();
   });
 
-  it('creates with a start date but no partner name', async () => {
+  it('refuses to create a space with nobody in it', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
 
+    // A space is for two people. Accepting one without a partner is how an
+    // unnamed partner reached the product, where every screen that greets them
+    // had to invent a fallback.
     const res = await postSpace(app, TOKEN_A, { name: 'Our Space', relationshipStartDate: '2024-06-01' });
+    expect(res.status).toBe(400);
+  });
+
+  it('creates with a start date and a partner name', async () => {
+    const { harness, app } = makeApp();
+    insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
+    insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
+
+    const res = await postSpace(app, TOKEN_A, {
+      name: 'Our Space',
+      partnerName: 'June',
+      relationshipStartDate: '2024-06-01',
+    });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.space.partnerName).toBeNull();
+    expect(body.space.partnerName).toBe('June');
     expect(body.space.relationshipStartDate).toBe('2024-06-01');
+  });
+
+  it('refuses a partner name that is only whitespace', async () => {
+    const { harness, app } = makeApp();
+    insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
+    insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
+
+    const res = await postSpace(app, TOKEN_A, { name: 'Our Space', partnerName: '   ' });
+    expect(res.status).toBe(400);
   });
 
   it('still rejects empty-string sentinels and malformed dates', async () => {
@@ -304,14 +345,14 @@ describe('optional partner name / start date (P3 nullable contract)', () => {
     expect(emptyDate.status).toBe(400);
   });
 
-  it('join after a partnerless create fills the partner name from the account', async () => {
+  it('tells each side the other name, and fills the column from the account', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     insertUser(harness.d1, USER_B, 'partner@example.com', 'Partner');
     insertSession(harness.d1, 'sess-a', USER_A, TOKEN_A);
     insertSession(harness.d1, 'sess-b', USER_B, TOKEN_B);
 
-    const created = await postSpace(app, TOKEN_A, { name: 'Our Space' });
+    const created = await postSpace(app, TOKEN_A, { name: 'Our Space', partnerName: 'Partner' });
     expect(created.status).toBe(201);
     const { inviteCode } = await created.json();
 
@@ -322,7 +363,17 @@ describe('optional partner name / start date (P3 nullable contract)', () => {
     });
     expect(join.status).toBe(200);
     const joinBody = await join.json();
-    expect(joinBody.space.partnerName).toBe('Partner');
+    // The joiner is told the creator's own account name, not the name the
+    // creator typed for the partner.
+    expect(joinBody.space.partnerName).toBe('Aoi');
     expect(joinBody.space.relationshipStartDate).toBeNull();
+
+    // And the creator is told the joiner's account name, which is what the
+    // stored column is for.
+    const current = await app.request('/v1/spaces/current', { headers: auth(TOKEN_A) });
+    expect(current.status).toBe(200);
+    const currentBody = await current.json();
+    expect(currentBody.space.partnerName).toBe('Partner');
+    expect(currentBody.space.partnerJoined).toBe(true);
   });
 });

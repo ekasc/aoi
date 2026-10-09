@@ -146,15 +146,6 @@ describe('Day timeline', () => {
     expect(screen.queryByText(/Pavilion/)).toBeNull();
   });
 
-  it('carries ownership in tint and words, never a side stripe', () => {
-    // A coloured border-left on the block is decoration wearing a
-    // convention's clothes: the tinted fill and the ownership caption
-    // already say whose plan it is, in sight and in words.
-    const source = readFileSync('components/calendar/day-timeline.tsx', 'utf8');
-    expect(source).not.toContain('borderLeftWidth');
-    expect(source).not.toContain('borderLeftColor');
-  });
-
   it('draws day blocks square, the way a calendar draws them', () => {
     // Rounding is for chips and buttons, not for time. Scoped to the event
     // style: the all-day chip is a pill on purpose.

@@ -35,6 +35,27 @@ This repo is currently an Expo + Expo Router app written in TypeScript.
 - Run one file: `npx vitest run tests/path/to/file.test.ts`
 - Run one test name: `npx vitest run -t "renders empty state"`
 
+### What a test may assert — read before writing one
+Test **behavior** and **durable rules**, never the presence of UI.
+
+- Assert what the app *does*: a tap navigates, saves, or removes; a failed
+  write keeps the draft and shows the error; an empty result is distinguishable
+  from a failed read; a reorder persists; a route stays reachable.
+- **Do not** assert that a section, string, or element is on screen —
+  `getByText('Letters')`, "renders the X group", "shows the Y details". That is
+  a snapshot of a design decision, not a requirement: it passes because the
+  code does what it was written to do, and it fails only when someone changes
+  the design. A red test then pressures the author to satisfy the test instead
+  of the user, which is exactly how deliberately-removed features get re-added.
+- A presence check is legitimate only when it encodes a stated **rule**, not a
+  layout: the accessibility contract, "no emoji anywhere", "the empty state and
+  the failed read are distinct". Keep those, and phrase them as the rule.
+- `getByText` / `getByLabelText` are fine as a way to *find* a control you then
+  act on. They are not fine as the assertion itself.
+
+When a presence test goes red because you changed the design, delete it — do
+not re-add the UI to make it pass.
+
 ### Accessibility audit
 - Static contract check across `app/` and `components/`:
   `pnpm run a11y:audit` (add `--json` for machines, `--strict` to exit 1
@@ -256,6 +277,8 @@ finding is a genuine false positive, extend `scripts/a11y-audit.mjs` with a
 narrow exemption and a comment explaining why.
 
 ### Error handling
+- Every user-facing collection or collection section must explicitly identify an empty result and retain a next action where one exists. Do not rely on a blank list, zero counter, decorative graphic, or an invitation alone.
+- Keep successful empty reads, loading, failed reads, and filtered no-results distinct. Never seed content to hide an empty state. Cover those distinctions in the affected screen tests.
 - Don't leave `alert(...)` in production flows (starter templates use it in examples).
 - For async actions, handle loading + error states explicitly (don't swallow errors).
 - When adding API calls, surface user-safe messages and log detailed context only in dev.

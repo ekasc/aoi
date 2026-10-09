@@ -1,12 +1,12 @@
 # Plans: month navigation both directions, event create, Someday.
-# Date pickers are native wheels and proposal/goal sheets need them —
+# Date pickers are native wheels and the goal sheet needs them —
 # navigation and the title field are automated; the rest is manual-device.
 appId: com.ekasc.aoi
 ---
 - launchApp:
     clearState: true
 - tapOn: "Continue with Google"
-- tapOn: "Create a Space"
+- tapOn: "Create our space"
 - tapOn: "What should Aoi call you?"
 - inputText: "Maestro"
 - tapOn: "Create Space"

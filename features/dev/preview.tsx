@@ -51,14 +51,73 @@ import type { SpaceContextValue } from '@/features/space/types';
  * so it shows its status error headless — expected.
  */
 
-export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed';
+export type PreviewVariant = 'full' | 'empty' | 'pending' | 'failed' | 'setup' | 'welcome' | 'recent' | 'historical' | 'no-resurfacing'
+  | 'sky-one'
+  | 'sky-few'
+  | 'sky-many'
+  | 'sky-today'
+  | 'sky-six-months-ago'
+  | 'sky-relationship-start'
+  | 'sky-with-content'
+  | 'sky-empty'
+  | 'sky-free';
+
+const SKY_VARIANTS: readonly PreviewVariant[] = [
+  'sky-one',
+  'sky-few',
+  'sky-many',
+  'sky-today',
+  'sky-six-months-ago',
+  'sky-relationship-start',
+  'sky-with-content',
+  'sky-empty',
+  'sky-free',
+];
 
 export function parsePreviewVariant(raw: string | string[] | undefined): PreviewVariant {
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (value === 'empty' || value === 'pending' || value === 'failed') {
+  if (
+    value === 'empty' ||
+    value === 'pending' ||
+    value === 'failed' ||
+    value === 'setup' || value === 'welcome' || value === 'recent' || value === 'historical' || value === 'no-resurfacing'
+  ) {
     return value;
   }
+  if (value && (SKY_VARIANTS as readonly string[]).includes(value)) {
+    return value as PreviewVariant;
+  }
   return 'full';
+}
+
+/** Initial date and entitlement for dev previews; the control remains interactive. */
+export function skyPreviewStart(variant: PreviewVariant): {
+  /** Months back from today, or the relationship's first day. */
+  monthsBack: number | 'start';
+  /**
+   * Local dev has no store, so a sky variant that is not the Free one
+   * renders as Plus to make the scrubber inspectable. Null elsewhere.
+   */
+  entitlement: 'plus' | 'free' | null;
+} {
+  switch (variant) {
+    case 'sky-one':
+    case 'sky-few':
+    case 'sky-many':
+    case 'sky-today':
+      return { monthsBack: 0, entitlement: 'plus' };
+    case 'sky-six-months-ago':
+      return { monthsBack: 6, entitlement: 'plus' };
+    case 'sky-relationship-start':
+    case 'sky-empty':
+      return { monthsBack: 'start', entitlement: 'plus' };
+    case 'sky-with-content':
+      return { monthsBack: 6, entitlement: 'plus' };
+    case 'sky-free':
+      return { monthsBack: 0, entitlement: 'free' };
+    default:
+      return { monthsBack: 0, entitlement: null };
+  }
 }
 
 type PreviewState = {
@@ -250,7 +309,6 @@ export const PREVIEW_SPACE: SpaceContextValue = {
     createdAt: '2022-06-14T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
   },
-  importedMilestones: [],
   isHydrated: true,
   createSpace: previewUnavailable('spaces'),
   joinSpace: previewUnavailable('spaces'),
@@ -258,7 +316,8 @@ export const PREVIEW_SPACE: SpaceContextValue = {
   clearSpace: previewUnavailable('spaces'),
   leaveSpace: previewUnavailable('spaces'),
   regenerateInvite: previewUnavailable('invite codes'),
-  importMilestones: previewUnavailable('milestone import'),
+  // Preview spaces are fixed; there is nothing newer to read.
+  refreshSpace: async () => {},
 };
 
 // ── Mock world: composer pending ────────────────────────────────────────
@@ -375,8 +434,28 @@ function seedMoment(overrides: Partial<Moment> & Pick<Moment, 'id' | 'occurredAt
  * The repo's `?variant=empty` still returns nothing.
  */
 export function getPreviewSeedMoments(variant: PreviewVariant): Moment[] {
-  if (variant === 'empty') {
+  if (variant === 'sky-with-content') {
+    // Same shift as `historical`: Sky History's "a month full of memories"
+    // variant needs memories that actually predate the vantage.
+    return getPreviewSeedMoments('historical');
+  }
+  if (variant === 'recent' || variant === 'historical' || variant === 'no-resurfacing') {
+    const full = getPreviewSeedMoments('full');
+    if (variant === 'no-resurfacing') return full.filter((moment) => moment.id !== 'preview-resurface');
+    if (variant === 'recent') return full.filter((moment) => Date.now() - new Date(moment.occurredAt).getTime() < 7 * 86400000);
+    return full.filter((moment) => moment.type !== 'goal' && moment.id !== 'preview-resurface').map((moment) => {
+      const date = new Date(moment.occurredAt);
+      date.setFullYear(date.getFullYear() - 2);
+      return { ...moment, occurredAt: date.toISOString() };
+    });
+  }
+  if (variant === 'empty' || variant === 'setup') {
     return [];
+  }
+  if (variant === 'welcome') {
+    return [seedMoment({ id: 'preview-welcome', type: 'trace', title: '',
+      body: 'This made me think of our walk home.', occurredAt: atMidnight(0, 18),
+      mediaPreview: previewImages.pier.uri, ...PARTNER, authorId: 'preview-june' })];
   }
   return [
     // This month: a kept set of prints, June's late note, June's voice note.

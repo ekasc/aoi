@@ -191,7 +191,7 @@ export const signOutProgram = (
  *   is a DB lookup), push registrations, preferences, and precise
  *   location shares (plus consent withdrawal on the member row).
  * - RETAINED (shared relationship content for the remaining partner):
- *   moments, letters, calendar, proposals, someday, weekly answers, media
+ *   moments, letters, calendar, someday, weekly answers, media
  *   rows + bytes, spaces, invites, activity, the Plus row (the partner's
  *   paid period runs on), and the membership row itself (flipped to left
  *   — pairing history and the audit trail stay intact).
@@ -238,6 +238,7 @@ export const deleteAccountProgram = (
       db.d1.prepare('delete from push_tokens where user_id = ?').bind(userId),
       db.d1.prepare('delete from location_shares where user_id = ?').bind(userId),
       db.d1.prepare('delete from user_preferences where user_id = ?').bind(userId),
+      db.d1.prepare('delete from partner_details where user_id = ?').bind(userId),
       // Provider linkage + tokens: without this, the next OAuth sign-in
       // would link the old account row and resurrect the deleted identity.
       db.d1.prepare('delete from auth_accounts where user_id = ?').bind(userId),

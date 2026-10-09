@@ -14,7 +14,7 @@ fake art.
 
 | Asset | Path | Status | Provenance / license | Notes |
 |---|---|---|---|---|
-| Display font | *(system stack)* | shipped | OS-bundled (iOS New York / Android serif / web Georgia) — referenced by name, never bundled | Former TTFs (unknown/Microsoft provenance) deleted P9A. |
+| Display font | *(system stack)* | shipped | OS default sans (SF Pro / Roboto / system-ui) | Former TTFs (unknown/Microsoft provenance) deleted P9A. |
 | Body font | *(system stack)* | shipped | OS default sans (SF Pro / Roboto / system-ui) | Former TTF deleted P9A. |
 | Meta font | *(system stack)* | shipped | OS-bundled (Menlo / monospace) | Former TTF deleted P9A. |
 | App icon | `assets/images/icon.png` + android adaptive set + `favicon.png` | shipped | Original mark generated in-repo by `scripts/gen-app-icons.mjs` (pure Node, no deps; deterministic, reproducible) | Kept-page + seal: flat ivory tile, moss page block, clay seal disc. Template-era blue mark deleted. |
@@ -104,7 +104,7 @@ file's doc comment matches this manifest):
 
 | Face | File | Role | Provenance | Redistribution | Status |
 |---|---|---|---|---|---|
-| Display serif | *(system stack)* | Display/title | OS-bundled (iOS New York / Android serif / web Georgia) — referenced by name, never bundled | n/a (no redistribution) | approved |
+| Display sans | *(system stack)* | Display/title | OS default sans (SF Pro / Roboto / system-ui) | n/a (no redistribution) | approved |
 | Body sans | *(system default)* | Body/supporting | OS default sans (SF Pro / Roboto / system-ui) | n/a | approved |
 | Meta mono | *(system stack)* | Meta/labels | OS-bundled (Menlo / monospace) | n/a | approved |
 

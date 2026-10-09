@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { MediaPicker } from '@/components/media/media-picker';
+import { VoiceRecorder } from '@/components/media/voice-recorder';
 import { UploadProgress } from '@/components/media/upload-progress';
 import { ThemedText } from '@/components/themed-text';
 import { Reveal } from '@/components/ui/reveal';
@@ -65,7 +66,6 @@ export type MomentFormValues = {
 };
 
 export type MomentFormProps = {
-  heroTitle: string;
   heroSubtitle: string;
   submitLabel: string;
   submittingLabel: string;
@@ -84,7 +84,6 @@ export type MomentFormProps = {
  * prefills from `initialMoment` and preserves occurredAt/audioUri untouched.
  */
 export function MomentForm({
-  heroTitle,
   heroSubtitle,
   submitLabel,
   submittingLabel,
@@ -132,6 +131,13 @@ export function MomentForm({
   const [quotaBlocked, setQuotaBlocked] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [mediaUri, setMediaUri] = useState<string | null>(initialMediaPreview);
+  /**
+   * The recording. The full-screen editor had no voice path at all: the only
+   * recorder lived on the Memories inline composer, so a voice memory could
+   * be captured in one place and not the other, and this form could only ever
+   * carry through a recording that already existed.
+   */
+  const [audioUri, setAudioUri] = useState<string | null>(initialMoment?.audioUri ?? null);
   const [selectedMimeType, setSelectedMimeType] = useState('image/jpeg');
   // Same-tick double-tap guard: useState flips don't apply within the tick,
   // so a rapid second Save would otherwise issue a duplicate request.
@@ -148,7 +154,14 @@ export function MomentForm({
   const isGoal = type === 'goal';
   const hasMedia = isMedia && !!mediaUri;
   const hasText = trimmedTitle.length > 0 || trimmedBody.length > 0;
-  const canSubmit = hasText || hasMedia;
+  /**
+   * Audio counts. It did not, which meant a voice memory could be opened but
+   * not saved: clear the title and body on one and there was nothing left to
+   * submit, so the only way out was to type something. For the partner who
+   * does not write, that was the whole feature closed off.
+   */
+  const hasAudio = Boolean(audioUri);
+  const canSubmit = hasText || hasMedia || hasAudio;
 
   const footerStyle = useMemo(
     () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
@@ -223,7 +236,7 @@ export function MomentForm({
         targetAt: isGoal && hasTargetDate ? targetAt.toISOString() : null,
         mediaPreview,
         mediaId,
-        audioUri: initialMoment?.audioUri ?? null,
+        audioUri,
         clientId: draftClientId,
       });
     } catch (err) {
@@ -233,6 +246,7 @@ export function MomentForm({
       savingRef.current = false;
     }
   }, [
+    audioUri,
     canSubmit,
     draftClientId,
     hasTargetDate,
@@ -241,6 +255,7 @@ export function MomentForm({
     isGoal,
     mediaUri,
     onSubmit,
+    refreshServerPlus,
     selectedMimeType,
     targetAt,
     trimmedBody,
@@ -289,9 +304,6 @@ export function MomentForm({
           entering={Reveal.up(Motion.slow)}
           style={styles.hero}
         >
-          <ThemedText type="display">
-            {heroTitle}
-          </ThemedText>
           <ThemedText type="body" style={{ color: muted }}>
             {heroSubtitle}
           </ThemedText>
@@ -378,6 +390,28 @@ export function MomentForm({
               />
             </>
           ) : null}
+
+          {/* Voice, always offered. It is not an attachment to a text field:
+              on its own it is a complete memory, and it is the only path in
+              that asks for nothing but a breath. */}
+          <View style={styles.voiceSection}>
+            <ThemedText type="meta" style={{ color: muted }}>
+              {hasAudio ? 'Voice note' : 'Or say it instead'}
+            </ThemedText>
+            <VoiceRecorder
+              compact
+              disabled={isSaving}
+              onRecorded={(uri) => setAudioUri(uri)}
+            />
+            {hasAudio ? (
+              <Button
+                label="Remove voice note"
+                onPress={() => setAudioUri(null)}
+                size="sm"
+                variant="ghost"
+              />
+            ) : null}
+          </View>
 
           <Surface style={styles.contentSection}>
             <TextInput
@@ -602,6 +636,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: Spacing[12],
     paddingVertical: Spacing[12],
+  },
+  voiceSection: {
+    gap: Spacing[8],
   },
   goalSection: {
     gap: Spacing[8],

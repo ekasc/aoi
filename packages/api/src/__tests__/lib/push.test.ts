@@ -60,6 +60,7 @@ describe('buildPushCopy', () => {
   it('gives every kind a warm, vague title and body', () => {
     for (const kind of [
       'squeeze',
+      'partner_joined',
       'moment_added',
       'moment_edited',
       'moment_deleted',
@@ -67,14 +68,21 @@ describe('buildPushCopy', () => {
       'event_added',
       'event_updated',
       'event_deleted',
-      'proposal_received',
-      'proposal_accepted',
-      'proposal_declined',
     ] as const) {
       const copy = buildPushCopy(kind);
       expect(copy.title.length).toBeGreaterThan(0);
       expect(copy.body.length).toBeGreaterThan(0);
     }
+  });
+
+  it('tells the person who was already there, and says nothing else', () => {
+    // The whole point of this one: somebody who has been sitting alone in a
+    // space they made finally has company. Warm, and it carries no name and no
+    // content, like every other push here.
+    const copy = buildPushCopy('partner_joined');
+    expect(copy.title).toBe('They joined your space');
+    expect(copy.body).toBe('Your sky has two people in it now.');
+    expect(`${copy.title} ${copy.body}`).not.toContain('Alice');
   });
 
   it('calendar kinds carry a weekday at most — never a title, date, or time', () => {
@@ -93,17 +101,6 @@ describe('buildPushCopy', () => {
       // No dates, no clock times — a weekday name is the ceiling.
       expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
       expect(wire).not.toMatch(/\d{1,2}:\d{2}/);
-    }
-  });
-
-  it('proposal kinds never carry the proposed title or time — the builder accepts neither', () => {
-    const secret = 'Farmers market Saturday';
-    for (const kind of ['proposal_received', 'proposal_accepted', 'proposal_declined'] as const) {
-      const copy = buildPushCopy(kind);
-      const wire = `${copy.title} ${copy.body}`;
-      expect(wire).not.toContain(secret);
-      expect(wire).not.toMatch(/\d{1,2}:\d{2}/);
-      expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     }
   });
 

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { NativeSheet } from '@/components/ui/native-sheet';
@@ -23,6 +23,8 @@ export type ActionSheetProps = {
   description?: string;
   actions: ActionSheetAction[];
   onClose: () => void;
+  busy?: boolean;
+  error?: string;
 };
 
 const NO_ACTIONS: ActionSheetAction[] = [];
@@ -39,7 +41,10 @@ export function ActionSheet({
   description,
   actions,
   onClose,
+  busy = false,
+  error,
 }: ActionSheetProps) {
+  const { height } = useWindowDimensions();
   const border = useThemeColor({}, 'border');
   const muted = useThemeColor({}, 'muted');
   const danger = useThemeColor({}, 'danger');
@@ -56,9 +61,16 @@ export function ActionSheet({
   }, [actions]);
 
   return (
-    <NativeSheet onClose={onClose} visible={visible}>
-      <View style={styles.content}>
-        {title || description ? (
+    <NativeSheet dismissible={!busy} onClose={onClose} visible={visible}>
+      <ScrollView
+        accessibilityViewIsModal
+        accessibilityLabel={title ?? 'Actions'}
+        role="dialog"
+        aria-modal
+        contentContainerStyle={styles.content}
+        style={{ maxHeight: height * 0.8 }}
+      >
+        {title || description || error ? (
           <View style={[styles.header, { borderColor: border }]}>
             {title ? <ThemedText type="title">{title}</ThemedText> : null}
             {description ? (
@@ -69,6 +81,7 @@ export function ActionSheet({
                 {description}
               </ThemedText>
             ) : null}
+            {error ? <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>{error}</ThemedText> : null}
           </View>
         ) : null}
 
@@ -78,8 +91,11 @@ export function ActionSheet({
             <Pressable
               accessibilityLabel={action.label}
               accessibilityRole="button"
+              accessibilityState={{ disabled: busy, busy }}
+              disabled={busy}
               key={action.label}
               onPress={() => {
+                if (busy) return;
                 haptics.select();
                 action.onPress();
               }}
@@ -107,7 +123,10 @@ export function ActionSheet({
           <Pressable
             accessibilityLabel={cancelAction.label}
             accessibilityRole="button"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
             onPress={() => {
+              if (busy) return;
               haptics.select();
               cancelAction.onPress();
             }}
@@ -128,7 +147,7 @@ export function ActionSheet({
             </ThemedText>
           </Pressable>
         ) : null}
-      </View>
+      </ScrollView>
     </NativeSheet>
   );
 }

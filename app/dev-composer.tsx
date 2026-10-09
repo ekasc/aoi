@@ -1,4 +1,4 @@
-import { Redirect } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 import { ComposerProvider } from "@/features/composer/composer-context";
 import { InlineMemoryComposer } from "@/components/moments/inline-memory-composer";
@@ -17,15 +17,16 @@ import { SpaceContext } from "@/features/space/space-context";
  * as the other dev routes. Not linked from any navigation.
  */
 export default function DevComposer() {
+	const { dedication } = useLocalSearchParams<{ dedication?: string }>();
 	if (!__DEV__) {
 		return <Redirect href="/" />;
 	}
 	return (
 		<SessionContext.Provider value={PREVIEW_SESSION}>
-			<SpaceContext.Provider value={PREVIEW_SPACE}>
+			<SpaceContext.Provider value={PREVIEW_SPACE.space && dedication === 'partner' ? { ...PREVIEW_SPACE, space: { ...PREVIEW_SPACE.space, partnerJoined: false } } : PREVIEW_SPACE}>
 				<ComposerProvider>
 					<DevErrorBoundary label="InlineMemoryComposer">
-						<InlineMemoryComposer />
+						<InlineMemoryComposer dedication={dedication === 'partner'} />
 					</DevErrorBoundary>
 				</ComposerProvider>
 			</SpaceContext.Provider>

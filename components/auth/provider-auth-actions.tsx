@@ -12,7 +12,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import Constants from 'expo-constants';
+
 import { ThemedText } from '@/components/themed-text';
+import { Pressed } from '@/components/ui/pressed';
+import { buildCapabilities } from '@/features/auth/capabilities';
 import type { AuthProvider } from '@/features/auth/types';
 import { useSession } from '@/features/session/session-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -34,6 +38,23 @@ type ProviderAuthActionsProps = {
   appearance?: ProviderAuthAppearance;
 };
 
+/**
+ * True when this build was made with `AOI_DEV_NO_CAPABILITIES=1`, which
+ * strips push and Sign in with Apple so a free Apple account can sign
+ * anything at all. Apple will not issue a profile for an app asking for
+ * either, so a local device build is otherwise impossible without the paid
+ * programme.
+ *
+ * Anything offering a capability must read this rather than the framework's
+ * own availability: a stripped build still reports Sign in with Apple as
+ * present, and would render a button that cannot work.
+ */
+// `isAvailableAsync` answers "is the framework linked", not "is this build
+// allowed to use it". A stripped build still answers true, which is exactly
+// how a button that cannot work ends up on screen.
+const capabilities = buildCapabilities(Constants.expoConfig?.extra);
+const strippedCapabilities = capabilities.stripped;
+
 export function ProviderAuthActions({
   helperColor,
   showHelper = true,
@@ -45,6 +66,7 @@ export function ProviderAuthActions({
     null
   );
   const [error, setError] = useState('');
+  // False on a stripped build without needing an effect to discover it.
   const [isAppleNativeAvailable, setIsAppleNativeAvailable] = useState(false);
   const [hasGoogleIconError, setHasGoogleIconError] = useState(false);
   const colorScheme = useColorScheme();
@@ -60,6 +82,15 @@ export function ProviderAuthActions({
 
   useEffect(() => {
     let isActive = true;
+
+    // The build flag wins and short-circuits: a stripped build still reports
+    // the framework as available, so without this the button renders and then
+    // fails on tap.
+    if (strippedCapabilities) {
+      return () => {
+        isActive = false;
+      };
+    }
 
     void AppleAuthentication.isAvailableAsync()
       .then((isAvailable) => {
@@ -128,7 +159,7 @@ export function ProviderAuthActions({
 
   return (
     <View style={styles.root}>
-      {isAppleNativeAvailable ? (
+      {isAppleNativeAvailable && !strippedCapabilities ? (
         <View style={isLoading ? styles.disabled : styles.resting}>
           <AppleAuthentication.AppleAuthenticationButton
             accessibilityLabel="Continue with Apple"
@@ -293,8 +324,8 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   pressed: {
-    opacity: 0.88,
-    transform: [{ translateY: 1 }],
+    ...Pressed.at,
+    ...Pressed.scaled,
   },
   disabled: {
     opacity: 0.55,

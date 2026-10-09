@@ -1,19 +1,11 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
-import {
-  LANDING_BACKGROUND_DARK,
-  LANDING_BACKGROUND_LIGHT,
-  landingInk,
-  landingSubtle,
-  landingThemeForColorScheme,
-} from '@/constants/landing-theme';
+import { ThemedText } from '@/components/themed-text';
 import { Reveal } from '@/components/ui/reveal';
-import { Motion } from '@/constants/theme';
-import { Typography } from '@/constants/typography';
-
-export { LANDING_BACKGROUND_DARK, LANDING_BACKGROUND_LIGHT, landingInk, landingSubtle };
+import { Motion, Spacing } from '@/constants/theme';
+import type { LandingTheme } from '@/constants/landing-theme';
 
 export type ImmersiveHeroVariant = 'welcome' | 'signin';
 
@@ -21,12 +13,24 @@ type ImmersiveHeroProps = {
   cta: ReactNode;
   legal?: ReactNode;
   variant?: ImmersiveHeroVariant;
+  /**
+   * The screen's palette, already resolved from the app's dark tokens.
+   * Passed in rather than read from a module constant so the same component
+   * serves the landing and the sign-in screen without either hardcoding a
+   * colour.
+   */
+  theme: LandingTheme;
 };
 
-export function ImmersiveHero({ cta, legal, variant = 'welcome' }: ImmersiveHeroProps) {
-  const theme = landingThemeForColorScheme('dark');
-  const ink = theme.ink;
-  const subtle = theme.subtle;
+/**
+ * The get-started hero.
+ *
+ * Same type scale, same spacing rhythm, same reveal timing as every other
+ * screen. What it no longer does is carry its own numbers: the gaps, the
+ * measure and the sizes were literals, so this screen drifted from the
+ * system the moment the system moved, and nothing noticed.
+ */
+export function ImmersiveHero({ cta, legal, variant = 'welcome', theme }: ImmersiveHeroProps) {
   const headline = variant === 'signin' ? 'Welcome\nback.' : 'The world\ncan wait.';
   const body =
     variant === 'signin'
@@ -34,20 +38,31 @@ export function ImmersiveHero({ cta, legal, variant = 'welcome' }: ImmersiveHero
       : 'A private place for your moments, letters, and everything in between.';
 
   return (
-    <Animated.View
-      entering={Reveal.in(Motion.slow)}
-      style={styles.root}
-    >
-      <View style={styles.wordmarkWrap}>
-        <Text style={[styles.wordmark, { color: subtle }]}>aoi</Text>
-      </View>
-      <View style={styles.spacer} />
+    <Animated.View entering={Reveal.in(Motion.slow)} style={styles.root}>
+      {/* A wordmark, not a heading. type="title" would put it in the
+          screen-reader heading outline, where it competes with the line
+          underneath for the position of "the first thing you read". */}
+      <ThemedText
+        accessibilityRole="text"
+        type="title"
+        style={[styles.wordmark, { color: theme.subtle }]}
+      >
+        aoi
+      </ThemedText>
+
+      {/* Pushes the copy to the lower third on a tall screen, without the
+          min-height a landing page reaches for when it wants to fill one. */}
+      <View style={styles.gap} />
+
       <View style={styles.copy}>
-        <Text accessibilityRole="header" style={[styles.headline, { color: ink }]}>
+        <ThemedText type="hero" style={[styles.headline, { color: theme.ink }]}>
           {headline}
-        </Text>
-        <Text style={[styles.body, { color: subtle }]}>{body}</Text>
+        </ThemedText>
+        <ThemedText type="body" style={[styles.body, { color: theme.subtle }]}>
+          {body}
+        </ThemedText>
       </View>
+
       <View style={styles.actions}>
         {cta}
         {legal}
@@ -61,34 +76,29 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
-  wordmarkWrap: {
-    alignItems: 'flex-start',
-  },
   wordmark: {
-    ...Typography.title,
+    // The mark is set in the serif, at body scale. It is a wordmark, not a
+    // heading, and it should not compete with the line under it.
     fontWeight: '400',
   },
-  spacer: {
-    flex: 1,
-    minHeight: 160,
+  gap: {
+    flexGrow: 1,
+    minHeight: Spacing[56],
   },
   copy: {
-    gap: 12,
-    alignItems: 'flex-start',
+    gap: Spacing[12],
   },
   headline: {
-    ...Typography.hero,
     fontWeight: '400',
-    textAlign: 'left',
   },
   body: {
-    ...Typography.body,
-    textAlign: 'left',
+    // A measure, not a size: long enough to read comfortably, short enough
+    // that the rag stays tidy on a narrow phone.
     maxWidth: 340,
   },
   actions: {
+    gap: Spacing[16],
+    marginTop: Spacing[24],
     width: '100%',
-    marginTop: 28,
-    gap: 16,
   },
 });

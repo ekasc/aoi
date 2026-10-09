@@ -1,3 +1,5 @@
+import type { PartnerName } from '@/features/space/partner-name';
+
 export type SpaceStatus = 'none' | 'ready' | 'loading' | 'error';
 export type SpaceMemberRole = 'you' | 'partner';
 
@@ -35,8 +37,13 @@ export type CreateSpaceInput = {
   name: string;
   createdByUserId: string;
   yourName: string;
-  /** Optional: omit when the user leaves it blank. */
-  partnerName?: string;
+  /**
+   * The other person, required. A branded type rather than a string so a
+   * repository cannot be handed an empty one: every screen that greets the
+   * partner needs a name, and an optional field is how a null got there.
+   * Build it with `parsePartnerName`.
+   */
+  partnerName: PartnerName;
   /** Optional: omit when unset. Never synthesize (e.g. never today). */
   relationshipStartDate?: string | null;
   photoUri?: string;
@@ -45,26 +52,20 @@ export type CreateSpaceInput = {
 export type JoinSpaceInput = {
   userId: string;
   inviteCode: string;
+  /**
+   * The joiner's own name.
+   *
+   * The server reads it from the account; the local stub has no account to
+   * read, and the space it is joining was written from the other person's
+   * side, so without this the joiner's copy would claim the creator's name as
+   * their own.
+   */
+  yourName?: string;
 };
 
 export type UpdateSpaceInput = Partial<
   Pick<RelationshipSpace, 'name' | 'partnerName' | 'relationshipStartDate'>
 >;
-
-export type ImportedMilestoneType = 'note' | 'milestone' | 'date' | 'goal';
-
-export type ImportedMilestoneInput = {
-  type: ImportedMilestoneType;
-  title: string;
-  body?: string;
-  occurredAt: string;
-  targetAt?: string | null;
-};
-
-export type ImportedMilestone = ImportedMilestoneInput & {
-  id: string;
-  createdAt: string;
-};
 
 export type SpaceRepository = {
   getSpaceForUser: (userId: string) => Promise<RelationshipSpace | null>;
@@ -78,18 +79,11 @@ export type SpaceRepository = {
   ) => Promise<RelationshipSpace | null>;
   clearSpaceForUser: (userId: string) => Promise<void>;
   leaveSpace: (userId: string) => Promise<void>;
-  getImportedMilestonesForUser: (userId: string) => Promise<ImportedMilestone[]>;
-  appendImportedMilestonesForUser: (
-    userId: string,
-    milestones: ImportedMilestone[]
-  ) => Promise<ImportedMilestone[]>;
-  clearImportedMilestonesForUser: (userId: string) => Promise<void>;
 };
 
 export type SpaceContextValue = {
   status: SpaceStatus;
   space: RelationshipSpace | null;
-  importedMilestones: ImportedMilestone[];
   isHydrated: boolean;
   createSpace: (input: CreateSpaceInput) => Promise<RelationshipSpace>;
   joinSpace: (input: JoinSpaceInput) => Promise<RelationshipSpace>;
@@ -98,7 +92,12 @@ export type SpaceContextValue = {
   leaveSpace: () => Promise<void>;
   /** Refresh the invite code (creator-only remote; stub returns live code). */
   regenerateInvite: () => Promise<string>;
-  importMilestones: (
-    inputs: ImportedMilestoneInput[]
-  ) => Promise<ImportedMilestone[]>;
+  /**
+   * Re-read the space from the repository.
+   *
+   * Hydration happens once per session, so without this the app keeps
+   * believing whatever it read at launch: a partner who arrived while the app
+   * was closed would not exist until the next relaunch.
+   */
+  refreshSpace: () => Promise<void>;
 };

@@ -135,33 +135,6 @@ export const spaceInvites = pgTable(
   ]
 );
 
-// ── Imported Milestones ────────────────────────────────────────────────────
-
-export const importedMilestones = pgTable(
-  'imported_milestones',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    spaceId: uuid('space_id')
-      .notNull()
-      .references(() => spaces.id, { onDelete: 'cascade' }),
-    createdByUserId: uuid('created_by_user_id')
-      .notNull()
-      .references(() => users.id),
-    type: text('type', { enum: ['note', 'milestone', 'date', 'goal'] }).notNull(),
-    title: text('title').notNull(),
-    body: text('body'),
-    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
-    targetAt: timestamp('target_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  },
-  (table) => [
-    index('idx_imported_milestones_space_occurred')
-      .on(table.spaceId, table.occurredAt)
-      .where(sql`${table.deletedAt} is null`),
-  ]
-);
-
 // ── Moments ────────────────────────────────────────────────────────────────
 
 export const moments = pgTable(
@@ -267,42 +240,6 @@ export const calendarEvents = pgTable(
     index('idx_calendar_events_owner')
       .on(table.createdByUserId, table.id)
       .where(sql`${table.deletedAt} is null`),
-  ]
-);
-
-// ── Event Proposals ──────────────────────────────────────────────────────
-// "How about Saturday?" — one partner proposes a time, the OTHER partner
-// accepts or gently declines. Only the proposee may resolve it, and only
-// while it is still pending (the transition is an atomic guarded UPDATE).
-// Accepting copies the proposal into a real calendar event.
-
-export const eventProposals = pgTable(
-  'event_proposals',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    spaceId: uuid('space_id')
-      .notNull()
-      .references(() => spaces.id, { onDelete: 'cascade' }),
-    proposerUserId: uuid('proposer_user_id')
-      .notNull()
-      .references(() => users.id),
-    title: text('title').notNull(),
-    proposedStart: timestamp('proposed_start', { withTimezone: true }).notNull(),
-    proposedEnd: timestamp('proposed_end', { withTimezone: true }).notNull(),
-    /** Mirrors the calendar label shape: { preset, customText? }. */
-    label: jsonb('label').$type<{ preset: string; customText?: string }>(),
-    status: text('status', { enum: ['pending', 'accepted', 'declined'] })
-      .notNull()
-      .default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-  },
-  (table) => [
-    index('idx_event_proposals_space_status').on(table.spaceId, table.status),
-    check(
-      'ck_event_proposals_status',
-      sql`${table.status} in ('pending', 'accepted', 'declined')`
-    ),
   ]
 );
 

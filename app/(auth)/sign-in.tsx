@@ -1,6 +1,6 @@
 import { useIsFocused, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,12 +8,17 @@ import { ProviderAuthActions } from '@/components/auth/provider-auth-actions';
 import { ImmersiveHero } from '@/components/landing/immersive-hero';
 import { MidnightBackdrop } from '@/components/landing/midnight-backdrop';
 import { LANDING_ERROR, landingThemeForColorScheme } from '@/constants/landing-theme';
+import { useAoiTheme } from '@/features/theme/theme-context';
 
 export default function SignInScreen() {
   const router = useRouter();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const theme = landingThemeForColorScheme('dark');
+  const { selectedTheme } = useAoiTheme();
+  const theme = useMemo(
+    () => landingThemeForColorScheme(selectedTheme.dark),
+    [selectedTheme],
+  );
 
   const handleContinue = useCallback(() => {
     router.replace('/');
@@ -28,13 +33,14 @@ export default function SignInScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: insets.top + 24,
+            paddingTop: 24,
             paddingBottom: insets.bottom + 32,
           },
         ]}
       >
         <View style={styles.content}>
           <ImmersiveHero
+            theme={theme}
             variant="signin"
             cta={
               <ProviderAuthActions

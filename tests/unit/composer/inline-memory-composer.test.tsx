@@ -18,6 +18,10 @@ const setParamsSpy = vi.fn();
 
 let mockDraft: any = null;
 let mockHydrating = false;
+let partnerJoined = false;
+vi.mock('@/features/space/space-context', () => ({
+  useSpace: () => ({ space: { partnerName: 'June', partnerJoined } }),
+}));
 let mockComposerError: string | null = null;
 let mockLibraryResult: any = { canceled: true };
 let mockCameraResult: any = { canceled: true };
@@ -274,6 +278,7 @@ async function renderComposer(props: Record<string, any> = {}) {
 }
 
 beforeEach(() => {
+  partnerJoined = false;
   mockDraft = makeDraft();
   mockHydrating = false;
   mockComposerError = null;
@@ -310,6 +315,32 @@ beforeEach(() => {
 });
 
 describe('Memory editor opens directly with keyboard + controls (no collapse)', () => {
+  it('writes a dedication with the ordinary composer and explains who can see it', async () => {
+    await renderComposer({ dedication: true });
+    expect(screen.getByText('For June')).toBeTruthy();
+    expect(screen.getByText('June can see this when they join.')).toBeTruthy();
+    expect(screen.getByPlaceholderText('This made me think of you.')).toBeTruthy();
+    expect(launchLibrarySpy).not.toHaveBeenCalled();
+    expect(launchCameraSpy).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Choose photos')).toBeTruthy();
+    expect(screen.getByLabelText('Record a voice note')).toBeTruthy();
+  });
+  it('does not tell an already joined partner to wait for access', async () => {
+    partnerJoined = true;
+    await renderComposer({ dedication: true });
+    expect(screen.getByText('Kept in your shared memories.')).toBeTruthy();
+    expect(screen.queryByText('June can see this when they join.')).toBeNull();
+  });
+  it('saves a dedication through the same durable queue, with no automatic message', async () => {
+    mockDraft = makeDraft({ body: 'This made me think of you.' });
+    await renderComposer({ dedication: true });
+    fireEvent.click(screen.getByText('Save'));
+    await act(async () => {});
+    expect(saveSpy).toHaveBeenCalledOnce();
+    expect(backSpy).toHaveBeenCalledOnce();
+  });
   it('renders writing with compact icon controls immediately, no type sheet', async () => {
     await renderComposer();
     const input = screen.getByLabelText('Keep something') as HTMLElement;
@@ -383,9 +414,10 @@ describe('Compact toolbar regression (single row, chip date, no wrap)', () => {
     expect(screen.getByText('New memory')).toBeTruthy();
     const source = await import('node:fs').then((fs) => fs.readFileSync('components/moments/inline-memory-composer.tsx', 'utf8'));
     // Restrained, and on the scale: this pinned `fontSize: 17`, an
-    // off-scale size three screens had each invented separately. `subheading`
-    // is the nearest step and is the same one to look at.
-    expect(source).toContain('...Typography.subheading');
+    // off-scale size three screens had each invented separately.
+    // `navigationTitle` is that exact size promoted to a token, so the
+    // child-screen title is one step on the scale rather than a literal.
+    expect(source).toContain('...Typography.navigationTitle');
     expect(source).toContain('flexShrink: 1');
     expect(source).not.toContain('type="title">New memory');
   });
@@ -564,6 +596,24 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
 });
 
 describe('Memory editor date, attachments, durable save', () => {
+  it('keeps Cancel and native exit blocked until the durable save finishes', async () => {
+    mockDraft = makeDraft({ body: 'Keep these words' });
+    let finish: (result: { clientId: string }) => void = () => {};
+    saveSpy.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await renderComposer();
+    fireEvent.click(screen.getByText('Save'));
+    expect(screen.getByText('Cancel').closest('button')?.disabled).toBe(true);
+    fireEvent.click(screen.getByText('Cancel'));
+    const leave = vi.fn();
+    act(() => {
+      (globalThis as { __preventLeave?: { prevent: boolean; onBlocked: (leave: () => void) => void } }).__preventLeave?.onBlocked(leave);
+    });
+    expect(screen.queryByTestId('sheet:Discard this memory?')).toBeNull();
+    expect(backSpy).not.toHaveBeenCalled();
+    expect(leave).not.toHaveBeenCalled();
+    await act(async () => finish({ clientId: 'saved' }));
+    expect(backSpy).toHaveBeenCalledOnce();
+  });
   it('shows short date when not today; picker opens only on chip tap with real date', async () => {
     await renderComposer();
     fireEvent.focus(screen.getByLabelText('Keep something'));

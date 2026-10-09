@@ -2,7 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { createInviteCode, normalizeInviteCode } from '@/features/space/invite-code';
 import type {
-  ImportedMilestone,
   JoinSpaceInput,
   RelationshipSpace,
   SpaceRepository,
@@ -11,7 +10,6 @@ import type {
 
 const SPACE_USER_KEY_PREFIX = 'aoi.space.by-user.v1.';
 const SPACE_INVITE_KEY_PREFIX = 'aoi.space.by-invite.v1.';
-const SPACE_MILESTONES_KEY_PREFIX = 'aoi.space.milestones.v1.';
 
 function spaceUserKey(userId: string) {
   return `${SPACE_USER_KEY_PREFIX}${userId}`;
@@ -19,10 +17,6 @@ function spaceUserKey(userId: string) {
 
 function spaceInviteKey(inviteCode: string) {
   return `${SPACE_INVITE_KEY_PREFIX}${normalizeInviteCode(inviteCode)}`;
-}
-
-function spaceMilestonesKey(userId: string) {
-  return `${SPACE_MILESTONES_KEY_PREFIX}${userId}`;
 }
 
 async function readJson<T>(key: string): Promise<T | null> {
@@ -77,7 +71,7 @@ export const localSpaceRepository: SpaceRepository = {
       name: input.name.trim(),
       createdByUserId: input.createdByUserId,
       yourName: input.yourName?.trim() || 'You',
-      partnerName: input.partnerName?.trim() || null,
+      partnerName: input.partnerName,
       relationshipStartDate: input.relationshipStartDate ?? null,
       inviteCode,
       partnerJoined: false,
@@ -103,17 +97,38 @@ export const localSpaceRepository: SpaceRepository = {
       throw new Error('Invite code not found.');
     }
 
-    // Stub coherence: joining marks the partnership joined on every stored
-    // copy (joiner's, creator's, invite slot) — same device, one truth.
-    const joined: RelationshipSpace = { ...space, partnerJoined: true };
+    // Two records, because the same space reads from opposite sides: yourName
+    // is whoever is holding it and partnerName is the other one. Writing a
+    // single copy for both (as this did) handed the joiner the creator's name
+    // as their own, and left the creator's partner unnamed.
+    const now = new Date().toISOString();
+    const creatorName = space.yourName;
+    const joinerName = input.yourName?.trim() || space.partnerName?.trim() || 'You';
+
+    const joinerView: RelationshipSpace = {
+      ...space,
+      yourName: joinerName,
+      partnerName: creatorName,
+      partnerJoined: true,
+      updatedAt: now,
+    };
+    const creatorView: RelationshipSpace = {
+      ...space,
+      partnerName: joinerName,
+      partnerJoined: true,
+      updatedAt: now,
+    };
+
+    // Stub coherence: every stored copy agrees the partnership is joined —
+    // same device, one truth.
     const creatorKey = spaceUserKey(space.createdByUserId);
     const existingCreator = await readJson<RelationshipSpace>(creatorKey);
     await Promise.all([
-      writeJson(spaceUserKey(input.userId), joined),
-      writeJson(spaceInviteKey(inviteCode), joined),
-      ...(existingCreator ? [writeJson(creatorKey, joined)] : []),
+      writeJson(spaceUserKey(input.userId), joinerView),
+      writeJson(spaceInviteKey(inviteCode), creatorView),
+      ...(existingCreator ? [writeJson(creatorKey, creatorView)] : []),
     ]);
-    return joined;
+    return joinerView;
   },
 
   async regenerateInvite(userId: string): Promise<string> {
@@ -150,39 +165,10 @@ export const localSpaceRepository: SpaceRepository = {
   },
 
   async clearSpaceForUser(userId: string) {
-    await AsyncStorage.multiRemove([spaceUserKey(userId), spaceMilestonesKey(userId)]);
+    await AsyncStorage.removeItem(spaceUserKey(userId));
   },
 
   async leaveSpace(userId: string) {
-    await AsyncStorage.multiRemove([spaceUserKey(userId), spaceMilestonesKey(userId)]);
-  },
-
-  async getImportedMilestonesForUser(userId: string) {
-    const milestones = await readJson<ImportedMilestone[]>(spaceMilestonesKey(userId));
-    return milestones ?? [];
-  },
-
-  async appendImportedMilestonesForUser(
-    userId: string,
-    milestones: ImportedMilestone[]
-  ) {
-    const currentMilestones = await this.getImportedMilestonesForUser(userId);
-    const byId = new Map<string, ImportedMilestone>();
-
-    [...currentMilestones, ...milestones].forEach((milestone) => {
-      byId.set(milestone.id, milestone);
-    });
-
-    const nextMilestones = Array.from(byId.values()).sort(
-      (left, right) =>
-        new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime()
-    );
-
-    await writeJson(spaceMilestonesKey(userId), nextMilestones);
-    return nextMilestones;
-  },
-
-  async clearImportedMilestonesForUser(userId: string) {
-    await AsyncStorage.removeItem(spaceMilestonesKey(userId));
+    await AsyncStorage.removeItem(spaceUserKey(userId));
   },
 };

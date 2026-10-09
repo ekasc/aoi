@@ -36,6 +36,8 @@ describe('useCalendar (stub)', () => {
 
     expect(result.current.events).toBeDefined();
     expect(Array.isArray(result.current.events)).toBe(true);
+    expect(result.current.events).toEqual([]);
+    expect(result.current.upcomingEvents).toEqual([]);
     expect(result.current.selectedDate).toBeInstanceOf(Date);
     expect(result.current.visibleMonth).toBeInstanceOf(Date);
     expect(result.current.monthSummary).toBeDefined();

@@ -21,7 +21,6 @@ import {
 } from '@/features/dev/simulate-partner';
 import { mediaObjectUrl } from '@aoi/shared';
 import { getPreviewSeedMoments, usePreviewVariant } from '@/features/dev/preview';
-import { mockMoments } from '@/features/moments/mock-data';
 import {
   fetchMoments,
   createMoment as remoteCreateMoment,
@@ -36,7 +35,6 @@ import type {
   UpdateMomentInput,
 } from '@/features/moments/types';
 import { useSpace } from '@/features/space/space-context';
-import type { ImportedMilestone } from '@/features/space/types';
 
 const _useRemote = !isStubMode();
 
@@ -163,25 +161,6 @@ function toLocalMoment(input: CreateMomentInput): Moment {
     audioUri: input.audioUri ?? null,
     mediaId: input.mediaId ?? null,
     attachments,
-  };
-}
-
-function toImportedMoment(milestone: ImportedMilestone): Moment {
-  return {
-    id: milestone.id,
-    type: milestone.type,
-    title: milestone.title,
-    body: milestone.body?.trim() || '',
-    occurredAt: milestone.occurredAt,
-    targetAt: milestone.type === 'goal' ? milestone.targetAt ?? null : null,
-    createdAt: milestone.createdAt,
-    updatedAt: milestone.createdAt,
-    authorId: 'user_you',
-    authorRole: 'you',
-    authorName: 'You',
-    // Milestones are imported by the current user for their own space.
-    isOwn: true,
-    mediaId: null,
   };
 }
 
@@ -461,25 +440,18 @@ function useRemoteMoments(): MomentsContextValue {
 // ── Stub (local) implementation ──────────────────────────────────────────
 
 function useStubMoments(): MomentsContextValue {
-  const { importedMilestones, space } = useSpace();
+  const { space } = useSpace();
   const preview = usePreviewVariant();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
 
-  const importedMoments = useMemo(
-    () => importedMilestones.map(toImportedMoment),
-    [importedMilestones]
-  );
-
   const baseMoments = useMemo(
-    // Dev-preview routes swap the thin unit-test seeds for a rich visual
-    // spread (photos/voice/months) — same merging logic below. Inactive
-    // everywhere else, including all unit tests and production.
-    () =>
-      preview.active
-        ? getPreviewSeedMoments(preview.variant)
-        : [...mockMoments, ...importedMoments],
-    [preview, importedMoments]
+    // Dev-preview routes render a rich visual spread (photos/voice/months).
+    // Everywhere else the feed is only what this space actually holds. Nothing
+    // is seeded, so a space with no memories shows the empty archive — the
+    // first-run screen — instead of mock content that was never written.
+    () => (preview.active ? getPreviewSeedMoments(preview.variant) : []),
+    [preview]
   );
 
   const moments = useMemo(() => {

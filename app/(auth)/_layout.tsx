@@ -4,6 +4,7 @@ import { Stack } from 'expo-router/stack';
 import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
 import { useAoiTheme } from '@/features/theme/theme-context';
+import { Typography } from '@/constants/typography';
 
 export default function AuthLayout() {
   const { status, isHydrated: isSessionHydrated } = useSession();
@@ -54,13 +55,20 @@ export default function AuthLayout() {
     <Stack
       screenOptions={{
         contentStyle: { backgroundColor: colors.background },
-        headerStyle: { backgroundColor: colors.surface },
+        headerStyle: { backgroundColor: colors.background },
+        headerTitleStyle: Typography.navigationTitle,
+        headerTitleAlign: 'center',
+        headerBackButtonDisplayMode: 'minimal',
+        headerShadowVisible: false,
         headerTintColor: colors.text,
       }}
     >
       <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} />
       <Stack.Screen name="verify-code" options={{ title: 'Verify code' }} />
-      <Stack.Screen name="space-setup" options={{ title: 'Get started' }} />
+      {/* The screen renders its own heading, so the nav bar stays out of it.
+          Naming it here set a title and re-enabled a header the route had
+          explicitly opted out of. */}
+      <Stack.Screen name="space-setup" options={{ headerShown: false }} />
     </Stack>
   );
 }

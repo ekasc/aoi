@@ -4,9 +4,9 @@ import { Stack } from "expo-router/stack";
 import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
+import { CollectionsProvider } from "@/features/collections/collections-context";
 import { LettersProvider } from "@/features/letters/letters-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
-import { ProposalsProvider } from "@/features/proposals/proposals-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
 import { ResponsesProvider } from "@/features/responses/responses-context";
@@ -18,7 +18,7 @@ import { useAoiTheme } from "@/features/theme/theme-context";
 import { SqueezeOverlay } from "@/components/squeeze/squeeze-overlay";
 import { ComposerProvider } from "@/features/composer/composer-context";
 import { useDevSeed } from "@/features/dev/preview";
-import { FontFamilies } from "@/constants/typography";
+import { Typography } from "@/constants/typography";
 
 // Anchoring the stack to (tabs) guarantees the tab bar is seeded beneath
 // any direct entry (deep link, redirect, dev preview), so pushed screens
@@ -74,10 +74,10 @@ export default function AuthenticatedAppLayout() {
 	return (
 		<CalendarProvider>
 			<PartnerDetailsProvider>
+				<CollectionsProvider>
 				<SomedayProvider>
 					<QuestionProvider>
 						<SqueezeProvider>
-							<ProposalsProvider>
 							<LettersProvider>
 							<PushProvider>
 								<ResponsesProvider>
@@ -89,13 +89,16 @@ export default function AuthenticatedAppLayout() {
 										headerStyle: { backgroundColor: colors.background },
 										headerTintColor: colors.text,
 										headerShadowVisible: false,
-										headerTitleStyle: { fontFamily: FontFamilies.body },
+										headerTitleStyle: Typography.navigationTitle,
+										headerTitleAlign: "center",
+										headerBackButtonDisplayMode: "minimal",
 									}}
 								>
 								<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+								<Stack.Screen name="account" options={{ title: "Account" }} />
 								{/* Legacy compat redirect (P2A): no header flash before it resolves. */}
 								<Stack.Screen name="profile" options={{ headerShown: false }} />
-								{/* Legacy setting deep link: redirects into Space. */}
+								{/* Legacy setting deep link: redirects into Account. */}
 								<Stack.Screen name="settings" options={{ headerShown: false }} />
 									<Stack.Screen
 										name="moment/trace"
@@ -156,37 +159,18 @@ export default function AuthenticatedAppLayout() {
 										options={{ title: "Year" }}
 									/>
 									<Stack.Screen
-										name="calendar/search"
-										options={{ title: "Search" }}
-									/>
-									<Stack.Screen
 										name="profile/edit-relationship"
 										options={{
 											title: "Edit relationship",
 											presentation: useFormSheet ? "formSheet" : "modal",
 											...sheetOptions,
+											...(useFormSheet ? { sheetAllowedDetents: 'fitToContents' as const } : {}),
 										}}
 									/>
 									<Stack.Screen
-										name="profile/import-milestones"
+										name="partner"
 										options={{
-											title: "Import milestones",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="profile/little-things"
-										options={{
-											title: "The little things",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="someday"
-										options={{
-											title: "Someday",
+											title: "About",
 											presentation: useFormSheet ? "formSheet" : "modal",
 											...sheetOptions,
 										}}
@@ -199,6 +183,26 @@ export default function AuthenticatedAppLayout() {
 											...sheetOptions,
 										}}
 									/>
+									{/* A list is a place you go into, not a task you finish, so
+									    it is a normal push — back button, swipe, the lot.
+									    Its editor and each thing's editor are pushes too,
+									    which keeps every list screen a browsing surface. */}
+									<Stack.Screen
+										name="collection/new"
+										options={{
+											title: "New list",
+											presentation: "formSheet",
+											sheetAllowedDetents: [0.5, 1.0],
+											sheetInitialDetentIndex: 0,
+											sheetGrabberVisible: true,
+											sheetExpandsWhenScrolledToEdge: true,
+											contentStyle: { backgroundColor: colors.background },
+										}}
+									/>
+									<Stack.Screen name="collection/[id]/index" options={{ title: "List" }} />
+									<Stack.Screen name="collection/[id]/edit" options={{ title: "Edit list" }} />
+									<Stack.Screen name="collection/[id]/item/new" options={{ title: "Add a thing" }} />
+									<Stack.Screen name="collection/[id]/item/[itemId]" options={{ title: "Thing" }} />
 									<Stack.Screen
 										name="question"
 										options={{
@@ -232,14 +236,6 @@ export default function AuthenticatedAppLayout() {
 										}}
 									/>
 									<Stack.Screen
-										name="proposal/new"
-										options={{
-											title: "Suggest a time",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
 										name="paywall"
 										options={{
 											title: "Aoi Plus",
@@ -260,10 +256,10 @@ export default function AuthenticatedAppLayout() {
 								</ResponsesProvider>
 							</PushProvider>
 							</LettersProvider>
-							</ProposalsProvider>
 					</SqueezeProvider>
 					</QuestionProvider>
 				</SomedayProvider>
+				</CollectionsProvider>
 			</PartnerDetailsProvider>
 		</CalendarProvider>
 	);

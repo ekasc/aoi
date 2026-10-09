@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
+import * as Reanimated from 'react-native-reanimated';
 
 import { PhotoViewer, type ViewerPhoto } from '@/components/moments/photo-viewer';
 
@@ -216,6 +217,17 @@ const MIXED: ViewerPhoto[] = [
 ];
 
 describe('PhotoViewer across media kinds', () => {
+  it('omits the memory navigation action when opened from within a memory response', () => {
+    renderViewer({ photos: PHOTOS, onOpenMemory: undefined });
+    expect(screen.queryByText('Open memory')).toBeNull();
+    expect(screen.getByLabelText('Close photo')).toBeTruthy();
+  });
+
+  it('does not invent a memory destination for a local gallery photo', () => {
+    renderViewer({ photos: [{ uri: 'file:///local.jpg', label: 'The two of you' }] });
+    expect(screen.queryByText('Open memory')).toBeNull();
+    expect(screen.getByLabelText('Close photo')).toBeTruthy();
+  });
   it('opens a clip full screen, and names it in the counter', () => {
     renderViewer({ photos: MIXED, initialIndex: 1 });
     expect(screen.getByTestId('video-page')).toBeTruthy();
@@ -465,9 +477,26 @@ describe('PhotoViewer swipeable set', () => {
     expect(capturedList.scrollEnabled).toBe(true);
   });
 
+  it('fades a photo without a thumbnail origin without changing its crop progress', () => {
+    const onClose = vi.fn();
+    const timing = vi.spyOn(Reanimated, 'withTiming');
+    renderViewer({ onClose });
+    const progress = capturedZoomProps.at(-1).morph.t.value;
+    fireEvent.click(screen.getByLabelText('Close photo'));
+    expect(capturedZoomProps.at(-1).morph.t.value).toBe(progress);
+    expect(capturedZoomProps.some((props) => props.morphOut)).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+    const call = timing.mock.calls.at(-1);
+    expect(call?.[0]).toBe(0);
+    expect(call?.[1]).toEqual({ duration: 180 });
+    act(() => { call?.[2]?.(true); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    timing.mockRestore();
+  });
+
   it('closes from the Close control, after the photo morphs home', () => {
     const onClose = vi.fn();
-    renderViewer({ onClose });
+    renderViewer({ onClose, origin: { x: 12, y: 240, width: 96, height: 96, radius: 4 } });
     fireEvent.click(screen.getByLabelText('Close photo'));
     // The control asks for the morph; the close follows the morph, not the tap.
     const morphing = capturedZoomProps.filter((props) => props.morphOut);
@@ -481,7 +510,7 @@ describe('PhotoViewer swipeable set', () => {
 
   it('morphs the visible photo home before closing', () => {
     const onClose = vi.fn();
-    renderViewer({ photos: FIVE, initialIndex: 2, onClose });
+    renderViewer({ photos: FIVE, initialIndex: 2, onClose, origin: { x: 12, y: 240, width: 96, height: 96, radius: 4 } });
 
     // Only the visible page morphs: the pages either side stay put while the
     // viewer closes over them.

@@ -47,23 +47,27 @@ function insertMember(
 }
 
 describe('D1 baseline', () => {
-  it('applies the migration with all 23 tables', () => {    const d1 = createTestD1();
+  it('applies the migration with all 27 tables', () => {    const d1 = createTestD1();
     const rows = d1.rawDb
       .prepare("select name from sqlite_master where type = 'table' and name not like 'sqlite_%'")
       .all() as Array<{ name: string }>;
     expect(rows.map((r) => r.name).sort()).toEqual(
       [
+        'album_backups',
+        'album_media',
         'auth_accounts',
         'calendar_events',
-        'event_proposals',
-        'imported_milestones',
+        'collection_items',
+        'collections',
         'letters',
         'location_shares',
         'media_objects',
         'moment_attachments',
         'moment_reads',
+        'moment_responses',
         'moments',
         'oauth_states',
+        'partner_details',
         'processed_webhook_events',
         'push_tokens',
         'someday_items',
@@ -155,6 +159,31 @@ describe('space invariants (partial uniques)', () => {
     insertSpace(d1, 's1', 'u1');
     insertMember(d1, 's1', 'u1', 'you');
     expect(() => insertMember(d1, 's1', 'u2', 'partner')).not.toThrow();
+  });
+});
+
+describe('collections tables', () => {
+  it('cascades space deletes to shelves and items, and shelf deletes to items', () => {
+    const d1 = createTestD1();
+    insertUser(d1, 'u1', 'a@b.co');
+    insertSpace(d1, 's1', 'u1');
+    d1.runSync(
+      "insert into collections (id, space_id, created_by_user_id, name, position) values ('c1', 's1', 'u1', 'Cafes', 0)"
+    );
+    d1.runSync(
+      "insert into collection_items (id, collection_id, space_id, created_by_user_id, title, position) values ('ci1', 'c1', 's1', 'u1', 'Blue Bottle', 0)"
+    );
+
+    // Deleting a shelf tombstones (cascades) its items.
+    d1.runSync("delete from collections where id = 'c1'");
+    expect(d1.rawDb.prepare('select count(*) as n from collection_items').get()).toEqual({ n: 0 });
+
+    // Deleting a space cascades to its shelves.
+    d1.runSync(
+      "insert into collections (id, space_id, created_by_user_id, name, position) values ('c2', 's1', 'u1', 'Films', 0)"
+    );
+    d1.runSync('delete from spaces where id = ?', 's1');
+    expect(d1.rawDb.prepare('select count(*) as n from collections').get()).toEqual({ n: 0 });
   });
 });
 
@@ -353,24 +382,6 @@ describe('CHECK constraints', () => {
         95,
         0,
         Date.now()
-      )
-    ).toThrow(/CHECK constraint failed/);
-  });
-
-  it('rejects an invalid proposal status', () => {
-    const d1 = createTestD1();
-    insertUser(d1, 'u1', 'a@b.co');
-    insertSpace(d1, 's1', 'u1');
-    insertMember(d1, 's1', 'u1', 'you');
-    expect(() =>
-      d1.runSync(
-        "insert into event_proposals (id, space_id, proposer_user_id, title, proposed_start, proposed_end, status) values (?, ?, ?, 't', ?, ?, ?)",
-        'p1',
-        's1',
-        'u1',
-        Date.now() + 1000,
-        Date.now() + 2000,
-        'maybe'
       )
     ).toThrow(/CHECK constraint failed/);
   });

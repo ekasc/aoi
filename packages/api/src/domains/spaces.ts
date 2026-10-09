@@ -1,5 +1,6 @@
 import { Effect, Data } from 'effect';
 
+import { enqueueJob, type JobQueueService } from '../services/job-queue';
 import type { Space } from '@aoi/shared';
 
 import { Db, guardedUpdate } from '../effects/d1';
@@ -73,14 +74,28 @@ interface SpaceRow {
   updated_at: number;
 }
 
-function rowToSpace(row: SpaceRow, inviteCode: string, partnerJoined: boolean, inviteExpiresAt: string | null): Space {
+function rowToSpace(
+  row: SpaceRow,
+  inviteCode: string,
+  partnerJoined: boolean,
+  inviteExpiresAt: string | null,
+  /**
+   * The other person's name, as *this* viewer should see it.
+   *
+   * Not read off the row. `spaces.partner_name` is stored from the creator's
+   * point of view, so to the joiner it holds the joiner's own account name
+   * (the join handler writes it there) and the creator is unnamed. Every
+   * reader has to be told the other member, so the caller does the naming.
+   */
+  partnerName: string | null
+): Space {
   return {
     id: row.id,
     name: row.name,
     createdByUserId: row.created_by_user_id,
     // Absence stays absence: null partner/date serialize as null, never ''
     // or a fabricated placeholder.
-    partnerName: row.partner_name ?? null,
+    partnerName,
     relationshipStartDate: row.relationship_start_date ?? null,
     inviteCode,
     partnerJoined,
@@ -120,9 +135,10 @@ export const getActiveSpaceId = (
 
 /**
  * Load a space row + its latest live invite code + whether a partner has
- * joined. Only unexpired, unredeemed invites are presented — an expired
- * code is never shown as active. `partnerJoined` is the only reliable
- * joined signal (partnerName may be the creator's pre-join wording).
+ * joined, named for the viewer. Only unexpired, unredeemed invites are
+ * presented — an expired code is never shown as active. `partnerJoined` is
+ * the only reliable joined signal (partnerName may be the creator's pre-join
+ * wording).
  */
 const loadSpaceWithInvite = (
   spaceId: string,
@@ -143,17 +159,25 @@ const loadSpaceWithInvite = (
           )
           .bind(spaceId, now)
           .first<{ code: string; expires_at: number | null }>();
+        // The other active member, by name. This is the only authority on who
+        // the viewer is paired with: the stored column is the creator's
+        // wording, so a joiner reading it would be reading their own name.
         const partner = await s.d1
           .prepare(
-            "select 1 as joined from space_members where space_id = ? and user_id != ? and state = 'active' limit 1"
+            "select u.name as name from space_members m join users u on u.id = m.user_id where m.space_id = ? and m.user_id != ? and m.state = 'active' limit 1"
           )
           .bind(spaceId, viewerUserId)
-          .first<{ joined: number }>();
+          .first<{ name: string }>();
         return rowToSpace(
           space,
           invite?.code ?? '',
           partner != null,
-          invite ? (invite.expires_at === null ? null : new Date(invite.expires_at).toISOString()) : null
+          invite ? (invite.expires_at === null ? null : new Date(invite.expires_at).toISOString()) : null,
+          // With nobody else in the space, only the creator's own wording for
+          // their absent partner means anything. To anyone else that column
+          // would be their own name read back at them.
+          partner?.name ??
+            (space.created_by_user_id === viewerUserId ? space.partner_name : null)
         );
       },
       catch: () => new InternalError({}),
@@ -287,7 +311,10 @@ export const createSpaceProgram = (
             },
             code,
             false,
-            new Date(now + INVITE_TTL_MS).toISOString()
+            new Date(now + INVITE_TTL_MS).toISOString(),
+            // The creator's own wording for someone who has not arrived: they
+            // are the only one it could mean anything to.
+            input.partnerName ?? null
           ),
         };
       }
@@ -327,7 +354,7 @@ export const joinSpaceProgram = (
 ): Effect.Effect<
   { space: SpaceWithInvite },
   BadRequestError | ForbiddenError | NotFoundError | ConflictError | InternalError,
-  DbService | ClockService | IdService | LoggerService
+  DbService | ClockService | IdService | LoggerService | JobQueueService
 > =>
   Effect.gen(function* () {
     const normalized = normalizeInviteCode(rawInviteCode);
@@ -505,6 +532,15 @@ export const joinSpaceProgram = (
     if (!joined) {
       return yield* Effect.fail(new InternalError({}));
     }
+    // Tell the person who was already here. The reader of this push has been
+    // sitting alone in a space they made, waiting; this is the news, and it is
+    // the only push in the app that is about the pair rather than an object.
+    yield* enqueueJob({
+      type: 'push.deliver',
+      kind: 'partner_joined',
+      spaceId: invite.space_id,
+      fromUserId: userId,
+    });
     yield* logInfo('spaces: joined', { spaceId: invite.space_id, userId });
     return { space: joined };
   });

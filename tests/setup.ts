@@ -20,6 +20,11 @@ function flattenStyle(style: any): any {
 // onPress ALSO becomes onClick so fireEvent.click can tap them.
 function withAriaProps(props: Record<string, any>): Record<string, any> {
   const next: Record<string, any> = { ...props };
+  // React Native's testID is how a test addresses a view, so it has to reach
+  // the DOM under the name the queries look for.
+  if (typeof props.testID === 'string') {
+    next['data-testid'] = props.testID;
+  }
   if (typeof props.accessibilityLabel === 'string') {
     next['aria-label'] = props.accessibilityLabel;
   }
@@ -82,6 +87,17 @@ vi.mock('react-native', () => {
     return React.createElement('img', { style: flattenStyle(style), src: source?.uri, ...props });
   };
 
+  // Pressable's children and style may be functions of the press state, which
+  // React Native resolves before it renders. The mock has to do the same, or
+  // every component that draws its own press feedback renders empty here.
+  const Pressable = ({ children, style, ...rest }: any) => {
+    const pressed = false;
+    const resolvedStyle = typeof style === 'function' ? style({ pressed }) : style;
+    const resolvedChildren =
+      typeof children === 'function' ? children({ pressed }) : children;
+    return createDiv(resolvedChildren, resolvedStyle, rest);
+  };
+
   return {
     StyleSheet: {
       create: (styles: Record<string, any>) => styles,
@@ -94,6 +110,7 @@ vi.mock('react-native', () => {
     Text,
     TextInput,
     Image,
+    Alert: { alert: vi.fn() },
     Platform: { OS: 'ios', select: (obj: any) => obj.ios },
     Dimensions: { get: () => ({ width: 390, height: 844 }) },
     useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
@@ -103,14 +120,94 @@ vi.mock('react-native', () => {
     TouchableOpacity: View,
     TouchableHighlight: View,
     ScrollView: View,
-    FlatList: View,
+    // FlatList is data-driven, so a bare View would render nothing. Render the
+    // sections and each row, which is what a screen test needs to see a list.
+    // Tests that care about a list's own behaviour (windowing, scrolling) still
+    // mock it locally and win.
+    FlatList: (props: any) => {
+      const {
+        data,
+        renderItem,
+        keyExtractor,
+        ListEmptyComponent,
+        ListHeaderComponent,
+        ListFooterComponent,
+        ItemSeparatorComponent,
+        contentContainerStyle,
+        contentInsetAdjustmentBehavior,
+        showsVerticalScrollIndicator,
+        style,
+        ...rest
+      } = props;
+      const section = (node: any) =>
+        node == null
+          ? null
+          : React.isValidElement(node)
+            ? node
+            : typeof node === 'function'
+              ? React.createElement(node)
+              : node;
+      const items = Array.isArray(data) ? data : [];
+      return createDiv(
+        [
+          section(ListHeaderComponent),
+          items.length > 0
+            ? items.map((item: any, index: number) =>
+                React.createElement(
+                  React.Fragment,
+                  { key: keyExtractor ? keyExtractor(item, index) : index },
+                  renderItem ? renderItem({ item, index, separators: {} }) : null
+                )
+              )
+            : section(ListEmptyComponent),
+          section(ListFooterComponent),
+        ],
+        style,
+        rest
+      );
+    },
     ActivityIndicator: View,
+    // Animated is JS-thread surface only. The shared view switch measures its
+    // track via onLayout and renders its thumb from that, so a Value and a View
+    // are enough for any screen that includes the control.
+    Animated: {
+      View,
+      Value: class {
+        private current: any;
+        constructor(value: any) {
+          this.current = value;
+        }
+        setValue(next: any) {
+          this.current = next;
+        }
+      },
+      timing: (value: any, config: any) => ({
+        start: (done?: () => void) => {
+          value?.setValue?.(config?.toValue);
+          done?.();
+        },
+      }),
+    },
+    Easing: {
+      bezier: () => ({}),
+      out: (curve: unknown) => curve,
+      exp: {},
+    },
     Modal: View,
-    Pressable: View,
+    Pressable,
     KeyboardAvoidingView: View,
     AppState: {
       currentState: 'active',
       addEventListener: () => ({ remove: () => {} }),
+    },
+    // Share opens a native sheet, which no test can observe. A spy, so a test
+    // can assert what would have been sent and how a refused sheet is handled.
+    Share: { share: vi.fn(async () => ({ action: 'sharedAction' })) },
+    // Linking hands a URL to the platform. A spy, so a test can assert that a
+    // link was opened (and that a place name was not).
+    Linking: {
+      openURL: vi.fn(async () => {}),
+      canOpenURL: vi.fn(async () => true),
     },
     // Only the reduce-motion surface WindowRain uses. The resting
     // default is off; tests capture the change handler to simulate
@@ -209,6 +306,70 @@ vi.mock('expo-haptics', () => ({
   selectionAsync: async () => {},
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+}));
+
+// The clipboard is a native module. Stubbed as a real little pasteboard, so a
+// test can put something on it and have the app read it back, which is what
+// the copy and paste paths actually do.
+vi.mock('expo-clipboard', () => ({
+  setStringAsync: async (value: string) => {
+    (globalThis as unknown as Record<string, unknown>).__aoiClipboard = value;
+    return true;
+  },
+  getStringAsync: async () =>
+    ((globalThis as unknown as Record<string, unknown>).__aoiClipboard as string) ??
+    '',
+}));
+
+// Safe-area is a native module whose sources cannot be transformed under
+// vitest, so any test that renders a screen importing it dies at import time.
+// Files that care about specific insets still mock this locally and win.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 47, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaFrame: () => ({ x: 0, y: 0, width: 390, height: 844 }),
+  SafeAreaProvider: ({ children }: { children: unknown }) => children,
+  SafeAreaView: ({ children }: { children: unknown }) => children,
+}));
+
+// The theme is app-level: component tests should not have to build one. A
+// stand-in with both halves is enough for anything that reads a colour; the
+// palette itself is pinned in the theme tests. Files that assert particular
+// colours still mock this locally and win.
+vi.mock('@/features/theme/theme-context', () => {
+  const colors = {
+    background: '#120D13',
+    backgroundSubtle: '#1B141E',
+    surface: '#241B26',
+    surface2: '#302230',
+    textPrimary: '#F6EDF3',
+    textSecondary: '#CBB9C9',
+    textMuted: '#BCA7B9',
+    border: '#493447',
+    borderStrong: '#72516B',
+    accentInk: '#E7A3BB',
+    partnerAccentInk: '#C1ADD7',
+    primary: '#E7A3BB',
+    primaryPressed: '#D58BA7',
+    primaryText: '#29121F',
+    destructive: '#E8A4B4',
+    disabled: '#6E5D6C',
+  };
+  return {
+    useAoiTheme: () => ({
+      selectedThemeId: 'after-hours',
+      mode: 'light',
+      colors,
+      selectedTheme: { light: colors, dark: colors },
+      hasStoredSelection: false,
+      isHydrated: true,
+      setSelectedThemeId: async () => {},
+    }),
+  };
+});
+
+// StatusBar renders nothing in a DOM test and is not a string component here.
+vi.mock('expo-status-bar', () => ({
+  StatusBar: () => null,
 }));
 
 // Deterministic per-call UUIDs: unique across drafts (so identical content
@@ -492,6 +653,26 @@ vi.mock('expo-sqlite', () => ({
 // JS-thread surface components under test actually use: mutable shared
 // values, one-shot derived values, static reduced-motion, and
 // pass-through animation builders.
+/**
+ * Live reactions, so a test can drive a tracked value past a threshold and
+ * flush. A reaction that exists to notice a crossing is untestable otherwise:
+ * the UI runtime is what would normally re-run it.
+ */
+const reactionRegistry = new Set<{
+  prepare: () => unknown;
+  react: (current: unknown, previous: unknown) => void;
+  previous: unknown;
+}>();
+
+/** Re-evaluate every registered reaction once, passing the real previous value. */
+(globalThis as unknown as Record<string, unknown>).__flushReactions = () => {
+  for (const reaction of Array.from(reactionRegistry)) {
+    const current = reaction.prepare();
+    reaction.react(current, reaction.previous);
+    reaction.previous = current;
+  }
+};
+
 vi.mock('react-native-reanimated', () => {
   const React = require('react');
 
@@ -552,9 +733,24 @@ vi.mock('react-native-reanimated', () => {
     SlideInDown: enteringStub,
     SlideInUp: enteringStub,
     SlideOutDown: enteringStub,
-    useSharedValue: (initial: any) => React.useRef({ value: initial }).current,
+    useSharedValue: (initial: any) => {
+      const ref = React.useRef(null);
+      if (!ref.current) {
+        const shared = {
+          value: initial,
+          // Components use the Reanimated 4 accessors, so the double answers
+          // to both forms.
+          get: () => shared.value,
+          set: (next: unknown) => { shared.value = typeof next === 'function' ? next(shared.value) : next; },
+        };
+
+        ref.current = shared;
+      }
+      return ref.current;
+    },
     useDerivedValue: (fn: any) => React.useState(() => ({ value: fn() }))[0],
     useReducedMotion: () => false,
+    useFrameCallback: () => React.useMemo(() => ({ setActive: vi.fn() }), []),
     useAnimatedStyle: () => ({}),
     // A scroll handler is just a callback the host list would invoke. The
     // mock hands it back so a component can put it on a ScrollView, and
@@ -572,10 +768,28 @@ vi.mock('react-native-reanimated', () => {
       react: (current: any, previous: any) => void,
     ) => {
       const fired = React.useRef(false);
+      // Registered as well as fired: a reaction whose whole job is to notice a
+      // value crossing a threshold cannot be tested by a one-shot call on
+      // mount, so a test can drive the tracked value and flush.
+      const entry = React.useRef<{ prepare: () => any; react: (c: any, p: any) => void; previous: any } | null>(null);
+      if (!entry.current) {
+        entry.current = { prepare, react, previous: undefined };
+      } else {
+        entry.current.prepare = prepare;
+        entry.current.react = react;
+      }
       React.useEffect(() => {
         if (fired.current) return;
         fired.current = true;
         react(prepare(), undefined);
+      }, []);
+      React.useEffect(() => {
+        const registered = entry.current;
+        if (!registered) return;
+        reactionRegistry.add(registered);
+        return () => {
+          reactionRegistry.delete(registered);
+        };
       }, []);
     },
     runOnUI: (fn: (...args: unknown[]) => unknown) => fn,
@@ -643,11 +857,25 @@ vi.mock('@shopify/react-native-skia', () => {
     RadialGradient: Nil,
     SweepGradient: Nil,
     LinearGradient: Nil,
+    Shader: shape('Shader'),
     Blur: Nil,
     Fill: Nil,
     vec: (x: number, y: number = x) => ({ x, y }),
-    Skia: { Path: { Make: () => ({ addArc: () => undefined }) } },
+    Skia: {
+      Path: { Make: () => ({ addArc: () => undefined }) },
+      // A stub effect, so the sky's shader path runs structurally in tests
+      // (the shader itself can only be judged on a GPU).
+      RuntimeEffect: { Make: () => ({}) },
+    },
   };
 });
 
 vi.stubGlobal('__DEV__', false);
+
+// The native date picker ships Flow-typed source, which the test transform
+// cannot parse at all. The field around it is a thin wrapper, so a null
+// component is enough for anything that contains one to render.
+vi.mock('@react-native-community/datetimepicker', () => ({
+  DateTimePickerAndroid: { open: () => undefined },
+  default: () => null,
+}));

@@ -5,6 +5,8 @@ import * as Reanimated from 'react-native-reanimated';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  COMPACT_SKY_PEAK,
+  MEMORY_SKY_AMBIENT_COUNT,
   MEMORY_SKY_COMPACT_CLOUD_BOTTOM_CLEARANCE,
   MEMORY_SKY_COMPACT_CLOUD_B_TOP,
   MEMORY_SKY_COMPACT_CLOUD_SCALE,
@@ -12,18 +14,26 @@ import {
   MEMORY_SKY_COMPACT_QUARTER,
   MEMORY_SKY_COMPACT_STAR_FADE_BAND,
   MEMORY_SKY_COMPACT_TWINKLE_MIN_OPACITY,
+  MEMORY_SKY_HORIZON_GLOW,
   MEMORY_SKY_TOP_SAFETY,
   MEMORY_SKY_FEATHER_ALPHAS,
   MEMORY_SKY_FEATHER_FRACTION,
   MEMORY_SKY_FEATHER_POSITIONS,
   MEMORY_SKY_QUARTER,
   MemorySky,
+  ambientStarForIndex,
+  ambientStarOpacity,
   backgroundAtAlpha,
   compactSkyGradientColors,
+  compactSkyGradientPositions,
   compactSkyHeightForWindow,
+  duskSkyUniforms,
   fadeCompactStarOpacity,
   featherVeilColors,
   isCompactTwinkleEligible,
+  skyGlowColors,
+  skyGlowGeometry,
+  sparklePath,
 } from '@/components/home/memory-sky';
 
 vi.mock('@/hooks/use-theme-color', () => ({
@@ -121,6 +131,41 @@ function twinkleOverlay(container: HTMLElement): HTMLElement | null {
   return container.querySelector(
     '[data-testid="memory-sky-twinkle"], [testid="memory-sky-twinkle"]',
   ) as HTMLElement | null;
+}
+
+/** Channels of a `#rrggbb`, `#rrggbbaa` or `rgba()` colour the sky produces. */
+function channelsOf(colour: string): { r: number; g: number; b: number; a: number } {
+  const hex = colour.match(/^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/);
+  if (hex) {
+    return {
+      r: parseInt(hex[1].slice(0, 2), 16),
+      g: parseInt(hex[1].slice(2, 4), 16),
+      b: parseInt(hex[1].slice(4, 6), 16),
+      a: hex[2] ? parseInt(hex[2], 16) / 255 : 1,
+    };
+  }
+  const fn = colour.match(
+    /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\)/,
+  );
+  if (!fn) throw new Error(`unparseable sky colour: ${colour}`);
+  return {
+    r: Number(fn[1]),
+    g: Number(fn[2]),
+    b: Number(fn[3]),
+    a: fn[4] === undefined ? 1 : Number(fn[4]),
+  };
+}
+
+const alphaOf = (colour: string) => channelsOf(colour).a;
+
+/** Relative luminance of the colour itself, alpha ignored. */
+function luminanceOf(colour: string): number {
+  const { r, g, b } = channelsOf(colour);
+  const linear = (value: number) => {
+    const s = value / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
 }
 
 afterEach(() => {
@@ -281,21 +326,69 @@ describe('MemorySky compact backdrop (Memories/Plans)', () => {
   });
 
   it('compact keeps its same-hue gradient and eases out through the veil', () => {
-    expect([...MEMORY_SKY_COMPACT_GRADIENT_POSITIONS]).toEqual([0, 0.36, 0.6, 0.82, 1]);
+    // A monotonic ramp that turns at the band's peak and lands on the page.
+    const positions = [...MEMORY_SKY_COMPACT_GRADIENT_POSITIONS];
+    expect(positions[0]).toBe(0);
+    expect(positions[positions.length - 1]).toBe(1);
+    expect(positions[3]).toBeCloseTo(COMPACT_SKY_PEAK);
+    for (let i = 1; i < positions.length; i += 1) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1]);
+    }
+    // The turn is a parameter, because an opened sky has to keep its dark
+    // down past the words: the dusk is lightest where it turns.
+    const opened = compactSkyGradientPositions(0.78);
+    expect(opened[3]).toBeCloseTo(0.78);
+    expect(opened[opened.length - 1]).toBe(1);
+    expect(opened[4]).toBeGreaterThan(opened[3]);
+    // And the opened ramp is dark where the band's would already be fading.
+    const band = compactSkyGradientColors('#452C4B', '#8C6E99', 'rgb(246, 242, 247)');
+    const open = compactSkyGradientColors('#452C4B', '#8C6E99', 'rgb(246, 242, 247)', 0.78);
+    const alphaAt = (colour: string) => (colour.length === 9 ? parseInt(colour.slice(7, 9), 16) / 255 : 1);
+    // Mid-ramp the band has begun dissolving; the opened sky is still solid.
+    expect(alphaAt(band[4])).toBeLessThan(1);
+    expect(alphaAt(open[3])).toBe(1);
     expect(
       MEMORY_SKY_COMPACT_GRADIENT_POSITIONS[MEMORY_SKY_COMPACT_GRADIENT_POSITIONS.length - 1],
     ).toBe(1);
     const gradient = compactSkyGradientColors('#452C4B', '#8C6E99', 'rgb(246, 242, 247)');
-    expect(gradient).toHaveLength(5);
+    expect(gradient).toHaveLength(MEMORY_SKY_COMPACT_GRADIENT_POSITIONS.length);
     expect(gradient[0]).toBe('#452C4B');
-    expect(gradient[1]).toBe('#8C6E99');
-    expect(gradient[4]).toBe('rgba(246, 242, 247, 0)');
-    expect(gradient[4]).not.toBe('transparent');
-    // Middle stops stay in the hue family, only the alpha falls.
-    expect(gradient[2]).toBe('#bca9c399');
-    expect(gradient[3]).toBe('#e3dae642');
+    // The brightest stop, held verbatim.
+    expect(gradient[3]).toBe('#8C6E99');
+    const last = gradient.length - 1;
+    expect(gradient[last]).toBe('rgba(246, 242, 247, 0)');
+    expect(gradient[last]).not.toBe('transparent');
     expect(backgroundAtAlpha('rgb(246, 242, 247)', 0)).toBe('rgba(246, 242, 247, 0)');
-    expect(compactSkyGradientColors('#F6F2F7', '#A97E95', '#F6F2F7')[4]).toBe('#F6F2F700');
+    expect(compactSkyGradientColors('#F6F2F7', '#A97E95', '#F6F2F7')[last]).toBe('#F6F2F700');
+
+    // Alpha only ever falls, from the peak to nothing.
+    const alphas = gradient.map(alphaOf);
+    expect(alphas[0]).toBe(1);
+    expect(alphas[3]).toBe(1);
+    expect(alphas[last]).toBe(0);
+    for (let i = 4; i <= last; i += 1) {
+      expect(alphas[i]).toBeLessThan(alphas[i - 1]);
+    }
+    // Every middle stop stays in the hue family (violet: red and blue clear
+    // of green), never a grey band where it meets the page.
+    for (const colour of gradient.slice(1, last)) {
+      const { r, g, b } = channelsOf(colour);
+      expect(r).toBeGreaterThan(g);
+      expect(b).toBeGreaterThan(g);
+    }
+    // No corner where the dusk turns around. On a tall band a corner in the
+    // colour ramp reads as a line straight across the sky, so the steps either
+    // side of the brightest stop must not be the steepest part of the ramp.
+    // Checked on the dark dusk, where the ramp really does turn around.
+    const dark = compactSkyGradientColors('#0D0912', '#4A2C4E', '#120D13');
+    const lums = dark.map(luminanceOf);
+    const steps = lums.slice(1).map((value, i) => Math.abs(value - lums[i]));
+    const peakIndex = lums.indexOf(Math.max(...lums));
+    expect(peakIndex).toBe(3);
+    const steepest = Math.max(...steps);
+    expect(steepest).toBeGreaterThan(0);
+    expect(Math.max(steps[peakIndex - 1], steps[peakIndex])).toBeLessThan(steepest);
+
     const { container, unmount } = render(
       createElement(MemorySky, { moments: [makeMoment('c-1')], compact: true }),
     );
@@ -434,6 +527,174 @@ describe('MemorySky compact backdrop (Memories/Plans)', () => {
     expect(twinkleOverlay(view.container)).toBeNull();
     view.unmount();
   });
+
+  it('gives an empty sky an ambient field, then clears it the moment a memory lands', () => {
+    const emptyMarker = (container: HTMLElement) =>
+      container.querySelector(
+        '[data-testid="memory-sky-star-empty"], [testid="memory-sky-star-empty"]',
+      );
+
+    const empty = render(createElement(MemorySky, { moments: [], compact: true }));
+    expect(starTotal(skyCanvas(empty.container) as HTMLElement)).toBe(0);
+    // With nothing to show, the lone marker is the honest signal.
+    expect(emptyMarker(empty.container)).not.toBeNull();
+    empty.unmount();
+
+    const ambient = render(
+      createElement(MemorySky, { moments: [], compact: true, ambient: true }),
+    );
+    expect(starTotal(skyCanvas(ambient.container) as HTMLElement)).toBe(
+      MEMORY_SKY_AMBIENT_COUNT,
+    );
+    // The marker would be a second, wrong signal inside a full field.
+    expect(emptyMarker(ambient.container)).toBeNull();
+    // Ambient stars stay scenery: no caption, no count.
+    expect(ambient.container.textContent ?? '').not.toContain('memory');
+    ambient.unmount();
+
+    // Ambient is gated on emptiness: a real memory always wins the sky.
+    const withMemory = render(
+      createElement(MemorySky, {
+        moments: [makeMoment('amb-1')],
+        compact: true,
+        ambient: true,
+      }),
+    );
+    expect(starTotal(skyCanvas(withMemory.container) as HTMLElement)).toBe(1);
+    withMemory.unmount();
+  });
+
+  it('scatters ambient stars instead of lining whole runs up on one row', () => {
+    const rows = new Set<number>();
+    for (let index = 0; index < MEMORY_SKY_AMBIENT_COUNT; index += 1) {
+      const star = ambientStarForIndex(index);
+      expect(star.xPct).toBeGreaterThanOrEqual(3);
+      expect(star.xPct).toBeLessThanOrEqual(97);
+      expect(star.yPct).toBeGreaterThanOrEqual(4);
+      expect(star.yPct).toBeLessThanOrEqual(90);
+      expect(star.size).toBeGreaterThanOrEqual(3);
+      expect(star.size).toBeLessThanOrEqual(4);
+      rows.add(star.yPct);
+      const opacity = ambientStarOpacity(index);
+      expect(opacity).toBeGreaterThan(0.1);
+      expect(opacity).toBeLessThan(0.6);
+    }
+    // The rolling hash alone put consecutive seeds on the same row; the
+    // finalizer is what makes the scatter a scatter.
+    expect(rows.size).toBeGreaterThan(MEMORY_SKY_AMBIENT_COUNT * 0.7);
+  });
+
+  it('feeds the dusk shader from the live theme, and keeps its own fallback', () => {
+    const u = duskSkyUniforms({
+      width: 400,
+      height: 300,
+      skyTop: '#0D0912',
+      skyMid: '#4A2C4E',
+      background: '#120D13',
+    });
+    expect(u.uSize).toEqual([400, 300]);
+    expect(u.uPeak).toBeCloseTo(0.42);
+    // Colours cross the bridge as unit floats, never as the theme's own strings.
+    expect(u.uTop).toEqual([13 / 255, 9 / 255, 18 / 255, 1]);
+    expect(u.uMid).toEqual([0x4a / 255, 0x2c / 255, 0x4e / 255, 1]);
+    expect(u.uHorizon).toEqual([0x12 / 255, 0x0d / 255, 0x13 / 255, 1]);
+    const light = skyGlowGeometry(400, 300);
+    expect(u.uLight).toEqual([light.cx, light.cy]);
+    expect(u.uLightRadius).toBe(light.radius);
+    expect(u.uLightStrength).toBeCloseTo(0.13);
+    // A 255th of noise is the whole dither; anything more is visible grain.
+    expect(u.uDither).toBeCloseTo(1 / 255);
+    // The shader is the painter and the stop-ramp is still the fallback.
+    expect(SOURCE).toContain('MEMORY_SKY_DUSK_SKSL');
+    expect(SOURCE).toContain('RuntimeEffect');
+    expect(SOURCE).toContain('compactSkyGradientColors');
+    expect(SOURCE).toContain('uDither');
+    expect(SOURCE).toContain('premultiplied');
+  });
+
+  it('paints the compact sky with the shader when the platform has runtime effects', () => {
+    const { container, unmount } = render(
+      createElement(MemorySky, { moments: [], compact: true }),
+    );
+    const canvas = skyCanvas(container) as HTMLElement;
+    expect(canvas.querySelector('[data-skia="Shader"]')).not.toBeNull();
+    // Still one paint surface; the shader replaces layers, not surfaces.
+    expect(canvases(container)).toHaveLength(1);
+    unmount();
+  });
+
+  it('opens a scenery sky by bringing the whole dusk in, and only when asked', () => {
+    const find = (c: HTMLElement, id: string) =>
+      c.querySelector(`[data-testid="${id}"], [testid="${id}"]`);
+
+    const quiet = render(
+      createElement(MemorySky, { moments: [], compact: true, ambient: true }),
+    );
+    expect(find(quiet.container, 'memory-sky-dusk')).not.toBeNull();
+    quiet.unmount();
+
+    const opening = render(
+      createElement(MemorySky, {
+        moments: [],
+        compact: true,
+        ambient: true,
+        opening: true,
+      }),
+    );
+    expect(find(opening.container, 'memory-sky-dusk')).not.toBeNull();
+    opening.unmount();
+  });
+
+  it('moves each depth a different distance when the camera pushes in', () => {
+    // Depth is not decoration: it is the reason a field reads as a place. The
+    // three buckets have to travel different distances for the same move.
+    expect(SOURCE).toContain('farTravel');
+    expect(SOURCE).toContain('midTravel');
+    expect(SOURCE).toContain('nearTravel');
+    expect(SOURCE).toContain('cloudTravel');
+    expect(SOURCE).toContain('camera');
+
+    const { container, unmount } = render(
+      createElement(MemorySky, { moments: [], compact: true, camera: 1 }),
+    );
+    const canvas = skyCanvas(container) as HTMLElement;
+    const groups = Array.from(canvas.children).filter(
+      (el) => el.getAttribute('data-skia') === 'Group',
+    );
+    // Three buckets, and each carries its own travel.
+    expect(groups).toHaveLength(3);
+    unmount();
+  });
+
+  it('draws the first light with the field\'s own four-point star path', () => {
+    const d = sparklePath(0, 0, 5);
+    expect(d.startsWith('M 0 -5')).toBe(true);
+    expect(d.endsWith('Z')).toBe(true);
+    // Four tapered arms, each a quadratic.
+    expect(d.split('Q')).toHaveLength(5);
+    // Pure, so the same star is drawn every render.
+    expect(sparklePath(0, 0, 5)).toBe(d);
+  });
+
+  it('lights the dusk off-axis, and fades every light out before the clip line', () => {
+    const light = skyGlowGeometry(400, 300);
+    expect(light.cx).toBeGreaterThan(300);
+    expect(light.cy).toBeLessThan(0);
+    const horizon = skyGlowGeometry(400, 300, MEMORY_SKY_HORIZON_GLOW);
+    expect(horizon.cx).toBeLessThan(200);
+    expect(horizon.cy).toBeGreaterThan(0);
+    expect(horizon.cy).toBeLessThan(300);
+    // A light still burning where the canvas clips leaves a hard seam across
+    // the whole band, so both have to reach nothing before the bottom edge.
+    for (const geometry of [light, horizon]) {
+      expect(geometry.cy + geometry.radius).toBeLessThan(300);
+    }
+    const [centre, edge] = skyGlowColors('#8C6E99');
+    expect(centre).not.toBe(edge);
+    expect(edge).toMatch(/00$/);
+    expect(SOURCE).toContain('RadialGradient');
+    expect(SOURCE).toContain('MEMORY_SKY_HORIZON_GLOW');
+  });
 });
 
 describe('Compact wiring (Memories + Plans tabs)', () => {
@@ -444,7 +705,7 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     // and the sky pauses off-focus with it.
     expect(INDEX_SOURCE).toContain('useIsFocused');
     expect(INDEX_SOURCE).toContain('getDaysTogether');
-    expect(INDEX_SOURCE).toContain('focused={isFocused}');
+    expect(INDEX_SOURCE).toContain('focused={isFocused && !entry}');
     expect(INDEX_SOURCE).toContain('daysTogether');
     expect(INDEX_SOURCE).toContain("startDate={space?.relationshipStartDate ?? null}");
     expect(INDEX_SOURCE).toContain('useMoments');
@@ -455,12 +716,12 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     // a BlurView.
     expect(INDEX_SOURCE.match(/<BlurView[\s/>]/g)?.length).toBe(1);
     // Absolute root anchored behind content: immediate root child after
-    // FrostedBackdrop, straight into the scroll list (never nested after
-    // a custom header — the native large-title header owns the title).
+    // FrostedBackdrop, straight into the scroll list. The screen draws its
+    // own shared header over the pinned sky (no native large-title header).
     expect(INDEX_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(
       INDEX_SOURCE.indexOf('<MemorySky compact'),
     );
-    expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
+    expect(INDEX_SOURCE).toContain('<ScreenHeader title="Memories"');
     expect(INDEX_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
       INDEX_SOURCE.indexOf('<FlatList\n'),
     );
@@ -498,9 +759,10 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
   });
 
   it('keeps header chrome readable on dark dusk (light foreground, above the sky)', () => {
-    // Default tone is the light over-sky chrome; onLight tabs opt out
-    // explicitly (Memories has no sky behind its header).
-    expect(HEADER_SOURCE).toContain("tone = 'onDark'");
+    // `onLight` is the default — the header reads on paper unless a screen
+    // asks otherwise; Us passes onDark to draw light chrome over its sky.
+    expect(HEADER_SOURCE).toContain("tone = 'onLight'");
+    expect(HEADER_SOURCE).toContain("tone === 'onLight'");
     expect(HEADER_SOURCE).toContain("'#FFF8FA'");
     expect(HEADER_SOURCE).toContain('zIndex: 2');
     expect(SOURCE).toContain('pointerEvents="none"');
@@ -534,10 +796,10 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     // The screen owns a fixed pinned overlay header (title + Feed/Gallery
     // switcher side by side). The list runs full-screen underneath with a
     // top pad below the fixed header, so the header meets the rising feed
-    // with no gap and no jump — and the sky is never faded or removed.
+    // with no gap and no jump. After entry, the sky stays pinned.
     // Nothing collapses, settles, or hides: the switcher lives in the title
     // row so it is always reachable, and Space lives in the tab bar.
-    expect(INDEX_SOURCE).not.toContain('compactSkyHeightForWindow');
+    expect(INDEX_SOURCE).toContain('const headerHeight = insets.top + Spacing[8] + TITLE_ROW + HEADER_PAD_BOTTOM');
     expect(INDEX_SOURCE).toContain('headerHeight');
     expect(INDEX_SOURCE).not.toContain('headerExpanded');
     expect(INDEX_SOURCE).not.toContain('headerCollapsed');
@@ -554,8 +816,7 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     expect(INDEX_SOURCE).not.toContain('headerBlockStyle');
     expect(INDEX_SOURCE).not.toContain('headerBlockHeight');
     expect(INDEX_SOURCE).not.toContain('headerBlock: {');
-    expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
-    expect(INDEX_SOURCE).not.toContain('title="Memories"');
+    expect(INDEX_SOURCE).toContain('<ScreenHeader title="Memories"');
     expect(INDEX_SOURCE).not.toContain('<SpaceAvatarButton');
     expect(INDEX_SOURCE).not.toContain('Search memories');
     expect(INDEX_SOURCE).not.toContain('styles.tabsRow');
@@ -576,7 +837,8 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     // edge both live at the top: the caption is the list's header, and no
     // bottom-edge trigger exists on either presentation.
     expect(INDEX_SOURCE).toContain('ListHeaderComponent={listHeader}');
-    expect(INDEX_SOURCE).not.toContain('ListFooterComponent');
+    expect(INDEX_SOURCE).toContain('ListFooterComponent={firstPageFooter}');
+    expect(INDEX_SOURCE).not.toContain('onEndReached=');
     expect(INDEX_SOURCE).not.toContain('onEndReached');
     // No overlap spacers: content never enters the sky zone.
     expect(INDEX_SOURCE).not.toContain('marginTop: -');
@@ -615,72 +877,47 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
   });
 
 
-  it('gives Us the same working-screen sky band as Plans, not a hero banner', () => {
-    // Us used to opt into `immersive`, the decorative full-bleed layout that
-    // exists so a banner can take half the viewport. It is a tab now and it
-    // takes the same band every other working screen takes.
-    //
-    // `immersive` is the prop that makes the band full-bleed and feathers
-    // it into the page, and it drops the standalone "N memories lighting
-    // your sky" caption as well. It is not the old 50vh hero: the height is
-    // ours, and it is a band.
-    //
-    // `compact` was tried here and is wrong for a tab: it draws a bounded
-    // canvas, so inside the padded content the clouds clip into a visible
-    // rectangle with hard edges.
-    // This used to be the opposite instruction. The sky was decoration
-    // pinned above a screen about something else, and it was trimmed to a
-    // band so it stopped looking like a page. Now it IS the screen, so it is
-    // full-bleed, it owns the press handler, and its height is most of the
-    // viewport rather than a strip of it.
-    const sky = TOGETHER_SOURCE.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
+  it('keeps Us immersive, photo-driven, and tappable without changing compact skies', () => {
+    const viewport = TOGETHER_SOURCE.match(/<PhotoSkyViewport[\s\S]{0,420}?\/>/)?.[0] ?? '';
+    const source = readFileSync('components/home/photo-sky-viewport.tsx', 'utf8');
+    const sky = source.match(/<MemorySky[\s\S]{0,320}?\/>/)?.[0] ?? '';
+    expect(viewport).toContain('moments={skyItems}');
+    expect(viewport).toContain('onOpenPhoto={pullPhoto}');
     expect(sky).toMatch(/\bimmersive\b/);
-    expect(sky).toMatch(/\bonPress=/);
-    expect(sky).not.toMatch(/\bcompact\b/);
-    expect(TOGETHER_SOURCE).not.toMatch(/<MemorySky[\s\S]{0,320}?\bheader\b/);
-    expect(TOGETHER_SOURCE).toMatch(/presentationHeight=\{skyHeight\}/);
-    // Most of the screen, not a strip: the field has to be worth reaching
-    // into, and that means the stars have room to be apart.
-    expect(TOGETHER_SOURCE).toMatch(/Math\.max\(320, height -/);
+    expect(sky).toContain('starLimit={null}');
+    expect(sky).toContain('photoCamera={camera}');
+    expect(sky).not.toContain('daysTogether');
+    expect(sky).not.toMatch(/\bcompact\b|\bheader\b/);
   });
 });
 
 describe('Tab header normalization (one shared anatomy)', () => {
-  it('keeps Us titled over its own sky while Plans heads its days with Calendar pills', () => {
-    // This rule existed so the three tabs could not drift into three headers.
-    // Us is now the one stated exception, and it is the only one that could
-    // be: it is the only tab whose surface is a full-bleed image, so the
-    // title has to be light chrome drawn over that image rather than a
-    // header built for a page of content sitting on a background.
-    expect(TOGETHER_SOURCE).not.toContain('<ScreenHeader');
-    // The title is a ThemedText over the sky, not a ScreenHeader prop.
-    expect(TOGETHER_SOURCE).toMatch(/<ThemedText[^>]*>\s*Us\s*<\/ThemedText>/);
-    expect(TOGETHER_SOURCE).not.toContain('title="Us"');
-    // Not an oversight: Calendar has no title row. The month pill names the
-    // month; a grid cell lifts the day into the sheet, so there is no view
-    // pill and no week strip.
-    expect(PLANS_SOURCE).not.toContain('<ScreenHeader');
+  it('keeps Us titled over its own sky while every tab shares one header anatomy', () => {
+    // The rule this pins is unchanged: the three tabs cannot drift into
+    // three headers, and it now holds literally — each renders the same
+    // shared `ScreenHeader`. Us is the one stated exception in *tone*, not
+    // in anatomy: it is the only tab whose surface is a full-bleed image,
+    // so it asks for the light over-sky chrome while the other two read on
+    // paper.
+    expect(TOGETHER_SOURCE).toContain('<ScreenHeader title="Us" tone="onDark"');
+    expect(INDEX_SOURCE).toContain('<ScreenHeader title="Memories"');
+    // Not an oversight: Calendar has no view pill. The month pill names the
+    // month; a grid cell lifts the day into the sheet, so there is no week
+    // strip either.
+    expect(PLANS_SOURCE).toContain('<ScreenHeader title="Plans"');
     expect(PLANS_SOURCE).not.toContain('<WeekStrip');
-    expect(INDEX_SOURCE).not.toContain('<ScreenHeader');
     // The native stack header is off; the screen renders the title itself.
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
     expect(MEMORIES_LAYOUT_SOURCE).not.toContain("title: 'Memories'");
-    expect(INDEX_SOURCE).toContain('type="title"');
-    expect(INDEX_SOURCE).toContain('>Memories</');
-    // Us is the exception, and it is the point: it is the only screen whose
-    // surface is a full-bleed image, so it sets the title over that image
-    // rather than borrowing a header meant for a page of content.
-    expect(TOGETHER_SOURCE).not.toContain('<ScreenHeader');
-    expect(TOGETHER_SOURCE).toMatch(/<ThemedText[^>]*>\s*Us\s*<\/ThemedText>/);
   });
 
   it('keeps one title scale and one action-cluster rhythm in the shared header', () => {
     // One title scale means the header does not carry a size of its own: the
-    // display token is the only thing that decides how big this title is.
+    // title token is the only thing that decides how big this title is.
     // It used to pin `fontSize: 28` here, which is the same contract written
     // as a literal, and the reason four screens each invented a page-title
     // size of their own.
-    expect(HEADER_SOURCE).toContain('type="display"');
+    expect(HEADER_SOURCE).toContain('type="title"');
     expect(HEADER_SOURCE).not.toMatch(/fontSize:\s*\d+/);
     expect(HEADER_SOURCE).not.toMatch(/lineHeight:\s*\d+/);
     expect(HEADER_SOURCE).toContain("'#FFF8FA'");
@@ -713,12 +950,12 @@ describe('Tab header normalization (one shared anatomy)', () => {
     expect(INDEX_SOURCE).toContain('FAB_SIZE');
     expect(INDEX_SOURCE).not.toContain('Capture a moment');
     expect(INDEX_SOURCE).not.toContain('handleOpenCompose');
-    // The screen owns the Memories title now (no per-tab tone override on
-    // the in-screen header); the native stack header stays off.
-    expect(INDEX_SOURCE).not.toContain('title="Memories"');
+    // Memories keeps the default `onLight` chrome — no per-tab tone override;
+    // Us is the only tab that asks for the light over-sky chrome.
+    expect(INDEX_SOURCE).toContain('title="Memories"');
     expect(INDEX_SOURCE).not.toContain('tone=');
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');
-    expect(TOGETHER_SOURCE).not.toContain('tone=');
+    expect(TOGETHER_SOURCE).toMatch(/<ScreenHeader\b[^>]*\btone="onDark"/);
     // The full width frost and its tone pick are gone. The pills carry their
     // own glass, so the chrome reads over the sky without a band.
     expect(PLANS_SOURCE).not.toContain('backgroundIsLight');

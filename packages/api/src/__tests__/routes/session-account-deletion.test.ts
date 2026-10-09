@@ -13,7 +13,7 @@ import { deleteAccountProgram } from '../../domains/auth';
  * linkage + tokens (auth_accounts), sessions (all devices), push tokens,
  * preferences, precise location shares.
  * RETAINED (shared relationship content for the remaining partner):
- * moments, letters, calendar, proposals, someday, weekly answers, media
+ * moments, letters, calendar, someday, weekly answers, media
  * rows + bytes, spaces/invites/activity rows, the Plus row (partner's paid
  * period), and the membership row itself (flipped to left).
  * The user row survives as an unlinked tombstone (id + deleted_at only)
@@ -304,7 +304,7 @@ describe('purge lifecycle + retry', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ name: 'Solo Space' }),
+      body: JSON.stringify({ name: 'Solo Space', partnerName: 'Partner' }),
     });
     expect(created.status).toBe(201);
     const { space } = (await created.json()) as { space: { id: string } };
@@ -360,7 +360,7 @@ describe('purge lifecycle + retry', () => {
     const created = await app.request('/v1/spaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ name: 'Solo Space' }),
+      body: JSON.stringify({ name: 'Solo Space', partnerName: 'Partner' }),
     });
     const { space, inviteCode } = (await created.json()) as { space: { id: string }; inviteCode: string };
 

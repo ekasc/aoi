@@ -69,7 +69,7 @@ function isPlusCustomer(info: { entitlements: { active: Record<string, unknown> 
   return Boolean(info.entitlements.active[PLUS_ENTITLEMENT_ID]);
 }
 
-const SubscriptionContext = createContext<SubscriptionContextValue | undefined>(undefined);
+export const SubscriptionContext = createContext<SubscriptionContextValue | undefined>(undefined);
 
 export function SubscriptionProvider({
   children,

@@ -42,6 +42,10 @@ const MOMENTS: Moment[] = [
   moment('m-3', '2026-02-02T10:00:00.000Z'),
 ];
 
+vi.mock('@/features/session/session-context', () => ({
+  useSession: () => ({ user: { id: 'user_you' } }),
+}));
+
 const loadMoreMoments = vi.fn(async () => false);
 let hasMoreMoments = true;
 /** Mirrors the context's paging failure, so the header states are testable. */
@@ -278,7 +282,13 @@ vi.mock('react-native', () => {
 vi.mock('react-native-reanimated', () => ({
   default: { View: ({ children }: { children?: unknown }) => createElement('div', {}, children) },
   useReducedMotion: () => false,
-  useSharedValue: (initial: unknown) => ({ value: initial }),
+  useSharedValue: (initial: unknown) => {
+    const shared = {
+      value: initial,
+      set: (next: unknown) => { shared.value = typeof next === 'function' ? next(shared.value) : next; },
+    };
+    return shared;
+  },
   useAnimatedStyle: () => ({}),
   withTiming: (value: unknown) => value,
   withSpring: (value: unknown) => value,
@@ -324,6 +334,8 @@ vi.mock('@/features/moments/use-resurface-notification', () => ({
 
 vi.mock('@/features/theme/theme-context', () => ({
   useAoiTheme: () => ({
+    // Both halves: a control on the night backdrop is dressed for night.
+    selectedTheme: { light: {}, dark: {} },
     colors: {
       background: '#FCF9F2',
       surface: '#FFFDF8',
@@ -345,6 +357,7 @@ vi.mock('@/features/space/space-context', () => ({
       id: 'space-1',
       name: 'Test space',
       partnerName: 'Alex',
+      partnerJoined: true,
       relationshipStartDate: '2024-01-01T00:00:00.000Z',
       inviteCode: 'ABC123',
     },
@@ -377,10 +390,15 @@ vi.mock('expo-glass-effect', () => ({
 // The screen's own chrome is out of scope here: stub everything that is not
 // a list, a row, or the fetch controls so only the paging contract is under
 // test.
-vi.mock('@/components/home/memory-sky', () => ({
-  MemorySky: () => null,
-  fabBottomOffset: (inset: number) => inset + 8,
-}));
+vi.mock('@/components/home/memory-sky', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/components/home/memory-sky')>();
+  return {
+    MemorySky: () => null,
+    compactSkyHeightForWindow: original.compactSkyHeightForWindow,
+    isDarkBackground: original.isDarkBackground,
+    fabBottomOffset: (inset: number) => inset + 8,
+  };
+});
 
 vi.mock('@/components/ui/frosted-backdrop', () => ({ FrostedBackdrop: () => null }));
 
@@ -589,6 +607,34 @@ describe('Memories feed paging edge', () => {
     fireEvent.click(screen.getByText('Gallery'));
     expect(galleryOpacity()).toBe('0');
     scrollList(galleryList(), 3000);
+    expect(galleryOpacity()).not.toBe('0');
+  });
+
+  it('reveals a short archive whichever measurement lands first', async () => {
+    await renderMemories();
+    const feedOpacity = () =>
+      (screen.getByTestId('feed-layer') as HTMLElement).style.opacity;
+    const galleryOpacity = () =>
+      (screen.getByTestId('gallery-layer') as HTMLElement).style.opacity;
+
+    // The reverse order is what the screen hits when the list mounts during
+    // the sky handover: it reports its content before it has a viewport, and a
+    // fit test that only reads the content size leaves the layer transparent
+    // with nothing left to prove it.
+    act(() => {
+      feedList().onContentSizeChange?.(390, 400);
+      galleryList().onContentSizeChange?.(390, 400);
+    });
+    expect(feedOpacity()).toBe('0');
+    expect(galleryOpacity()).toBe('0');
+    act(() => {
+      feedList().onLayout?.({ nativeEvent: { layout: { height: 844 } } });
+      galleryList().onLayout?.({ nativeEvent: { layout: { height: 844 } } });
+    });
+    expect(feedOpacity()).not.toBe('0');
+    // The gallery layer also carries the hidden-while-inactive style, so it is
+    // only judged once it is the presented tab.
+    fireEvent.click(screen.getByText('Gallery'));
     expect(galleryOpacity()).not.toBe('0');
   });
 

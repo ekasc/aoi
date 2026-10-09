@@ -6,10 +6,9 @@ import type { PushNotificationKind } from '@aoi/shared';
  * kind + a name at most — NEVER coordinates. `fromName` is only used by the
  * location kinds; everything else ignores it.
  *
- * Calendar/proposal pushes are deliberately vague: a partner reminder says
+ * Calendar pushes are deliberately vague: a partner reminder says
  * "they planned something", never the event title, and may carry at most the
- * DAY OF WEEK (`dayOfWeek`) — never a date, time, or detail. Proposal pushes
- * never carry the proposed title or time at all.
+ * DAY OF WEEK (`dayOfWeek`) — never a date, time, or detail.
  *
  * Pure module (zero imports): the single copy source for BOTH the legacy
  * in-request delivery (`lib/push.ts`, which re-exports this) and the worker
@@ -24,6 +23,13 @@ export function buildPushCopy(
   switch (kind) {
     case 'squeeze':
       return { title: 'A squeeze for you', body: 'Your partner is thinking of you.' };
+    case 'partner_joined':
+      // The one push here that is about the pair rather than an object. It
+      // carries no name and no content: the reader knows who they invited.
+      return {
+        title: 'They joined your space',
+        body: 'Your sky has two people in it now.',
+      };
     case 'moment_added':
       return { title: 'They kept a moment', body: 'Something new landed in your space.' };
     case 'moment_edited':
@@ -66,15 +72,5 @@ export function buildPushCopy(
       };
     case 'event_deleted':
       return { title: 'A plan let go', body: 'One of your plans was let go.' };
-    case 'proposal_received':
-      // Never the title, never the time — just a gentle invitation.
-      return {
-        title: 'A time, suggested',
-        body: 'Your partner suggested a time for the two of you.',
-      };
-    case 'proposal_accepted':
-      return { title: 'They said yes', body: 'Your partner accepted a time you suggested.' };
-    case 'proposal_declined':
-      return { title: 'Not this time', body: 'Your partner passed on a time — gently.' };
   }
 }

@@ -5,6 +5,8 @@ import { createElement } from 'react';
 import DevFoundations from '@/app/dev-foundations';
 import { Button } from '@/components/ui/button';
 import { PaperTextInput } from '@/components/ui/text-input';
+import { FirstPageDedication } from '@/components/moments/first-page-dedication';
+import { FontFamilies, Typography } from '@/constants/typography';
 
 // The shared react-native mock passes Pressable `style` straight through,
 // but Button computes `style={({ pressed }) => ...}`. Resolve press-state
@@ -89,12 +91,37 @@ vi.mock('react-native', () => {
 
 const themeColorMock = vi.hoisted(() => vi.fn((_overrides: unknown, name: string) => `#${name}`));
 
+describe('First-page typography', () => {
+  it('uses the native system sans for headings and controls on iOS', () => {
+    expect(FontFamilies.display).toBeUndefined();
+    expect(FontFamilies.display).toBe(FontFamilies.body);
+  });
+
+  it.each([true, false])('keeps invitation sentences separate (waiting=%s)', (waiting) => {
+    render(<FirstPageDedication partnerName="June" waiting={waiting} sinceLabel="1 day together"
+      onCompose={() => {}} onSkip={() => {}} />);
+    expect(screen.getByText('No memories yet')).toBeTruthy();
+    const opening = screen.getByText('Leave a photo, a few words, or your voice.');
+    const ending = screen.getByText(waiting
+      ? 'Something to find when they arrive.' : 'A little something to begin with.');
+    expect(opening).not.toBe(ending);
+    expect(opening.textContent).not.toContain('\n');
+    expect(opening.style.textAlign).toBe('center');
+    expect(opening.style.alignSelf).toBe('stretch');
+    expect(ending.style.alignSelf).toBe('stretch');
+    expect(opening.style.fontSize).toBe(`${Typography.body.fontSize}px`);
+    expect(ending.style.fontSize).toBe(`${Typography.supporting.fontSize}px`);
+  });
+});
+
 vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: themeColorMock,
 }));
 
 vi.mock('@/features/theme/theme-context', () => ({
   useAoiTheme: () => ({
+    // Both halves: a control on the night backdrop is dressed for night.
+    selectedTheme: { light: {}, dark: {} },
     colors: {
       background: '#FCF9F2',
       backgroundSubtle: '#F3ECDD',

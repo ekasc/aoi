@@ -7,7 +7,10 @@ import { join } from 'node:path';
 // The shared react-native mock passes Pressable `style` straight through,
 // but tab screens compute `style={({ pressed }) => ...}`. Resolve press-state
 // styles as unpressed so the real screens render in this file.
-vi.mock('@/components/home/us-glass-backdrop', () => ({ UsGlassBackdrop: () => null }));
+// This suite checks screen ownership; camera and gesture contracts have their own tests.
+vi.mock('@/components/home/photo-sky-viewport', () => ({ PhotoSkyViewport: () => null }));
+// Our shelves has its own screen tests; this file is about tab ownership.
+vi.mock('@/components/collections/our-lists', () => ({ OurLists: () => null }));
 
 vi.mock('react-native', () => {
   function flattenStyle(style: unknown): unknown {
@@ -395,6 +398,8 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('@/features/theme/theme-context', () => ({
   useAoiTheme: () => ({
+    // Both halves: a control on the night backdrop is dressed for night.
+    selectedTheme: { light: {}, dark: {} },
     colors: {
       background: '#FCF9F2',
       surface: '#FFFDF8',
@@ -455,6 +460,10 @@ vi.mock('@/features/space/space-context', () => ({
 
 vi.mock('@/features/squeeze/squeeze-context', () => ({
   useSqueeze: () => ({ sendSqueeze: sendSqueezeSpy, isSending: false }),
+}));
+
+vi.mock('@/features/album/use-sky-photos', () => ({
+  useSkyPhotos: () => ({ photos: [], status: 'ready', readError: null, actionError: null, operation: null, scopeKey: 'test-scope', reload: vi.fn(), choosePhotos: vi.fn(), removePhoto: vi.fn() }),
 }));
 
 const storyLoadMoreMoments = vi.fn(async () => false);
@@ -534,15 +543,6 @@ vi.mock('@/features/calendar/calendar-context', () => ({
 
 vi.mock('@/features/someday/someday-context', () => ({
   useSomeday: () => ({ openItems: [], doneItems: [] }),
-}));
-
-vi.mock('@/features/proposals/proposals-context', () => ({
-  useProposals: () => ({
-    proposals: [],
-    accept: vi.fn(),
-    decline: vi.fn(),
-    reload: vi.fn(async () => {}),
-  }),
 }));
 
 vi.mock('@/components/moments/moment-card', () => ({
@@ -705,19 +705,16 @@ async function renderTabsLayout() {
 }
 
 describe('P2A tab structure (system tab bar)', () => {
-  it('declares exactly Memories, Us, Plans, Space triggers in that visible order', async () => {
+  it('declares the shipped tabs in that visible order', async () => {
     await renderTabsLayout();
-    expect(capturedTabTriggers.map((entry) => entry.name)).toEqual([
-      '(memories)',
-      'together',
-      'plans',
-      'space',
-    ]);
+    // Memories, Us, Plans, Lists, in that order, and nothing else.
+    const names = capturedTabTriggers.map((entry) => entry.name);
+    expect(names).toEqual(['(memories)', 'together', 'plans', 'ours']);
     expect(capturedTabTriggers.map((entry) => entry.label)).toEqual([
       'Memories',
       'Us',
       'Plans',
-      'Space',
+      'Lists',
     ]);
   });
 
@@ -742,11 +739,11 @@ describe('P2A tab structure (system tab bar)', () => {
     const names = capturedTabTriggers.map((entry) => entry.name);
     expect(names).not.toContain('profile');
     expect(names).not.toContain('settings');
-    // Space is a real tab now, not a pushed detail.
-    expect(names).toContain('space');
+    // Ours is a real tab now, not a pushed detail.
+    expect(names).toContain('ours');
   });
 
-  it('uses book/mail/calendar/person SF + vector pairs — no hearts anywhere in the bar', async () => {
+  it('uses book/mail/calendar/grid SF + vector pairs — no hearts anywhere in the bar', async () => {
     const { container } = await renderTabsLayout();
     const seen = tabIconNames();
     expect(seen.length).toBeGreaterThan(0);
@@ -760,8 +757,8 @@ describe('P2A tab structure (system tab bar)', () => {
     expect(tabSf('together', true)).toBe('envelope.fill');
     expect(tabSf('plans', false)).toBe('calendar');
     expect(tabSf('plans', true)).toBe('calendar.circle.fill');
-    expect(tabSf('space', false)).toBe('person');
-    expect(tabSf('space', true)).toBe('person.fill');
+    expect(tabSf('ours', false)).toBe('square.grid.2x2');
+    expect(tabSf('ours', true)).toBe('square.grid.2x2.fill');
     // The same outline/filled pairs cross-platform through Ionicons.
     expect(tabVectorIcon('(memories)', false)).toBe('book-outline');
     expect(tabVectorIcon('(memories)', true)).toBe('book');
@@ -769,8 +766,8 @@ describe('P2A tab structure (system tab bar)', () => {
     expect(tabVectorIcon('together', true)).toBe('mail');
     expect(tabVectorIcon('plans', false)).toBe('calendar-outline');
     expect(tabVectorIcon('plans', true)).toBe('calendar');
-    expect(tabVectorIcon('space', false)).toBe('person-outline');
-    expect(tabVectorIcon('space', true)).toBe('person');
+    expect(tabVectorIcon('ours', false)).toBe('grid-outline');
+    expect(tabVectorIcon('ours', true)).toBe('grid');
     // The bar renders those Ionicons in trigger order.
     expect(
       Array.from(container.querySelectorAll('[data-icon]')).map((icon) =>
@@ -783,38 +780,18 @@ describe('P2A tab structure (system tab bar)', () => {
       'mail',
       'calendar-outline',
       'calendar',
-      'person-outline',
-      'person',
+      'grid-outline',
+      'grid',
     ]);
   });
 });
 
-describe('P2A Together ownership', () => {
-  it('gives the letters shelf and the reflection to Space, not to Us', async () => {
-    // Us is one memory and the exchange on it. The shelf of letters and the
-    // weekly reflection moved to Space, next to the rest of what the two of
-    // them keep, so neither is orphaned and neither sits on a home surface
-    // as a recurring obligation.
-    const { default: SpaceScreen } = await import('@/app/(app)/(tabs)/space');
-    render(<SpaceScreen />);
-    expect(screen.getByText('Letters')).toBeTruthy();
-    expect(screen.getByText('Reflection')).toBeTruthy();
-
+describe('P2A Ours ownership', () => {
+  it('keeps Squeeze off the photo sky', async () => {
     const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
     render(<TogetherScreen />);
-    // Us does not re-offer them, and it does not own a capture target either.
-    expect(screen.queryByText('Someday')).toBeNull();
-    expect(screen.queryByText('Memory wall')).toBeNull();
-  });
-
-  it('sends a squeeze from the pill in one tap', async () => {
-    const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
-    render(<TogetherScreen />);
-    expect(screen.getAllByText('Squeeze').length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(screen.getByText('Squeeze'));
-    // Production sends via Promise.resolve().then — flush the microtask.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sendSqueezeSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Squeeze')).toBeNull();
+    expect(sendSqueezeSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -831,7 +808,7 @@ describe('P2A Memories ownership', () => {
     expect(screen.getByLabelText('Gallery')).toBeTruthy();
     // Search is gone from the archive; Space lives in the tab bar.
     expect(screen.queryByLabelText('Search memories')).toBeNull();
-    expect(screen.queryByLabelText('Open Space settings')).toBeNull();
+    expect(screen.queryByLabelText('Account and settings')).toBeNull();
     // Capture is back on the screen itself: the round glass FAB over the feed.
     const fab = screen.getByLabelText('Add memory') as HTMLElement;
     expect(fab.style.width).toBe('56px');
@@ -887,35 +864,36 @@ describe('P2A Memories ownership', () => {
 });
 
 describe('P2A Plans ownership', () => {
-  it('keeps Space off the calendar, which is a calendar and nothing else', async () => {
+  it('keeps the account off the calendar, which is a calendar and nothing else', async () => {
     const { default: CalendarScreen } = await import('@/app/(app)/(tabs)/plans');
     render(<CalendarScreen />);
-    // Space has its own entry points; the plans screen is the month and the
-    // day, with no profile chrome over the grid.
-    expect(screen.queryByLabelText('Open Space settings')).toBeNull();
+    // The account has its own entry points; the plans screen is the month and
+    // the day, with no profile chrome over the grid.
+    expect(screen.queryByLabelText('Account and settings')).toBeNull();
   });
 });
 
-describe('P2A Space surface', () => {
-  it('keeps relationship content with a Space/Account switch and no location UI', async () => {
-    const { default: SpaceScreen } = await import('@/app/(app)/(tabs)/space');
-    render(<SpaceScreen />);
-    expect(screen.getAllByText('Space').length).toBeGreaterThanOrEqual(1);
+describe('P2A Account surface', () => {
+  it('keeps relationship content on the Account screen with no location UI', async () => {
+    const { default: AccountScreen } = await import('@/app/(app)/account');
+    render(<AccountScreen />);
     expect(screen.getByText('Edit relationship')).toBeTruthy();
-    // One screen, two segments — no nested settings route.
-    expect(screen.getByText('Account')).toBeTruthy();
+    expect(screen.getByText('Partner')).toBeTruthy();
+    expect(screen.getByText('Started')).toBeTruthy();
+    // Account admin, not a tab: no segmented profile/account switch.
+    expect(screen.queryByText('Space')).toBeNull();
     expect(screen.queryByText('App settings')).toBeNull();
     expect(screen.queryByText('Location sharing settings')).toBeNull();
     expect(screen.queryByText('Location')).toBeNull();
   });
 
-  it('reveals account controls on the same screen without navigating', async () => {
-    const { default: SpaceScreen } = await import('@/app/(app)/(tabs)/space');
-    render(<SpaceScreen />);
-    expect(screen.queryByText('Sign out')).toBeNull();
-    fireEvent.click(screen.getByText('Account'));
+  it('renders account controls directly without navigating', async () => {
+    const { default: AccountScreen } = await import('@/app/(app)/account');
+    render(<AccountScreen />);
     expect(screen.getByText('Sign out')).toBeTruthy();
     expect(screen.getByText('Leave space')).toBeTruthy();
+    expect(screen.getByText('Export my data')).toBeTruthy();
+    expect(screen.getByText('Local photo copies')).toBeTruthy();
     expect(pushSpy).not.toHaveBeenCalledWith('/(app)/settings');
   });
 });
@@ -931,8 +909,8 @@ describe('P2A legacy redirects', () => {
       .map((entry) => entry.replace(/\.tsx$/, ''))
       .sort();
 
-  it('tab routes are the memories group plus the Us, Plans, and Space screens', () => {
-    expect(discoveredTabScreens()).toEqual(['plans', 'space', 'together']);
+  it('tab routes are the memories group plus the Us, Plans, and Ours screens', () => {
+    expect(discoveredTabScreens()).toEqual(['ours', 'plans', 'together']);
     const memoriesDir = join(tabsDir, '(memories)');
     expect(readdirSync(memoriesDir).sort()).toEqual(['_layout.tsx', 'index.tsx']);
   });
@@ -943,7 +921,7 @@ describe('P2A legacy redirects', () => {
       '(memories)',
       'together',
       'plans',
-      'space',
+      'ours',
     ]);
   });
 
@@ -954,17 +932,17 @@ describe('P2A legacy redirects', () => {
     expect(existsSync(join(import.meta.dirname, '../../../app/(app)/profile.tsx'))).toBe(true);
     const { default: LegacyProfileRedirect } = await import('@/app/(app)/profile');
     render(<LegacyProfileRedirect />);
-    expect(capturedRedirect.href).toBe('/(app)/(tabs)/space');
+    expect(capturedRedirect.href).toBe('/(app)/account');
   });
 
-  it('legacy settings redirects into the Space account segment, not a second screen', async () => {
-    // The standalone settings screen is gone: account controls live in the
-    // Space screen's Account segment, so /settings resolves to the Space tab.
+  it('legacy settings redirects into the Account screen, not a tab', async () => {
+    // The standalone settings screen is gone: account controls live on the
+    // Account screen behind the profile avatar, so /settings resolves there.
     expect(existsSync(join(import.meta.dirname, '../../../app/(app)/(tabs)/settings.tsx'))).toBe(false);
     expect(existsSync(join(import.meta.dirname, '../../../app/(app)/settings.tsx'))).toBe(true);
     const { default: LegacySettingsRedirect } = await import('@/app/(app)/settings');
     render(<LegacySettingsRedirect />);
-    expect(capturedRedirect.href).toBe('/(app)/(tabs)/space');
+    expect(capturedRedirect.href).toBe('/(app)/account');
   });
 });
 
@@ -1003,11 +981,11 @@ describe('Memories stack layout', () => {
     expect(capturedStackOptions.headerLargeTitle).toBeUndefined();
   });
 
-  it('opens the Space tab from the avatar entry', async () => {
+  it('opens the Account screen from the avatar entry', async () => {
     const { SpaceAvatarButton } = await import('@/components/space/space-avatar-button');
     render(<SpaceAvatarButton />);
-    fireEvent.click(screen.getByLabelText('Open Space settings'));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/(tabs)/space', { withAnchor: true });
+    fireEvent.click(screen.getByLabelText('Account and settings'));
+    expect(pushSpy).toHaveBeenCalledWith('/(app)/account');
   });
 });
 

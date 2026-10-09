@@ -130,11 +130,11 @@ async function mutateRows<T>(
   task: (rows: CalendarEventRow[]) => T,
 ): Promise<T> {
   return enqueueWrite(async () => {
-    const rows = await getRows();
+    const rows = (await getRows()).map((row) => ({ ...row }));
     const result = task(rows);
-    cache = rows;
     const payload: StoredPayload = { rows };
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    cache = rows;
     return result;
   });
 }

@@ -3,6 +3,13 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+if (!config.resolver.assetExts.includes('onnx')) {
+  config.resolver.assetExts.push('onnx');
+}
+if (!config.resolver.assetExts.includes('txt')) {
+  config.resolver.assetExts.push('txt');
+}
+
 // expo-sqlite web bundles its wa-sqlite WASM binary via
 // `import wasmModule from './wa-sqlite/wa-sqlite.wasm'`. Metro only resolves
 // extensions listed in assetExts/sourceExts, and `wasm` is in neither by

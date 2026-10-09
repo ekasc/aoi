@@ -27,6 +27,8 @@ vi.mock('react-native', () => {
   };
   return {
     View,
+    ScrollView: View,
+    useWindowDimensions: () => ({ width: 402, height: 874 }),
     Pressable,
     StyleSheet: { create: (s: any) => s, hairlineWidth: 1, absoluteFill: {} },
   };
@@ -73,6 +75,22 @@ describe('ActionSheet', () => {
     await renderSheet();
     // SwiftUI detents / Compose sheet / vaul drawer, not our hand-rolled one.
     expect(screen.getByTestId('native-sheet')).toBeTruthy();
+  });
+
+  it('disables confirmation and cancel during a request and keeps errors inside the sheet', async () => {
+    const action = vi.fn();
+    const cancel = vi.fn();
+    await renderSheet({ busy: true, error: 'Could not complete this action.', actions: [
+      { label: 'Remove', variant: 'destructive', onPress: action },
+      { label: 'Cancel', onPress: cancel },
+    ] });
+    expect((screen.getByLabelText('Remove') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Cancel') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText('Remove'));
+    fireEvent.click(screen.getByLabelText('Cancel'));
+    expect(action).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(screen.getByText('Could not complete this action.')).toBeTruthy();
   });
 
   it('renders the title, description, and main rows', async () => {

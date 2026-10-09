@@ -19,12 +19,13 @@ export type ScreenHeaderProps = {
 	subtitle?: string;
 	primaryAction?: ScreenHeaderAction;
 	showAvatar?: boolean;
+	actions?: ReactNode;
 	leading?: ReactNode;
 	/** Pinned archive menu (Memories only): chevron + 44pt title tap. */
 	onTitlePress?: () => void;
 	/**
-	 * Foreground tone. `onDark` (default) renders the light chrome designed
-	 * for over-sky headers (Us, Plans). `onLight` renders theme text colors
+	 * Foreground tone. `onDark` renders the light chrome designed
+	 * for over-sky headers (Us). `onLight` (default) renders theme text colors
 	 * for paper backgrounds with no sky behind the header (Memories feed).
 	 */
 	tone?: 'onDark' | 'onLight';
@@ -34,10 +35,11 @@ export function ScreenHeader({
 	title,
 	subtitle,
 	primaryAction,
-	showAvatar = true,
+	showAvatar = false,
+	actions,
 	leading,
 	onTitlePress,
-	tone = 'onDark',
+	tone = 'onLight',
 }: ScreenHeaderProps) {
 	const chevronColor = useThemeColor({}, "muted");
 	// onLight inherits theme text colors; onDark keeps the fixed light chrome.
@@ -60,7 +62,8 @@ export function ScreenHeader({
 						>
 							<View style={styles.titleBlock}>
 								<ThemedText
-									type="display"
+									type="title"
+									style={styles.title}
 									selectable
 									lightColor={titleLight}
 									darkColor={titleDark}
@@ -77,7 +80,8 @@ export function ScreenHeader({
 					) : (
 						<View style={styles.titleBlock}>
 							<ThemedText
-								type="display"
+								type="title"
+								style={styles.title}
 								selectable
 								lightColor={titleLight}
 								darkColor={titleDark}
@@ -88,6 +92,7 @@ export function ScreenHeader({
 					)}
 				</View>
 				<View style={styles.cluster}>
+					{actions}
 					{primaryAction ? (
 						<IconButton
 							label={primaryAction.label}
@@ -103,6 +108,7 @@ export function ScreenHeader({
 			{subtitle ? (
 				<ThemedText
 					type="caption"
+					accessibilityLiveRegion="polite"
 					numberOfLines={2}
 					lightColor={titleLight}
 					darkColor={titleDark}
@@ -119,9 +125,12 @@ const styles = StyleSheet.create({
 		position: "relative",
 		zIndex: 2,
 		gap: Spacing[4],
-		marginBottom: Spacing[4],
+	},
+	title: {
+		fontWeight: "600",
 	},
 	row: {
+		minHeight: 56,
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",

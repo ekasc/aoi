@@ -32,6 +32,8 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
+vi.mock('@/components/themed-text', () => ({ ThemedText: () => null }));
+vi.mock('@/components/ui/button', () => ({ Button: () => null }));
 
 vi.mock('react-native-gesture-handler', () => ({
   Gesture: { Pinch: () => ({}), Pan: () => ({}), Tap: () => ({}), Simultaneous: () => ({}) },
@@ -46,7 +48,16 @@ vi.mock('react-native-reanimated', () => ({
   Easing: { bezier: () => ({}), in: (v: unknown) => v, out: (v: unknown) => v, cubic: {} },
   useAnimatedStyle: () => ({}),
   useReducedMotion: () => false,
-  useSharedValue: (initial: unknown) => ({ value: initial }),
+  useSharedValue: (initial: unknown) => {
+    const self = {
+      value: initial,
+      get: () => self.value,
+      set: (next: unknown) => {
+        self.value = typeof next === 'function' ? (next as (current: unknown) => unknown)(self.value) : next;
+      },
+    };
+    return self;
+  },
   withDelay: (_delay: number, value: unknown) => value,
   withSpring: (value: unknown) => value,
   withTiming: (value: unknown) => value,
@@ -357,7 +368,7 @@ describe('gesture and transition contracts (source)', () => {
     expect(viewer).toContain('const [overlayFailsafe, setOverlayFailsafe] = useState(false);');
     expect(viewer).toMatch(/if \(!origin \|\| reduceMotion \|\| !geometryReady\) \{/);
     // Non-photo pages present on their own fade instead of the morph.
-    expect(viewer).toContain('overlay.value = withTiming(1, { duration: FADE_DURATION');
+    expect(viewer).toContain('overlay.set(withTiming(1, { duration: FADE_DURATION');
     // And once a dismiss starts, the photo is only finishing its landing: the
     // reader can touch the feed underneath without waiting for it to settle.
     expect(viewer).toContain('setHandingBack(true)');
@@ -371,7 +382,7 @@ describe('gesture and transition contracts (source)', () => {
     // visible for the whole swipe instead of only at the end.
     expect(photo).toContain('buildMorphGeometry(');
     expect(photo).toMatch(/onLayout=\{handleMorphLayout\}/);
-    expect(photo).toContain('borderRadius: shellRadiusFor(t, home.radius.value, scale)');
+    expect(photo).toContain('borderRadius: shellRadiusFor(t, home.radius.get(), scale)');
     // The clip box's size comes from the geometry state and never animates:
     // animating a rect per frame froze the app on device. Everything the
     // animated styles return is a transform, a radius or an opacity.
@@ -385,7 +396,7 @@ describe('gesture and transition contracts (source)', () => {
       expect(photo).toContain(`${name} = useAnimatedStyle(`);
     }
     expect(photo).toMatch(/cropStyle = useAnimatedStyle\(\(\) => \(\{/);
-    expect(photo).toContain('scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.value');
+    expect(photo).toContain('scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.get()');
     // The gesture surface stays the whole window, not the shrinking box.
     expect(photo).toMatch(/<View style=\{styles\.surface\}>/);
     expect(photo).toMatch(/centerLayer/);

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import * as Skia from '@shopify/react-native-skia';
 import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { AccessibilityInfo, AppState } from 'react-native';
@@ -29,6 +30,8 @@ import {
   starRestOpacity,
   starToneColor,
 } from '@/components/home/memory-sky';
+import { photoSkyStar } from '@/features/home/photo-sky';
+import { photoSkyDepth, photoSkyGlyphScale, photoSkyPlane } from '@/features/home/photo-sky-camera';
 
 vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: (_overrides: unknown, name: string) => {
@@ -89,11 +92,9 @@ function skyCanvas(container: HTMLElement): HTMLElement | null {
   ) as HTMLElement | null;
 }
 
-/** Batched field: dots are Circles, bright sparkles are Groups (3 bucket Groups). */
 function starCounts(canvas: HTMLElement): { dots: number; brights: number; total: number } {
   const dots = canvas.querySelectorAll('[data-skia="Circle"]').length;
-  const groups = canvas.querySelectorAll('[data-skia="Group"]').length;
-  const brights = groups - 3;
+  const brights = canvas.querySelectorAll('[data-skia="Path"]').length;
   return { dots, brights, total: dots + brights };
 }
 
@@ -137,6 +138,54 @@ describe('MemorySky star count capping (memory fallback)', () => {
     expect(starCounts(canvas as HTMLElement).total).toBe(40);
     expect(container.textContent).toContain('50 memories lighting your sky');
     unmount();
+  });
+
+  it('renders every photo when Us opts out of the cap, with stable star positions', () => {
+    const moments = Array.from({ length: 80 }, (_, index) => makeMoment(`photo-${index}`));
+    const firstPosition = starForMoment(moments[0].id);
+    const view = render(createElement(MemorySky, { moments, starLimit: null, photoStars: true, immersive: true, focused: false }));
+    expect(starCounts(skyCanvas(view.container)!).total).toBe(80);
+    expect(skyStrip(view.container)?.style.top).toBe('0px');
+    expect(skyStrip(view.container)?.style.left).toBe('0px');
+    expect(skyCanvas(view.container)?.style.width).toBe('390px');
+    view.rerender(createElement(MemorySky, { moments: [...moments, makeMoment('added')], starLimit: null, photoStars: true, immersive: true, focused: false }));
+    expect(starCounts(skyCanvas(view.container)!).total).toBe(81);
+    expect(starForMoment(moments[0].id)).toEqual(firstPosition);
+    view.unmount();
+  });
+
+  it('draws zoomed photo halos in circular bounds with transparent radial edges', () => {
+    const oval = vi.spyOn(Skia, 'Oval');
+    const gradient = vi.spyOn(Skia, 'RadialGradient');
+    const group = vi.spyOn(Skia, 'Group');
+    const star = photoSkyStar('photo-halo');
+    const radius = Math.max(star.haloRadius, star.radius * 4);
+    function ZoomedSky() {
+      const photoCamera = Reanimated.useSharedValue({ x: 0, y: 0, zoom: 12 });
+      return createElement(MemorySky, {
+        moments: [makeMoment(star.id)], photoStars: true, photoCamera,
+        starLimit: null, immersive: true, focused: false,
+      });
+    }
+    const view = render(createElement(ZoomedSky));
+    expect(oval).toHaveBeenCalledOnce();
+    expect(oval.mock.calls[0][0]).toMatchObject({ width: radius * 2, height: radius * 2 });
+    expect(gradient.mock.calls.some(([props]) => props.r === radius
+      && props.positions?.join(',') === '0,0.35,1'
+      && Array.isArray(props.colors) && /^#[0-9a-f]{6}00$/i.test(props.colors[2]))).toBe(true);
+    const glyphs = group.mock.calls.filter(([props]) => props.origin !== undefined && props.transform && !Array.isArray(props.transform));
+    const plane = photoSkyPlane({ x: 0, y: 0, zoom: 12 }, photoSkyDepth(star.depth), { width: 390, height: 700 });
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0][0]).toMatchObject({ transform: { value: [{ scale: photoSkyGlyphScale(plane.scale) / plane.scale }] } });
+    expect(starCounts(skyCanvas(view.container)!).total).toBe(1);
+    view.unmount();
+  });
+
+  it('does not invent a placeholder star for an empty Us photo sky', () => {
+    const view = render(createElement(MemorySky, { moments: [], photoStars: true, starLimit: null, immersive: true, focused: false }));
+    expect(emptyStar(view.container)).toBeNull();
+    expect(starCounts(skyCanvas(view.container)!).total).toBe(0);
+    view.unmount();
   });
 
   it('uses singular copy for one memory and plural otherwise', () => {

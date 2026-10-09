@@ -58,3 +58,13 @@ app-example
 .pi/
 packages/api/.dev.vars
 packages/api/.wrangler/
+
+# Impeccable skill local state (critiques, live sessions)
+.impeccable/
+
+# Reproducible model artifact; prepare explicitly before bundling recognition.
+assets/models/*.onnx
+assets/models/*.partial
+
+# Visual brainstorming companion artifacts
+.superpowers/

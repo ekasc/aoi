@@ -1,4 +1,8 @@
 import type { MomentAuthorRole } from '@/features/moments/types';
+import type { MomentResponse, MomentResponseKind } from '@aoi/shared';
+
+export type { MomentResponse, MomentResponseKind, MomentResponseListResponse } from '@aoi/shared';
+export { RESPONSE_BODY_MAX_LENGTH } from '@aoi/shared';
 
 /**
  * A response to a memory: one person reacting to something the two of them
@@ -24,26 +28,6 @@ import type { MomentAuthorRole } from '@/features/moments/types';
  * anything are the people this feature most needs to hear from. Words are
  * the third option, not the first.
  */
-export type MomentResponseKind = 'tap' | 'photo' | 'voice' | 'word';
-
-export type MomentResponse = {
-  id: string;
-  momentId: string;
-  authorId: string;
-  /** Always relative to the viewer, like every other authorship in the app. */
-  authorRole: MomentAuthorRole;
-  authorName: string;
-  kind: MomentResponseKind;
-  /** Present exactly when `kind === 'word'`. */
-  body: string | null;
-  /** Present exactly when `kind === 'photo'`. */
-  mediaPreview: string | null;
-  /** Present exactly when `kind === 'voice'`. */
-  audioUri: string | null;
-  createdAt: string;
-};
-
-export const RESPONSE_BODY_MAX_LENGTH = 400;
 
 /** Narrow a response to the variant that carries words. */
 export function responseWords(
@@ -74,13 +58,10 @@ export type CreateMomentResponseInput = {
   body?: string;
   mediaPreview?: string;
   audioUri?: string;
-};
-
-export type MomentResponseListResponse = {
-  responses: MomentResponse[];
+  mimeType?: string;
 };
 
 export type MomentResponseRepository = {
   listForMoment: (momentId: string) => Promise<MomentResponse[]>;
-  add: (input: CreateMomentResponseInput) => Promise<MomentResponse>;
+  add: (input: CreateMomentResponseInput, assertScope?: () => void) => Promise<MomentResponse>;
 };

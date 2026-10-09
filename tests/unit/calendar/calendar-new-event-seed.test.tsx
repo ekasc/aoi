@@ -1,7 +1,10 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const addEventSpy = vi.fn(async () => {});
+const backSpy = vi.fn();
+const preventLeaveSpy = vi.fn();
+vi.mock('@/hooks/use-prevent-leave', () => ({ usePreventLeave: (...args: unknown[]) => preventLeaveSpy(...args) }));
 
 // Params are swapped per test so one file can cover both seed shapes.
 const { routeParams } = vi.hoisted(() => ({
@@ -11,7 +14,7 @@ const { routeParams } = vi.hoisted(() => ({
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => routeParams,
-  useRouter: () => ({ back: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ back: backSpy, push: vi.fn() }),
 }));
 
 vi.mock('react-native-safe-area-context', () => ({
@@ -35,7 +38,7 @@ vi.mock('@/components/ui/surface', () => ({
 }));
 
 vi.mock('@/components/ui/button', () => ({
-  Button: ({ label, onPress }: any) => <button onClick={onPress}>{label}</button>,
+  Button: ({ label, onPress, disabled }: any) => <button disabled={disabled} onClick={onPress}>{label}</button>,
 }));
 
 vi.mock('@/hooks/use-theme-color', () => ({
@@ -59,10 +62,44 @@ async function renderAndSave() {
 
 describe('NewCalendarEventScreen seed date parsing', () => {
   beforeEach(() => {
-    addEventSpy.mockClear();
+    addEventSpy.mockReset().mockResolvedValue(undefined);
+    backSpy.mockClear();
+    preventLeaveSpy.mockClear();
     for (const key of Object.keys(routeParams)) {
       delete routeParams[key];
     }
+  });
+
+  it('locks editing, Cancel, and native removal until the durable save finishes', async () => {
+    let finish: () => void = () => {};
+    addEventSpy.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+    const { default: Screen } = await import('@/app/(app)/calendar/new-event');
+    render(<Screen />);
+    fireEvent.change(screen.getByLabelText('Event title'), { target: { value: 'Dinner' } });
+    fireEvent.click(screen.getByText('Save event'));
+    expect(preventLeaveSpy).toHaveBeenLastCalledWith(true, expect.any(Function));
+    fireEvent.click(screen.getByText('Cancel'));
+    fireEvent.click(screen.getByText('Saving…'));
+    expect(addEventSpy).toHaveBeenCalledOnce();
+    expect(backSpy).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(preventLeaveSpy).toHaveBeenLastCalledWith(false, expect.any(Function));
+    expect(backSpy).toHaveBeenCalledOnce();
+  });
+
+  it('retains the draft and unlocks after a failed save without exposing internal errors', async () => {
+    addEventSpy.mockRejectedValueOnce(new Error('private storage details'));
+    const { default: Screen } = await import('@/app/(app)/calendar/new-event');
+    render(<Screen />);
+    fireEvent.change(screen.getByLabelText('Event title'), { target: { value: 'Dinner' } });
+    await act(async () => fireEvent.click(screen.getByText('Save event')));
+    expect(screen.getByText('Could not save this event. Please try again.')).toBeTruthy();
+    expect(screen.queryByText('private storage details')).toBeNull();
+    expect((screen.getByLabelText('Event title') as HTMLInputElement).value).toBe('Dinner');
+    expect(backSpy).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByText('Save event')));
+    expect(addEventSpy).toHaveBeenCalledTimes(2);
+    expect(backSpy).toHaveBeenCalledOnce();
   });
 
   // Run with TZ=America/Los_Angeles: a date-only param parsed as UTC midnight

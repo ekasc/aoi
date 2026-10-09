@@ -219,7 +219,6 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     const { MomentForm } = await import('@/components/moments/moment-form');
     render(
       <MomentForm
-        heroTitle="Capture"
         heroSubtitle="Sub"
         onCancel={() => {}}
         onSubmit={vi.fn(async () => {})}
@@ -237,7 +236,6 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     const firstSubmit = vi.fn(async () => {});
     const { unmount: unmountFirst } = render(
       <MomentForm
-        heroTitle="Capture"
         heroSubtitle="Sub"
         onCancel={() => {}}
         onSubmit={firstSubmit}
@@ -255,7 +253,6 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     const secondSubmit = vi.fn(async () => {});
     render(
       <MomentForm
-        heroTitle="Capture"
         heroSubtitle="Sub"
         onCancel={() => {}}
         onSubmit={secondSubmit}
@@ -281,7 +278,6 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     onSubmit.mockRejectedValueOnce(new Error('network down'));
     render(
       <MomentForm
-        heroTitle="Capture"
         heroSubtitle="Sub"
         onCancel={() => {}}
         onSubmit={onSubmit}
@@ -306,7 +302,6 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     const onSubmit = vi.fn(async () => {});
     render(
       <MomentForm
-        heroTitle="Capture"
         heroSubtitle="Sub"
         onCancel={() => {}}
         onSubmit={onSubmit}
@@ -338,7 +333,6 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     const onSubmit = vi.fn(async () => {});
     render(
       <MomentForm
-        heroTitle="Capture"
         heroSubtitle="Sub"
         onCancel={() => {}}
         onSubmit={onSubmit}
@@ -359,7 +353,6 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     const onSubmit = vi.fn(async () => {});
     render(
       <MomentForm
-        heroTitle="Capture"
         heroSubtitle="Sub"
         onCancel={() => {}}
         onSubmit={onSubmit}
@@ -379,214 +372,5 @@ describe('Story capture identity (opaque per-draft ids)', () => {
     expect(values.mediaId).toBe('media-1');
     expect(values.mediaPreview).toBe('https://cdn.test/media-1');
     expect(values.clientId).toMatch(/^moment_/);
-  });
-});
-
-describe('trace compat redirect (capture → compose; approved plan supersedes old capture)', () => {
-  // trace.tsx is intentionally now a compat redirect (capture→compose intent,
-  // returnTo ignored, no camera/upload/save). The old direct-capture behaviors
-  // were intentionally removed per approved plan — their assertions were deleted
-  // (not weakened): camera auto-fire on mount, camera-cancel library fallback,
-  // camera-denial error UI, voice draft-instance save, failed-upload recovery,
-  // quota-blocked voice panel, note autofocus, photo keyboard-steal guard, voice
-  // recorder prominence, note-save dismissTo, Keep-it double-tap guard,
-  // attach-photo visibility, photo-only save (all superseded by the universal
-  // Memories inline composer). These tests pin the redirect contract and prove
-  // the removed behaviors stay removed.
-
-  it('capture=photo redirects to Memories with compose=photos (no camera auto-fire)', async () => {
-    searchParams = { capture: 'photo' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'photos' },
-    });
-    // Removed behavior stays removed: no camera auto-fire on mount.
-    expect(launchCameraAsyncMock).not.toHaveBeenCalled();
-    expect(launchImageLibraryAsyncMock).not.toHaveBeenCalled();
-    expect(addMoment).not.toHaveBeenCalled();
-    expect(uploadImage).not.toHaveBeenCalled();
-    expect(dismissToSpy).not.toHaveBeenCalled();
-    expect(screen.getByText('Opening Memories…')).toBeTruthy();
-  });
-
-  it('capture=note redirects to Memories with compose=note', async () => {
-    searchParams = { capture: 'note' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'note' },
-    });
-    expect(launchCameraAsyncMock).not.toHaveBeenCalled();
-    expect(launchImageLibraryAsyncMock).not.toHaveBeenCalled();
-    expect(addMoment).not.toHaveBeenCalled();
-    expect(uploadImage).not.toHaveBeenCalled();
-    expect(screen.getByText('Opening Memories…')).toBeTruthy();
-  });
-
-  it('capture=voice redirects to Memories with compose=voice', async () => {
-    searchParams = { capture: 'voice' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'voice' },
-    });
-    expect(launchCameraAsyncMock).not.toHaveBeenCalled();
-    expect(launchImageLibraryAsyncMock).not.toHaveBeenCalled();
-    expect(addMoment).not.toHaveBeenCalled();
-    expect(uploadImage).not.toHaveBeenCalled();
-    expect(screen.getByText('Opening Memories…')).toBeTruthy();
-  });
-
-  it('missing capture defaults to compose=note', async () => {
-    searchParams = {};
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'note' },
-    });
-    expect(launchCameraAsyncMock).not.toHaveBeenCalled();
-    expect(launchImageLibraryAsyncMock).not.toHaveBeenCalled();
-    expect(addMoment).not.toHaveBeenCalled();
-  });
-
-  it('ignores returnTo (universal Memories destination per approved plan)', async () => {
-    searchParams = { capture: 'note', returnTo: 'us' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    // returnTo=us is intentionally ignored: Memories is the universal final
-    // destination (approved).
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'note' },
-    });
-    expect(dismissToSpy).not.toHaveBeenCalled();
-    expect(backSpy).not.toHaveBeenCalled();
-  });
-
-  it('quota-blocked photo keeps the draft and offers Plus, not a dead end', async () => {
-    const { MomentForm } = await import('@/components/moments/moment-form');
-    const onSubmit = vi.fn(async () => {});
-    render(
-      <MomentForm
-        heroTitle="Capture"
-        heroSubtitle="Sub"
-        onCancel={() => {}}
-        onSubmit={onSubmit}
-        submitLabel="Save"
-        submittingLabel="Saving…"
-      />
-    );
-    fillNoteForm('Quota draft', 'Words stay.');
-    fireEvent.click(screen.getByText('Media'));
-    fireEvent.click(screen.getByText('Pick media'));
-
-    uploadImage.mockRejectedValueOnce(quotaError());
-    await act(async () => {
-      fireEvent.click(screen.getByText('Save'));
-    });
-
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByText('This Space is out of media room.')).toBeTruthy();
-    // Draft intact: title, body, and media selection all survive.
-    expect(screen.getByDisplayValue('Quota draft')).toBeTruthy();
-    expect(screen.getByDisplayValue('Words stay.')).toBeTruthy();
-    expect(refreshServerPlus).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByText('See Plus'));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/paywall');
-
-    // Dismiss and retry after room frees: same draft, one submission.
-    uploadImage.mockResolvedValue({ mediaId: 'media-2', url: 'https://cdn.test/media-2' });
-    fireEvent.click(screen.getByText('Keep editing'));
-    await act(async () => {
-      fireEvent.click(screen.getByText('Save'));
-    });
-    expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit.mock.calls[0][0].mediaId).toBe('media-2');
-  });
-
-  it('never fires camera/library/upload/save (removed behaviors stay removed)', async () => {
-    // Previously capture=photo auto-fired the camera and fell back to the
-    // library; capture=voice saved via addMoment+upload. All intentionally
-    // removed per approved plan — the redirect stages through the durable
-    // composer only, never here.
-    searchParams = { capture: 'photo' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    expect(launchCameraAsyncMock).not.toHaveBeenCalled();
-    expect(launchImageLibraryAsyncMock).not.toHaveBeenCalled();
-    expect(uploadImage).not.toHaveBeenCalled();
-    expect(addMoment).not.toHaveBeenCalled();
-    expect(dismissToSpy).not.toHaveBeenCalled();
-    expect(backSpy).not.toHaveBeenCalled();
-    expect(pushSpy).not.toHaveBeenCalled();
-    // No draft UI here: no Keep-it, no inputs, no pickers.
-    expect(screen.queryByText('Keep it')).toBeNull();
-    expect(screen.queryByText('Record voice')).toBeNull();
-    expect(screen.queryByText('Pick media')).toBeNull();
-  });
-});
-
-describe('trace compat removed behaviors (intentionally superseded per approved plan)', () => {
-  // Each test below documents one intentionally-removed behavior. Assertions of
-  // removed behavior were deleted only because the behavior was intentionally
-  // removed per approved plan (compat redirect supersedes direct capture) —
-  // not to weaken coverage. The inline composer in Memories now owns capture.
-
-  it('shows transitional affordance with no Keep-it / inputs / pickers', async () => {
-    searchParams = { capture: 'note' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    expect(screen.getByText('Opening Memories…')).toBeTruthy();
-    // Old content-first focus UI (serif input autofocus, caption inputs,
-    // prominent recorder, attach-photo control) is gone by design.
-    expect(screen.queryByText('Keep it')).toBeNull();
-    expect(screen.queryByText('Record voice')).toBeNull();
-    expect(screen.queryByText('Tap to record a short voice trace')).toBeNull();
-    expect(screen.queryByText('Choose from library instead')).toBeNull();
-    expect(launchCameraAsyncMock).not.toHaveBeenCalled();
-    expect(launchImageLibraryAsyncMock).not.toHaveBeenCalled();
-  });
-
-  it('no draft save / upload / quota panel / double-tap (all superseded by inline composer)', async () => {
-    // Old guarantees — same-tick double-tap publishes once, failed-upload
-    // recovery with stable id, quota-blocked voice keeps text, photo-only save
-    // without typing — lived in the direct capture pipeline. That pipeline is
-    // removed; the durable composer owns idempotency now. The redirect itself
-    // never saves, uploads, or shows quota UI.
-    searchParams = { capture: 'voice' };
-    const { default: TraceScreen } = await import('@/app/(app)/moment/trace');
-    await act(async () => {
-      render(<TraceScreen />);
-    });
-    expect(replaceSpy).toHaveBeenCalledWith({
-      pathname: '/(app)/(tabs)/(memories)',
-      params: { compose: 'voice' },
-    });
-    expect(addMoment).not.toHaveBeenCalled();
-    expect(uploadImage).not.toHaveBeenCalled();
-    expect(screen.queryByText('Keep it')).toBeNull();
-    expect(screen.queryByText('This Space is out of media room.')).toBeNull();
-    expect(screen.queryByText('See Plus')).toBeNull();
-    expect(dismissToSpy).not.toHaveBeenCalled();
   });
 });

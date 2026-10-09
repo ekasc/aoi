@@ -206,8 +206,8 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   );
 
   useEffect(() => {
-    if (!scrubbing.value) {
-      playhead.value = progress;
+    if (!scrubbing.get()) {
+      playhead.set(progress);
     }
   }, [playhead, progress, scrubbing]);
 
@@ -260,36 +260,48 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   );
 
   const scrubGesture = useMemo(() => {
+    // These callbacks hand JS functions to runOnJS. React Compiler reads that as
+    // a ref-reading closure passed to a function during render, but runOnJS only
+    // stores the function and never invokes it while rendering, so no ref is read
+    // during render. A reduced reproduction confirms the trigger is the real
+    // useRef these callbacks close over, not the shared values: the identical
+    // closure with no useRef in reach lints clean.
+    /* eslint-disable react-hooks/refs -- runOnJS defers these callbacks. */
     const drag = Gesture.Pan()
       // Horizontal along the band scrubs; a vertical drag is the viewer's
       // dismiss and passes straight through.
       .activeOffsetX([-6, 6])
       .failOffsetY([-18, 18])
       .onStart(() => {
-        scrubbing.value = true;
+        'worklet';
+        scrubbing.set(true);
         runOnJS(beginScrub)();
       })
       .onUpdate((event) => {
-        playhead.value = scrubFractionForOffset(event.x, waveWidth);
+        'worklet';
+        playhead.set(scrubFractionForOffset(event.x, waveWidth));
         runOnJS(scrubTo)(event.x, false);
       })
       .onFinalize((_, success) => {
-        scrubbing.value = false;
+        'worklet';
+        scrubbing.set(false);
         runOnJS(finishScrub)(success);
       });
 
     const tap = Gesture.Tap()
       .onEnd((event, success) => {
+        'worklet';
         if (!success) {
           return;
         }
-        playhead.value = scrubFractionForOffset(event.x, waveWidth);
+        playhead.set(scrubFractionForOffset(event.x, waveWidth));
         // A tap is one deliberate jump: it always lands.
         runOnJS(scrubTo)(event.x, true);
       });
 
     // Whichever the hand meant first wins: a drag on movement, a tap on lift.
     return Gesture.Race(drag, tap);
+    /* eslint-enable react-hooks/refs */
   }, [beginScrub, finishScrub, playhead, scrubTo, scrubbing, waveWidth]);
 
   const handleWaveLayout = useCallback((event: LayoutChangeEvent) => {
@@ -373,24 +385,24 @@ export function ViewerVoicePage({
   home,
 }: ViewerVoicePageProps) {
   const pageStyle = useAnimatedStyle(() => {
-    const t = morph.t.value;
-    const hasHome = home.valid.value;
+    const t = morph.t.get();
+    const hasHome = home.valid.get();
     const cover = hasHome
-      ? Math.max(home.width.value / width, home.height.value / height)
+      ? Math.max(home.width.get() / width, home.height.get() / height)
       : 1;
     const scale = 1 + (Math.min(cover, 1) - 1) * t;
     const centreX = width / 2;
     const centreY = height / 2;
-    const targetCentreX = hasHome ? home.x.value + home.width.value / 2 : centreX;
-    const targetCentreY = hasHome ? home.y.value + home.height.value / 2 : centreY;
+    const targetCentreX = hasHome ? home.x.get() + home.width.get() / 2 : centreX;
+    const targetCentreY = hasHome ? home.y.get() + home.height.get() / 2 : centreY;
     return {
       opacity: 1 - Math.max(0, (t - VOICE_FADE_FROM) / (1 - VOICE_FADE_FROM)),
       // Clipped at the radius, so the page's corners round as it lands.
       overflow: 'hidden',
-      borderRadius: shellRadiusFor(t, home.radius.value, scale),
+      borderRadius: shellRadiusFor(t, home.radius.get(), scale),
       transform: [
-        { translateX: morph.residualX.value },
-        { translateY: morph.residualY.value },
+        { translateX: morph.residualX.get() },
+        { translateY: morph.residualY.get() },
         { translateX: (targetCentreX - centreX) * t },
         { translateY: (targetCentreY - centreY) * t },
         { scale },

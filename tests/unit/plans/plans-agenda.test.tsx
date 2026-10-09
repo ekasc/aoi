@@ -63,15 +63,11 @@ vi.mock('react-native', () => {
 
 import type { CalendarEvent } from '@/features/calendar/types';
 import type { Moment } from '@/features/moments/types';
-import type { EventProposal } from '@/features/proposals/types';
 
 // Hoisted so the module factories below can reference the spies and the
 // per-test data without tripping vitest's mock hoisting.
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
-  accept: vi.fn(),
-  decline: vi.fn(),
-  reload: vi.fn(),
   refreshCalendar: vi.fn(),
   loadGoals: vi.fn(),
 }));
@@ -79,11 +75,6 @@ const mocks = vi.hoisted(() => ({
 const data = vi.hoisted(() => ({
   calendar: {
     upcomingEvents: [] as unknown[],
-    isLoading: false,
-    error: null as string | null,
-  },
-  proposals: {
-    proposals: [] as unknown[],
     isLoading: false,
     error: null as string | null,
   },
@@ -105,17 +96,6 @@ vi.mock('@/features/calendar/calendar-context', () => ({
     isLoading: data.calendar.isLoading,
     error: data.calendar.error,
     refresh: mocks.refreshCalendar,
-  }),
-}));
-
-vi.mock('@/features/proposals/proposals-context', () => ({
-  useProposals: () => ({
-    proposals: data.proposals.proposals,
-    isLoading: data.proposals.isLoading,
-    error: data.proposals.error,
-    accept: mocks.accept,
-    decline: mocks.decline,
-    reload: mocks.reload,
   }),
 }));
 
@@ -148,23 +128,6 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
   };
 }
 
-function makeProposal(
-  overrides: Partial<EventProposal> = {}
-): EventProposal {
-  return {
-    createdAt: '2026-09-15T00:00:00.000Z',
-    id: 'proposal-1',
-    proposerName: 'June',
-    proposerRole: 'partner',
-    proposedEnd: at(21),
-    proposedStart: at(19),
-    resolvedAt: null,
-    status: 'pending',
-    title: 'Cinema night',
-    ...overrides,
-  };
-}
-
 function makeGoal(overrides: Partial<Moment> = {}): Moment {
   return {
     authorId: 'user_you',
@@ -187,17 +150,10 @@ function renderAgenda() {
 
 beforeEach(() => {
   data.calendar = { upcomingEvents: [], isLoading: false, error: null };
-  data.proposals = { proposals: [], isLoading: false, error: null };
   data.goals = [];
   mocks.push.mockClear();
-  mocks.reload.mockReset();
-  mocks.reload.mockResolvedValue(undefined);
   mocks.refreshCalendar.mockReset();
   mocks.refreshCalendar.mockResolvedValue(undefined);
-  mocks.accept.mockReset();
-  mocks.accept.mockResolvedValue(undefined);
-  mocks.decline.mockReset();
-  mocks.decline.mockResolvedValue(undefined);
   mocks.loadGoals.mockReset();
   mocks.loadGoals.mockImplementation(async () => data.goals);
 });
@@ -224,89 +180,6 @@ describe('Plans agenda', () => {
     expect(screen.getByLabelText(/^Open Dinner out/)).toBeTruthy();
   });
 
-  it('shows Accept and Not now for a partner suggestion', async () => {
-    data.proposals.proposals = [makeProposal({ id: 'p1' })];
-
-    renderAgenda();
-
-    expect(await screen.findByText('Cinema night')).toBeTruthy();
-    expect(screen.getByLabelText('Accept')).toBeTruthy();
-    expect(screen.getByLabelText('Not now')).toBeTruthy();
-  });
-
-  it('shows your own pending suggestion without response actions', async () => {
-    data.proposals.proposals = [
-      makeProposal({
-        id: 'p2',
-        proposerName: 'You',
-        proposerRole: 'you',
-        title: 'Beach day',
-      }),
-    ];
-
-    renderAgenda();
-
-    expect(await screen.findByText('Beach day')).toBeTruthy();
-    expect(screen.queryByLabelText('Accept')).toBeNull();
-    expect(screen.queryByLabelText('Not now')).toBeNull();
-    expect(screen.getByText('Waiting for them.')).toBeTruthy();
-  });
-
-  it('accepts a suggestion once and refreshes the calendar afterwards', async () => {
-    data.proposals.proposals = [makeProposal({ id: 'p1' })];
-    let resolveAccept: () => void = () => {};
-    mocks.accept.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveAccept = () => resolve();
-        })
-    );
-
-    renderAgenda();
-    const accept = await screen.findByLabelText('Accept');
-
-    fireEvent.click(accept);
-    fireEvent.click(accept);
-
-    expect(mocks.accept).toHaveBeenCalledTimes(1);
-    expect(mocks.accept).toHaveBeenCalledWith('p1');
-    expect(mocks.refreshCalendar).not.toHaveBeenCalled();
-
-    await act(async () => {
-      resolveAccept();
-    });
-
-    await waitFor(() => {
-      expect(mocks.refreshCalendar).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('keeps accept failures calm and leaves the calendar alone', async () => {
-    data.proposals.proposals = [makeProposal({ id: 'p1' })];
-    mocks.accept.mockRejectedValue(new Error('raw backend failure 500'));
-
-    renderAgenda();
-    fireEvent.click(await screen.findByLabelText('Accept'));
-
-    expect(
-      await screen.findByText('That suggestion could not be accepted just now.')
-    ).toBeTruthy();
-    expect(screen.queryByText(/raw backend failure 500/)).toBeNull();
-    expect(mocks.refreshCalendar).not.toHaveBeenCalled();
-  });
-
-  it('offers Not now for a partner suggestion and sends a decline', async () => {
-    data.proposals.proposals = [makeProposal({ id: 'p1' })];
-
-    renderAgenda();
-    fireEvent.click(await screen.findByLabelText('Not now'));
-
-    await waitFor(() => {
-      expect(mocks.decline).toHaveBeenCalledWith('p1');
-    });
-    expect(mocks.refreshCalendar).not.toHaveBeenCalled();
-  });
-
   it('opens a goal detail and routes the create entries', async () => {
     data.goals = [makeGoal({ id: 'g1', title: 'Visit Kyoto' })];
 
@@ -317,9 +190,6 @@ describe('Plans agenda', () => {
       pathname: '/(app)/moment/[id]',
       params: { id: 'g1', at: '2026-09-01T00:00:00.000Z' },
     });
-
-    fireEvent.click(screen.getByLabelText('Suggest a time'));
-    expect(mocks.push).toHaveBeenCalledWith('/(app)/proposal/new');
 
     fireEvent.click(screen.getByLabelText('Set a goal'));
     expect(mocks.push).toHaveBeenCalledWith('/(app)/goal-new');
@@ -337,11 +207,8 @@ describe('Plans agenda', () => {
   it('says what is missing when the agenda is empty', async () => {
     renderAgenda();
 
-    expect(
-      await screen.findByText('Nothing on the calendar yet.')
-    ).toBeTruthy();
+    expect(await screen.findByText('No upcoming plans.')).toBeTruthy();
     expect(screen.getByText('No goals yet.')).toBeTruthy();
-    expect(screen.queryByText('Suggestions')).toBeNull();
   });
 
   it('shows a loading line while the calendar is loading', () => {
@@ -350,6 +217,14 @@ describe('Plans agenda', () => {
     renderAgenda();
 
     expect(screen.getByText('Loading plans…')).toBeTruthy();
+    expect(screen.queryByText('No upcoming plans.')).toBeNull();
+  });
+
+  it('does not call past goals nonexistent when none are upcoming', async () => {
+    data.goals = [makeGoal({ targetAt: '2020-01-01T00:00:00.000Z' })];
+    renderAgenda();
+    expect(await screen.findByText('No upcoming goals.')).toBeTruthy();
+    expect(screen.queryByText('No goals yet.')).toBeNull();
   });
 
   it('says a failed read failed, and retries every source', async () => {
@@ -357,16 +232,13 @@ describe('Plans agenda', () => {
 
     renderAgenda();
 
-    expect(
-      screen.getByText('Some of your plans could not be loaded.')
-    ).toBeTruthy();
+    expect(screen.getByText('Some of your plans could not be loaded.')).toBeTruthy();
     expect(screen.queryByText('raw calendar failure')).toBeNull();
 
     fireEvent.click(screen.getByLabelText('Try again'));
 
     await waitFor(() => {
       expect(mocks.refreshCalendar).toHaveBeenCalledTimes(1);
-      expect(mocks.reload).toHaveBeenCalledTimes(1);
       expect(mocks.loadGoals).toHaveBeenCalled();
     });
   });
@@ -374,7 +246,6 @@ describe('Plans agenda', () => {
   it('turns a rejected retry into a calm line instead of an unhandled promise', async () => {
     data.calendar.error = 'raw calendar failure';
     mocks.refreshCalendar.mockRejectedValue(new Error('raw refresh failure 500'));
-    mocks.reload.mockRejectedValue(new Error('raw reload failure 500'));
 
     renderAgenda();
     fireEvent.click(screen.getByLabelText('Try again'));
@@ -383,7 +254,6 @@ describe('Plans agenda', () => {
       await screen.findByText('Some of your plans could not be refreshed just now.')
     ).toBeTruthy();
     expect(screen.queryByText(/raw refresh failure 500/)).toBeNull();
-    expect(screen.queryByText(/raw reload failure 500/)).toBeNull();
   });
 
   it('issues one retry at a time while a retry is still in flight', async () => {
@@ -403,57 +273,14 @@ describe('Plans agenda', () => {
     fireEvent.click(tryAgain);
 
     expect(mocks.refreshCalendar).toHaveBeenCalledTimes(1);
-    expect(mocks.reload).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveRefresh();
     });
 
     await waitFor(() => {
-      expect(screen.queryByText('Some of your plans could not be refreshed just now.')).toBeNull();
-    });
-  });
-
-  it('does not claim an accepted suggestion failed when only the refresh did', async () => {
-    data.proposals.proposals = [makeProposal({ id: 'p1' })];
-    mocks.refreshCalendar.mockRejectedValue(new Error('raw refresh failure 500'));
-
-    renderAgenda();
-    fireEvent.click(await screen.findByLabelText('Accept'));
-
-    expect(mocks.accept).toHaveBeenCalledWith('p1');
-    expect(
-      await screen.findByText(
-        'That suggestion was accepted, but your calendar could not be refreshed.'
-      )
-    ).toBeTruthy();
-    expect(
-      screen.queryByText('That suggestion could not be accepted just now.')
-    ).toBeNull();
-  });
-
-  it('retries only the calendar read after an accepted suggestion', async () => {
-    data.proposals.proposals = [makeProposal({ id: 'p1' })];
-    mocks.refreshCalendar.mockRejectedValueOnce(new Error('raw refresh failure 500'));
-
-    renderAgenda();
-    fireEvent.click(await screen.findByLabelText('Accept'));
-
-    const reload = await screen.findByLabelText('Reload calendar');
-    expect(mocks.accept).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(reload);
-
-    await waitFor(() => {
-      expect(mocks.refreshCalendar).toHaveBeenCalledTimes(2);
-    });
-    // The answer is already settled: retrying must not re-accept it.
-    expect(mocks.accept).toHaveBeenCalledTimes(1);
-    await waitFor(() => {
       expect(
-        screen.queryByText(
-          'That suggestion was accepted, but your calendar could not be refreshed.'
-        )
+        screen.queryByText('Some of your plans could not be refreshed just now.')
       ).toBeNull();
     });
   });

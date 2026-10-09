@@ -46,7 +46,7 @@ export type CalendarLabel =
 /**
  * Validation: a non-`Other` preset must not carry `customText`; `Other` may
  * carry a non-empty `customText`, but is also valid WITHOUT one (the server
- * serializes label-less accepted proposals as `{ preset: 'Other' }`).
+ * serializes label-less events as `{ preset: 'Other' }`).
  * Expressed as a single object + superRefine (instead of a `z.never()`
  * union member) so the schema also renders in OpenAPI — runtime rejection
  * semantics are preserved.

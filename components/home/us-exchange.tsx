@@ -1,19 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 
 import { AudioPlayer } from '@/components/media/audio-player';
-import { MediaPicker } from '@/components/media/media-picker';
+import { MediaPicker, type MediaSelection } from '@/components/media/media-picker';
 import { VoiceRecorder } from '@/components/media/voice-recorder';
+import { PhotoViewer, type ViewerPhoto } from '@/components/moments/photo-viewer';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Pressed } from '@/components/ui/pressed';
 import { NativeSheet } from '@/components/ui/native-sheet';
 import { Radii, Spacing } from '@/constants/theme';
 import { haptics } from '@/features/haptics/haptics';
+import { imageSourceForUri } from '@/features/media/image-source';
 import { useResponses } from '@/features/responses/responses-context';
 import {
   RESPONSE_LABELS,
+  RESPONSE_BODY_MAX_LENGTH,
   type MomentResponse,
   type MomentResponseKind,
 } from '@/features/responses/types';
@@ -34,7 +38,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  */
 export function UsExchange({ moment }: { moment: Moment }) {
   const { user } = useSession();
-  const { responses, add } = useResponses();
+  const { responses, isLoading, error, loadFor, add } = useResponses();
   const [composing, setComposing] = useState(false);
   const [composeKind, setComposeKind] = useState<MomentResponseKind>('photo');
   const [sending, setSending] = useState(false);
@@ -91,11 +95,18 @@ export function UsExchange({ moment }: { moment: Moment }) {
           <ResponseRow key={response.id} response={response} />
         ))}
 
-        {responses.length === 0 ? (
-          <ThemedText type="body" style={[styles.empty, { color: muted }]}>
-            Nothing on this one yet. {partnerName()} does not have to be the one
-            who starts.
+        {error ? (
+          <ThemedText accessibilityRole="alert" type="body" style={{ color: muted }}>
+            Could not load responses.
           </ThemedText>
+        ) : responses.length === 0 ? (
+          <ThemedText accessibilityLiveRegion="polite" type="body" style={[styles.empty, { color: muted }]}>
+            {isLoading ? 'Loading responses…'
+              : `No responses yet. ${partnerName()} does not have to be the one who starts.`}
+          </ThemedText>
+        ) : null}
+        {error ? (
+          <Button label="Try again" onPress={() => loadFor(moment.id)} size="sm" variant="secondary" />
         ) : null}
       </View>
 
@@ -105,7 +116,7 @@ export function UsExchange({ moment }: { moment: Moment }) {
         accessibilityHint="Adds you to this memory with one tap, no writing"
         accessibilityLabel={`Say you were there, on ${moment.title?.trim() || 'this memory'}`}
         accessibilityRole="button"
-        accessibilityState={{ busy: sending }}
+        accessibilityState={{ busy: sending, disabled: sending }}
         disabled={sending}
         onPress={handleTap}
         style={({ pressed }) => [
@@ -145,6 +156,7 @@ export function UsExchange({ moment }: { moment: Moment }) {
       ) : null}
 
       <ResponseComposer
+        key={moment.id}
         kind={composeKind}
         moment={moment}
         onClose={closeComposer}
@@ -208,13 +220,59 @@ function ResponseRow({ response }: { response: MomentResponse }) {
       <ThemedText type="label" style={{ color: muted }}>
         {name}
       </ThemedText>
-      {response.kind === 'word' && response.body ? (
+      {response.kind === 'photo' && response.mediaPreview ? (
+        <ResponsePhoto key={response.mediaPreview} uri={response.mediaPreview} name={name} momentId={response.momentId} />
+      ) : response.kind === 'word' && response.body ? (
         <ThemedText type="body">{response.body}</ThemedText>
       ) : (
         <ThemedText type="body" style={{ color: muted }}>
           {RESPONSE_LABELS[response.kind]}
         </ThemedText>
       )}
+    </View>
+  );
+}
+
+function ResponsePhoto({ uri, name, momentId }: { uri: string; name: string; momentId: string }) {
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [viewing, setViewing] = useState(false);
+  const closeViewer = useCallback(() => setViewing(false), []);
+  const photos = useMemo<ViewerPhoto[]>(() => [{ uri, label: `Photo from ${name}`, momentId }], [uri, name, momentId]);
+  const source = imageSourceForUri(uri);
+  const surface = useThemeColor({}, 'surface2');
+  const muted = useThemeColor({}, 'textSecondary');
+  return (
+    <View style={styles.responsePhoto}>
+      {source && !failed ? (
+        <Pressable
+          accessibilityLabel={`Open photo from ${name} fullscreen`}
+          accessibilityRole="button"
+          onPress={() => setViewing(true)}
+        >
+          <Image
+            key={attempt}
+            accessible={false}
+            contentFit="contain"
+            onError={() => setFailed(true)}
+            source={source}
+            style={[styles.photo, { backgroundColor: surface }]}
+          />
+        </Pressable>
+      ) : (
+        <View style={[styles.photoUnavailable, { backgroundColor: surface }]}>
+          <ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
+            Could not load this photo.
+          </ThemedText>
+          <Button
+            label="Retry photo"
+            onPress={() => { setFailed(false); setAttempt((current) => current + 1); }}
+            size="sm"
+            variant="secondary"
+          />
+        </View>
+      )}
+      <PhotoViewer visible={viewing} photos={photos} onClose={closeViewer} />
     </View>
   );
 }
@@ -233,19 +291,30 @@ function ResponseComposer({
   const { user } = useSession();
   const { add } = useResponses();
   const [body, setBody] = useState('');
-  const [uri, setUri] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<MediaSelection | null>(null);
+  const [voiceUri, setVoiceUri] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [error, setError] = useState('');
   const border = useThemeColor({}, 'border');
   const muted = useThemeColor({}, 'textSecondary');
+  const text = useThemeColor({}, 'textPrimary');
+  const { height } = useWindowDimensions();
 
   const canSend =
-    kind === 'photo' ? Boolean(uri) : kind === 'voice' ? Boolean(uri) : body.trim().length > 0;
+    kind === 'photo' ? Boolean(photo) : kind === 'voice' ? Boolean(voiceUri) && !recording
+      : body.trim().length > 0 && body.length <= RESPONSE_BODY_MAX_LENGTH;
+
+  const handleClose = useCallback(() => {
+    if (!sendingRef.current && !recording) onClose();
+  }, [onClose, recording]);
 
   const handleSend = useCallback(async () => {
-    if (!canSend || sending) {
+    if (!canSend || sendingRef.current) {
       return;
     }
+    sendingRef.current = true;
     setSending(true);
     setError('');
     const ok = await add({
@@ -254,23 +323,32 @@ function ResponseComposer({
       authorRole: 'you',
       authorName: user?.displayName ?? 'You',
       kind,
+      mimeType: kind === 'photo' ? photo?.mimeType : undefined,
       ...(kind === 'word' ? { body: body.trim() } : {}),
-      ...(kind === 'photo' ? { mediaPreview: uri ?? undefined } : {}),
-      ...(kind === 'voice' ? { audioUri: uri ?? undefined } : {}),
+      ...(kind === 'photo' ? { mediaPreview: photo?.uri } : {}),
+      ...(kind === 'voice' ? { audioUri: voiceUri ?? undefined } : {}),
     });
     setSending(false);
+    sendingRef.current = false;
     if (!ok) {
       setError('That did not go through. Nothing was lost, try again.');
       return;
     }
-    setBody('');
-    setUri(null);
+    if (kind === 'word') setBody('');
+    if (kind === 'photo') setPhoto(null);
+    if (kind === 'voice') setVoiceUri(null);
     onClose();
-  }, [add, body, canSend, kind, moment.id, onClose, sending, uri, user]);
+  }, [add, body, canSend, kind, photo, moment.id, onClose, voiceUri, user]);
 
   return (
-    <NativeSheet onClose={onClose} visible={visible}>
-      <View accessibilityViewIsModal style={styles.composer}>
+    <NativeSheet dismissible={!sending && !recording} onClose={handleClose} visible={visible}>
+      <ScrollView
+        accessibilityViewIsModal
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.composer}
+        style={{ maxHeight: height * 0.8 }}
+      >
         <ThemedText type="title">
           {kind === 'photo' ? 'Add a photo' : kind === 'voice' ? 'Voice note' : 'Write something'}
         </ThemedText>
@@ -280,29 +358,40 @@ function ResponseComposer({
 
         {kind === 'photo' ? (
           <MediaPicker
-            onClear={() => setUri(null)}
-            onMediaSelected={(selection) => setUri(selection.uri)}
-            selectedUri={uri}
+            disabled={sending}
+            onClear={() => setPhoto(null)}
+            onMediaSelected={setPhoto}
+            selectedUri={photo?.uri}
           />
         ) : null}
 
         {kind === 'voice' ? (
           <VoiceRecorder
-            onRecorded={(recorded) => setUri(recorded)}
-            onRecordingChange={() => {}}
+            disabled={sending}
+            onError={setError}
+            onRecorded={setVoiceUri}
+            onRecordingChange={setRecording}
           />
         ) : null}
+        {kind === 'voice' && voiceUri && !recording ? <AudioPlayer uri={voiceUri} /> : null}
 
         {kind === 'word' ? (
-          <TextInput
-            accessibilityLabel="Your words about this memory"
-            multiline
-            onChangeText={setBody}
-            placeholder="Anything you remember about it"
-            placeholderTextColor={muted}
-            style={[styles.input, { borderColor: border, color: muted }]}
-            value={body}
-          />
+          <View style={styles.wordDraft}>
+            <TextInput
+              accessibilityLabel="Your words about this memory"
+              editable={!sending}
+              maxLength={RESPONSE_BODY_MAX_LENGTH}
+              multiline
+              onChangeText={setBody}
+              placeholder="Anything you remember about it"
+              placeholderTextColor={muted}
+              style={[styles.input, { borderColor: border, color: text }]}
+              value={body}
+            />
+            <ThemedText type="caption" style={[styles.characterCount, { color: muted }]}>
+              {body.length}/{RESPONSE_BODY_MAX_LENGTH}
+            </ThemedText>
+          </View>
         ) : null}
 
         {error ? (
@@ -312,14 +401,16 @@ function ResponseComposer({
         ) : null}
 
         <View style={styles.composerActions}>
-          <Button label="Not now" onPress={onClose} variant="ghost" />
+          <Button disabled={sending || recording} label="Not now" onPress={handleClose} variant="ghost" />
           <Button
+            accessibilityState={{ busy: sending, disabled: !canSend || sending }}
+            accessibilityLiveRegion="polite"
             disabled={!canSend || sending}
             label={sending ? 'Sending…' : 'Add to this memory'}
             onPress={handleSend}
           />
         </View>
-      </View>
+      </ScrollView>
     </NativeSheet>
   );
 }
@@ -382,5 +473,27 @@ const styles = StyleSheet.create({
   },
   composerActions: {
     gap: Spacing[8],
+  },
+  wordDraft: {
+    gap: Spacing[4],
+  },
+  characterCount: {
+    alignSelf: 'flex-end',
+  },
+  responsePhoto: {
+    marginTop: Spacing[4],
+  },
+  photo: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    borderRadius: Radii.card,
+  },
+  photoUnavailable: {
+    minHeight: 120,
+    padding: Spacing[16],
+    gap: Spacing[12],
+    borderRadius: Radii.card,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

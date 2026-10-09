@@ -49,7 +49,6 @@ export default function NewGoalScreen() {
 			<MomentForm
 				defaultType="goal"
 				heroSubtitle="Something to look forward to, together."
-				heroTitle="Set a future goal"
 				hideTypePicker
 				onCancel={handleCancel}
 				onSubmit={handleSubmit}

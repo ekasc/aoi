@@ -5,8 +5,6 @@ import type {
   CreateSpaceInput,
   JoinSpaceInput,
   UpdateSpaceInput,
-  ImportedMilestone,
-  ImportedMilestoneInput,
 } from '@/features/space/types';
 
 interface SpaceResponse {
@@ -80,29 +78,5 @@ export const remoteSpaceRepository: SpaceRepository = {
 
   async leaveSpace(_userId: string): Promise<void> {
     await apiFetch('/v1/spaces/leave', { method: 'POST' });
-  },
-
-  async getImportedMilestonesForUser(_userId: string): Promise<ImportedMilestone[]> {
-    return apiFetch<ImportedMilestone[]>('/v1/spaces/current/imported-milestones');
-  },
-
-  async appendImportedMilestonesForUser(
-    _userId: string,
-    milestones: ImportedMilestoneInput[]
-  ): Promise<ImportedMilestone[]> {
-    // The API supports creating one at a time, so we batch them
-    const results: ImportedMilestone[] = [];
-    for (const milestone of milestones) {
-      const created = await apiFetch<ImportedMilestone>('/v1/spaces/current/imported-milestones', {
-        method: 'POST',
-        body: JSON.stringify(milestone),
-      });
-      results.push(created);
-    }
-    return results;
-  },
-
-  async clearImportedMilestonesForUser(_userId: string): Promise<void> {
-    // No dedicated delete-all endpoint yet
   },
 };

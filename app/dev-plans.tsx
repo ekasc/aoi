@@ -1,4 +1,4 @@
-import { Redirect } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 import PlansScreen from "@/app/(app)/(tabs)/plans";
 import { CalendarProvider } from "@/features/calendar/calendar-context";
@@ -6,10 +6,11 @@ import {
 	DevErrorBoundary,
 	PREVIEW_SESSION,
 	PREVIEW_SPACE,
+	parsePreviewVariant,
 	useApplyPreviewVariant,
 } from "@/features/dev/preview";
-import { ProposalsProvider } from "@/features/proposals/proposals-context";
 import { SessionContext } from "@/features/session/session-context";
+import { SomedayProvider } from "@/features/someday/someday-context";
 import { SpaceContext } from "@/features/space/space-context";
 
 /**
@@ -23,8 +24,8 @@ import { SpaceContext } from "@/features/space/space-context";
  * to spin up. Motion work on the day view needs to be looked at, framed by
  * framed, so this route makes the screen reachable in a browser.
  *
- * It mounts the two providers the (app) layout owns that this screen reads
- * (calendar, proposals) and overrides session/space with the preview world;
+ * It mounts the provider the (app) layout owns that this screen reads
+ * (calendar) and overrides session/space with the preview world;
  * moments and the theme already come from the root layout. The bottom tab bar
  * is absent because the tab navigator lives in the (tabs) layout: expected for
  * a single-screen preview.
@@ -40,17 +41,18 @@ export default function DevPlans() {
 }
 
 function DevPlansPreview() {
-	useApplyPreviewVariant("full");
+	const { variant } = useLocalSearchParams<{ variant?: string | string[] }>();
+	useApplyPreviewVariant(parsePreviewVariant(variant));
 	return (
 		<SessionContext.Provider value={PREVIEW_SESSION}>
 			<SpaceContext.Provider value={PREVIEW_SPACE}>
-				<ProposalsProvider>
+				<SomedayProvider>
 					<CalendarProvider>
 						<DevErrorBoundary label="PlansScreen">
 							<PlansScreen />
 						</DevErrorBoundary>
 					</CalendarProvider>
-				</ProposalsProvider>
+				</SomedayProvider>
 			</SpaceContext.Provider>
 		</SessionContext.Provider>
 	);
