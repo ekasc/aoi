@@ -686,6 +686,162 @@ export const albumBackups = sqliteTable('album_backups', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
 });
 
+// ── Album Protocol (the new trust state) ───────────────────────────────────
+// Beside the backup blob rather than replacing it: the session path still reads
+// that one until the cutover. Every row keeps the signed object as validated
+// canonical wire JSON and extracts only the fields the server needs for
+// routing, ownership and monotonicity, so there is one representation of the
+// signed object rather than two that can drift.
+//
+// The server never decides whether a signature is trustworthy. It decides who
+// owns a row, whether a revision moved forward, and whether the caller is
+// allowed to write it at all.
+
+export const albumTrustAnchors = sqliteTable('album_trust_anchors', {
+  spaceId: text('space_id')
+    .primaryKey()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  payload: text('payload').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+/**
+ * A device's claim on its own id, before anything is signed.
+ *
+ * Without this, "first writer owns the device" is a race rather than a rule.
+ * During enrolment the authorising device necessarily learns the recipient's id
+ * and public keys, so it can PUT the recipient's record first and the row ends
+ * up owned by the wrong account: cryptographically Bob's phone, administratively
+ * Alice's, and Bob can never revise it.
+ *
+ * The recipient claims its id and keys first, and the final record has to match
+ * the claim on owner and both keys.
+ */
+export const albumDeviceClaims = sqliteTable(
+  'album_device_claims',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    deviceId: text('device_id').notNull(),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id),
+    signingPublicKey: text('signing_public_key').notNull(),
+    agreementPublicKey: text('agreement_public_key').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.spaceId, table.deviceId] })]
+);
+
+/**
+ * One row per device, owned by the account that first wrote it.
+ *
+ * `owner_user_id` is the fix for the hole the backup blob had: one shared bag
+ * meant either member could rewrite the other's device rows. Here the first
+ * writer owns the row and every later revision has to come from that same
+ * account, which is enforceable without the server understanding any
+ * signature. The owner comes from the device's claim, not from whoever wins the
+ * first request.
+ */
+export const albumDeviceRecords = sqliteTable(
+  'album_device_records',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    deviceId: text('device_id').notNull(),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id),
+    revision: integer('revision').notNull(),
+    payload: text('payload').notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.deviceId] }),
+    index('idx_album_device_records_owner').on(table.ownerUserId),
+  ]
+);
+
+/**
+ * Immutable per (space, generation, recipient, recipient revision, authoriser).
+ *
+ * The envelope binds the recipient's revision, so a reparented device needs a
+ * new row rather than a mutated one. The authoriser is in the key too, because
+ * without it any member could occupy a recipient's slot with an envelope the
+ * client will reject, and the real authoriser could then never store the
+ * legitimate one. All candidates are kept and the client accepts only the
+ * envelope whose authoriser matches the record it already trusts.
+ */
+export const albumSpaceKeyEnvelopes = sqliteTable(
+  'album_space_key_envelopes',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    generation: integer('generation').notNull(),
+    recipientDeviceId: text('recipient_device_id').notNull(),
+    recipientRevision: integer('recipient_revision').notNull(),
+    authoriserDeviceId: text('authoriser_device_id').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.spaceId,
+        table.generation,
+        table.recipientDeviceId,
+        table.recipientRevision,
+        table.authoriserDeviceId,
+      ],
+    }),
+  ]
+);
+
+/** One immutable row, generation 1 only until rotation exists. */
+export const albumRecoveryEnvelopes = sqliteTable(
+  'album_recovery_envelopes',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    generation: integer('generation').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.spaceId, table.generation] })]
+);
+
+/**
+ * Append-only, one row per tombstone rather than one row per target.
+ *
+ * A single row per target with last-write-wins would let a forged or untrusted
+ * tombstone displace a valid one, and the client has logic specifically to
+ * evaluate each tombstone's authority. Give it all of them.
+ *
+ * The unique index makes an exact retry idempotent rather than a second row.
+ * Distinct tombstones still accumulate, which is why the write path also
+ * enforces a ceiling.
+ */
+export const albumDeviceTombstones = sqliteTable(
+  'album_device_tombstones',
+  {
+    id: text('id').primaryKey(),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    targetDeviceId: text('target_device_id').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    index('idx_album_device_tombstones_target').on(table.spaceId, table.targetDeviceId),
+    uniqueIndex('uq_album_device_tombstones_payload').on(table.spaceId, table.payload),
+  ]
+);
+
 // ── User Preferences ───────────────────────────────────────────────────────
 
 export const userPreferences = sqliteTable(

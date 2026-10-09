@@ -16,6 +16,7 @@ import { momentsRouter } from './routes/session-moments';
 import { pushRouter } from './routes/session-push';
 import { mediaRouter } from './routes/session-media';
 import { albumRouter } from './routes/session-album';
+import { albumProtocolRouter } from './routes/session-album-protocol';
 import { calendarRouter } from './routes/session-calendar';
 import { lettersRouter } from './routes/session-letters';
 import { questionRouter } from './routes/session-question';
@@ -184,6 +185,7 @@ export function createApp(layers: RuntimeLayer): OpenAPIHono<AppEnv> {
   app.route('/', pushRouter(run));
   app.route('/', mediaRouter(run));
   app.route('/', albumRouter(run));
+  app.route('/', albumProtocolRouter(run));
   app.route('/', calendarRouter(run));
   app.route('/', lettersRouter(run));
   app.route('/', questionRouter(run));
