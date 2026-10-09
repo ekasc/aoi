@@ -658,13 +658,35 @@ export const albumMedia = sqliteTable(
     uploadState: text('upload_state').notNull().default('pending'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
     completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    /**
+     * The object's identity at the moment it was finalised.
+     *
+     * The presigned PUT is a conditional create, so a replay cannot rewrite a
+     * completed object. That defence lives in object storage, and whether it
+     * enforces the condition is not something this server can prove, so the
+     * object's etag and size are pinned here as well and the serve path refuses
+     * anything that no longer matches. The pin is the read-side check that holds
+     * even when the condition is not honoured.
+     */
+    completedEtag: text('completed_etag'),
+    completedSize: integer('completed_size'),
     deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+    /**
+     * When the ciphertext was confirmed gone from storage.
+     *
+     * Distinct from `deleted_at`, which is the user-visible act. A soft delete
+     * hides the photo immediately, but its bytes stay accounted for until this
+     * is set — which only happens after a fail-closed delete, and never while an
+     * upload authorization could still recreate the object. The shared quota
+     * counts actual storage, not the tombstone.
+     */
+    storageReclaimedAt: integer('storage_reclaimed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
     index('idx_album_media_space').on(table.spaceId),
     check(
       'ck_album_media_upload_state',
-      sql`${table.uploadState} in ('pending', 'complete', 'failed')`
+      sql`${table.uploadState} in ('pending', 'expiring', 'complete', 'failed')`
     ),
     check(
       'ck_album_media_person_tag',
@@ -839,6 +861,118 @@ export const albumDeviceTombstones = sqliteTable(
   (table) => [
     index('idx_album_device_tombstones_target').on(table.spaceId, table.targetDeviceId),
     uniqueIndex('uq_album_device_tombstones_payload').on(table.spaceId, table.payload),
+  ]
+);
+
+/**
+ * The signed-media upload lifecycle: one row per media, from reservation to
+ * completion.
+ *
+ * It is the storage-accounting row for signed media — the single place those
+ * bytes are counted — and the only thing that authorises an upload. It is
+ * separate from `album_media` (the pre-cutover flow) so signed media stays
+ * invisible to the legacy list and the legacy delete, which read that table.
+ *
+ *   pending  → complete   finalised, object pinned, quota held
+ *   pending  → failed     abandoned: object deleted, quota released
+ *
+ * `expires_at` is set past the presigned URL's own expiry, so a reservation
+ * never dies while its URL is still usable. Cleanup deletes the object before
+ * flipping the row to `failed`, so a `failed` row never leaves untracked
+ * storage behind.
+ */
+export const albumMediaReservations = sqliteTable(
+  'album_media_reservations',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    mediaId: text('media_id').notNull(),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    uploaderDeviceId: text('uploader_device_id').notNull(),
+    generation: integer('generation').notNull(),
+    byteLength: integer('byte_length').notNull(),
+    state: text('state').notNull().default('pending'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    completedEtag: text('completed_etag'),
+    completedSize: integer('completed_size'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.mediaId] }),
+    index('idx_album_media_reservations_state').on(table.spaceId, table.state),
+    check(
+      'ck_album_media_reservations_state',
+      sql`${table.state} in ('pending', 'expiring', 'complete', 'failed')`
+    ),
+  ]
+);
+
+/**
+ * One immutable signed manifest per media.
+ *
+ * The manifest is what makes the metadata authentic: the server currently holds
+ * `createdAt`, dimensions, `byteLength`, the wrapped-key association and the
+ * uploader in the clear and unauthenticated, so it can remix the archive
+ * without reading a pixel. The uploader signs the canonical bytes, and any
+ * device verifies them instead of trusting this row.
+ *
+ * There is no second revision. A delete does not rewrite it, because the device
+ * deleting is usually not the device that uploaded: removal is its own signed
+ * object. The primary key is the identity, so an exact retry is a no-op and a
+ * different payload for the same `mediaId` is refused.
+ *
+ * `uploader_device_id` and `revision` are extracted from the signed payload for
+ * routing and ordering only; they are not a second source of truth.
+ */
+export const albumMediaManifests = sqliteTable(
+  'album_media_manifests',
+  {
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    mediaId: text('media_id').notNull(),
+    uploaderDeviceId: text('uploader_device_id').notNull(),
+    revision: integer('revision').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.spaceId, table.mediaId] })]
+);
+
+/**
+ * Append-only media tombstone candidates.
+ *
+ * A tombstone is a claim, not a fact: the server cannot verify the signature,
+ * so it stores every candidate and lets clients decide. One row per target with
+ * last-write-wins would let a forged tombstone displace a valid one, and
+ * tracking only the highest revision would let a bogus huge revision block a
+ * legitimate one forever. So: one row per distinct tombstone, no monotonicity.
+ *
+ * The unique index makes an exact retry idempotent rather than a second row.
+ * Distinct tombstones still accumulate, which is why the write path also
+ * enforces a ceiling.
+ *
+ * Nothing here deletes ciphertext. A submitted tombstone is only a candidate
+ * until a client authenticates it, so it must never trigger physical removal.
+ */
+export const albumMediaTombstones = sqliteTable(
+  'album_media_tombstones',
+  {
+    id: text('id').primaryKey(),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    mediaId: text('media_id').notNull(),
+    payload: text('payload').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    index('idx_album_media_tombstones_media').on(table.spaceId, table.mediaId),
+    uniqueIndex('uq_album_media_tombstones_payload').on(table.spaceId, table.payload),
   ]
 );
 

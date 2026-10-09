@@ -7,6 +7,12 @@ import {
   PROTOCOL_MAX_ID_LENGTH,
   wireAlbumDeviceRecordResponseSchema,
   wireAlbumDeviceTombstoneResponseSchema,
+  wireAlbumMediaManifestResponseSchema,
+  wireAlbumMediaPageQuerySchema,
+  wireAlbumMediaProtocolSchema,
+  wireAlbumMediaReservationRequestSchema,
+  wireAlbumMediaReservationResponseSchema,
+  wireAlbumMediaTombstoneResponseSchema,
   wireAlbumProtocolSnapshotSchema,
   wireAlbumRecoveryEnvelopeResponseSchema,
   wireAlbumSpaceKeyEnvelopeResponseSchema,
@@ -15,6 +21,8 @@ import {
   wireDeviceClaimResponseSchema,
   wireDeviceRecordSchema,
   wireDeviceTombstoneSchema,
+  wireMediaManifestSchema,
+  wireMediaTombstoneSchema,
   wireRecoveryEnvelopeSchema,
   wireSpaceKeyEnvelopeSchema,
   wireSpaceTrustAnchorSchema,
@@ -23,11 +31,15 @@ import {
 import type { RunProgram } from '../create-app';
 import { makeAuthMiddleware } from '../middleware/session';
 import { makeRateLimitMiddleware } from '../middleware/session-rate-limit';
+import { finalizeAlbumMediaProgram, reserveAlbumMediaProgram } from '../domains/album';
 import {
+  getAlbumMediaProtocolProgram,
   getAlbumProtocolSnapshotProgram,
   postAlbumDeviceTombstoneProgram,
+  postAlbumMediaTombstoneProgram,
   putAlbumDeviceClaimProgram,
   putAlbumDeviceRecordProgram,
+  putAlbumMediaManifestProgram,
   putAlbumRecoveryEnvelopeProgram,
   putAlbumSpaceKeyEnvelopeProgram,
   putAlbumTrustAnchorProgram,
@@ -49,6 +61,10 @@ import {
 
 const deviceIdParamSchema = z.object({
   deviceId: z.string().min(1).max(PROTOCOL_MAX_ID_LENGTH),
+});
+
+const mediaIdParamSchema = z.object({
+  mediaId: z.string().min(1).max(PROTOCOL_MAX_ID_LENGTH),
 });
 
 const generationParamSchema = z.object({
@@ -138,6 +154,72 @@ export function albumProtocolRouter(run: RunProgram): Hono {
         )
       );
       return c.json(wireAlbumRecoveryEnvelopeResponseSchema.parse({ recoveryEnvelope: result }), 201);
+    }
+  );
+
+  router.get(
+    '/v1/spaces/current/album/protocol/media',
+    requireAuth,
+    rateLimit,
+    zValidator('query', wireAlbumMediaPageQuerySchema),
+    async (c) => {
+      const result = await run(
+        getAlbumMediaProtocolProgram(c.var.userId, c.req.valid('query'))
+      );
+      return c.json(wireAlbumMediaProtocolSchema.parse(result));
+    }
+  );
+
+  router.post(
+    '/v1/spaces/current/album/protocol/media',
+    requireAuth,
+    rateLimit,
+    zValidator('json', wireAlbumMediaReservationRequestSchema),
+    async (c) => {
+      const result = await run(reserveAlbumMediaProgram(c.var.userId, c.req.valid('json')));
+      return c.json(wireAlbumMediaReservationResponseSchema.parse(result), 201);
+    }
+  );
+
+  router.post(
+    '/v1/spaces/current/album/protocol/media/:mediaId/complete',
+    requireAuth,
+    rateLimit,
+    zValidator('param', mediaIdParamSchema),
+    async (c) => {
+      const result = await run(
+        finalizeAlbumMediaProgram(c.var.userId, c.req.valid('param').mediaId)
+      );
+      return c.json(result);
+    }
+  );
+
+  router.put(
+    '/v1/spaces/current/album/protocol/media/:mediaId/manifest',
+    requireAuth,
+    rateLimit,
+    zValidator('param', mediaIdParamSchema),
+    zValidator('json', wireMediaManifestSchema),
+    async (c) => {
+      const result = await run(
+        putAlbumMediaManifestProgram(
+          c.var.userId,
+          c.req.valid('param').mediaId,
+          c.req.valid('json')
+        )
+      );
+      return c.json(wireAlbumMediaManifestResponseSchema.parse({ manifest: result }), 201);
+    }
+  );
+
+  router.post(
+    '/v1/spaces/current/album/protocol/media-tombstones',
+    requireAuth,
+    rateLimit,
+    zValidator('json', wireMediaTombstoneSchema),
+    async (c) => {
+      const result = await run(postAlbumMediaTombstoneProgram(c.var.userId, c.req.valid('json')));
+      return c.json(wireAlbumMediaTombstoneResponseSchema.parse({ tombstone: result }), 201);
     }
   );
 

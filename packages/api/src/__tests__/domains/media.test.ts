@@ -142,6 +142,14 @@ describe('createUploadIntentProgram', () => {
     expect(result.uploadUrl).toMatch(/^https:\/\//);
     expect(result.uploadUrl).toContain('X-Amz-Signature');
     expect(result.headers?.['Content-Type']).toBe('image/jpeg');
+    // The album's conditional create is album-specific; the general media
+    // pipeline keeps an unconditional PUT.
+    expect(result.headers?.['If-None-Match']).toBeUndefined();
+    // The checksum fix applies here too: ordinary media presigning is otherwise
+    // unchanged, but it must not carry an empty-body checksum either.
+    const mediaUrl = new URL(result.uploadUrl);
+    expect(mediaUrl.searchParams.get('x-amz-checksum-crc32')).toBeNull();
+    expect(mediaUrl.searchParams.get('X-Amz-SignedHeaders')).toContain('content-length');
 
     // Deterministic key: derived from the media id, not a random uuid.
     const expectedKey = mediaOriginalKey(result.mediaId, 'image/jpeg');

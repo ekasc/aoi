@@ -746,6 +746,29 @@ export const getSpacePlusProgram = (
  * declared size, so in-flight uploads count against quota; abandoned ones
  * release when the staged cron purges them.
  */
+/**
+ * The one definition of a Space's counted media bytes.
+ *
+ * Ordinary media, the legacy album, and signed-media reservations all land in
+ * the same R2 bucket, so they share one budget: a Space cannot exceed its limit
+ * by uploading through a different door. Pending reservations count, because
+ * they hold space a completed object will occupy; a failed or expired one stops
+ * counting only once its bytes are actually gone.
+ *
+ * The expression carries three `?` placeholders, all bound to the same
+ * `spaceId`. It lives here so the read path and every enforcement statement can
+ * never disagree about what "used" means.
+ */
+export const COUNTED_MEDIA_BYTES_SQL = `(
+  coalesce((select sum(size_bytes) from media_objects
+             where space_id = ? and deleted_at is null and upload_state in ('pending', 'complete')), 0)
++ coalesce((select sum(byte_length) from album_media
+             where space_id = ? and storage_reclaimed_at is null
+               and upload_state in ('pending', 'expiring', 'complete')), 0)
++ coalesce((select sum(byte_length) from album_media_reservations
+             where space_id = ? and state in ('pending', 'expiring', 'complete')), 0)
+)`;
+
 export interface SpaceUsage {
   readonly isPlus: boolean;
   readonly expiresAt: string | null;
@@ -777,11 +800,8 @@ export const readSpaceUsage = (
         plusRow.status === 'active' &&
         (plusRow.expires_at === null || plusRow.expires_at > now);
       const mediaRow = await d1
-        .prepare(
-          `select coalesce(sum(size_bytes), 0) as used from media_objects
-           where space_id = ? and deleted_at is null and upload_state in ('pending', 'complete')`
-        )
-        .bind(spaceId)
+        .prepare(`select ${COUNTED_MEDIA_BYTES_SQL} as used`)
+        .bind(spaceId, spaceId, spaceId)
         .first<{ used: number }>();
       const lettersRow = await d1
         .prepare(`select count(*) as active from letters where space_id = ? and opened_at is null`)

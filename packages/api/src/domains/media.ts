@@ -30,7 +30,7 @@ import {
   limitExceeded,
   notFound,
 } from './errors';
-import { readSpaceUsage, type SpaceUsage } from './plus';
+import { readSpaceUsage, COUNTED_MEDIA_BYTES_SQL, type SpaceUsage } from './plus';
 import { getActiveSpaceId } from './spaces';
 
 /**
@@ -163,7 +163,9 @@ export const createUploadIntentProgram = (
     // under SQLite's serialized writes, so concurrent intents cannot both
     // pass when together they exceed quota. Pending intents reserve their
     // declared size (released if abandoned via the staged purge); the client
-    // never supplies usage — it is always recomputed here.
+    // never supplies usage — it is always recomputed here. The counted usage
+    // is the SHARED budget: ordinary media, the legacy album, and signed-media
+    // reservations all draw on the same limit.
     const usage = yield* readSpaceUsage(db.d1, spaceId, at);
     const inserted = yield* Effect.tryPromise({
       try: () =>
@@ -173,9 +175,7 @@ export const createUploadIntentProgram = (
                (id, space_id, created_by_user_id, filename, mime_type, size_bytes,
                 storage_key, upload_state, created_at)
              select ?, ?, ?, ?, ?, ?, ?, 'pending', ?
-             where (select coalesce(sum(size_bytes), 0) from media_objects
-                    where space_id = ? and deleted_at is null
-                      and upload_state in ('pending', 'complete')) + ? <= ?`
+             where ${COUNTED_MEDIA_BYTES_SQL} + ? <= ?`
           )
           .bind(
             mediaId,
@@ -186,6 +186,8 @@ export const createUploadIntentProgram = (
             input.sizeBytes,
             storageKey,
             at,
+            spaceId,
+            spaceId,
             spaceId,
             input.sizeBytes,
             usage.mediaLimitBytes
@@ -207,16 +209,16 @@ export const createUploadIntentProgram = (
     }
 
     const store = yield* MediaStore;
-    const uploadUrl = yield* Effect.tryPromise({
+    const presigned = yield* Effect.tryPromise({
       try: () => store.presignPutUrl(storageKey, input.mimeType, input.sizeBytes),
       catch: () => new InternalError({}),
     });
 
     return {
       mediaId,
-      uploadUrl,
+      uploadUrl: presigned.url,
       expiresInSec: MEDIA_PRESIGN_TTL_SEC,
-      headers: { 'Content-Type': input.mimeType },
+      headers: presigned.headers,
     };
   });
 
@@ -299,12 +301,18 @@ export const completeUploadProgram = (
           .prepare(
             `update media_objects set upload_state = 'complete', size_bytes = ?
              where id = ? and upload_state = 'pending'
-               and (select coalesce(sum(size_bytes), 0) from media_objects
-                    where space_id = ? and deleted_at is null
-                      and upload_state in ('pending', 'complete') and id != ?)
-                   + ? <= ?`
+               and ${COUNTED_MEDIA_BYTES_SQL} - ? + ? <= ?`
           )
-          .bind(head.size, mediaId, media.space_id, mediaId, head.size, usage.mediaLimitBytes)
+          .bind(
+            head.size,
+            mediaId,
+            media.space_id,
+            media.space_id,
+            media.space_id,
+            media.size_bytes,
+            head.size,
+            usage.mediaLimitBytes
+          )
           .run();
       },
       catch: () => new InternalError({}),
@@ -371,11 +379,12 @@ const rejectOverQuotaUpload = (
       try: async () => {
         const row = await d1
           .prepare(
-            `select coalesce(sum(size_bytes), 0) as used from media_objects
-             where space_id = ? and deleted_at is null
-               and upload_state in ('pending', 'complete') and id != ?`
+            `select ${COUNTED_MEDIA_BYTES_SQL} - coalesce(
+               (select size_bytes from media_objects
+                 where id = ? and deleted_at is null
+                   and upload_state in ('pending', 'complete')), 0) as used`
           )
-          .bind(media.space_id, media.id)
+          .bind(media.space_id, media.space_id, media.space_id, media.id)
           .first<{ used: number }>();
         return row?.used ?? 0;
       },

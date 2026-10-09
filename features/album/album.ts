@@ -133,19 +133,28 @@ export function openAlbumMedia(spaceKey: Uint8Array, media: AlbumMedia): Uint8Ar
   return openMedia(mediaKey, media.sealed);
 }
 
-/** Seal a photo for storage: random media key, wrapped under the space key. */
+/**
+ * Seal a photo for storage: random media key, wrapped under the space key.
+ *
+ * `byteLength` is the sealed ciphertext's own length, not the plaintext's. It
+ * is what gets uploaded, what object storage is asked to hold, and what
+ * finalisation verifies, so a plaintext length here reserves the wrong number
+ * of bytes and quietly hides the authentication tag's worth of difference.
+ */
 export function sealAlbumMedia(
   spaceKey: Uint8Array,
   plaintext: Uint8Array,
-  meta: Omit<AlbumMedia, 'id' | 'sealed' | 'wrappedKey'>,
+  meta: Omit<AlbumMedia, 'id' | 'sealed' | 'wrappedKey' | 'byteLength'>,
   generateMediaKey: () => Uint8Array,
 ): AlbumMedia {
   const mediaKey = generateMediaKey();
+  const sealed = sealMedia(mediaKey, plaintext);
   return {
     ...meta,
     id: `m-${meta.createdAt}-${mediaKey[0].toString(16)}${mediaKey[1].toString(16)}`,
-    sealed: sealMedia(mediaKey, plaintext),
+    sealed,
     wrappedKey: wrapKey(spaceKey, mediaKey),
+    byteLength: fromBase64(sealed.ciphertext).length,
   };
 }
 

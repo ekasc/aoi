@@ -126,7 +126,6 @@ export async function sealAndUploadPhoto(
     bytes,
     {
       createdAt: new Date().toISOString(),
-      byteLength: bytes.length,
       mimeType: 'image/jpeg',
       width: prepared.width,
       height: prepared.height,
@@ -136,6 +135,9 @@ export async function sealAndUploadPhoto(
 
   const intent = await session.client.createIntent({
     mimeType: media.mimeType,
+    // The ciphertext's length, because that is the object that will exist. The
+    // reservation, the head check, and the stored metadata all mean the same
+    // number now.
     byteLength: media.byteLength,
     sealedNonce: media.sealed.nonce,
     wrappedKey: media.wrappedKey,

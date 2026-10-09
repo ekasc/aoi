@@ -1,0 +1,1 @@
+ALTER TABLE `album_media` ADD `storage_reclaimed_at` integer;

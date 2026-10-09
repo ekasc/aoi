@@ -514,6 +514,27 @@ export const PROTOCOL_MAX_TOMBSTONES = 256;
 export const PROTOCOL_MAX_ENVELOPES = 256;
 export const PROTOCOL_MAX_RECOVERY_ENVELOPES = 16;
 
+/**
+ * The signed-media tombstone ceiling scales with the archive.
+ *
+ * A flat cap is wrong in both directions: too low and a large, busy archive
+ * blocks a legitimate deletion without any attacker; too high and a hostile
+ * member can grow one Space's snapshot without limit. So the ceiling is
+ * `BASE + PER_MEDIA * completedMedia`, capped absolutely.
+ *
+ * This does not remove the denial-of-service limit, only moves it: a member can
+ * still spend the ceiling on candidates a client will reject. The server cannot
+ * tell a forged candidate from a real one, so it cannot hold room for the real
+ * one, and pretending otherwise would be the lie.
+ */
+export const PROTOCOL_MEDIA_TOMBSTONE_BASE = 64;
+export const PROTOCOL_MEDIA_TOMBSTONES_PER_MEDIA = 2;
+export const PROTOCOL_MAX_MEDIA_TOMBSTONES = 4096;
+
+/** Page sizes for the signed-media manifest read. */
+export const ALBUM_MEDIA_PAGE_DEFAULT = 200;
+export const ALBUM_MEDIA_PAGE_MAX = 500;
+
 export const ED25519_PUBLIC_KEY_BYTES = 32;
 export const X25519_PUBLIC_KEY_BYTES = 32;
 export const ED25519_SIGNATURE_BYTES = 64;

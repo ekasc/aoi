@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { encodeBase64 } from '@aoi/shared';
 
 import { createApp } from '../../create-app';
+import { albumMediaKey } from '../../domains/album';
 import { makeTestHarness, type ShimD1 } from '../../effects/test-harness';
 
 /**
@@ -362,5 +363,154 @@ describe('the envelope routes', () => {
       ciphertext: WRAPPED,
     });
     expect(response.status).toBe(400);
+  });
+});
+
+const MEDIA_BASE = `${BASE}/media`;
+const TOMBSTONE_PATH = `${BASE}/media-tombstones`;
+const MEDIA_1 = '00000000-0000-4000-8000-000000000101';
+const MEDIA_2 = '00000000-0000-4000-8000-000000000102';
+
+const reservationBody = (mediaId: string, overrides: Record<string, unknown> = {}) => ({
+  mediaId,
+  generation: 1,
+  uploaderDeviceId: 'device-a',
+  byteLength: 3,
+  ...overrides,
+});
+
+const manifestBody = (mediaId: string, overrides: Record<string, unknown> = {}) => ({
+  mediaId,
+  spaceId: SPACE_1,
+  generation: 1,
+  revision: 1,
+  wrappedKey: { nonce: NONCE, ciphertext: WRAPPED },
+  sealedNonce: NONCE,
+  byteLength: 3,
+  mimeType: 'image/jpeg',
+  uploaderDeviceId: 'device-a',
+  createdAt: AT,
+  signature: SIG,
+  ...overrides,
+});
+
+const tombstoneBody = (mediaId: string) => ({
+  spaceId: SPACE_1,
+  mediaId,
+  revision: 2,
+  deletedAt: AT,
+  deletedByDeviceId: 'device-a',
+  signature: SIG,
+});
+
+async function post(app: ReturnType<typeof makeApp>['app'], path: string, token: string, body: unknown) {
+  return app.request(path, {
+    method: 'POST',
+    headers: { ...auth(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Enrol Alice's uploader, then reserve → upload → finalise one media. */
+async function publishableMedia(
+  harness: ReturnType<typeof makeApp>['harness'],
+  app: ReturnType<typeof makeApp>['app'],
+  mediaId: string
+) {
+  await claim(app, TOKEN_A, 'device-a');
+  await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'));
+  expect((await post(app, MEDIA_BASE, TOKEN_A, reservationBody(mediaId))).status).toBe(201);
+  harness.r2.putSync(
+    albumMediaKey(SPACE_1, mediaId),
+    new Uint8Array(3).fill(9),
+    'application/octet-stream'
+  );
+  expect((await post(app, `${MEDIA_BASE}/${mediaId}/complete`, TOKEN_A, {})).status).toBe(200);
+}
+
+describe('the media protocol route', () => {
+  it('returns the empty shape and requires a session', async () => {
+    const { app } = makeApp();
+    const response = await app.request(MEDIA_BASE, { headers: auth(TOKEN_A) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ manifests: [], nextCursor: null, tombstones: [] });
+    expect((await app.request(MEDIA_BASE)).status).toBe(401);
+  });
+
+  it('reserves, finalises, publishes a manifest, and reads it back', async () => {
+    const { harness, app } = makeApp();
+    await publishableMedia(harness, app, MEDIA_1);
+
+    const created = await put(
+      app,
+      `${MEDIA_BASE}/${MEDIA_1}/manifest`,
+      TOKEN_A,
+      manifestBody(MEDIA_1)
+    );
+    expect(created.status).toBe(201);
+    expect(await created.json()).toEqual({ manifest: manifestBody(MEDIA_1) });
+
+    const read = await app.request(MEDIA_BASE, { headers: auth(TOKEN_A) });
+    expect(await read.json()).toEqual({
+      manifests: [manifestBody(MEDIA_1)],
+      nextCursor: null,
+      tombstones: [],
+    });
+  });
+
+  it('refuses a reservation with a malformed id, and one with no session', async () => {
+    const { harness, app } = makeApp();
+    await claim(app, TOKEN_A, 'device-a');
+    await put(app, `${BASE}/devices/device-a`, TOKEN_A, record('device-a'));
+
+    expect((await post(app, MEDIA_BASE, TOKEN_A, reservationBody('media-1'))).status).toBe(400);
+    const anon = await app.request(MEDIA_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reservationBody(MEDIA_1)),
+    });
+    expect(anon.status).toBe(401);
+  });
+
+  it('refuses a manifest whose body and path disagree, and a malformed body', async () => {
+    const { harness, app } = makeApp();
+    await publishableMedia(harness, app, MEDIA_1);
+    expect(
+      (await put(app, `${MEDIA_BASE}/${MEDIA_2}/manifest`, TOKEN_A, manifestBody(MEDIA_1))).status
+    ).toBe(400);
+    expect(
+      (await put(app, `${MEDIA_BASE}/${MEDIA_1}/manifest`, TOKEN_A, { mediaId: MEDIA_1 })).status
+    ).toBe(400);
+  });
+
+  it('refuses a manifest with no session', async () => {
+    const { app } = makeApp();
+    const response = await app.request(`${MEDIA_BASE}/${MEDIA_1}/manifest`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(manifestBody(MEDIA_1)),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('accepts a tombstone candidate for media the Space has', async () => {
+    const { harness, app } = makeApp();
+    await publishableMedia(harness, app, MEDIA_1);
+    await put(app, `${MEDIA_BASE}/${MEDIA_1}/manifest`, TOKEN_A, manifestBody(MEDIA_1));
+
+    const response = await post(app, TOMBSTONE_PATH, TOKEN_A, tombstoneBody(MEDIA_1));
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ tombstone: tombstoneBody(MEDIA_1) });
+  });
+
+  it('refuses a malformed tombstone and a tombstone with no session', async () => {
+    const { app } = makeApp();
+    expect((await post(app, TOMBSTONE_PATH, TOKEN_A, { spaceId: SPACE_1 })).status).toBe(400);
+    const anon = await app.request(TOMBSTONE_PATH, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(anon.status).toBe(401);
   });
 });
