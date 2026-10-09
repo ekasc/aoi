@@ -14,6 +14,7 @@ import {
 import { makeTestHarness } from '../../effects/test-harness';
 import { mediaDisplayKey, mediaOriginalKey, mediaThumbKey } from '../../domains/media';
 import { completeAlbumUploadProgram } from '../../domains/album';
+import { LEGACY_ALBUM_RECLAIM_AFTER_MS } from '../../domains/album';
 import { COUNTED_MEDIA_BYTES_SQL } from '../../domains/plus';
 import { MEDIA_PRESIGN_TTL_SEC } from '../../services/media-store';
 
@@ -634,7 +635,7 @@ describe('album cleanup', () => {
     expect(albumUsedBytes(harness.d1)).toBe(10);
 
     // Past the window the object is reclaimed, and only then is it released.
-    harness.clock.set(now + MEDIA_PRESIGN_TTL_SEC * 1000 + 1);
+    harness.clock.set(now + LEGACY_ALBUM_RECLAIM_AFTER_MS + 1);
     const second = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
     expect(second.albumDeletedPurged).toBe(1);
     expect(harness.r2.objects.has(key)).toBe(false);
@@ -676,5 +677,58 @@ describe('album cleanup', () => {
 
     expect(result.albumOrphansDeleted).toBe(0);
     expect(harness.r2.objects.has(key)).toBe(true);
+  });
+
+  it('keeps a soft-deleted object while the presigning margin has not passed', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    // Past the nominal TTL but inside the safety margin: `created_at` predates
+    // presigning, so the URL the device holds could still be live.
+    const key = insertLegacyAlbum(harness.d1, 'legacy-margin', {
+      state: 'complete',
+      createdAt: now - MEDIA_PRESIGN_TTL_SEC * 1000 - 1000,
+      deletedAt: now,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream');
+
+    const result = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+
+    expect(result.albumDeletedPurged).toBe(0);
+    expect(harness.r2.objects.has(key)).toBe(true);
+    expect(albumUsedBytes(harness.d1)).toBe(10);
+  });
+
+  it('retries a failed soft-delete reclamation on the next run', async () => {
+    const harness = makeTestHarness();
+    seedUserSpace(harness.d1);
+    const now = harness.clock.value();
+    const stale = now - LEGACY_ALBUM_RECLAIM_AFTER_MS - 1;
+    const key = insertLegacyAlbum(harness.d1, 'legacy-reclaim', {
+      state: 'complete',
+      createdAt: stale,
+      deletedAt: stale,
+    });
+    harness.r2.putSync(key, new Uint8Array(10), 'application/octet-stream');
+
+    const originalDelete = harness.r2.delete.bind(harness.r2);
+    harness.r2.delete = async () => {
+      throw new Error('r2 down');
+    };
+    const blocked = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+    expect(blocked.albumDeletedPurged).toBe(0);
+    expect(harness.r2.objects.has(key)).toBe(true);
+    // Still counted, and still carrying the marker the retry needs.
+    expect(albumUsedBytes(harness.d1)).toBe(10);
+    const held = harness.d1.rawDb
+      .prepare('select storage_reclaimed_at from album_media where id = ?')
+      .get('legacy-reclaim') as { storage_reclaimed_at: number | null };
+    expect(held.storage_reclaimed_at).toBeNull();
+
+    harness.r2.delete = originalDelete;
+    const recovered = await Effect.runPromise(Effect.provide(mediaPurgeProgram, harness.layer));
+    expect(recovered.albumDeletedPurged).toBe(1);
+    expect(harness.r2.objects.has(key)).toBe(false);
+    expect(albumUsedBytes(harness.d1)).toBe(0);
   });
 });

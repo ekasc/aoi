@@ -176,6 +176,13 @@
       "when": 1791450675184,
       "tag": "0024_overjoyed_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791490330224,
+      "tag": "0025_serious_korvac",
+      "breakpoints": true
     }
   ]
 }

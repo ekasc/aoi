@@ -279,6 +279,14 @@ export const wireAlbumProtocolSnapshotSchema = z
   .object({
     anchor: wireSpaceTrustAnchorSchema.nullable(),
     records: z.array(wireDeviceRecordSchema).max(PROTOCOL_MAX_DEVICES),
+    /**
+     * Devices that have claimed an id and are waiting to be authorised, and the
+     * signed records an authoriser has left for them. Both are relay only: the
+     * server cannot tell a good signature from a bad one, and neither field is
+     * what makes a device trusted — the recipient verifies before it publishes.
+     */
+    claims: z.array(z.lazy(() => wireDeviceClaimSchema)).max(PROTOCOL_MAX_DEVICES),
+    offers: z.array(wireDeviceRecordSchema).max(PROTOCOL_MAX_DEVICES),
     tombstones: z.array(wireDeviceTombstoneSchema).max(PROTOCOL_MAX_TOMBSTONES),
     envelopes: z.array(wireSpaceKeyEnvelopeSchema).max(PROTOCOL_MAX_ENVELOPES),
     recoveryEnvelopes: z.array(wireRecoveryEnvelopeSchema).max(PROTOCOL_MAX_RECOVERY_ENVELOPES),
@@ -301,6 +309,9 @@ export const wireAlbumSpaceKeyEnvelopeResponseSchema = z
   .strict();
 export const wireAlbumRecoveryEnvelopeResponseSchema = z
   .object({ recoveryEnvelope: wireRecoveryEnvelopeSchema })
+  .strict();
+export const wireAlbumEnrollmentOfferResponseSchema = z
+  .object({ offer: wireDeviceRecordSchema })
   .strict();
 export const wireAlbumMediaManifestResponseSchema = z
   .object({ manifest: wireMediaManifestSchema })

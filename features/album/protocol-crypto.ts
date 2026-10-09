@@ -5,6 +5,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
   AES_GCM_NONCE_BYTES,
+  MEDIA_KEY_BYTES,
   SPACE_KEY_BYTES,
   encodeDeviceRecord,
   encodeDeviceTombstone,
@@ -24,6 +25,7 @@ import {
   type MediaTombstone,
   type MediaTombstoneInput,
   type RecoveryEnvelope,
+  type SealedBytes,
   type SpaceKeyEnvelope,
   type SpaceTrustAnchor,
   type SpaceTrustAnchorInput,
@@ -392,4 +394,62 @@ export function verifySpaceTrustAnchorRecovery(
   const { rootSignature, recoverySignature, ...input } = anchor;
   void rootSignature;
   return verify(recoverySignature, encodeSpaceTrustAnchor(input), recoverySigningPublicKey);
+}
+
+// ── media ────────────────────────────────────────────────────────────────
+
+/**
+ * The media key, wrapped under the Space key.
+ *
+ * The same encoded context that authenticates the ciphertext binds this too, so
+ * a wrapped key cannot be moved to another media or another generation and still
+ * open. Two different keys — Space for the wrap, media for the payload — under
+ * one binding, which is what makes a swapped `wrappedKey` a decrypt failure
+ * rather than a silent substitution.
+ */
+export function wrapMediaKey(input: {
+  spaceKey: Uint8Array;
+  mediaKey: Uint8Array;
+  context: Uint8Array;
+}): SealedBytes {
+  assertLength(input.spaceKey, SPACE_KEY_BYTES, 'spaceKey');
+  assertLength(input.mediaKey, MEDIA_KEY_BYTES, 'mediaKey');
+  const nonce = randomBytes(AES_GCM_NONCE_BYTES);
+  return { nonce, ciphertext: gcm(input.spaceKey, nonce, input.context).encrypt(input.mediaKey) };
+}
+
+export function unwrapMediaKey(input: {
+  spaceKey: Uint8Array;
+  wrapped: SealedBytes;
+  context: Uint8Array;
+}): Uint8Array {
+  assertLength(input.spaceKey, SPACE_KEY_BYTES, 'spaceKey');
+  const mediaKey = gcm(input.spaceKey, input.wrapped.nonce, input.context).decrypt(
+    input.wrapped.ciphertext
+  );
+  assertLength(mediaKey, MEDIA_KEY_BYTES, 'opened media key');
+  return mediaKey;
+}
+
+export function sealMediaCiphertext(input: {
+  mediaKey: Uint8Array;
+  plaintext: Uint8Array;
+  context: Uint8Array;
+}): SealedBytes {
+  assertLength(input.mediaKey, MEDIA_KEY_BYTES, 'mediaKey');
+  const nonce = randomBytes(AES_GCM_NONCE_BYTES);
+  return { nonce, ciphertext: gcm(input.mediaKey, nonce, input.context).encrypt(input.plaintext) };
+}
+
+/**
+ * Open, or throw. A failed tag check means the bytes are not the ones this
+ * manifest describes, and there is deliberately no softer outcome than that.
+ */
+export function openMediaCiphertext(input: {
+  mediaKey: Uint8Array;
+  sealed: SealedBytes;
+  context: Uint8Array;
+}): Uint8Array {
+  assertLength(input.mediaKey, MEDIA_KEY_BYTES, 'mediaKey');
+  return gcm(input.mediaKey, input.sealed.nonce, input.context).decrypt(input.sealed.ciphertext);
 }

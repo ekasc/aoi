@@ -1,0 +1,234 @@
+import {
+  wireAlbumDeviceRecordResponseSchema,
+  wireAlbumEnrollmentOfferResponseSchema,
+  wireAlbumMediaManifestResponseSchema,
+  wireAlbumMediaProtocolSchema,
+  wireAlbumMediaReservationResponseSchema,
+  wireAlbumMediaTombstoneResponseSchema,
+  wireAlbumProtocolSnapshotSchema,
+  wireAlbumRecoveryEnvelopeResponseSchema,
+  wireAlbumSpaceKeyEnvelopeResponseSchema,
+  wireAlbumTrustAnchorResponseSchema,
+  wireDeviceClaimResponseSchema,
+  type WireAlbumMediaProtocol,
+  type WireAlbumMediaReservationResponse,
+  type WireAlbumProtocolSnapshot,
+  type WireDeviceRecord,
+  type WireMediaManifest,
+  type WireMediaTombstone,
+  type WireRecoveryEnvelope,
+  type WireSpaceKeyEnvelope,
+  type WireSpaceTrustAnchor,
+} from '@aoi/shared';
+
+import { apiFetch, apiFetchBytes, isStubMode } from '@/features/api-client';
+import { toArrayBuffer } from '@/features/album/crypto';
+
+/**
+ * The protocol's transport.
+ *
+ * Every response is parsed through the same wire schema the server validates
+ * with, so a client never reasons about a shape the contract does not promise.
+ * The one non-JSON hop is the presigned PUT, which points at object storage and
+ * must not carry our Authorization header.
+ */
+
+const PROTOCOL = '/v1/spaces/current/album/protocol';
+const MEDIA = `${PROTOCOL}/media`;
+
+/** A failed protocol request, with the status preserved for callers that act on it. */
+export class ProtocolRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'ProtocolRequestError';
+  }
+}
+
+export type DeviceClaimRequest = {
+  deviceId: string;
+  signingPublicKey: string;
+  agreementPublicKey: string;
+};
+
+export type MediaReservationRequest = {
+  mediaId: string;
+  generation: number;
+  uploaderDeviceId: string;
+  byteLength: number;
+};
+
+export interface AlbumProtocolClient {
+  getSnapshot(): Promise<WireAlbumProtocolSnapshot>;
+  putAnchor(anchor: WireSpaceTrustAnchor): Promise<void>;
+  claimDevice(claim: DeviceClaimRequest): Promise<void>;
+  putDeviceRecord(record: WireDeviceRecord): Promise<void>;
+  putEnrollmentOffer(record: WireDeviceRecord): Promise<void>;
+  putSpaceKeyEnvelope(envelope: WireSpaceKeyEnvelope): Promise<void>;
+  putRecoveryEnvelope(generation: number, envelope: WireRecoveryEnvelope): Promise<void>;
+  reserveMedia(input: MediaReservationRequest): Promise<WireAlbumMediaReservationResponse>;
+  putObject(
+    uploadUrl: string,
+    headers: Record<string, string> | undefined,
+    bytes: Uint8Array
+  ): Promise<void>;
+  finalizeMedia(mediaId: string): Promise<void>;
+  putManifest(mediaId: string, manifest: WireMediaManifest): Promise<void>;
+  postMediaTombstone(tombstone: WireMediaTombstone): Promise<void>;
+  fetchMediaProtocol(cursor: string | null): Promise<WireAlbumMediaProtocol>;
+  fetchMediaObject(mediaId: string): Promise<Uint8Array>;
+}
+
+/**
+ * `apiFetch` throws ordinary `Error`s carrying a `status`; callers here need to
+ * tell "already done" from "failed", so every protocol request is normalised to
+ * one error type with the status preserved.
+ */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    return await apiFetch<T>(path, init);
+  } catch (error) {
+    const status = (error as { status?: number }).status ?? 0;
+    throw new ProtocolRequestError(
+      status,
+      error instanceof Error ? error.message : 'The request failed'
+    );
+  }
+}
+
+function remoteClient(): AlbumProtocolClient {
+  return {
+    async getSnapshot() {
+      return wireAlbumProtocolSnapshotSchema.parse(await request<unknown>(PROTOCOL));
+    },
+    async putAnchor(anchor) {
+      wireAlbumTrustAnchorResponseSchema.parse(
+        await request<unknown>(`${PROTOCOL}/anchor`, {
+          method: 'PUT',
+          body: JSON.stringify(anchor),
+        })
+      );
+    },
+    async claimDevice(claim) {
+      wireDeviceClaimResponseSchema.parse(
+        await request<unknown>(`${PROTOCOL}/device-claims`, {
+          method: 'POST',
+          body: JSON.stringify(claim),
+        })
+      );
+    },
+    async putDeviceRecord(record) {
+      wireAlbumDeviceRecordResponseSchema.parse(
+        await request<unknown>(`${PROTOCOL}/devices/${encodeURIComponent(record.deviceId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(record),
+        })
+      );
+    },
+    async putEnrollmentOffer(record) {
+      wireAlbumEnrollmentOfferResponseSchema.parse(
+        await request<unknown>(
+          `${PROTOCOL}/enrollment-offers/${encodeURIComponent(record.deviceId)}`,
+          { method: 'PUT', body: JSON.stringify(record) }
+        )
+      );
+    },
+    async putSpaceKeyEnvelope(envelope) {
+      wireAlbumSpaceKeyEnvelopeResponseSchema.parse(
+        await request<unknown>(`${PROTOCOL}/envelopes`, {
+          method: 'PUT',
+          body: JSON.stringify(envelope),
+        })
+      );
+    },
+    async putRecoveryEnvelope(generation, envelope) {
+      wireAlbumRecoveryEnvelopeResponseSchema.parse(
+        await request<unknown>(`${PROTOCOL}/recovery-envelopes/${generation}`, {
+          method: 'PUT',
+          body: JSON.stringify(envelope),
+        })
+      );
+    },
+    async reserveMedia(input) {
+      return wireAlbumMediaReservationResponseSchema.parse(
+        await request<unknown>(MEDIA, { method: 'POST', body: JSON.stringify(input) })
+      );
+    },
+    async putObject(uploadUrl, headers, bytes) {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: toArrayBuffer(bytes),
+        headers: { 'Content-Type': 'application/octet-stream', ...(headers ?? {}) },
+      });
+      // 412 is the conditional create refusing a key that already holds an
+      // object. On a retry that is exactly what we wanted to happen.
+      if (!response.ok && response.status !== 412) {
+        throw new ProtocolRequestError(response.status, `Upload failed: ${response.status}`);
+      }
+    },
+    async finalizeMedia(mediaId) {
+      await request<unknown>(`${MEDIA}/${encodeURIComponent(mediaId)}/complete`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    },
+    async putManifest(mediaId, manifest) {
+      wireAlbumMediaManifestResponseSchema.parse(
+        await request<unknown>(`${MEDIA}/${encodeURIComponent(mediaId)}/manifest`, {
+          method: 'PUT',
+          body: JSON.stringify(manifest),
+        })
+      );
+    },
+    async postMediaTombstone(tombstone) {
+      wireAlbumMediaTombstoneResponseSchema.parse(
+        await request<unknown>(`${PROTOCOL}/media-tombstones`, {
+          method: 'POST',
+          body: JSON.stringify(tombstone),
+        })
+      );
+    },
+    async fetchMediaProtocol(cursor) {
+      const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`;
+      return wireAlbumMediaProtocolSchema.parse(await request<unknown>(`${MEDIA}${query}`));
+    },
+    async fetchMediaObject(mediaId) {
+      const result = await apiFetchBytes(`${MEDIA}/${encodeURIComponent(mediaId)}/object`);
+      return result.bytes;
+    },
+  };
+}
+
+/**
+ * The protocol has no stub backend: the dev world is a single device with no
+ * second witness, so there is nothing truthful to enrol against. Returning a
+ * client that fails loudly keeps the archive on its legacy path there instead
+ * of inventing a fake trust root.
+ */
+function unavailableClient(): AlbumProtocolClient {
+  const refuse = (): never => {
+    throw new ProtocolRequestError(0, 'The signed protocol is unavailable in stub mode');
+  };
+  return {
+    getSnapshot: async () => refuse(),
+    putAnchor: async () => refuse(),
+    claimDevice: async () => refuse(),
+    putDeviceRecord: async () => refuse(),
+    putEnrollmentOffer: async () => refuse(),
+    putSpaceKeyEnvelope: async () => refuse(),
+    putRecoveryEnvelope: async () => refuse(),
+    reserveMedia: async () => refuse(),
+    putObject: async () => refuse(),
+    finalizeMedia: async () => refuse(),
+    putManifest: async () => refuse(),
+    postMediaTombstone: async () => refuse(),
+    fetchMediaProtocol: async () => refuse(),
+    fetchMediaObject: async () => refuse(),
+  };
+}
+
+export function getAlbumProtocolClient(): AlbumProtocolClient {
+  return isStubMode() ? unavailableClient() : remoteClient();
+}

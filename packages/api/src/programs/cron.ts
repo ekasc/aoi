@@ -4,8 +4,8 @@ import type { WorkerCtx } from '../env';
 import { Db, guardedUpdate, type DbService } from '../effects/d1';
 import { nowMs } from '../effects/clock';
 import { Logger, logInfo, type LoggerService } from '../effects/logger';
-import { MediaStore, MEDIA_PRESIGN_TTL_SEC, deleteKeyConfirmed, type MediaStoreService } from '../services/media-store';
-import { albumMediaKey } from '../domains/album';
+import { MediaStore, deleteKeyConfirmed, type MediaStoreService } from '../services/media-store';
+import { LEGACY_ALBUM_RECLAIM_AFTER_MS, albumMediaKey } from '../domains/album';
 import { mediaDisplayKey, mediaThumbKey } from '../domains/media';
 
 /**
@@ -332,7 +332,7 @@ export const mediaPurgeProgram = Effect.gen(function* () {
           `select id, storage_key, storage_reclaimed_at from album_media
            where deleted_at is not null and created_at < ?`
         )
-        .bind(now - MEDIA_PRESIGN_TTL_SEC * 1000)
+        .bind(now - LEGACY_ALBUM_RECLAIM_AFTER_MS)
         .all<{ id: string; storage_key: string; storage_reclaimed_at: number | null }>(),
     catch: () => new Error('cron: album reclaim query failed'),
   }).pipe(

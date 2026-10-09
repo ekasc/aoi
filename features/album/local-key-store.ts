@@ -88,6 +88,8 @@ export type StoredDevice = {
 export type LocalKeyStore = {
   /** Create and persist this device's keys, or return the ones already here. */
   ensureDevice: (spaceId: string, deviceId: string) => Promise<DeviceKeys>;
+  /** Persist keys that were minted elsewhere — recovery generates its own. */
+  saveDevice: (spaceId: string, device: DeviceKeys) => Promise<void>;
   /** Rehydrate the private halves after a restart. Null when it is a new device. */
   loadDevice: (spaceId: string) => Promise<DeviceKeys | null>;
   forgetDevice: (spaceId: string) => Promise<void>;
@@ -111,6 +113,13 @@ export function createLocalKeyStore(): LocalKeyStore {
         JSON.stringify(toWire(identityOf(device))),
       );
       return device;
+    },
+
+    async saveDevice(spaceId, device) {
+      const base = devicePrefix(spaceId);
+      await writeSecret(`${base}signing.private`, device.signing.privateKey);
+      await writeSecret(`${base}agreement.private`, device.agreement.privateKey);
+      await AsyncStorage.setItem(`${base}device`, JSON.stringify(toWire(identityOf(device))));
     },
 
     async loadDevice(spaceId) {

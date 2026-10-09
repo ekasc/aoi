@@ -20,13 +20,28 @@ const state = vi.hoisted(() => ({
 
 vi.mock('@/features/session/session-context', () => ({ useSession: () => ({ user: { id: state.userId } }) }));
 vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { id: state.spaceId } }) }));
+// The signed archive is exercised by its own suite; here it is stubbed so the
+// hook's legacy behaviour is what is under test, and so no test makes a real
+// network attempt.
+const protocol = vi.hoisted(() => ({
+  establish: vi.fn(async () => ({ status: 'unavailable' })),
+  read: vi.fn(async () => ({ photos: [], deleted: [], rejected: [], incomplete: false, missing: [] })),
+  remove: vi.fn(async () => {}),
+  upload: vi.fn(async () => {}),
+}));
+vi.mock('@/features/album/protocol-archive', () => ({
+  establishProtocolArchive: protocol.establish,
+  readProtocolArchive: protocol.read,
+  removeProtocolPhoto: protocol.remove,
+  uploadProtocolPhoto: protocol.upload,
+  ProtocolUploadInterrupted: class ProtocolUploadInterrupted extends Error {},
+}));
 vi.mock('@/features/album/album-session', () => ({
   establishAlbumSession: state.establish,
   sealAndUploadPhoto: state.sealUpload,
   openPhoto: state.open,
 }));
-vi.mock('@/features/album/album-photo-store', () => ({
-  createAlbumPhotoStore: () => ({ list: state.storeList, removeCached: state.storeRemove, dispose: state.dispose }),
+vi.mock('@/features/album/album-photo-store', () => ({  createAlbumPhotoStore: () => ({ list: state.storeList, removeCached: state.storeRemove, dispose: state.dispose }),
 }));
 vi.mock('@/features/album/sky-photo-import', () => ({ prepareSkyPhoto: state.prepare }));
 vi.mock('expo-image-picker', () => ({ launchImageLibraryAsync: state.pick }));
@@ -57,6 +72,10 @@ beforeEach(() => {
   state.sealUpload.mockReset().mockResolvedValue(undefined);
   state.prepare.mockReset().mockResolvedValue(prepared);
   state.pick.mockReset().mockResolvedValue({ canceled: true, assets: null });
+  protocol.establish.mockReset().mockResolvedValue({ status: 'unavailable' });
+  protocol.read.mockReset().mockResolvedValue({ photos: [], deleted: [], rejected: [], incomplete: false, missing: [] });
+  protocol.remove.mockReset().mockResolvedValue(undefined);
+  protocol.upload.mockReset().mockResolvedValue(undefined);
 });
 
 describe('shared sky photos', () => {
@@ -157,8 +176,72 @@ describe('shared sky photos', () => {
     expect(result.current.operation).toBeNull();
   });
 
-  it('hides old scope photos immediately and ignores a late read', async () => {
-    state.list.mockResolvedValueOnce([{ id: 'shared-photo' }]);
+  it('initializes the signed archive even when the legacy session has no partner', async () => {
+    // A brand-new Space: no legacy partner, so the old path has nothing. The
+    // signed protocol is the only thing that can work, and it must still start.
+    state.establish.mockResolvedValue({ status: 'waiting' });
+    protocol.establish.mockResolvedValue({ status: 'ready' });
+
+    const { result } = renderHook(useSkyPhotos);
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect(protocol.establish).toHaveBeenCalledWith({ spaceId: 'space' });
+    expect(protocol.read).toHaveBeenCalled();
+    expect(result.current.protocolStatus).toBe('ready');
+  });
+
+  it('keeps a displayed photo when its download fails, and drops it on an authenticated deletion', async () => {
+    protocol.establish.mockResolvedValue({ status: 'ready' });
+    protocol.read.mockResolvedValueOnce({
+      photos: [{ mediaId: 'm-1', addedAt: '2026-01-01T00:00:00.000Z', width: 1, height: 1, bytes: new Uint8Array([1]) }],
+      deleted: [],
+      rejected: [],
+      incomplete: false,
+      missing: [],
+    });
+    state.storeList.mockResolvedValueOnce([
+      { id: 'm-1', addedAt: '2026-01-01T00:00:00.000Z', width: 1, height: 1, uri: 'blob:m-1' },
+    ]);
+
+    const { result } = renderHook(useSkyPhotos);
+    await waitFor(() => expect(result.current.photos).toHaveLength(1));
+
+    // The download fails on the next pass: an outage, not a deletion, so the
+    // copy this device already showed stays.
+    protocol.read.mockResolvedValueOnce({
+      photos: [],
+      deleted: [],
+      rejected: [],
+      incomplete: true,
+      missing: ['m-1'],
+    });
+    state.storeList.mockResolvedValueOnce([]);
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.photos).toHaveLength(1));
+
+    // An authenticated deletion does remove it.
+    protocol.read.mockResolvedValueOnce({
+      photos: [],
+      deleted: ['m-1'],
+      rejected: [],
+      incomplete: false,
+      missing: [],
+    });
+    state.storeList.mockResolvedValueOnce([]);
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.photos).toHaveLength(0));
+  });
+
+  it('surfaces a trust failure instead of silently using the legacy path', async () => {    protocol.establish.mockResolvedValue({ status: 'blocked' });
+
+    const { result } = renderHook(useSkyPhotos);
+    await waitFor(() => expect(result.current.status).toBe('failed'));
+
+    expect(result.current.protocolStatus).toBe('blocked');
+    expect(result.current.readError).not.toBeNull();
+  });
+
+  it('hides old scope photos immediately and ignores a late read', async () => {    state.list.mockResolvedValueOnce([{ id: 'shared-photo' }]);
     state.storeList.mockResolvedValueOnce([photo]);
     const { result, rerender } = renderHook(useSkyPhotos);
     await waitFor(() => expect(result.current.photos).toEqual([photo]));
