@@ -93,6 +93,7 @@ export type CreateMomentInput = {
 };
 
 export type UpdateMomentInput = {
+  expectedUpdatedAt: string;
   type?: MomentType;
   title?: string;
   body?: string;
@@ -150,7 +151,7 @@ export type MomentsContextValue = {
   loadChapterRange: (fromMs: number, toMs: number) => Promise<Moment[]>;
   addMoment: (input: CreateMomentInput) => Promise<Moment>;
   updateMoment: (momentId: string, patch: UpdateMomentInput) => Promise<void>;
-  removeMoment: (momentId: string) => Promise<void>;
+  removeMoment: (momentId: string, expectedUpdatedAt: string) => Promise<void>;
   /** Re-fetches the head of the archive (remote mode); no-op in stub mode. */
   refresh: () => Promise<void>;
 };

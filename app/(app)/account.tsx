@@ -186,9 +186,12 @@ export default function AccountScreen() {
 		router.push("/(app)/paywall");
 	}, [router]);
 
+	const [isSigningOut, setIsSigningOut] = useState(false);
 	const handleSignOut = useCallback(async () => {
+		if (isSigningOut) return;
 		haptics.tap();
 		setSignOutError("");
+		setIsSigningOut(true);
 		try {
 			// signOut() quietly lets go of this device's push registration first
 			// (single choke point — every sign-out path unregisters the token).
@@ -196,8 +199,10 @@ export default function AccountScreen() {
 			router.replace("/(public)");
 		} catch {
 			setSignOutError("Failed to sign out. Please try again.");
+		} finally {
+			setIsSigningOut(false);
 		}
-	}, [router, signOut]);
+	}, [isSigningOut, router, signOut]);
 
 	// Both destructive paths confirm in the app's own sheet rather than a
 	// system alert: the copy is long, the sheet is themeable and announced as
@@ -311,6 +316,15 @@ export default function AccountScreen() {
 			showsVerticalScrollIndicator={false}
 		>
 			<View style={styles.section}>
+				<ThemedText type="title">{user?.displayName?.trim() || 'You'}</ThemedText>
+				<ThemedText type="caption" style={{ color: muted }}>
+					{[user?.email, space?.name].filter(Boolean).join(' · ')}
+				</ThemedText>
+			</View>
+
+			<Divider />
+
+			<View style={styles.section}>
 				<SectionHeading title="Appearance" muted={muted} />
 				<ThemeSelector showDescriptions={false} />
 			</View>
@@ -364,7 +378,7 @@ export default function AccountScreen() {
 					disabled={isExporting}
 				/>
 				{exportMessage ? (
-					<ThemedText accessibilityRole="alert" type="caption">
+					<ThemedText accessibilityRole="alert" type="caption" selectable>
 						{exportMessage}
 					</ThemedText>
 				) : null}
@@ -430,7 +444,14 @@ export default function AccountScreen() {
 
 			<View style={styles.section}>
 				<SectionHeading title="Session" muted={muted} />
-				<Button label="Sign out" variant="secondary" onPress={handleSignOut} />
+				<Button
+					accessibilityLiveRegion="polite"
+					accessibilityState={{ busy: isSigningOut }}
+					disabled={isSigningOut}
+					label={isSigningOut ? "Signing out…" : "Sign out"}
+					variant="secondary"
+					onPress={handleSignOut}
+				/>
 				{signOutError ? (
 					<ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
 						{signOutError}
@@ -513,7 +534,7 @@ export default function AccountScreen() {
 					},
 					{ label: "Cancel", onPress: handleCloseConfirm },
 				]}
-				description="This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, letters, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
+				description="Export your data first — it stays free, before or without deleting anything. This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, letters, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
 				onClose={handleCloseConfirm}
 				title="Delete your account?"
 				visible={confirming === "delete"}

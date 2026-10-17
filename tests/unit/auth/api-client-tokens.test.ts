@@ -186,4 +186,185 @@ describe('api-client token plumbing (remote mode)', () => {
     // B untouched by stale A refresh.
     expect(getApiTokens()).toEqual({ accessToken: 'token-B', refreshToken: 'refresh-B' });
   });
+
+  it('shares one refresh between concurrent 401s of the same session', async () => {
+    // The regression: two requests 401ing together each POSTed a refresh.
+    // The server reads a rotated-out refresh token presented twice as theft
+    // and revokes every session. Concurrent losers must join one flight.
+    const { setApiTokens, apiFetch, getApiTokens } = await loadApiClient();
+    setApiTokens({ accessToken: 'stale-token', refreshToken: 'refresh-1' });
+
+    let resolveRefresh!: (r: Response) => void;
+    const refreshGate = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+      const u = String(url);
+      calls.push({ url: u, authorization: new Headers(init?.headers).get('Authorization') });
+      if (u.endsWith('/v1/auth/refresh')) {
+        return refreshGate;
+      }
+      if (calls.filter((c) => !c.url.endsWith('/v1/auth/refresh')).length <= 2) {
+        return jsonResponse({ error: { message: 'expired' } }, 401);
+      }
+      return jsonResponse({ ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/v1/a');
+    const second = apiFetch('/v1/b');
+    // Let both initial 401s land: the second must find the first's flight.
+    // Registration is synchronous, so this ordering is deterministic.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls.filter((c) => c.url.endsWith('/v1/auth/refresh'))).toHaveLength(1);
+
+    resolveRefresh(
+      jsonResponse({ accessToken: 'fresh-token', refreshToken: 'refresh-2', expiresInSec: 3600 })
+    );
+    await expect(first).resolves.toEqual({ ok: true });
+    await expect(second).resolves.toEqual({ ok: true });
+
+    const retries = calls.filter((c) => !c.url.endsWith('/v1/auth/refresh')).slice(2);
+    expect(retries.map((c) => c.authorization)).toEqual(['Bearer fresh-token', 'Bearer fresh-token']);
+    expect(getApiTokens()).toEqual({
+      accessToken: 'fresh-token',
+      refreshToken: 'refresh-2',
+      expiresAt: expect.any(String),
+    });
+  });
+
+  it('retries a loser whose 401 lands after our own rotation completed', async () => {
+    // The reload race: space wins the refresh while moments is still in
+    // flight; moments 401s after the rotation published. Without the
+    // lineage record it would surface a stale 401 ("Offline") until a
+    // manual retry, even though valid tokens exist.
+    const { setApiTokens, apiFetch } = await loadApiClient();
+    setApiTokens({ accessToken: 'stale-token', refreshToken: 'refresh-1' });
+
+    let releaseSecond401!: () => void;
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond401 = resolve;
+    });
+    const counts = new Map<string, number>();
+    const authorizations: Array<string | null> = [];
+    const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+      const u = String(url);
+      const n = (counts.get(u) ?? 0) + 1;
+      counts.set(u, n);
+      authorizations.push(new Headers(init?.headers).get('Authorization'));
+      if (u.endsWith('/v1/auth/refresh')) {
+        return jsonResponse({
+          accessToken: 'fresh-token',
+          refreshToken: 'refresh-2',
+          expiresInSec: 3600,
+        });
+      }
+      if (u.endsWith('/v1/second') && n === 1) {
+        await secondGate;
+        return jsonResponse({ error: { message: 'expired' } }, 401);
+      }
+      return jsonResponse({ ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/v1/first');
+    const second = apiFetch('/v1/second');
+    await expect(first).resolves.toEqual({ ok: true });
+    // The rotation above completed while the second request was in flight.
+    releaseSecond401();
+    await expect(second).resolves.toEqual({ ok: true });
+
+    // Exactly one refresh POST; the late loser retried with its lineage.
+    expect(counts.get('https://api.test.local/v1/auth/refresh')).toBe(1);
+    expect(counts.get('https://api.test.local/v1/second')).toBe(2);
+  });
+
+  it('still 401s after a switch even when a rotation record exists', async () => {
+    // Rotation record proves lineage, not identity: after A rotates and the
+    // reader switches to B, a stale in-flight A request must still fail
+    // rather than replay anything anywhere.
+    const { setApiTokens, apiFetch, getApiTokens } = await loadApiClient();
+    setApiTokens({ accessToken: 'stale-A', refreshToken: 'refresh-A' });
+
+    let releaseStale401!: () => void;
+    const staleGate = new Promise<void>((resolve) => {
+      releaseStale401 = resolve;
+    });
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      calls.push(u);
+      if (u.endsWith('/v1/auth/refresh')) {
+        return jsonResponse({
+          accessToken: 'fresh-A',
+          refreshToken: 'refresh-A2',
+          expiresInSec: 3600,
+        });
+      }
+      if (u.endsWith('/v1/stale')) {
+        if (calls.filter((c) => c.endsWith('/v1/stale')).length > 1) {
+          throw new Error('stale request must never retry');
+        }
+        await staleGate;
+        return jsonResponse({ error: { message: 'expired' } }, 401);
+      }
+      return jsonResponse({ ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const staleReq = apiFetch('/v1/stale').catch((e: Error) => e);
+    // Rotate A's lineage fully while the stale request is in flight.
+    await expect(apiFetch('/v1/rotator')).resolves.toEqual({ ok: true });
+    // Then switch accounts before the stale 401 lands.
+    setApiTokens({ accessToken: 'token-B', refreshToken: 'refresh-B' });
+    releaseStale401();
+
+    const err = (await staleReq) as Error;
+    expect(String(err.message)).toContain('expired');
+    expect(calls.filter((c) => c.endsWith('/v1/stale'))).toHaveLength(1);
+    expect(getApiTokens()).toEqual({ accessToken: 'token-B', refreshToken: 'refresh-B' });
+  });
+
+  it('a joiner never replays when the account switches mid-refresh', async () => {
+    // A1 initiates, A2 joins, then the reader switches to B before the
+    // refresh lands: both must fail closed on the original 401s.
+    const { setApiTokens, apiFetch, getApiTokens } = await loadApiClient();
+    setApiTokens({ accessToken: 'stale-A', refreshToken: 'refresh-A' });
+
+    let resolveRefresh!: (r: Response) => void;
+    const refreshGate = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      calls.push(u);
+      if (u.endsWith('/v1/auth/refresh')) {
+        return refreshGate;
+      }
+      if (calls.filter((c) => !c.endsWith('/v1/auth/refresh')).length > 2) {
+        throw new Error('must never retry after a switch');
+      }
+      return jsonResponse({ error: { message: 'expired' } }, 401);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/v1/a').catch((e: Error) => e);
+    const second = apiFetch('/v1/b').catch((e: Error) => e);
+    await new Promise((r) => setTimeout(r, 10));
+    setApiTokens({ accessToken: 'token-B', refreshToken: 'refresh-B' });
+    resolveRefresh(
+      jsonResponse({ accessToken: 'fresh-A', refreshToken: 'refresh-A2', expiresInSec: 3600 })
+    );
+
+    expect(String((await first as Error).message)).toContain('expired');
+    expect(String((await second as Error).message)).toContain('expired');
+    expect(calls).toEqual([
+      'https://api.test.local/v1/a',
+      'https://api.test.local/v1/b',
+      'https://api.test.local/v1/auth/refresh',
+    ]);
+    expect(getApiTokens()).toEqual({ accessToken: 'token-B', refreshToken: 'refresh-B' });
+  });
 });

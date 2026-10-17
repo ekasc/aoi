@@ -44,8 +44,23 @@ describe('haptics helper', () => {
     expect(notificationSpy).toHaveBeenCalledWith('error');
   });
 
-  it('stays silent off iOS', async () => {
+  it('fires on Android exactly like iOS', async () => {
     (process.env as any).EXPO_OS = 'android';
+    const { haptics } = await import('@/features/haptics/haptics');
+
+    haptics.select();
+    haptics.tap();
+    haptics.soft();
+    haptics.success();
+
+    expect(selectionSpy).toHaveBeenCalledTimes(1);
+    expect(impactSpy).toHaveBeenCalledWith('light');
+    expect(impactSpy).toHaveBeenCalledWith('soft');
+    expect(notificationSpy).toHaveBeenCalledWith('success');
+  });
+
+  it('stays silent on web', async () => {
+    (process.env as any).EXPO_OS = 'web';
     const { haptics } = await import('@/features/haptics/haptics');
 
     haptics.select();

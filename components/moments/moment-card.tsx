@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AudioPlayer } from "@/components/media/audio-player";
 import { VideoPlayer } from "@/components/media/video-player";
+import { bump, noteCardRender } from "@/features/dev/measurement-recorder";
 import { FeedPhoto, MomentOrderedAudios, MomentOrderedImages, hasOrderedAttachments, orderedImageAttachments } from "@/components/moments/moment-attachments";
 import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { ThemedText } from "@/components/themed-text";
@@ -79,7 +80,7 @@ export function clampPhotoAspect(aspect: number): number {
 	return Math.min(16 / 9, Math.max(3 / 4, aspect));
 }
 
-function isEditedMoment(moment: Moment): boolean {
+export function isEditedMoment(moment: Moment): boolean {
 	if (!moment.updatedAt) {
 		return false;
 	}
@@ -104,6 +105,8 @@ function formatGoalTargetLabel(targetAt?: string | null) {
 }
 
 function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsInset = 0, onPhotoPress, presentation = "article", rowWidth }: MomentCardProps) {
+  // Diagnosis only; a no-op unless a recorder window is open.
+  noteCardRender(moment.id);
 	const isTimeline = presentation === "timeline";
 	const secondary = useThemeColor({}, "textSecondary");
 	const accentInk = useThemeColor({}, "accentInk");
@@ -130,6 +133,7 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsI
 	const [photoAspect, setPhotoAspect] = useState<number | null>(null);
 	const handlePhotoLoad = useCallback(
 		(event: { source: { width: number; height: number } }) => {
+			bump("mediaLoad");
 			const { width, height } = event.source;
 			if (Number.isFinite(width) && Number.isFinite(height) && height > 0) {
 				setPhotoAspect(clampPhotoAspect(width / height));
@@ -137,6 +141,16 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsI
 		},
 		[],
 	);
+
+	// Diagnosis only: these fire from the native image loader, which JS fetch
+	// instrumentation never sees.
+	const handlePhotoLoadStart = useCallback(() => {
+		bump("mediaStart");
+	}, []);
+
+	const handlePhotoError = useCallback(() => {
+		bump("mediaError");
+	}, []);
 
 	const goalTargetLabel = useMemo(
 		() => formatGoalTargetLabel(moment.targetAt),
@@ -256,7 +270,9 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsI
 					style={styles.mediaImage}
 					contentFit="contain"
 					transition={200}
+					onLoadStart={handlePhotoLoadStart}
 					onLoad={handlePhotoLoad}
+					onError={handlePhotoError}
 				/>
 			</MediaFrame>
 		)

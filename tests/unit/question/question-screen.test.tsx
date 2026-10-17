@@ -198,7 +198,7 @@ beforeEach(() => {
 describe('QuestionScreen loading and error (network behavior preserved)', () => {
   it('identifies unanswered and unavailable reflections explicitly', async () => {
     const page = await renderQuestion();
-    expect(screen.getByText('No answers yet.')).toBeTruthy();
+    expect(screen.getByText(/No answers yet\./)).toBeTruthy();
     page.unmount();
     mockQuestion = { ...mockQuestion, state: null };
     await renderQuestion();
@@ -297,7 +297,7 @@ describe('QuestionScreen composer (answer behavior preserved)', () => {
     expect(screen.getByText('Update my answer')).toBeTruthy();
   });
 
-  it('pairs the saved-but-locked note with one gold dot in warning', async () => {
+  it('rests saved words as read-only text with a calm unlock note (no warning)', async () => {
     mockQuestion.state = baseState({
       yourAnswer: 'The way they made coffee on Tuesday.',
       yourAnswerUpdatedAt: '2026-08-01T10:00:00.000Z',
@@ -306,15 +306,83 @@ describe('QuestionScreen composer (answer behavior preserved)', () => {
     });
     const { container } = await renderQuestion();
 
+    // Kept words rest as text, not an input, until the reader chooses to edit.
+    expect(screen.queryByLabelText('Your reflection answer')).toBeNull();
+    expect(
+      screen.getByText('The way they made coffee on Tuesday.')
+    ).toBeTruthy();
     const note = screen.getByText('Saved. It unlocks when Mara has written too.');
-    expect((note as HTMLElement).style.color).toBe('#8a5f2b');
-    const dots = Array.from(container.querySelectorAll('div')).filter(
+    // Calm status colour: muted, never the warning amber.
+    expect((note as HTMLElement).style.color).toBe('#3a3a3a');
+    const warningDots = Array.from(container.querySelectorAll('div')).filter(
       (element) =>
         (element as HTMLElement).style.backgroundColor === '#8a5f2b' &&
         (element as HTMLElement).style.width === '8px' &&
         (element as HTMLElement).style.height === '8px'
     );
-    expect(dots).toHaveLength(1);
+    expect(warningDots).toHaveLength(0);
+    // The edit path stays available without pressure.
+    expect(screen.getByText('Update my answer')).toBeTruthy();
+  });
+
+  it('opens the composer from the waiting rest with the kept draft', async () => {
+    mockQuestion.state = baseState({
+      yourAnswer: 'The way they made coffee on Tuesday.',
+      yourAnswerUpdatedAt: '2026-08-01T10:00:00.000Z',
+      partnerAnswered: true,
+      partnerAnswer: null,
+    });
+    await renderQuestion();
+
+    fireEvent.click(screen.getByText('Update my answer'));
+
+    const input = (await screen.findByLabelText(
+      'Your reflection answer'
+    )) as HTMLInputElement;
+    expect(input.value).toBe('The way they made coffee on Tuesday.');
+  });
+
+  it('announces the save failure and retries the kept draft', async () => {
+    mockQuestion.submitAnswer = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    const { container } = await renderQuestion();
+
+    fireEvent.change(screen.getByLabelText('Your reflection answer'), {
+      target: { value: 'Something small and true.' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Keep my answer'));
+    });
+
+    const failure = await screen.findByText(
+      "Your answer couldn't be saved right now, try again in a moment."
+    );
+    expect(failure).toBeTruthy();
+    expect(
+      container.querySelector('[accessibilityrole="alert"]')
+    ).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try again'));
+    });
+    expect(mockQuestion.submitAnswer).toHaveBeenCalledTimes(2);
+    expect(mockQuestion.submitAnswer).toHaveBeenLastCalledWith(
+      'Something small and true.'
+    );
+  });
+
+  it('keeps the length cap quiet until the draft nears it', async () => {
+    await renderQuestion();
+
+    fireEvent.change(screen.getByLabelText('Your reflection answer'), {
+      target: { value: 'a'.repeat(399) },
+    });
+    expect(screen.queryByText(/characters left/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Your reflection answer'), {
+      target: { value: 'a'.repeat(450) },
+    });
+    expect(screen.getByText('50 characters left')).toBeTruthy();
   });
 });
 
@@ -328,6 +396,7 @@ describe('QuestionScreen reveal (unlock behavior preserved)', () => {
     });
     await renderQuestion();
 
+    expect(screen.getByText('Both answers are here.')).toBeTruthy();
     expect(screen.getByText('The way they made coffee on Tuesday.')).toBeTruthy();
     expect(screen.getByText('Their quiet answer.')).toBeTruthy();
     expect(screen.getByText('Mara')).toBeTruthy();

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 
@@ -221,6 +221,14 @@ describe('setup wizard screen', () => {
     expect(screen.getByText('Sign out')).toBeTruthy();
   });
 
+  it('signs out when the sheet\'s sign-out control is pressed', () => {
+    const signOut = vi.fn();
+    flowMock.current = flow({ signOut });
+    render(createElement(OnboardingWizard));
+    fireEvent.click(screen.getByLabelText('Sign out'));
+    expect(signOut).toHaveBeenCalledOnce();
+  });
+
   it('transfers the joined partner into the destination invitation', () => {
     flowMock.current = flow({ step: 'joined', partnerName: 'June' });
     render(createElement(OnboardingWizard));
@@ -259,6 +267,18 @@ describe('setup wizard screen', () => {
     expect(screen.getByText('Invite code')).toBeTruthy();
     expect(screen.getByText('Join space')).toBeTruthy();
     expect(screen.getByText('Back')).toBeTruthy();
+  });
+
+  it('fills the code boxes from a paste of the invite message', () => {
+    const setInviteCode = vi.fn();
+    flowMock.current = flow({ step: 'join', setInviteCode });
+    render(createElement(OnboardingWizard));
+
+    // The field is the six-cell row; the message people paste holds the code
+    // buried in a sentence, and the field picks it out the way the flow does.
+    const input = screen.getByLabelText('Invite code, 6 characters');
+    fireEvent.change(input, { target: { value: 'Join me on aoi! The code is HQABD7.' } });
+    expect(setInviteCode).toHaveBeenCalledWith('HQABD7');
   });
 
   it('does not invent a name it was not given', () => {

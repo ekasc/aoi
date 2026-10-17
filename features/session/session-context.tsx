@@ -12,6 +12,7 @@ import * as SecureStore from 'expo-secure-store';
 import { getAuthApi } from '@/features/auth/auth-api';
 import { isAuthStubMode } from '@/features/auth/auth-config';
 import { setApiTokens } from '@/features/api-client';
+import { getLocalStressConfig } from '@/features/dev/local-stress-config';
 import {
   OAuthClientError,
   signInWithOAuthProvider,
@@ -61,6 +62,21 @@ function parseStoredSession(rawValue: string) {
 }
 
 /**
+ * Whether a failed session check means the stored credentials are dead.
+ * Only an explicit 401 discards: network failures, server hiccups, and
+ * unparseable bodies keep the stored session (fail open — a missed 401
+ * retries next launch, but wrongly deleted credentials strand a valid
+ * sign-in and force a fresh login).
+ */
+function isSessionRejected(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return false;
+  }
+  const status = (error as { status?: unknown } | null)?.status;
+  return status === 401;
+}
+
+/**
  * Exported for dev-preview routes, which provide seed values directly
  * (headless environments have no SecureStore, so the real provider can
  * never sign in there). Never used by app UI.
@@ -75,11 +91,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [tokens, setTokens] = useState<SessionTokens | null>(null);
 
   const clearStoredSession = useCallback(async () => {
+    if (getLocalStressConfig()) return;
     await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
   }, []);
 
   const persistSession = useCallback(
     async (nextUser: SessionUser, nextTokens: SessionTokens) => {
+      if (getLocalStressConfig()) return;
       const serializedSession = JSON.stringify({
         user: nextUser,
         tokens: nextTokens,
@@ -93,7 +111,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setStatus('loading');
 
     try {
-      const storedRawSession = await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
+      const stress = getLocalStressConfig();
+      const storedRawSession = stress ? JSON.stringify(stress.session) : await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
 
       if (!storedRawSession) {
         setUser(null);
@@ -119,20 +138,19 @@ export function SessionProvider({ children }: PropsWithChildren) {
       try {
         resolvedUser = await authApi.getSession(storedSession.tokens.accessToken);
       } catch (err) {
-        if (!isAuthStubMode()) {
-          // Only sign out on auth errors (non-ok HTTP response), not network failures
-          // fetch throws TypeError for network errors; auth API throws Error for HTTP errors
-          const isNetworkError = err instanceof TypeError;
-          if (!isNetworkError) {
-            await clearStoredSession();
-            setUser(null);
-            setTokens(null);
-            setApiTokens(null);
-            setStatus('signed_out');
-            return;
-          }
-          // Network error: stay signed in with stored user data
+        if (!isAuthStubMode() && isSessionRejected(err)) {
+          // Only sign out on dead credentials (explicit 401), not network
+          // failures or server hiccups — fetch throws TypeError for network
+          // errors; auth API throws status-carrying Errors for HTTP errors.
+          await clearStoredSession();
+          setUser(null);
+          setTokens(null);
+          setApiTokens(null);
+          setStatus('signed_out');
+          return;
         }
+        // Network error, server hiccup, or stub: stay signed in with the
+        // stored user data.
       }
 
       setUser(resolvedUser);
@@ -156,13 +174,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, [authApi, clearStoredSession, persistSession]);
 
   useEffect(() => {
+    // Hydrates external SecureStore/API state, rather than deriving state from props.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void restoreSession();
   }, [restoreSession]);
 
   const signInWithProvider = useCallback(
     async (provider: 'apple' | 'google') => {
-      setStatus('loading');
-
+      // Stay on the current status while the native sheet is up: flipping to
+      // 'loading' unmounts the landing behind the sheet (every route guard
+      // renders null while loading) and replays the boot sequence on
+      // resolution. The buttons already show progress via activeProvider.
       try {
         const authSession = await signInWithOAuthProvider(provider, authApi);
 
@@ -215,17 +237,24 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const deleteAccountFn = useCallback(async () => {
     const accessToken = tokens?.accessToken;
 
-    try {
-      if (accessToken) {
-        await authApi.deleteAccount(accessToken);
-      }
-    } finally {
-      await clearStoredSession().catch(() => {});
-      setUser(null);
-      setTokens(null);
-      setApiTokens(null);
-      setStatus('signed_out');
+    // The local teardown is what makes the deletion irreversible on this
+    // device, so it waits for the server to confirm. Clearing the session in a
+    // `finally` ran on rejection too: the app guard redirects on `signed_out`,
+    // so a failed delete ejected the user *and* unmounted the account screen
+    // before it could say anything, leaving the account alive behind a phone
+    // that looked signed out. A failure now propagates instead, so the caller
+    // keeps the user in place and renders the error. Dropping this device's
+    // session is still one tap away on the account screen's Sign out row, so a
+    // user who cannot reach the server is never trapped.
+    if (accessToken) {
+      await authApi.deleteAccount(accessToken);
     }
+
+    await clearStoredSession().catch(() => {});
+    setUser(null);
+    setTokens(null);
+    setApiTokens(null);
+    setStatus('signed_out');
   }, [authApi, clearStoredSession, tokens?.accessToken]);
 
   const value = useMemo<SessionContextValue>(

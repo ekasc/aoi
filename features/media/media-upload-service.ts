@@ -1,5 +1,6 @@
 import { apiFetch, isStubMode } from '@/features/api-client';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
+import { withRequestDeadline } from '@/features/request-deadline';
 import { mediaObjectUrl } from '@aoi/shared';
 
 export type MediaUploadInput = {
@@ -71,8 +72,10 @@ export async function uploadMediaAsset(
 
   // Staged composer assets are Documents-relative paths; picker and
   // remote URIs pass through untouched.
-  const response = await fetch(resolveStagedUri(input.uri));
-  const blob = await response.blob();
+  const blob = await withRequestDeadline(async (signal) => {
+    const response = await fetch(resolveStagedUri(input.uri), { signal });
+    return response.blob();
+  });
   const sizeBytes = blob.size;
 
   onProgress?.(0.2);
@@ -93,11 +96,12 @@ export async function uploadMediaAsset(
   check();
 
   // 2. Direct device → R2 upload.
-  const uploadResult = await fetch(intent.uploadUrl, {
+  const uploadResult = await withRequestDeadline((signal) => fetch(intent.uploadUrl, {
     method: 'PUT',
     body: blob,
     headers: intent.headers ?? { 'Content-Type': mimeType },
-  });
+    signal,
+  }), { timeoutMs: 120_000 });
 
   if (!uploadResult.ok) {
     throw new Error('Upload to storage failed');

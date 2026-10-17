@@ -86,7 +86,8 @@ describe('Us photo sky', () => {
     expect(state.choosePhotos).toHaveBeenCalledOnce();
     expect(screen.queryByText('Local photo copies')).toBeNull();
     state.status = 'loading'; rerender(<UsScreen />);
-    expect(screen.getByText('Loading photos…')).toBeTruthy();
+    expect(screen.getByText('Loading your sky…')).toBeTruthy();
+    expect(screen.queryByText('Loading photos…')).toBeNull();
     expect(screen.queryByText('No photos yet.')).toBeNull();
     state.status = 'failed'; state.readError = 'Could not open your local photos.'; rerender(<UsScreen />);
     await press(screen.getByText('Try again')); expect(state.reload).toHaveBeenCalledOnce();
@@ -94,6 +95,20 @@ describe('Us photo sky', () => {
     expect(screen.getByText('Photos unavailable on this device.')).toBeTruthy();
     expect(screen.getByText('Choose the photos again to restore their local copies, or add new favorites.')).toBeTruthy();
     expect(screen.getByLabelText('Choose photos')).toBeTruthy();
+  });
+  it('keeps the empty panel mounted while the album loads so nothing shifts', async () => {
+    // The regression: a one-line loading hint swapped for the full prompt
+    // card when the album landed, shoving the card upward on first visit.
+    // Loading owns the same card chrome instead — title, body, and the
+    // (disabled) action in the same slots.
+    state.status = 'loading';
+    const { rerender } = render(<UsScreen />);
+    expect(screen.getByText('Loading your sky…')).toBeTruthy();
+    expect(screen.getByText('Choose photos')).toBeTruthy();
+    expect(screen.queryByText('Loading photos…')).toBeNull();
+    state.status = 'ready'; rerender(<UsScreen />);
+    expect(screen.getByText('No photos yet.')).toBeTruthy();
+    expect(screen.queryByText('Loading your sky…')).toBeNull();
   });
   it('shows import progress without another picker trigger or an unavailable-photo error', () => {
     state.operation = 'importing';

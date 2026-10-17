@@ -428,7 +428,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
               onPress={() => void handleSave()}
               variant="done"
             >
-              {isSaving ? 'Saving…' : 'Save'}
+              {isSaving ? 'Keeping…' : 'Keep'}
             </Stack.Toolbar.Button>
           </Stack.Toolbar>
         </>
@@ -437,11 +437,11 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
           <Button disabled={isSaving} label="Cancel" variant="ghost" size="sm" onPress={handleClose} />
           <ThemedText type="bodyEmphasis" numberOfLines={1} style={styles.headerTitle}>{editorTitle}</ThemedText>
           <Button
-            accessibilityHint="Save this memory"
+            accessibilityHint="Keep this memory"
             accessibilityState={{ busy: isSaving, disabled: !canSave }}
             accessibilityLiveRegion="polite"
             disabled={!canSave}
-            label={isSaving ? 'Saving…' : 'Save'}
+            label={isSaving ? 'Keeping…' : 'Keep'}
             size="sm"
             onPress={() => void handleSave()}
           />

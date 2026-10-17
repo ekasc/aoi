@@ -988,17 +988,20 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
       makeMoment({ id: 'mine', isOwn: true, occurredAt: '2026-03-16T10:00:00.000Z' }),
     ];
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
-    render(createElement(MemoriesScreen));
+    const view = render(createElement(MemoriesScreen));
     await act(async () => {});
     fireEvent.click(
       screen.getByTestId('native-moment-menu').querySelector('[data-menu-action="delete"]') as HTMLElement,
     );
     // Destructive actions confirm first — nothing is removed yet.
-    const confirm = screen.getByTestId('sheet:Remove this moment?');
+    const confirm = screen.getByTestId('sheet:Delete this moment?');
     expect(removeMoment).not.toHaveBeenCalled();
+    const capturedVersion = feedMoments[0].updatedAt ?? feedMoments[0].createdAt;
+    feedMoments = [{ ...feedMoments[0], updatedAt: '2026-03-17T10:00:00.000Z' }];
+    view.rerender(createElement(MemoriesScreen));
     fireEvent.click(confirm.querySelector('button') as HTMLElement);
     await act(async () => {});
-    expect(removeMoment).toHaveBeenCalledWith('mine');
+    expect(removeMoment).toHaveBeenCalledWith('mine', capturedVersion);
   });
 
   it('opens the app sheet from the ellipsis on iOS, routing Edit to the editor', async () => {

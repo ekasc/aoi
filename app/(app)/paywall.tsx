@@ -11,6 +11,7 @@ import { Surface } from '@/components/ui/surface';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
 import { PLUS_FEATURES } from '@/features/subscription/limits';
 import { SKY_HISTORY_PLUS } from '@/features/home/sky-history';
+import { formatBytes } from '@/features/subscription/format';
 import { useSubscription } from '@/features/subscription/subscription-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -27,9 +28,22 @@ export default function PaywallScreen() {
   // Which lock sent the reader here. One line about the feature they were
   // trying to use, above the unchanged plan shelf — not a second paywall.
   const { feature } = useLocalSearchParams<{ feature?: string }>();
-  const soughtFeature = feature === 'sky-history' ? SKY_HISTORY_PLUS : null;
+  const soughtFeature =
+    feature === 'sky-history'
+      ? SKY_HISTORY_PLUS
+      : feature === 'letter-limit'
+        ? {
+            title: 'Seal what is waiting',
+            body: 'Your draft stays right here. Plus lets your shared Space hold more than one future letter.',
+          }
+        : feature === 'keepsake'
+          ? {
+              title: 'Take this chapter home',
+              body: 'Keep the month as a PDF you can print and gift.',
+            }
+          : null;
   const insets = useSafeAreaInsets();
-  const { status, isPlus, isAvailable, plans, purchase, restore, refresh, activationPending } = useSubscription();
+  const { status, isPlus, isAvailable, plans, purchase, restore, refresh, serverPlus, activationPending } = useSubscription();
   const [selected, setSelected] = useState<string | null>(null);
   const [operation, setOperation] = useState<'purchase' | 'restore' | 'refresh' | null>(null);
   const operationRef = useRef(false);
@@ -120,7 +134,9 @@ export default function PaywallScreen() {
       <View style={[styles.center, { backgroundColor: background, paddingTop: Spacing[24] }]}>
         <ThemedText type="title">You have Aoi Plus</ThemedText>
         <ThemedText type="body" style={styles.sub}>
-          Plus is active on this account.
+          {serverPlus?.isPlus
+            ? `Plus is active on your shared Space, ${formatBytes(serverPlus.mediaUsedBytes)} of ${formatBytes(serverPlus.mediaLimitBytes)} media used.`
+            : 'Plus is active on this account.'}
         </ThemedText>
         <Button label="Back" onPress={() => router.back()} />
       </View>

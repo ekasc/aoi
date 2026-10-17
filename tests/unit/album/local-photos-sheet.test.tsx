@@ -19,7 +19,7 @@ describe('retained local photo copies', () => {
   it('keeps old unavailable copies removable and explains that they are not shared memories', () => {
     const value = album();
     render(<LocalPhotosSheet visible onClose={vi.fn()} album={value} />);
-    expect(screen.getByText('These photos are not part of your shared archive. To share a photo with your partner, keep it in Memories.')).toBeTruthy();
+    expect(screen.getByText(/These are this phone/)).toBeTruthy();
     expect(screen.getByText('Photo unavailable on this device')).toBeTruthy();
     expect(screen.queryByText(/automatic discovery/i)).toBeNull();
     fireEvent.click(screen.getByText('Remove photo 1'));

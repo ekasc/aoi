@@ -28,7 +28,7 @@ export function LocalPhotosSheet({ visible, onClose, album }: {
         data={album.photos} keyExtractor={(photo) => photo.id}
         ListHeaderComponent={<View style={styles.section}>
         <ThemedText type="title">Local photo copies</ThemedText>
-        <ThemedText type="body">These photos are not part of your shared archive. To share a photo with your partner, keep it in Memories.</ThemedText>
+        <ThemedText type="body">These are this phone’s copies. The same photos also live in your shared sky for your partner — removing a copy here removes only this phone’s copy. To share a photo with your partner, keep it in Memories.</ThemedText>
         <ThemedText type="caption" style={{ color: muted }}>
           Copies stay on this device. Aoi does not upload or share them. Removing a copy here does not delete the original from your gallery.
         </ThemedText>

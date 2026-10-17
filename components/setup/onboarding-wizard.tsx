@@ -2,8 +2,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { Redirect } from 'expo-router';
@@ -19,6 +19,7 @@ import { Reveal } from '@/components/ui/reveal';
 import { PaperTextInput } from '@/components/ui/text-input';
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { PARTNER_NAME_MAX, PARTNER_NAME_MESSAGES } from '@/features/space/partner-name';
+import { findInviteCode, normalizeInviteCode } from '@/features/space/invite-code';
 import { useSkyEntry } from '@/components/home/sky-entry-provider';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -42,12 +43,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  scroll: {
-    flex: 1,
-  },
   sheet: {
     alignSelf: 'center',
-    flexGrow: 1,
+    flex: 1,
     maxWidth: 560,
     width: '100%',
   },
@@ -184,18 +182,49 @@ const styles = StyleSheet.create({
   form: {
     gap: Spacing[16],
   },
-  pasteRow: {
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    // A link still has to be a touch target.
-    minHeight: 44,
+  /**
+   * The invite code, as its shape.
+   *
+   * The caption names the field; the box row is the field, centred on the
+   * page because a six-cell shape reads as an object, not a form control.
+   * The real TextInput is painted onto the row itself so a paste or a
+   * keystroke never has to aim at a small target.
+   */
+  otpGroup: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: Spacing[8],
   },
-  /** Reserved, so the failure line never pushes the buttons down. */
-  pasteLine: {
-    minHeight: 19,
+  otpRow: {
+    flexDirection: 'row',
+    gap: Spacing[8],
+  },
+  otpBox: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: Radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 56,
+    justifyContent: 'center',
+    width: 46,
+  },
+  /**
+   * Invisible but real: it carries the keyboard, the autofill and the paste,
+   * and it has to keep a tappable footprint inside the row it is painted on.
+   */
+  otpField: {
+    height: 1,
+    opacity: 0.01,
+    position: 'absolute',
+    width: 1,
   },
   signOut: {
     paddingTop: Spacing[24],
+  },
+  signOutRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
 });
 
@@ -365,6 +394,12 @@ function DoorBlock({
         {/* The fork's own error belongs to the doors, not to the consequence
             below, which is not on screen yet. */}
         <ErrorLine color={palette.muted} message={flow.error} />
+        {/* The topology question, asked once and quietly: a joiner who
+            creates splits the couple across two spaces, the costliest
+            mis-tap in the product. */}
+        <ThemedText type="caption" style={{ color: palette.muted }}>
+          One space per couple — if they already started one, take the joining door.
+        </ThemedText>
       </View>
     );
   }
@@ -470,6 +505,7 @@ function IdentityStep({
           label="Since"
           mode="date"
           onChange={flow.setStartDate}
+          textColor={palette.ink}
           value={flow.startDate}
           variant="row"
         />
@@ -481,7 +517,7 @@ function IdentityStep({
             disabled={flow.isSubmitting}
             label={flow.isSubmitting ? 'Creating…' : 'Continue'}
             onPress={() => void flow.submitCreate()}
-            tone="paper"
+            tone="sky"
           />
           <Button
             disabled={flow.isSubmitting}
@@ -568,59 +604,10 @@ function JoinStep({
   flow: ReturnType<typeof useOnboardingFlow>;
   palette: StepPalette;
 }) {
-  const [pasteFailed, setPasteFailed] = useState(false);
-
   return (
     <>
       <Animated.View entering={Reveal.up()} style={styles.form}>
-        <PaperTextInput
-          label="Invite code"
-          value={flow.inviteCode}
-          onChangeText={(value) => {
-            setPasteFailed(false);
-            flow.setInviteCode(value);
-          }}
-          placeholder="6-character code"
-          autoCapitalize="characters"
-          autoCorrect={false}
-          keyboardType="default"
-          textContentType="oneTimeCode"
-          returnKeyType="done"
-          maxLength={6}
-          tone="paper"
-        />
-        {/* The code arrived in a message, so it is already in the pasteboard.
-            Reading it unprompted would be both a privacy smell and, on iOS 16,
-            a system prompt nobody asked for. */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Paste the code from your clipboard"
-          accessibilityHint="Fills the invite code field if the clipboard holds a code"
-          onPress={() => {
-            void flow.pasteCode().then((ok) => setPasteFailed(!ok));
-          }}
-          style={styles.pasteRow}
-        >
-          {({ pressed }) => (
-            <ThemedText
-              style={{ color: palette.focusRing, opacity: pressed ? 0.7 : 1 }}
-              type="link"
-            >
-              Paste the code you were sent
-            </ThemedText>
-          )}
-        </Pressable>
-        <View style={styles.pasteLine}>
-          {pasteFailed ? (
-            <ThemedText
-              accessibilityLiveRegion="polite"
-              style={{ color: palette.muted }}
-              type="caption"
-            >
-              Nothing that looks like an invite code in your clipboard
-            </ThemedText>
-          ) : null}
-        </View>
+        <InviteCodeBoxes flow={flow} palette={palette} />
         <Button
           label={flow.isSubmitting ? 'Joining…' : 'Join space'}
           onPress={() => void flow.submitJoin()}
@@ -641,6 +628,101 @@ function JoinStep({
   );
 }
 
+/**
+ * The invite code, typed into six boxes.
+ *
+ * Six characters are a shape, not a sentence, so the field shows the shape:
+ * one box per character, the next empty cell carrying the focus. The real
+ * TextInput sits behind the boxes — invisible but hearing every keystroke —
+ * which is what keeps the system keyboard, the autofill (`oneTimeCode`) and
+ * a paste working: a paste of the whole message lands as one change and
+ * fills the boxes left to right for free. Boxes are paint; the field does
+ * the work.
+ */
+function InviteCodeBoxes({
+  flow,
+  palette,
+}: {
+  flow: ReturnType<typeof useOnboardingFlow>;
+  palette: StepPalette;
+}) {
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<TextInput | null>(null);
+  // Boxes display the normalized code; the flow keeps whatever arrives and
+  // judges it on its own terms.
+  const code = normalizeInviteCode(flow.inviteCode);
+  // The cursor sits in the next empty box while the field has the keyboard.
+  const activeIndex = focused ? Math.min(code.length, 5) : -1;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Invite code"
+      accessibilityHint="Opens the keyboard to type or paste the 6-character code"
+      onPress={() => inputRef.current?.focus()}
+      style={styles.otpGroup}
+    >
+      <ThemedText
+        accessibilityLiveRegion="polite"
+        style={{ color: palette.muted }}
+        type="caption"
+      >
+        Invite code
+      </ThemedText>
+      <TextInput
+        ref={inputRef}
+        accessibilityLabel="Invite code, 6 characters"
+        autoCapitalize="characters"
+        autoCorrect={false}
+        keyboardType="default"
+        maxLength={6}
+        onBlur={() => setFocused(false)}
+        onChangeText={(value) => {
+          const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (cleaned.length < 6) {
+            flow.setInviteCode(cleaned);
+            return;
+          }
+          // A paste of more typing than a code — the invite message itself is
+          // the usual cargo — is read the way the flow reads the clipboard:
+          // the code is a word inside the sentence, so pick it out.
+          const fromMessage =
+            value.length > 6 ? findInviteCode(value) : null;
+          flow.setInviteCode(fromMessage ?? cleaned.slice(0, 6));
+        }}
+        onFocus={() => setFocused(true)}
+        // Invisible but pressable, so the keyboard still arrives: it is the
+        // one real field, and the boxes are its reflection.
+        style={styles.otpField}
+        returnKeyType="done"
+        textContentType="oneTimeCode"
+        value={code}
+      />
+      <View pointerEvents="none" style={styles.otpRow}>
+        {Array.from({ length: 6 }, (_, index) => {
+          const char = code[index] ?? '';
+          const active = index === activeIndex;
+          return (
+            <View
+              // Six fixed cells: the keys stabilise as long as the code does.
+              key={index}
+              accessible={false}
+              style={[
+                styles.otpBox,
+                { borderColor: char || active ? palette.focusRing : palette.border },
+              ]}
+            >
+              <ThemedText style={{ color: palette.ink }} type="title">
+                {char}
+              </ThemedText>
+            </View>
+          );
+        })}
+      </View>
+    </Pressable>
+  );
+}
+
 /** The way out of a space you did not mean to be in. Quiet, and last. */
 function SignOut({
   flow,
@@ -649,18 +731,26 @@ function SignOut({
   flow: ReturnType<typeof useOnboardingFlow>;
   palette: StepPalette;
 }) {
+  // A real press target, not an `onPress` on a Text nested inside another
+  // Text. A nested run only claims its own glyphs, so the touchable area was
+  // the width of the word and pressed only when it landed exactly on it.
   return (
-    <ThemedText style={[styles.signOut, { color: palette.muted }]} type="caption">
-      Wrong space?{' '}
-      <ThemedText
-        accessibilityRole="link"
-        onPress={() => void flow.signOut()}
-        style={{ color: palette.focusRing }}
-        type="link"
-      >
-        Sign out
+    <View style={[styles.signOut, styles.signOutRow]}>
+      <ThemedText style={{ color: palette.muted }} type="caption">
+        Wrong space?{' '}
       </ThemedText>
-    </ThemedText>
+      <Pressable
+        accessibilityHint="Signs out and returns to the landing screen"
+        accessibilityLabel="Sign out"
+        accessibilityRole="link"
+        hitSlop={8}
+        onPress={() => void flow.signOut()}
+      >
+        <ThemedText style={{ color: palette.focusRing }} type="link">
+          Sign out
+        </ThemedText>
+      </Pressable>
+    </View>
   );
 }
 
@@ -780,16 +870,14 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
       style={[styles.root, { backgroundColor: colors.background }]}>
       {!inert ? <StatusBar style={dark ? 'light' : 'dark'} /> : null}
 
-      <ScrollView
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={[
+      <View
+        style={[
           styles.sheet,
           {
             paddingBottom: insets.bottom + Spacing[24],
             paddingTop: insets.top + Spacing[16],
           },
         ]}
-        style={styles.scroll}
       >
         <View style={styles.head}>
           <ThemedText style={{ color: palette.muted }} type="meta">
@@ -852,7 +940,7 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
         <View style={styles.footer}>
           <SignOut flow={flow} palette={palette} />
         </View>
-      </ScrollView>
+      </View>
     </View>
   );
 }

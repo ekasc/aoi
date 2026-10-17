@@ -5,13 +5,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 
 import { AudioPlayer } from '@/components/media/audio-player';
+import { VideoPlayer } from '@/components/media/video-player';
 import { ThemedText } from '@/components/themed-text';
 import { ActionSheet } from '@/components/ui/action-sheet';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
-import { clampPhotoAspect } from '@/components/moments/moment-card';
+import { clampPhotoAspect, isEditedMoment } from '@/components/moments/moment-card';
 import {
   MeasuredPress,
   MomentAttachments,
@@ -20,6 +21,7 @@ import {
 } from '@/components/moments/moment-attachments';
 import { PhotoViewer, type ViewerPhoto } from '@/components/moments/photo-viewer';
 import type { PhotoOrigin } from '@/components/moments/zoomable-photo';
+import { UsExchange } from '@/components/home/us-exchange';
 import { haptics } from '@/features/haptics/haptics';
 import { useMoments } from '@/features/moments/moments-context';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
@@ -62,8 +64,8 @@ export default function MomentDetailScreen() {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   // Window frame of the photo that opened the session (morph origin).
   const [viewerOrigin, setViewerOrigin] = useState<PhotoOrigin | undefined>(undefined);
-  const [overflowVisible, setOverflowVisible] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
+  const [deleteSnapshot, setDeleteSnapshot] = useState<typeof moment>(null);
   const [isRemoving, setIsRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const background = useThemeColor({}, 'background');
@@ -150,24 +152,12 @@ export default function MomentDetailScreen() {
     });
   }, [atHint, moment, router]);
 
-  const handleOpenOverflow = useCallback(() => {
-    setOverflowVisible(true);
-  }, []);
-
-  const handleCloseOverflow = useCallback(() => {
-    setOverflowVisible(false);
-  }, []);
-
-  const handleEditFromOverflow = useCallback(() => {
-    setOverflowVisible(false);
-    handleEdit();
-  }, [handleEdit]);
 
   const handleRequestDelete = useCallback(() => {
-    setOverflowVisible(false);
+    setDeleteSnapshot(moment);
     setRemoveError(null);
     setConfirmVisible(true);
-  }, []);
+  }, [moment]);
 
   const handleCloseConfirm = useCallback(() => {
     if (isRemoving) return;
@@ -176,32 +166,24 @@ export default function MomentDetailScreen() {
   }, [isRemoving]);
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!moment || isRemoving) return;
+    if (!deleteSnapshot || isRemoving) return;
     setIsRemoving(true);
     setRemoveError(null);
     try {
-      await removeMoment(moment.id);
+      await removeMoment(deleteSnapshot.id, deleteSnapshot.updatedAt ?? deleteSnapshot.createdAt);
       setConfirmVisible(false);
       handleClose();
-    } catch {
-      setRemoveError("Couldn't remove this moment right now. Try again?");
+    } catch (error) {
+      setRemoveError(error instanceof Error ? error.message : "Couldn't delete this moment right now. Try again?");
     } finally {
       setIsRemoving(false);
     }
-  }, [handleClose, isRemoving, moment, removeMoment]);
-
-  const overflowActions = useMemo(
-    () => [
-      { label: 'Edit', onPress: handleEditFromOverflow },
-      { label: 'Delete', onPress: handleRequestDelete, variant: 'destructive' as const },
-    ],
-    [handleEditFromOverflow, handleRequestDelete],
-  );
+  }, [deleteSnapshot, handleClose, isRemoving, removeMoment]);
 
   const confirmActions = useMemo(
     () => [
       {
-        label: isRemoving ? 'Removing…' : 'Remove',
+        label: isRemoving ? 'Deleting…' : 'Delete',
         onPress: () => {
           void handleConfirmDelete();
         },
@@ -262,6 +244,13 @@ export default function MomentDetailScreen() {
       <Stack.Screen options={detailScreenOptions} />
       {hasOrdered ? (
         <MomentAttachments moment={moment} onPhotoPress={handleOpenFullscreen} />
+      ) : moment.videoUri ? (
+        <VideoPlayer
+          aspectRatio={16 / 9}
+          label={title ? `Video: ${title}` : 'Video memory'}
+          posterUri={moment.mediaPreview}
+          uri={moment.videoUri}
+        />
       ) : moment.mediaPreview ? (
         <MeasuredPress
           accessibilityHint="Opens fullscreen"
@@ -284,7 +273,7 @@ export default function MomentDetailScreen() {
           </ThemedText>
         ) : null}
         <ThemedText type="caption" style={{ color: muted }}>
-          {formatDetailDate(moment.occurredAt)} · {authorName}
+          {formatDetailDate(moment.occurredAt)} · {authorName}{isEditedMoment(moment) ? ' · Edited' : null}
         </ThemedText>
         {!hasOrdered && moment.audioUri ? <AudioPlayer uri={moment.audioUri} /> : null}
         {body ? (
@@ -294,9 +283,10 @@ export default function MomentDetailScreen() {
         ) : null}
         {!title && !body && !moment.mediaPreview && !moment.audioUri && !hasOrdered ? (
           <ThemedText type="body" style={{ color: muted }}>
-            This memory is empty.
+            This memory is empty. Add a few words or a photo with Edit — or delete it if it was kept by mistake.
           </ThemedText>
         ) : null}
+        <UsExchange moment={moment} />
         {own ? (
           <Pressable
             accessibilityLabel="Edit this memory"
@@ -309,12 +299,12 @@ export default function MomentDetailScreen() {
         ) : null}
         {own ? (
           <Pressable
-            accessibilityLabel="More actions"
+            accessibilityLabel="Delete this memory"
             accessibilityRole="button"
-            onPress={handleOpenOverflow}
+            onPress={handleRequestDelete}
             style={styles.editRow}
           >
-            <ThemedText type="body">More actions</ThemedText>
+            <ThemedText type="body">Delete…</ThemedText>
           </Pressable>
         ) : null}
       </View>
@@ -327,16 +317,11 @@ export default function MomentDetailScreen() {
       visible={viewerIndex !== null}
     />
     <ActionSheet
-      actions={overflowActions}
-      onClose={handleCloseOverflow}
-      title={title || 'This moment'}
-      visible={overflowVisible}
-    />
-    <ActionSheet
       actions={confirmActions}
-      description={removeError || 'This moment will be removed from your shared timeline'}
+      description="This moment will be deleted from your shared timeline"
+      error={removeError ?? undefined}
       onClose={handleCloseConfirm}
-      title="Remove this moment?"
+      title="Delete this moment?"
       visible={confirmVisible}
     />
     </>

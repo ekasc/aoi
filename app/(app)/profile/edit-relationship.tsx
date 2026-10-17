@@ -14,7 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Divider } from '@/components/ui/divider';
 import { Spacing } from '@/constants/theme';
 import { useSpace } from '@/features/space/space-context';
+import { formatDaysTogether, getDaysTogether } from '@/features/time-together/time-together';
 import { parseRelationshipStart } from '@/features/calendar/calendar-date-utils';
+import { toApiDateString } from '@/features/space/space-date';
 import { buildRelationshipUpdateInput } from '@/features/space/update-input';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -161,6 +163,7 @@ export default function EditRelationshipScreen() {
               <NativeDateTimeField
                 accessibilityLabel="Choose relationship start date"
                 label="Relationship start date (optional)"
+                maximumDate={new Date()}
                 mode="date"
                 textColor={text}
                 onChange={(nextDate) => {
@@ -175,7 +178,6 @@ export default function EditRelationshipScreen() {
                 label="Add relationship start date"
                 onPress={() => {
                   setRelationshipStartDate(new Date());
-                  setRelationshipDateChanged(true);
                   setError('');
                 }}
                 variant="secondary"
@@ -185,7 +187,16 @@ export default function EditRelationshipScreen() {
               <ThemedText type="caption" style={{ color: muted }}>
                 Optional. Used for days together and relationship chapters.
               </ThemedText>
-            ) : null}
+            ) : (
+              <ThemedText type="caption" style={{ color: muted }}>
+                {(() => {
+                  const days = getDaysTogether(toApiDateString(relationshipStartDate), new Date());
+                  return days === null
+                    ? 'Sets anniversaries and chapters.'
+                    : `${formatDaysTogether(days)} — sets anniversaries and chapters.`;
+                })()}
+              </ThemedText>
+            )}
 
             {error ? (
               <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>

@@ -147,7 +147,7 @@ export default function NewLetterScreen() {
 		}
 
 		if (atServerLimit) {
-			router.push("/(app)/paywall");
+			router.push({ pathname: "/(app)/paywall", params: { feature: "letter-limit" } });
 			return;
 		}
 
@@ -344,6 +344,7 @@ export default function NewLetterScreen() {
 									minimumDate={addDays(startOfDay(writingMoment), 1)}
 									mode="date"
 									onChange={setCustomDate}
+									textColor={text}
 									value={customDate}
 								/>
 							) : null}
@@ -363,13 +364,13 @@ export default function NewLetterScreen() {
 
 						{atServerLimit || limitBlocked ? (
 							<Surface style={styles.limitCard}>
-								<ThemedText type="body">Your Space holds its future letter.</ThemedText>
+								<ThemedText type="body">One future letter is already waiting.</ThemedText>
 								<ThemedText style={{ color: muted }} type="caption">
-									Aoi Plus unlocks unlimited letters for your shared Space, your draft stays right here.
+									Your draft stays right here. Aoi Plus lets your shared Space hold more than one future letter.
 								</ThemedText>
 								<Button
 									label="Unlock Plus"
-									onPress={() => router.push("/(app)/paywall")}
+									onPress={() => router.push({ pathname: "/(app)/paywall", params: { feature: "letter-limit" } })}
 									variant="secondary"
 								/>
 							</Surface>
@@ -378,7 +379,7 @@ export default function NewLetterScreen() {
 						<View style={styles.footer}>
 							<Button
 								disabled={!canSeal}
-								label={isSealing ? "Sealing…" : "Seal it"}
+								label={isSealing ? "Sealing…" : atServerLimit ? "See Plus options" : "Seal it"}
 								onPress={() => void handleSeal()}
 							/>
 							<ThemedText style={{ color: muted }} type="caption">

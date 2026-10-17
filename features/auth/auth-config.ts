@@ -1,3 +1,5 @@
+import { getLocalStressConfig } from '@/features/dev/local-stress-config';
+
 const STUB_MODE_FLAG = process.env.EXPO_PUBLIC_AUTH_STUB_MODE;
 
 // Fail fast: auth mode must be an explicit choice, never an accidental default.
@@ -8,10 +10,13 @@ if (STUB_MODE_FLAG == null) {
 }
 
 export function isAuthStubMode() {
+  if (getLocalStressConfig()) return false;
   return STUB_MODE_FLAG === 'true';
 }
 
 export function getAuthApiBaseUrl() {
+  const stress = getLocalStressConfig();
+  if (stress) return stress.baseUrl;
   const baseUrl = process.env.EXPO_PUBLIC_AUTH_API_BASE_URL?.trim();
 
   if (!baseUrl && !isAuthStubMode()) {

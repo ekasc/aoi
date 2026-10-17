@@ -62,6 +62,7 @@ vi.mock('react-native', () => {
     ScrollView: View,
     KeyboardAvoidingView: View,
     Platform: { OS: 'ios', select: (o: { ios?: unknown }) => o.ios },
+    useWindowDimensions: () => ({ width: 390, height: 844, scale: 2, fontScale: 1 }),
   };
 });
 
@@ -110,6 +111,39 @@ const addMoment = vi.fn();
 const uploadImage = vi.fn();
 const refreshServerPlus = vi.fn(async () => {});
 const loadChapterRange = vi.fn(async () => []);
+
+vi.mock('@/features/auth/oauth-client', () => ({
+  OAuthClientError: class OAuthClientError extends Error {
+    constructor(
+      message: string,
+      public readonly code: string
+    ) {
+      super(message);
+    }
+  },
+  signInWithOAuthProvider: async () => {
+    throw new Error('oauth not available in tests');
+  },
+}));
+
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async () => {},
+  deleteItemAsync: async () => {},
+}));
+
+vi.mock('@/features/session/session-context', () => ({ useSession: () => ({ user: { id: 'you', displayName: 'You' } }) }));
+
+vi.mock('@/features/responses/responses-context', () => ({
+  useResponses: () => ({
+    responses: [],
+    isLoading: false,
+    error: null,
+    loadFor: async () => {},
+    add: async () => {},
+    clearError: () => {},
+  }),
+}));
 
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({

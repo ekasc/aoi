@@ -51,8 +51,56 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
+vi.mock('expo-image-picker', () => ({
+  requestMediaLibraryPermissionsAsync: async () => ({ granted: true }),
+  requestCameraPermissionsAsync: async () => ({ granted: true }),
+  launchImageLibraryAsync: async () => ({ canceled: true }),
+  launchCameraAsync: async () => ({ canceled: true }),
+}));
+
+vi.mock('@/features/auth/oauth-client', () => ({
+  OAuthClientError: class OAuthClientError extends Error {
+    constructor(
+      message: string,
+      public readonly code: string
+    ) {
+      super(message);
+    }
+  },
+  signInWithOAuthProvider: async () => {
+    throw new Error('oauth not available in tests');
+  },
+}));
+
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async () => {},
+  deleteItemAsync: async () => {},
+}));
+
+vi.mock('expo-audio', () => ({
+  RecordingPresets: { HIGH_QUALITY: {} },
+  requestRecordingPermissionsAsync: async () => ({ granted: true }),
+  setAudioModeAsync: async () => {},
+  useAudioRecorder: () => null,
+  useAudioRecorderState: () => null,
+}));
+
 vi.mock('@/hooks/use-theme-color', () => ({
   useThemeColor: () => '#000000',
+}));
+
+vi.mock('@/features/session/session-context', () => ({ useSession: () => ({ user: { id: 'you', displayName: 'You' } }) }));
+
+vi.mock('@/features/responses/responses-context', () => ({
+  useResponses: () => ({
+    responses: [],
+    isLoading: false,
+    error: null,
+    loadFor: async () => {},
+    add: async () => {},
+    clearError: () => {},
+  }),
 }));
 
 vi.mock('@/features/moments/moments-context', () => ({
@@ -80,12 +128,13 @@ vi.mock('@/components/moments/photo-viewer', () => ({
 }));
 
 vi.mock('@/components/ui/action-sheet', () => ({
-  ActionSheet: ({ visible, title, description, actions }: { visible: boolean; title?: string; description?: string; actions: { label: string; onPress: () => void }[] }) => {
+  ActionSheet: ({ visible, title, description, error, actions }: { visible: boolean; title?: string; description?: string; error?: string; actions: { label: string; onPress: () => void }[] }) => {
     if (!visible) return null;
     return createElement(
       'div',
       { 'data-testid': `sheet:${title ?? 'untitled'}` },
       description ? createElement('span', {}, description) : null,
+      error ? createElement('span', { role: 'alert' }, error) : null,
       ...actions.map((action) => createElement('button', { key: action.label, onClick: action.onPress }, action.label)),
     );
   },
@@ -296,7 +345,7 @@ describe('Moment read detail', () => {
   });
 });
 
-describe('Moment detail ownership + deletion (overflow)', () => {
+describe('Moment detail ownership + deletion (direct rows)', () => {
   beforeEach(() => {
     detailMoments = [];
     detailParams = {};
@@ -309,26 +358,27 @@ describe('Moment detail ownership + deletion (overflow)', () => {
     detailRemoveMoment.mockResolvedValue(undefined);
   });
 
-  it('shows owner-only More actions and hides it for partner moments', async () => {
+  it('shows an owner-only Delete row and hides it for partner moments', async () => {
     detailMoments = [baseMoment({ isOwn: true })];
     detailParams = { id: 'm-1' };
     const view = await renderDetail();
-    expect(screen.getByText('More actions')).toBeTruthy();
+    expect(screen.getByText('Delete…')).toBeTruthy();
+    // One Edit path only: the visible row, no overflow duplicate.
+    expect(screen.getAllByText('Edit')).toHaveLength(1);
     view.unmount();
 
     detailMoments = [baseMoment({ authorRole: 'partner', authorName: 'Alex', isOwn: false })];
     detailParams = { id: 'm-1' };
     await renderDetail();
-    expect(screen.queryByText('More actions')).toBeNull();
+    expect(screen.queryByText('Delete…')).toBeNull();
   });
 
-  it('overflow exposes Edit with existing edit semantics', async () => {
+  it('Edit navigates directly with no overflow middleman', async () => {
     detailMoments = [baseMoment({ isOwn: true })];
     detailParams = { id: 'm-1' };
     await renderDetail();
-    fireEvent.click(screen.getByText('More actions'));
-    fireEvent.click(screen.getByTestId('sheet:Kept title').querySelector('button') as HTMLElement);
-    // First action in the overflow is Edit — same destination as the inline Edit.
+    fireEvent.click(screen.getByText('Edit'));
+    // Same destination as before, minus the sheet round trip.
     expect(detailPush).toHaveBeenCalledWith({
       pathname: '/(app)/moment/edit/[id]',
       params: { id: 'm-1', at: '2024-05-10T12:00:00.000Z' },
@@ -339,18 +389,34 @@ describe('Moment detail ownership + deletion (overflow)', () => {
     detailMoments = [baseMoment({ isOwn: true })];
     detailParams = { id: 'm-1' };
     await renderDetail();
-    fireEvent.click(screen.getByText('More actions'));
-    const overflow = screen.getByTestId('sheet:Kept title');
-    const deleteBtn = Array.from(overflow.querySelectorAll('button')).find((el) => el.textContent === 'Delete') as HTMLElement;
-    expect(deleteBtn).toBeTruthy();
-    fireEvent.click(deleteBtn);
-    await waitFor(() => expect(screen.getByTestId('sheet:Remove this moment?')).toBeTruthy());
-    expect(screen.getByText('This moment will be removed from your shared timeline')).toBeTruthy();
+    fireEvent.click(screen.getByText('Delete…'));
+    await waitFor(() => expect(screen.getByTestId('sheet:Delete this moment?')).toBeTruthy());
+    expect(screen.getByText('This moment will be deleted from your shared timeline')).toBeTruthy();
     await act(async () => {
-      fireEvent.click(screen.getByText('Remove'));
+      fireEvent.click(screen.getByText('Delete'));
     });
-    await waitFor(() => expect(detailRemoveMoment).toHaveBeenCalledWith('m-1'));
+    await waitFor(() => expect(detailRemoveMoment).toHaveBeenCalledWith('m-1', '2024-05-10T12:00:00.000Z'));
     await waitFor(() => expect(detailBack).toHaveBeenCalledTimes(1));
+  });
+
+  it('deletes with the confirmation snapshot after refresh and lets a conflict be dismissed', async () => {
+    const { default: DetailScreen } = await import('@/app/(app)/moment/[id]');
+    const original = baseMoment({ isOwn: true });
+    detailMoments = [original];
+    detailParams = { id: original.id };
+    const view = await renderDetail();
+    fireEvent.click(screen.getByText('Delete…'));
+    detailMoments = [{ ...original, updatedAt: '2024-05-11T12:00:00.000Z' }];
+    view.rerender(createElement(DetailScreen));
+    const message = 'This memory changed on another device. Reopen it before trying again.';
+    detailRemoveMoment.mockRejectedValueOnce(new Error(message));
+    await act(async () => { fireEvent.click(screen.getByText('Delete')); });
+    expect(detailRemoveMoment).toHaveBeenCalledTimes(1);
+    expect(detailRemoveMoment).toHaveBeenCalledWith(original.id, original.updatedAt);
+    expect(screen.getByRole('alert').textContent).toBe(message);
+    expect(detailBack).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByTestId('sheet:Delete this moment?')).toBeNull();
   });
 
   it('delete failure shows an explicit error and stays without navigating', async () => {
@@ -358,15 +424,12 @@ describe('Moment detail ownership + deletion (overflow)', () => {
     detailMoments = [baseMoment({ isOwn: true })];
     detailParams = { id: 'm-1' };
     await renderDetail();
-    fireEvent.click(screen.getByText('More actions'));
-    const overflow = screen.getByTestId('sheet:Kept title');
-    const deleteBtn = Array.from(overflow.querySelectorAll('button')).find((el) => el.textContent === 'Delete') as HTMLElement;
-    fireEvent.click(deleteBtn);
-    await waitFor(() => expect(screen.getByTestId('sheet:Remove this moment?')).toBeTruthy());
+    fireEvent.click(screen.getByText('Delete…'));
+    await waitFor(() => expect(screen.getByTestId('sheet:Delete this moment?')).toBeTruthy());
     await act(async () => {
-      fireEvent.click(screen.getByText('Remove'));
+      fireEvent.click(screen.getByText('Delete'));
     });
-    await waitFor(() => expect(screen.getByText("Couldn't remove this moment right now. Try again?")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('backend down'));
     expect(detailBack).not.toHaveBeenCalled();
     expect(detailDismissTo).not.toHaveBeenCalled();
   });

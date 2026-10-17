@@ -4,6 +4,30 @@ import { createElement } from 'react';
 
 vi.mock('@/components/moments/chapter-photo-stack', () => ({ ChapterPhotoStack: () => <div data-testid="chapter-photo-stack" /> }));
 
+const shareAsyncSpy = vi.fn(async () => {});
+vi.mock('expo-sharing', () => ({
+  shareAsync: (...args: unknown[]) => shareAsyncSpy(...args),
+  isAvailableAsync: async () => true,
+}));
+
+vi.mock('@/features/theme/theme-context', () => ({
+  useAoiTheme: () => ({
+    colors: { background: '#ffffff', surface: '#ffffff', border: '#000000', text: '#000000', muted: '#555555', accent: '#990000' },
+    selectedTheme: { name: 'Beach' },
+    mode: 'light',
+  }),
+}));
+
+vi.mock('@/components/ui/native-sheet', () => ({
+  NativeSheet: ({ visible, children }: { visible: boolean; children?: unknown }) =>
+    visible ? <section>{children}</section> : null,
+}));
+
+vi.mock('react-native-view-shot', () => ({
+  default: ({ children }: { children?: unknown }) => <div>{children}</div>,
+  captureRef: async () => 'file:///keepsake.png',
+}));
+
 const pushSpy = vi.fn();
 const backSpy = vi.fn();
 let searchParams: Record<string, string | string[]> = {};
@@ -265,7 +289,8 @@ describe('ChapterDetailScreen export action', () => {
     // cleanup all happen inside the orchestration (pinned downstream).
     expect(exportChapterKeepsakeSpy).toHaveBeenCalledTimes(1);
     const [input] = exportChapterKeepsakeSpy.mock.calls[0];
-    expect(input.filename).toContain(`month-${key}`);
+    // Human filename from the chapter title, not the id grammar.
+    expect(input.filename).toContain(`aoi-keepsake-august-2026`);
     expect(input.members.map((member: { id: string }) => member.id)).toEqual([
       'm-note',
       'm-photo',
@@ -313,7 +338,7 @@ describe('ChapterDetailScreen export action', () => {
       fireEvent.click(screen.getByText('Keep as PDF · Plus'));
     });
 
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/paywall');
+    expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/paywall', params: { feature: 'keepsake' } });
     expect(exportChapterKeepsakeSpy).not.toHaveBeenCalled();
   });
 
@@ -324,7 +349,7 @@ describe('ChapterDetailScreen export action', () => {
     expect(screen.queryByText('Keep as PDF · Plus')).toBeNull();
     expect(screen.getByText('Check Plus status')).toBeTruthy();
     expect(
-      screen.getByText(/Couldn't confirm Plus status/)
+      screen.getByText(/Plus status is unclear right now/)
     ).toBeTruthy();
 
     await act(async () => {
@@ -356,7 +381,28 @@ describe('ChapterDetailScreen export action', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Keep as PDF · Plus'));
     });
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/paywall');
+    expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/paywall', params: { feature: 'keepsake' } });
     expect(exportChapterKeepsakeSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChapterDetailScreen share card', () => {
+  it('previews the card and shares the capture', async () => {
+    const { default: ChapterDetailScreen } = await import('@/app/(app)/chapter/[id]');
+    const { key } = oldMonthDay(10);
+    loadChapterRange.mockResolvedValue([
+      makeMoment({ id: 'm-note', type: 'note', title: 'Lake note', body: 'Still water.', occurredAt: `${key}-05T12:00:00.000Z` }),
+    ]);
+    searchParams = { id: `month:${key}` };
+    render(<ChapterDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId('chapter-photo-stack')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('Share card'));
+    await waitFor(() => expect(screen.getByText('Share')).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Share'));
+    });
+    await waitFor(() => expect(shareAsyncSpy).toHaveBeenCalledWith('file:///keepsake.png'));
   });
 });

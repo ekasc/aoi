@@ -5,6 +5,7 @@ import { AppState, Pressable, ScrollView, StyleSheet, View, useWindowDimensions 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fabBottomOffset } from '@/components/home/compact-sky-geometry';
+import { INVITE_TAG_CLEARANCE } from '@/components/space/invite-tag-geometry';
 import { SYSTEM_TAB_BAR_IOS_CLEARANCE } from '@/components/home/memory-sky';
 import { PhotoSkyViewport } from '@/components/home/photo-sky-viewport';
 import { SKY_CONTROL_FILL, SKY_CONTROL_INK } from '@/components/home/sky-palette';
@@ -42,6 +43,7 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
   // history/FAB row, mirroring that row's own bottom clearance.
   const controlsBottom = insets.bottom + Spacing[24] + SYSTEM_TAB_BAR_IOS_CLEARANCE + 44 + Spacing[16];
   const { space } = useSpace();
+  const waitingForPartner = Boolean(space) && !space?.partnerJoined;
   const { isPlus } = useSubscription();
   const preview = usePreviewVariant();
   const previewStart = skyPreviewStart(__DEV__ && preview.active ? preview.variant : 'full');
@@ -71,6 +73,12 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
   const canDiscover = album.status === 'ready' && photos.length > 0 && album.operation === null;
   const busy = album.operation !== null;
   const showEmptyPrompt = album.status === 'ready' && photos.length === 0 && !busy && !viewingPast && !helpOpen && !historyOpen;
+  // First load owns the panel from the start: the album takes a moment to
+  // establish (crypto session + protocol), and swapping a one-line loading
+  // hint for the full prompt card when it lands visibly shoves the card
+  // upward. The panel below renders its loading face instead, so the card
+  // chrome is already where it will stay.
+  const showLoadingPanel = album.status === 'loading';
   const viewerPhotos = useMemo<ViewerPhoto[]>(() => opened?.photo.uri ? [{ uri: opened.photo.uri, label: 'A photo from your local album' }] : [], [opened]);
   const viewerVisible = opened !== null && opened.scopeKey === album.scopeKey && photos.some((photo) => photo.id === opened.photo.id);
 
@@ -130,14 +138,14 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
                   onPress={() => router.push('/(app)/album/enroll')}
                 />
               </>
-            ) : album.status === 'loading' ? <ThemedText type="caption" style={styles.hint}>Loading photos…</ThemedText>
+            ) : album.status === 'loading' ? null
               : album.readError ? <><ThemedText accessibilityRole="alert" type="caption" style={styles.hint}>{album.readError}</ThemedText><Button label="Try again" onPress={album.reload} tone="sky" variant="muted" /></>
               : busy ? <ThemedText type="caption" style={styles.hint}>{album.operation === 'importing' ? 'Adding photos…' : 'Updating photos…'}</ThemedText>
               : canDiscover || showEmptyPrompt || helpOpen ? null
               : <ThemedText type="caption" style={styles.hint}>{viewingPast ? 'No photos at this date.' : album.photos.length === 0 ? 'No photos yet.' : 'Photos unavailable on this device.'}</ThemedText>}
             {album.actionError ? <ThemedText accessibilityRole="alert" type="caption" style={styles.hint}>{album.actionError}</ThemedText> : null}
           </View>
-          {showEmptyPrompt || helpOpen || historyOpen ? <ScrollView style={[styles.panel, { backgroundColor: surface, maxHeight: height * 0.45 }]} contentContainerStyle={styles.panelContent}>
+          {showEmptyPrompt || helpOpen || historyOpen || showLoadingPanel ? <ScrollView style={[styles.panel, { backgroundColor: surface, maxHeight: height * 0.45 }]} contentContainerStyle={[styles.panelContent, waitingForPartner && { paddingBottom: Spacing[16] + INVITE_TAG_CLEARANCE }]}>
             {helpOpen ? <>
               <ThemedText type="subheading">How to explore</ThemedText>
               <ThemedText>Tap the sky to open a photo. Pinch to zoom, then drag to explore.</ThemedText>
@@ -154,6 +162,11 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
                 <ThemedText>Add your relationship start date to explore earlier skies.</ThemedText>
                 <Button label="Set our start date" variant="secondary" onPress={() => router.push('/(app)/profile/edit-relationship')} />
               </> : null}
+            </> : showLoadingPanel ? <>
+              <ThemedText type="subheading">Loading your sky…</ThemedText>
+              <ThemedText>Gathering your shared album. First visit takes a moment.</ThemedText>
+              <ThemedText type="caption">Photos are encrypted on this device. They appear to your partner in your shared sky.</ThemedText>
+              <Button label="Choose photos" accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky." disabled onPress={choosePhotos} />
             </> : <>
               <ThemedText type="subheading">{album.photos.length === 0 ? 'No photos yet.' : 'Photos unavailable on this device.'}</ThemedText>
               <ThemedText>{album.photos.length === 0 ? 'Choose a few favorites. Each photo becomes a star you can revisit.' : 'Choose the photos again to restore their local copies, or add new favorites.'}</ThemedText>
@@ -171,7 +184,7 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
           </View> : null}
         </View>
       </View>
-      {!showEmptyPrompt ? <Pressable accessibilityRole="button" accessibilityLabel="Choose photos"
+      {!showEmptyPrompt && !showLoadingPanel ? <Pressable accessibilityRole="button" accessibilityLabel="Choose photos"
         accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky."
         accessibilityState={{ disabled: busy || album.status !== 'ready', busy }} disabled={busy || album.status !== 'ready'}
         onPress={choosePhotos} style={({ pressed }) => [styles.fab, { bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'), boxShadow: shadow(Elevation.floating, shadowColor) }, pressed ? Pressed.onMedia : undefined, busy || album.status !== 'ready' ? styles.fabDisabled : undefined]}>

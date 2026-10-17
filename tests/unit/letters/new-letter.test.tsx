@@ -227,11 +227,11 @@ describe('letter creation against server allowance', () => {
     writeDraft();
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Seal it'));
+      fireEvent.click(screen.getByText('See Plus options'));
     });
 
     expect(sealLetterSpy).not.toHaveBeenCalled();
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/paywall');
+    expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/paywall', params: { feature: 'letter-limit' } });
     // Draft preserved for the return trip.
     expect(screen.getByDisplayValue('Dear future us')).toBeTruthy();
   });
@@ -248,12 +248,12 @@ describe('letter creation against server allowance', () => {
     });
 
     expect(sealLetterSpy).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Your Space holds its future letter.')).toBeTruthy();
+    expect(screen.getByText('One future letter is already waiting.')).toBeTruthy();
     expect(screen.getByDisplayValue('Dear future us')).toBeTruthy();
     expect(refreshServerPlus).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByText('Unlock Plus'));
-    expect(pushSpy).toHaveBeenCalledWith('/(app)/paywall');
+    expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/paywall', params: { feature: 'letter-limit' } });
   });
 
   it('Plus never blocks sealing', async () => {
@@ -267,6 +267,6 @@ describe('letter creation against server allowance', () => {
     });
 
     expect(sealLetterSpy).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Your Space holds its future letter.')).toBeNull();
+    expect(screen.queryByText('One future letter is already waiting.')).toBeNull();
   });
 });

@@ -223,6 +223,10 @@ vi.mock('@expo/vector-icons/Ionicons', () => ({
   default: () => null,
 }));
 
+// The invite tag overlays the tab bar chrome; it has its own suite. Mock it
+// here so this file stays about tab ownership (it needs no space/session).
+vi.mock('@/components/space/invite-pending-tag', () => ({ InvitePendingTag: () => null }));
+
 vi.mock('react-native-reanimated', () => {
   const chain: Record<string, () => unknown> = {};
   chain.duration = () => chain;

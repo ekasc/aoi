@@ -62,7 +62,7 @@ function Tile({ asset, index, total, onRemove, overlayCount }: TileProps) {
       <Pressable
         accessibilityLabel={`Remove photo ${index + 1}`}
         accessibilityRole="button"
-        hitSlop={8}
+        hitSlop={9}
         onPress={() => {
           haptics.tap();
           onRemove(asset.stagedId);

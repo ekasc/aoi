@@ -197,7 +197,6 @@ export function ComposerProvider({
           }
         }
         if (cancelled) return;
-        setPartial({ draft, pending, hydrating: false, error: null, scopeKey: activeKey });
         // Persist the sending->queued recovery when it changed anything.
         if ((loaded?.pending ?? []).some((p) => p.status === 'sending')) {
           try {
@@ -206,6 +205,8 @@ export function ComposerProvider({
             // Best-effort; next explicit write retries.
           }
         }
+        if (cancelled) return;
+        setPartial({ draft, pending, hydrating: false, error: null, sendingIds: [], scopeKey: activeKey });
       } catch (err) {
         if (cancelled) return;
         const { message } = classifySendError(err);
@@ -218,25 +219,30 @@ export function ComposerProvider({
   }, [scope, store, nowFn, setPartial]);
 
   const runSend = useCallback(
-    (clientId: string) => {
+    (clientId: string, automatic = false) => {
+      const requestedScope = scopeRef.current;
       const task = sendChainRef.current.then(async () => {
         const currentScope = scopeRef.current;
+        if (!currentScope || !scopeEquals(requestedScope, currentScope)) return;
+        if (stateRef.current.hydrating || stateRef.current.scopeKey !== scopeKey(currentScope)) return;
         const snapshot = stateRef.current.pending.find((p) => p.clientId === clientId);
-        // Fall back to disk when in-memory was cleared by a scope switch:
-        // the send still belongs to its captured scope, never the new one.
         const record: PendingRecord | undefined = snapshot;
         if (!record) return;
+        // A second trigger can wait behind the first send. Recheck its result
+        // here so foreground/hydration overlap cannot replay delivery or failure.
+        if (record.status === 'sending' || record.status === 'delivered') return;
+        if (automatic && !canAutoRetry(record.status, AppState.currentState)) return;
         if (!scopeEquals(record.scope, currentScope)) {
           // Stale scope: leave the disk copy queued, touch nothing in memory.
           return;
         }
-        if (!currentScope) return;
         setPartial({ sendingIds: [...stateRef.current.sendingIds, clientId] });
         const sending: PendingRecord = { ...record, status: 'sending', attempts: record.attempts + 1, updatedAt: nowFn(), errorCode: null, errorMessage: null };
         const nextPending = stateRef.current.pending.map((p) => (p.clientId === clientId ? sending : p));
         try {
           await persist(currentScope, stateRef.current.draft, nextPending);
         } catch (err) {
+          if (!scopeEquals(record.scope, scopeRef.current)) return;
           const { message } = classifySendError(err);
           setPartial({
             pending: stateRef.current.pending.map((p) =>
@@ -247,6 +253,7 @@ export function ComposerProvider({
           });
           return;
         }
+        if (!scopeEquals(record.scope, scopeRef.current)) return;
         setPartial({ pending: nextPending });
         let latestSlots = sending.slots.map((s) => ({ ...s }));
 
@@ -432,22 +439,31 @@ export function ComposerProvider({
     [nowFn, persist, setPartial, store]
   );
 
-  // Foreground-only auto retry: queued (never failed) while the same
-  // authenticated scope is current. No OS background delivery promise.
+  const resumeQueued = useCallback(() => {
+    const current = scopeRef.current;
+    const snapshot = stateRef.current;
+    if (!current || snapshot.hydrating || snapshot.scopeKey !== scopeKey(current)) return;
+    for (const item of snapshot.pending) {
+      if (canAutoRetry(item.status, AppState.currentState) && scopeEquals(item.scope, current)) {
+        void runSend(item.clientId, true);
+      }
+    }
+  }, [runSend]);
+
+  // Hydration can finish after the app is already active, without a new
+  // foreground event. Do not resume until recovery writes have completed.
+  useEffect(() => {
+    resumeQueued();
+  }, [currentScopeKey, state.scopeKey, state.hydrating, resumeQueued]);
+
+  // No OS background delivery promise; failed sends need explicit retry.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'active') return;
-      const current = scopeRef.current;
-      if (!current) return;
-      const queued = stateRef.current.pending.filter(
-        (p) => p.status === 'queued' && canAutoRetry(p.status, nextState) && scopeEquals(p.scope, current)
-      );
-      for (const item of queued) {
-        void runSend(item.clientId);
-      }
+      resumeQueued();
     });
     return () => subscription.remove();
-  }, [runSend]);
+  }, [resumeQueued]);
 
   const updateBody = useCallback(
     async (body: string) => {

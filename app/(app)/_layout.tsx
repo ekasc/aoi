@@ -201,8 +201,8 @@ export default function AuthenticatedAppLayout() {
 									/>
 									<Stack.Screen name="collection/[id]/index" options={{ title: "List" }} />
 									<Stack.Screen name="collection/[id]/edit" options={{ title: "Edit list" }} />
-									<Stack.Screen name="collection/[id]/item/new" options={{ title: "Add a thing" }} />
-									<Stack.Screen name="collection/[id]/item/[itemId]" options={{ title: "Thing" }} />
+									<Stack.Screen name="collection/[id]/item/new" options={{ title: "Add an item" }} />
+									<Stack.Screen name="collection/[id]/item/[itemId]" options={{ title: "Item" }} />
 									<Stack.Screen name="album/enroll" options={{ title: "Join this album" }} />
 									<Stack.Screen name="album/devices" options={{ title: "Devices" }} />
 									<Stack.Screen
@@ -210,6 +210,8 @@ export default function AuthenticatedAppLayout() {
 										options={{ title: "Recovery phrase" }}
 									/>
 									<Stack.Screen name="album/restore" options={{ title: "Restore album" }} />
+									<Stack.Screen name="album/check-photo" options={{ title: "Shared album" }} />
+									<Stack.Screen name="album/local-photos" options={{ title: "Local photo copies" }} />
 									<Stack.Screen
 										name="question"
 										options={{

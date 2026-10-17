@@ -50,11 +50,6 @@ beforeEach(() => {
   }));
 });
 
-/** What is sitting on the stubbed pasteboard. */
-function setClipboard(value: string) {
-  (globalThis as unknown as Record<string, unknown>).__aoiClipboard = value;
-}
-
 describe('onboarding create path (minimum pre-Story state)', () => {
   it('asks who the space is for, then creates it and holds on the minted code', async () => {
     const { result } = renderHook(() => useOnboardingFlow());
@@ -336,37 +331,6 @@ describe('onboarding join path', () => {
 
     expect(spaceMock.joinSpace).not.toHaveBeenCalled();
     expect(replaceMock).not.toHaveBeenCalledWith('/(app)/(tabs)/(memories)');
-  });
-
-  it('fills the code field from the clipboard, on a tap', async () => {
-    const { result } = renderHook(() => useOnboardingFlow());
-    await act(async () => {
-      result.current.goJoin();
-    });
-
-    // The stub clipboard holds a whole message, the way one actually arrives.
-    await act(async () => {
-      setClipboard('join me on aoi, code HQABD7');
-      const ok = await result.current.pasteCode();
-      expect(ok).toBe(true);
-    });
-    expect(result.current.inviteCode).toBe('HQABD7');
-    expect(result.current.canJoin).toBe(true);
-  });
-
-  it('says so, rather than guessing, when the clipboard holds no code', async () => {
-    const { result } = renderHook(() => useOnboardingFlow());
-    await act(async () => {
-      result.current.goJoin();
-    });
-
-    await act(async () => {
-      setClipboard('hey, how are you?');
-      const ok = await result.current.pasteCode();
-      expect(ok).toBe(false);
-    });
-    expect(result.current.inviteCode).toBe('');
-    expect(result.current.canJoin).toBe(false);
   });
 
   it('lands a shared link on the join step with the code already in the field', async () => {
