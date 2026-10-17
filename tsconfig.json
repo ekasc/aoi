@@ -17,7 +17,6 @@
   "exclude": [
     "node_modules",
     "app-example",
-    "tests",
-    "marketing-site"
+    "tests"
   ]
 }
