@@ -45,12 +45,22 @@ Acceptance: a tester installs from TestFlight or a build URL, with push and real
 
 ### P0-2 — The work exists only as an uncommitted working tree
 
-- [ ] Commit the current work in reviewable units.
+- [x] Commit the current work in reviewable units.
 - [ ] Push and open a PR so CI sees the code.
 - [ ] Cut the beta from a tagged revision.
 
 Nothing has been committed in 8 days. There is no revision a tester's build can be cut from, CI has
 never run against this code, and one `git checkout` loses 150 files of work.
+
+**Split done: 14 units, `67efab1..7192690`.** `chore(ci)` drop marketing-site + split the test jobs ·
+`chore(config)` dev target/apk ignore/deps · `fix(notifications)` push-getter guard · `test(harness)`
+mock stubs · `feat(splash)` · `feat(home)` · `feat(calendar)` · `feat(keepsake)` · `feat(collections)` ·
+`feat(api)` · `feat(e2e)` · `feat(dev)` · `fix(app)` the UI audit sweep · `docs`. The tree is clean
+apart from `films/aoi-launch`, deliberately left untracked (a separate Remotion project). On the
+committed revision: `typecheck` clean, `lint` 0 errors (13 pre-existing warnings), `test:unit`
+**243 files / 2515 tests, 0 failed**, `a11y:audit` 0 findings.
+
+Push and tag are deliberately not done — they wait on an explicit go-ahead per push.
 
 **Additional blocker found while preparing the split:** the tree cannot build from a clean clone.
 `features/dev/local-stress-config.ts` statically imports `./local-stress-config.json`, and that file
