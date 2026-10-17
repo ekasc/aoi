@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { MotiView } from 'moti';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Easing, useReducedMotion } from 'react-native-reanimated';
+import { useReducedMotion } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { AccentWash, Radii, Spacing, withAlpha } from '@/constants/theme';
@@ -29,10 +29,16 @@ export type DayTimelineProps = {
   partnerColor: string;
   /**
    * Minute of the day to draw the "now" line at, or undefined to leave it out
-   * (any day that is not today). The line creeps rather than jumps, so it
-   * reads as a clock instead of as a state change.
+   * (any day that is not today). The line steps discretely as the parent
+   * re-renders, like a clock rather than an animation.
    */
   nowMinutes?: number;
+  /**
+   * The day these events belong to, in words ("Friday – Jan 16, 2026").
+   * Names all-day events, which have no time range of their own.
+   */
+  dayLabel?: string;
+  bottomClearance?: number;
 };
 
 /** One minute of the day, in points. */
@@ -43,39 +49,21 @@ const MINUTE_HEIGHT = DAY_HOUR_HEIGHT / 60;
  * gutter end: enough to answer "what are they doing right now" without
  * competing with the plans themselves.
  *
- * It advances by animating to the next minute's position over the minute that
- * follows, so the line is always in motion rather than ticking once a minute.
- * Under reduced motion it lands on the minute and stays there.
+ * It lands on the minute and stays there — the parent re-renders every
+ * minute, so the line steps discretely like a clock instead of tweening
+ * endlessly. No entrance animation: the sheet's own slide is arrival enough.
  */
-function NowLine({
-  minutes,
-  reduceMotion,
-}: {
-  minutes: number;
-  reduceMotion: boolean;
-}) {
+function NowLine({ minutes }: { minutes: number }) {
   const ink = useThemeColor({}, 'accentInk');
   const offset = minutes * MINUTE_HEIGHT;
   return (
-    <MotiView
+    <View
       accessible={false}
       pointerEvents="none"
-      animate={{ opacity: 1, translateY: offset }}
-      from={{ opacity: 0, translateY: offset }}
-      transition={{
-        opacity: { duration: reduceMotion ? 0 : 240, type: 'timing' },
-        translateY: {
-          // A minute of travel per minute of clock: constant speed, so the
-          // line reads as time passing rather than as an animation.
-          easing: Easing.linear,
-          duration: reduceMotion ? 0 : 60_000,
-          type: 'timing',
-        },
-      }}
-      style={[styles.nowLine, { backgroundColor: ink }]}
+      style={[styles.nowLine, { backgroundColor: ink, transform: [{ translateY: offset }] }]}
     >
       <View style={[styles.nowBead, { backgroundColor: ink }]} />
-    </MotiView>
+    </View>
   );
 }
 
@@ -95,8 +83,10 @@ function timeLabel(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? ''
-    : date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    : timeFormatter.format(date);
 }
+
+const timeFormatter = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
 
 /**
  * One day hour by hour: a label column, a hairline per hour, and each event
@@ -110,6 +100,8 @@ export function DayTimeline({
   ownColor,
   partnerColor,
   nowMinutes,
+  dayLabel,
+  bottomClearance = Spacing[40],
 }: DayTimelineProps) {
   const reduceMotion = useReducedMotion();
   const border = useThemeColor({}, 'border');
@@ -124,12 +116,19 @@ export function DayTimeline({
   const columnWidth = (count: number) =>
     count <= 1 ? trackWidth : (trackWidth - DAY_EVENT_GAP * (count - 1)) / count;
 
+  // Mount-time contentOffset is lost when the sheet is still presenting, so
+  // the timeline lands imperatively on first layout instead of trusting the
+  // initial prop (which left empty days stuck at midnight). Once per mount:
+  // later event arrivals must never yank a scrolled day.
+  const scrollerRef = useRef<ScrollView | null>(null);
+  const didLandRef = useRef(false);
+
   return (
     <View style={styles.root}>
       {allDay.length > 0 ? (
         <View style={[styles.allDayRow, { borderBottomColor: border }]}>
           <ThemedText type="meta" style={[styles.allDayLabel, { color: muted }]}>
-            all-day
+            All day
           </ThemedText>
           <View style={styles.allDayEvents}>
             {allDay.map((event) => {
@@ -146,12 +145,13 @@ export function DayTimeline({
                   }}
                 >
                   <Pressable
-                    accessibilityLabel={`Open ${event.title}, ${ownership.label}`}
+                    accessibilityLabel={`Open ${event.title}, ${ownership.label}${dayLabel ? `, all day ${dayLabel}` : ', all day'}`}
                     accessibilityRole="button"
                     onPress={() => onOpenEvent(event.id)}
-                    style={[
+                    style={({ pressed }) => [
                       styles.allDayChip,
                       { backgroundColor: withAlpha(ownership.color, 0.18) },
+                      pressed ? styles.pressed : undefined,
                     ]}
                   >
                     <ThemedText numberOfLines={1} type="bodyEmphasis">
@@ -166,13 +166,26 @@ export function DayTimeline({
       ) : null}
 
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomClearance }]}
         contentOffset={{ x: 0, y: initialHour * DAY_HOUR_HEIGHT }}
         // A vertical timeline inside the horizontal day pager: without this
         // the parent can steal vertical drags on Android.
         nestedScrollEnabled
+        ref={scrollerRef}
         showsVerticalScrollIndicator={false}
         style={styles.scroller}
+        testID="day-timeline"
+        onLayout={() => {
+          if (didLandRef.current) {
+            return;
+          }
+          didLandRef.current = true;
+          scrollerRef.current?.scrollTo({
+            x: 0,
+            y: initialHour * DAY_HOUR_HEIGHT,
+            animated: false,
+          });
+        }}
       >
         <View
           onLayout={(event) => {
@@ -185,31 +198,31 @@ export function DayTimeline({
           style={{ height: HOURS.length * DAY_HOUR_HEIGHT }}
         >
           {HOURS.map((hour) => (
-            <View
+            <Pressable
               key={hour}
-              style={[
-                styles.hourLine,
-                { borderTopColor: border, top: hour * DAY_HOUR_HEIGHT },
+              accessibilityHint="Creates an event in this hour"
+              accessibilityLabel={`Add to ${hourLabel(hour)}`}
+              accessibilityRole="button"
+              onPress={() => onCreateAtHour(hour)}
+              style={({ pressed }) => [
+                styles.hourRow,
+                { top: hour * DAY_HOUR_HEIGHT },
+                pressed ? { backgroundColor: withAlpha(ownColor, AccentWash) } : undefined,
               ]}
             >
-              <Pressable
-                accessibilityHint="Creates an event in this hour"
-                accessibilityLabel={`Add to ${hourLabel(hour)}`}
-                accessibilityRole="button"
-                onPress={() => onCreateAtHour(hour)}
-                style={styles.gutter}
-              >
-                <ThemedText type="meta" style={[styles.hourLabel, { color: muted }]}>
+              <View accessible={false} style={[styles.hourLine, { backgroundColor: border }]} />
+              <View style={styles.gutter}>
+                <ThemedText type="supporting" style={[styles.hourLabel, { color: muted }]}>
                   {hourLabel(hour)}
                 </ThemedText>
-              </Pressable>
-            </View>
+              </View>
+            </Pressable>
           ))}
 
           {/* Under the plans, so a block covering now is not sliced in half by
               the line, and above the hairlines it has to be read against. */}
           {nowMinutes === undefined ? null : (
-            <NowLine minutes={nowMinutes} reduceMotion={reduceMotion} />
+            <NowLine minutes={nowMinutes} />
           )}
 
           {laidOut.map((item, index) => {
@@ -248,10 +261,10 @@ export function DayTimeline({
                 }}
               >
                 <Pressable
-                  accessibilityLabel={`Open ${item.event.title}, ${ownership.label}`}
+                  accessibilityLabel={`Open ${item.event.title}, ${ownership.label}, ${timeLabel(item.event.startsAt)} to ${timeLabel(item.event.endsAt)}`}
                   accessibilityRole="button"
                   onPress={() => onOpenEvent(item.event.id)}
-                  style={styles.eventTap}
+                  style={({ pressed }) => [styles.eventTap, pressed ? styles.pressed : undefined]}
                 >
                   <ThemedText numberOfLines={2} type="bodyEmphasis">
                     {item.event.title}
@@ -312,16 +325,13 @@ const styles = StyleSheet.create({
     paddingTop: Spacing[8],
   },
   content: {
-    paddingBottom: Spacing[40],
     paddingHorizontal: Spacing[16],
   },
   event: {
     // The owner reads off the tint and the caption, never off an edge: a
     // coloured side stripe is decoration wearing a convention's clothes.
-    // Square corners, the way a calendar draws a block: rounding is for
-    // chips and buttons, not for time. Hidden overflow, so a short block
-    // can never paint its words onto the neighbour hours.
-    borderRadius: 0,
+    // Keep short event text inside its own time span.
+    borderRadius: Radii.sm,
     overflow: 'hidden',
     justifyContent: 'flex-start',
     // Text hugging the block's edges is what made neighbouring blocks read
@@ -334,6 +344,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'flex-start',
     minHeight: 44,
+    paddingTop: Spacing[4],
     width: DAY_GUTTER_WIDTH - Spacing[8],
   },
   hourLabel: {
@@ -355,7 +366,14 @@ const styles = StyleSheet.create({
     width: 7,
   },
   hourLine: {
-    borderTopWidth: StyleSheet.hairlineWidth,
+    height: StyleSheet.hairlineWidth,
+    left: DAY_GUTTER_WIDTH,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  hourRow: {
+    height: DAY_HOUR_HEIGHT,
     left: 0,
     position: 'absolute',
     right: 0,

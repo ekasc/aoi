@@ -55,6 +55,20 @@ describe('NewCalendarEventScreen recurrence', () => {
     expect(screen.queryByLabelText('Toggle repeats weekly')).toBeNull();
   });
 
+  it('stays distilled: title, when, save — refinement lives on the edit screen', async () => {
+    const { default: NewCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/new-event'
+    );
+    render(<NewCalendarEventScreen />);
+
+    expect(screen.getByLabelText('Event title')).toBeTruthy();
+    expect(screen.getByLabelText('All day')).toBeTruthy();
+    expect(screen.getByText('Save event')).toBeTruthy();
+    expect(screen.queryByLabelText('Event location')).toBeNull();
+    expect(screen.queryByLabelText('Mark as time together')).toBeNull();
+    expect(screen.queryByText('Label')).toBeNull();
+  });
+
   it('always saves a one-off event (recurrence: none)', async () => {
     const { default: NewCalendarEventScreen } = await import(
       '@/app/(app)/calendar/new-event'
@@ -70,36 +84,20 @@ describe('NewCalendarEventScreen recurrence', () => {
     expect(addEventSpy.mock.calls[0][0].recurrence).toBe('none');
   });
 
-  it('saves where the event happens, and saves none when there is no where', async () => {
+  it('saves unlabeled by default instead of stamping Work', async () => {
+    // `{ preset: 'Other' }` without custom text is the domain's labelless
+    // representation — a surprise date must never arrive tagged Work.
     const { default: NewCalendarEventScreen } = await import(
       '@/app/(app)/calendar/new-event'
     );
     render(<NewCalendarEventScreen />);
 
     fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: 'Standup' },
-    });
-    fireEvent.change(screen.getByLabelText('Event location'), {
-      target: { value: '  Crystal Pavilion  ' },
+      target: { value: 'Rooftop dinner' },
     });
     fireEvent.click(screen.getByText('Save event'));
 
     await waitFor(() => expect(addEventSpy).toHaveBeenCalledTimes(1));
-    expect(addEventSpy.mock.calls[0][0].location).toBe('Crystal Pavilion');
-  });
-
-  it('omits the location entirely when it is left empty', async () => {
-    const { default: NewCalendarEventScreen } = await import(
-      '@/app/(app)/calendar/new-event'
-    );
-    render(<NewCalendarEventScreen />);
-
-    fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: 'Deep work' },
-    });
-    fireEvent.click(screen.getByText('Save event'));
-
-    await waitFor(() => expect(addEventSpy).toHaveBeenCalledTimes(1));
-    expect(addEventSpy.mock.calls[0][0].location).toBeUndefined();
+    expect(addEventSpy.mock.calls[0][0].label).toEqual({ preset: 'Other' });
   });
 });

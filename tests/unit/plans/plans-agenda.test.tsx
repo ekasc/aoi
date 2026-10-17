@@ -69,7 +69,7 @@ import type { Moment } from '@/features/moments/types';
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   refreshCalendar: vi.fn(),
-  loadGoals: vi.fn(),
+  retryGoals: vi.fn(),
 }));
 
 const data = vi.hoisted(() => ({
@@ -79,6 +79,7 @@ const data = vi.hoisted(() => ({
     error: null as string | null,
   },
   goals: [] as unknown[],
+  goalsError: false,
 }));
 
 vi.mock('expo-router', () => ({
@@ -100,7 +101,7 @@ vi.mock('@/features/calendar/calendar-context', () => ({
 }));
 
 vi.mock('@/features/moments/moments-context', () => ({
-  useMoments: () => ({ loadGoals: mocks.loadGoals }),
+
 }));
 
 import { PlansAgenda } from '@/components/calendar/plans-agenda';
@@ -145,17 +146,24 @@ function makeGoal(overrides: Partial<Moment> = {}): Moment {
 }
 
 function renderAgenda() {
-  return render(<PlansAgenda now={NOW} />);
+  return render(
+    <PlansAgenda
+      goals={data.goals as never}
+      goalsError={data.goalsError}
+      now={NOW}
+      onRetryGoals={mocks.retryGoals}
+    />
+  );
 }
 
 beforeEach(() => {
   data.calendar = { upcomingEvents: [], isLoading: false, error: null };
   data.goals = [];
+  data.goalsError = false;
   mocks.push.mockClear();
   mocks.refreshCalendar.mockReset();
   mocks.refreshCalendar.mockResolvedValue(undefined);
-  mocks.loadGoals.mockReset();
-  mocks.loadGoals.mockImplementation(async () => data.goals);
+  mocks.retryGoals.mockClear();
 });
 
 describe('Plans agenda', () => {
@@ -211,6 +219,14 @@ describe('Plans agenda', () => {
     expect(screen.getByText('No goals yet.')).toBeTruthy();
   });
 
+  it('shows a loading line while goals are still arriving', () => {
+    data.goals = null as never;
+
+    renderAgenda();
+
+    expect(screen.getByText('Loading plans…')).toBeTruthy();
+  });
+
   it('shows a loading line while the calendar is loading', () => {
     data.calendar.isLoading = true;
 
@@ -229,17 +245,19 @@ describe('Plans agenda', () => {
 
   it('says a failed read failed, and retries every source', async () => {
     data.calendar.error = 'raw calendar failure';
+    data.goalsError = true;
 
     renderAgenda();
 
     expect(screen.getByText('Some of your plans could not be loaded.')).toBeTruthy();
+    expect(screen.getByText('Your goals could not be loaded.')).toBeTruthy();
     expect(screen.queryByText('raw calendar failure')).toBeNull();
 
     fireEvent.click(screen.getByLabelText('Try again'));
 
     await waitFor(() => {
       expect(mocks.refreshCalendar).toHaveBeenCalledTimes(1);
-      expect(mocks.loadGoals).toHaveBeenCalled();
+      expect(mocks.retryGoals).toHaveBeenCalledTimes(1);
     });
   });
 

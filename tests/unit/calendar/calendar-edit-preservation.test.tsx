@@ -163,4 +163,57 @@ describe('EditCalendarEventScreen preservation', () => {
     await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
     expect(updateEventSpy.mock.calls[0][0].recurrence).toBe('weekly');
   });
+
+  it('saves where the event happens, trimmed', async () => {
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Event location'), {
+      target: { value: '  Crystal Pavilion  ' },
+    });
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
+    expect(updateEventSpy.mock.calls[0][0].location).toBe('Crystal Pavilion');
+  });
+
+  it('clears the location to null when the field is emptied', async () => {
+    getEventById.mockResolvedValueOnce({ ...storedEvent, location: 'Old place' });
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    expect(screen.getByLabelText('Event location')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Event location'), {
+      target: { value: '   ' },
+    });
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
+    expect(updateEventSpy.mock.calls[0][0].location).toBeNull();
+  });
+
+  it('names the all-day control for what it is and explains an empty title', async () => {
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    expect(screen.getByLabelText('All day')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Event title'), {
+      target: { value: '   ' },
+    });
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() =>
+      expect(screen.getByText('Event title is required.')).toBeTruthy()
+    );
+    expect(updateEventSpy).not.toHaveBeenCalled();
+  });
 });

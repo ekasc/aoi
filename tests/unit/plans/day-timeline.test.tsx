@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 
 vi.mock('react-native', () => {
@@ -146,11 +145,22 @@ describe('Day timeline', () => {
     expect(screen.queryByText(/Pavilion/)).toBeNull();
   });
 
-  it('draws day blocks square, the way a calendar draws them', () => {
-    // Rounding is for chips and buttons, not for time. Scoped to the event
-    // style: the all-day chip is a pill on purpose.
-    const source = readFileSync('components/calendar/day-timeline.tsx', 'utf8');
-    const eventStyle = source.match(/\n  event: \{([\s\S]*?)\n  \},/)?.[1] ?? '';
-    expect(eventStyle).toContain('borderRadius: 0');
+  it('creates at the chosen hour and opens events without creating another plan', () => {
+    const onCreateAtHour = vi.fn();
+    const onOpenEvent = vi.fn();
+    render(createElement(DayTimeline, {
+      events: [event({ id: 'Dinner' })],
+      onCreateAtHour,
+      onOpenEvent,
+      ownColor: '#111111',
+      partnerColor: '#222222',
+    }));
+
+    fireEvent.click(screen.getByLabelText('Add to 7 AM'));
+    expect(onCreateAtHour).toHaveBeenCalledExactlyOnceWith(7);
+
+    fireEvent.click(screen.getByLabelText(/Open Dinner/));
+    expect(onOpenEvent).toHaveBeenCalledExactlyOnceWith('Dinner');
+    expect(onCreateAtHour).toHaveBeenCalledTimes(1);
   });
 });

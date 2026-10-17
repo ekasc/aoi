@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { CalendarListMock } from './calendar-list-mock';
 
 // Same RN boundary as plans.test.tsx: resolve press-state styles unpressed,
 // flatten styles, map accessibilityLabel -> aria-label and onPress -> onClick.
@@ -79,6 +80,8 @@ vi.mock('react-native', () => {
     View,
     Text,
     Pressable,
+    ActivityIndicator: () => null,
+    FlatList: CalendarListMock,
     Animated: {
       View,
       Value: class {
@@ -144,6 +147,7 @@ vi.mock('react-native-reanimated', () => {
     ReduceMotion: { System: 'system' },
     useReducedMotion: () => false,
     Easing: {
+      bezier: () => ({}),
       linear: {},
       in: (easing: unknown) => easing,
       out: (easing: unknown) => easing,
@@ -232,7 +236,7 @@ describe('Plans calendar pager sizing', () => {
     }
 
     // The scroll step is the page height, not a second estimate of it.
-    const pager = (pages[0] as HTMLElement).parentElement as HTMLElement;
+    const pager = (pages[0] as HTMLElement).closest('[data-rn-scrollview]') as HTMLElement;
     expect(Number.parseFloat(pager.style.height)).toBe(600);
   });
 
@@ -250,12 +254,11 @@ describe('Plans calendar pager sizing', () => {
         ),
       ).length;
 
-    // A grid cell lifts its day into the sheet: yesterday through tomorrow,
-    // three pages, counted inside the sheet only.
+    // The detail pager mounts a bounded seven-day window.
     fireEvent.click(screen.getAllByLabelText(/Thursday, January 15/)[0]);
     expect(
-      dateCellCount(document.querySelector('[data-testid="day-sheet"]')),
-    ).toBeLessThanOrEqual(49);
+      screen.getByTestId('day-view').querySelectorAll('[aria-label^="Day page "]').length,
+    ).toBeLessThanOrEqual(7);
 
     // Month view: a bounded stack of grids, counted inside the month surface
     // only.

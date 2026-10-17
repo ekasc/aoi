@@ -1,13 +1,16 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedKeyboard,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
@@ -17,8 +20,6 @@ import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { useCalendar } from '@/features/calendar/calendar-context';
 import { addDays, initialEventStart, startOfDay } from '@/features/calendar/calendar-date-utils';
-import { CALENDAR_PRESET_LABELS } from '@/features/calendar/types';
-import type { CalendarPresetLabel } from '@/features/calendar/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { usePreventLeave } from '@/hooks/use-prevent-leave';
 
@@ -60,7 +61,6 @@ export default function NewCalendarEventScreen() {
     hour?: string | string[];
   }>();
   const insets = useSafeAreaInsets();
-  const isIos = process.env.EXPO_OS === 'ios';
   const { addEvent } = useCalendar();
   const border = useThemeColor({}, 'border');
   const accent = useThemeColor({}, 'accent');
@@ -79,12 +79,9 @@ export default function NewCalendarEventScreen() {
   );
 
   const [title, setTitle] = useState('');
-  const [location, setLocation] = useState('');
-  const [presetLabel, setPresetLabel] = useState<CalendarPresetLabel>('Work');
   const [startsAt, setStartsAt] = useState(initialStart);
   const [endsAt, setEndsAt] = useState(datePlusOneHour(initialStart));
   const [allDay, setAllDay] = useState(false);
-  const [together, setTogether] = useState(false);
   const [error, setError] = useState('');
   const [submission, setSubmission] = useState<'idle' | 'saving' | 'saved'>('idle');
   const isSubmitting = submission === 'saving';
@@ -104,7 +101,18 @@ export default function NewCalendarEventScreen() {
     [allDay, endsAt]
   );
   const isRangeInvalid = effectiveEnd.getTime() <= effectiveStart.getTime();
-
+  // Which day this lands on, in words — the seed (tapped cell or 9am today)
+  // is invisible otherwise, and decoding the Starts row is the #1 entry
+  // error. Tracks edits, so it can never go stale.
+  const eventDayLabel = useMemo(
+    () =>
+      effectiveStart.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      }),
+    [effectiveStart]
+  );
   // Moving the start keeps the existing duration; the Ends field can still
   // stretch it independently.
   const handleStartChange = useCallback(
@@ -140,11 +148,6 @@ export default function NewCalendarEventScreen() {
     });
   }, []);
 
-  const handleToggleTogether = useCallback(() => {
-    if (submittingRef.current) return;
-    setTogether((current) => !current);
-  }, []);
-
   const handleSave = useCallback(async () => {
     if (submittingRef.current || submission === 'saved') return;
     const trimmedTitle = title.trim();
@@ -169,11 +172,11 @@ export default function NewCalendarEventScreen() {
         endsAt: effectiveEnd.toISOString(),
         actor: 'you',
         actorName: 'You',
-        label: { preset: presetLabel },
-        // An empty location means no location: the repository stores null.
-        location: location.trim() || undefined,
+        // Unlabeled by default: `{ preset: 'Other' }` without custom text
+        // is the domain's labelless representation. Stamping 'Work' here
+        // misnames plans where the partner can see it.
+        label: { preset: 'Other' },
         allDay,
-        together,
         recurrence: 'none',
       });
 
@@ -189,10 +192,7 @@ export default function NewCalendarEventScreen() {
     allDay,
     effectiveEnd,
     effectiveStart,
-    location,
-    presetLabel,
     title,
-    together,
     isRangeInvalid,
     submission,
   ]);
@@ -211,6 +211,18 @@ export default function NewCalendarEventScreen() {
     () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
     [insets.bottom]
   );
+  // Keyboard avoidance tracks the reported keyboard height directly, like
+  // the composer: KeyboardAvoidingView derives its offset from layout
+  // measurements that go stale during the sheet's detent animation, which
+  // collapses the scroll content to nothing (the "empty sheet"). The
+  // animated height stays correct; Android resizes its window instead, so
+  // the padding applies iOS-only.
+  const isIos = process.env.EXPO_OS === 'ios';
+  const keyboard = useAnimatedKeyboard();
+  const keyboardStyle = useAnimatedStyle(() => ({
+    paddingBottom: isIos ? keyboard.height.value : 0,
+  }));
+
   const footerStyle = useMemo(
     () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
     [insets.bottom]
@@ -219,13 +231,12 @@ export default function NewCalendarEventScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'New event' }} />
-      <KeyboardAvoidingView
-        behavior={isIos ? 'padding' : undefined}
-        style={[styles.root, { backgroundColor: background }]}
+      <Animated.View
+        style={[styles.root, { backgroundColor: background }, keyboardStyle]}
       >
         <ScrollView
           contentContainerStyle={contentContainerStyle}
-          contentInsetAdjustmentBehavior="never"
+          contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -251,25 +262,13 @@ export default function NewCalendarEventScreen() {
           </View>
 
           <View style={styles.section}>
-            <ThemedText type="meta">Where</ThemedText>
-            <TextInput
-              accessibilityHint="Optional"
-              accessibilityLabel="Event location"
-              editable={!isSubmitting}
-              autoCapitalize="words"
-              onChangeText={setLocation}
-              placeholder="Crystal Pavilion"
-              placeholderTextColor={muted}
-              style={titleInputStyle}
-              value={location}
-            />
-          </View>
-
-          <View style={styles.section}>
             <ThemedText type="meta">When</ThemedText>
+            <ThemedText type="supporting" style={{ color: muted }}>
+              On {eventDayLabel}
+            </ThemedText>
             <View style={styles.choiceRow}>
               <Pressable
-                accessibilityLabel="Toggle all day"
+                accessibilityLabel="All day"
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: allDay, disabled: isSubmitting }}
                 aria-checked={allDay}
@@ -283,27 +282,11 @@ export default function NewCalendarEventScreen() {
                   },
                 ]}
               >
-                <ThemedText type="caption" style={{ color: allDay ? onAccent : text }}>
+                <ThemedText
+                  type="caption"
+                  style={{ color: allDay ? onAccent : text, fontWeight: allDay ? '600' : '400' }}
+                >
                   All day
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Mark as time together"
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: together, disabled: isSubmitting }}
-                aria-checked={together}
-                disabled={isSubmitting}
-                onPress={handleToggleTogether}
-                style={[
-                  styles.choiceChip,
-                  {
-                    borderColor: together ? accent : border,
-                    backgroundColor: together ? accent : surface2,
-                  },
-                ]}
-              >
-                <ThemedText type="caption" style={{ color: together ? onAccent : text }}>
-                  Together
                 </ThemedText>
               </Pressable>
             </View>
@@ -315,6 +298,7 @@ export default function NewCalendarEventScreen() {
                 label="Starts"
                 mode={allDay ? 'date' : 'datetime'}
                 onChange={handleStartChange}
+                textColor={text}
                 value={startsAt}
                 variant="row"
               />
@@ -326,71 +310,32 @@ export default function NewCalendarEventScreen() {
                 minimumDate={startsAt}
                 mode={allDay ? 'date' : 'datetime'}
                 onChange={handleEndChange}
+                textColor={text}
                 value={endsAt}
                 variant="row"
               />
             </View>
-
-            {isRangeInvalid ? (
-              <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
-                The ending needs to come after the start.
-              </ThemedText>
-            ) : null}
           </View>
 
-          <View style={styles.section}>
-            <ThemedText type="meta">Label</ThemedText>
-            <View accessibilityRole="radiogroup">
-              <View style={styles.choiceRow}>
-                {CALENDAR_PRESET_LABELS.map((label) => {
-                  const selected = presetLabel === label;
-
-                  return (
-                    <Pressable
-                      accessibilityLabel={`Set label ${label}`}
-                      accessibilityRole="radio"
-                      accessibilityState={{ checked: selected, disabled: isSubmitting }}
-                      aria-checked={selected}
-                      disabled={isSubmitting}
-                      key={label}
-                      onPress={() => { if (!submittingRef.current) setPresetLabel(label); }}
-                      style={[
-                        styles.choiceChip,
-                        {
-                          borderColor: selected ? accent : border,
-                          backgroundColor: selected ? accent : surface2,
-                        },
-                      ]}
-                    >
-                      <ThemedText
-                        type="caption"
-                        style={{ color: selected ? onAccent : text }}
-                      >
-                        {label}
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-
-          {error ? (
+          {/* One announcer for the whole form (submit error wins, otherwise
+              the range error): two adjacent alert regions double-announce
+              near-identical strings to screen readers. */}
+          {error || isRangeInvalid ? (
             <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
-              {error}
+              {error || 'The ending needs to come after the start.'}
             </ThemedText>
           ) : null}
         </ScrollView>
 
         <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
           <Button
-            disabled={isSubmitting || isRangeInvalid || title.trim().length === 0}
+            disabled={isSubmitting || isRangeInvalid}
             label={isSubmitting ? 'Saving…' : 'Save event'}
             onPress={handleSave}
           />
           <Button disabled={isSubmitting} label="Cancel" variant="secondary" onPress={() => { if (!submittingRef.current) router.back(); }} />
         </View>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </>
   );
 }

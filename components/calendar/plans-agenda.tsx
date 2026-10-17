@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useIsFocused, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -14,7 +14,6 @@ import {
 import { getEventOwnership } from '@/features/calendar/event-ownership';
 import type { CalendarEvent } from '@/features/calendar/types';
 import { getGoalHorizon, isUpcomingGoal } from '@/features/moments/moment-goal-utils';
-import { useMoments } from '@/features/moments/moments-context';
 import type { Moment } from '@/features/moments/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -24,68 +23,36 @@ export type PlansAgendaProps = {
    * now; tests pin it so "Today" is deterministic.
    */
   now?: Date;
+  /**
+   * Goals, owned by Plans: the screen loads once per focus and hands the
+   * same list here, so switching modes never refetches. Null while loading.
+   */
+  goals: Moment[] | null;
+  goalsError: boolean;
+  onRetryGoals: () => void;
 };
 
 /**
  * The readable half of Plans: upcoming events grouped by day and future goals.
  * No time grid — the day timeline owns that.
  *
- * The screen does not have to hand it data: it reads the calendar and goal
- * contexts itself, so it drops into Plans as one element.
+ * Events come from the calendar context; goals arrive as props, loaded once
+ * per screen focus by Plans itself, so mounting this view is instant.
  */
-export function PlansAgenda({ now }: PlansAgendaProps) {
+export function PlansAgenda({ now, goals, goalsError, onRetryGoals }: PlansAgendaProps) {
   const router = useRouter();
-  const isFocused = useIsFocused();
   const {
     upcomingEvents,
     isLoading: calendarLoading,
     error: calendarError,
     refresh: refreshCalendar,
   } = useCalendar();
-  const { loadGoals } = useMoments();
 
-  const [goals, setGoals] = useState<Moment[] | null>(null);
-  const [goalsError, setGoalsError] = useState(false);
   const [retryInFlight, setRetryInFlight] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const retryInFlightRef = useRef(false);
 
   const nowDate = useMemo(() => now ?? new Date(), [now]);
-
-  // Goals are a separate, bounded read; a new goal set on another screen
-  // lands on the next focus the way a partner's change does.
-  useEffect(() => {
-    if (!isFocused) {
-      return;
-    }
-    let cancelled = false;
-    void loadGoals().then(
-      (loaded) => {
-        if (!cancelled) {
-          setGoals(loaded);
-          setGoalsError(false);
-        }
-      },
-      () => {
-        if (!cancelled) {
-          setGoalsError(true);
-        }
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [isFocused, loadGoals]);
-
-  const handleRetryGoals = useCallback(() => {
-    void loadGoals().then(
-      (loaded) => {
-        setGoals(loaded);
-        setGoalsError(false);
-      },
-      () => setGoalsError(true)
-    );
-  }, [loadGoals]);
 
   const agendaDays = useMemo(
     () => groupAgendaEvents(upcomingEvents, nowDate),
@@ -141,8 +108,8 @@ export function PlansAgenda({ now }: PlansAgendaProps) {
         setRetryInFlight(false);
       });
 
-    handleRetryGoals();
-  }, [handleRetryGoals, refreshCalendar]);
+    onRetryGoals();
+  }, [onRetryGoals, refreshCalendar]);
 
   const accent = useThemeColor({}, 'accent');
   const partnerAccent = useThemeColor({}, 'partnerAccent');

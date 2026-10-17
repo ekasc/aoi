@@ -142,6 +142,7 @@ export function PlansSomeday() {
   const background = useThemeColor({}, 'background');
   const border = useThemeColor({}, 'border');
   const muted = useThemeColor({}, 'muted');
+  const danger = useThemeColor({}, 'danger');
   const onAccent = useThemeColor({}, 'onAccent');
   const surface = useThemeColor({}, 'surface');
   const text = useThemeColor({}, 'text');
@@ -250,7 +251,7 @@ export function PlansSomeday() {
             accessibilityLiveRegion="polite"
             accessibilityRole="alert"
             type="caption"
-            style={{ color: muted }}
+            style={{ color: danger }}
           >
             {saveError}
           </ThemedText>
