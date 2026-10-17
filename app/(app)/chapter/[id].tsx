@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MomentCard } from '@/components/moments/moment-card';
 import { ChapterCover } from '@/components/moments/chapter-cover';
 import { ChapterPhotoStack } from '@/components/moments/chapter-photo-stack';
+import { KeepsakeShareSheet } from '@/components/keepsake/keepsake-share-sheet';
+import { formatKeepsakeRange } from '@/components/keepsake/keepsake-card';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Spacing } from '@/constants/theme';
@@ -112,6 +114,16 @@ export default function ChapterDetailScreen() {
   const readyId = ready?.chapterId ?? '';
   const coverPhotoUri =
     members.find((member) => member.type === 'media' && member.mediaPreview)?.mediaPreview ?? null;
+  // Stable per chapter: computed once, never from the render clock, so the
+  // shared card always names the same range.
+  const cardDateRange = useMemo(() => {
+    const fromMs = described?.range.fromMs;
+    const toMs = described?.range.toMs;
+    if (fromMs == null || toMs == null) {
+      return title;
+    }
+    return formatKeepsakeRange(fromMs, toMs);
+  }, [described, title]);
   const subtitle = members.length === 1 ? '1 memory' : `${members.length} memories`;
 
   const handleOpenStackPhoto = useCallback(
@@ -127,6 +139,7 @@ export default function ChapterDetailScreen() {
   );
   const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle');
   const [exportError, setExportError] = useState('');
+  const [shareCardVisible, setShareCardVisible] = useState(false);
   const { serverPlus, refreshServerPlus } = useSubscription();
 
   const handleExport = useCallback(async () => {
@@ -143,7 +156,7 @@ export default function ChapterDetailScreen() {
       return;
     }
     if (!serverPlus.isPlus) {
-      router.push('/(app)/paywall');
+      router.push({ pathname: '/(app)/paywall', params: { feature: 'keepsake' } });
       return;
     }
     setExportError('');
@@ -156,7 +169,7 @@ export default function ChapterDetailScreen() {
       const result = await exportChapterKeepsake({
         title,
         subtitle,
-        filename: `aoi-keepsake-${readyId.replace(/[^a-z0-9]+/gi, '-')}`,
+        filename: `aoi-keepsake-${(title.trim() || readyId).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         members,
       });
       if (result.status === 'failed') {
@@ -226,13 +239,17 @@ export default function ChapterDetailScreen() {
         chapter={{
           id: readyId,
           kind: readyId.startsWith('anniversary:') ? 'anniversary' : 'monthly',
+          monthKey: readyId.startsWith('anniversary:')
+            ? null
+            : readyId.slice('month:'.length) || null,
+          anniversaryYear: readyId.startsWith('anniversary:')
+            ? Number(readyId.split(':')[1]) || null
+            : null,
           title,
           subtitle,
           memoryIds: members.map((member) => member.id),
           range: described?.range ?? { fromMs: 0, toMs: 0 },
           coverPhotoUri,
-          monthKey: null,
-          anniversaryYear: null,
         }}
         width={240}
       />
@@ -252,15 +269,9 @@ export default function ChapterDetailScreen() {
       ) : (
         <>
           <ChapterPhotoStack moments={members} onOpenMoment={handleOpenStackPhoto} />
-          <View style={styles.entries}>
-            {members.map((member) => (
-              <MomentCard key={member.id} moment={member} onPress={openMember} />
-            ))}
-          </View>
-        </>
-      )}
       <View style={styles.exportRow}>
         <Button
+          accessibilityLiveRegion="polite"
           label={
             exportState === 'working'
               ? 'Preparing…'
@@ -276,7 +287,7 @@ export default function ChapterDetailScreen() {
         />
         {!serverPlus && exportState !== 'working' ? (
           <ThemedText type="caption" style={{ color: muted }}>
-            Couldn&apos;t confirm Plus status, check connection, then try again.
+            Plus status is unclear right now — check your connection, then try again.
           </ThemedText>
         ) : null}
         {exportState === 'error' ? (
@@ -284,7 +295,32 @@ export default function ChapterDetailScreen() {
             {exportError}
           </ThemedText>
         ) : null}
+        {members.length > 0 ? (
+          <Button
+            accessibilityHint="Previews a shareable card for this chapter"
+            label="Share card"
+            onPress={() => setShareCardVisible(true)}
+            variant="secondary"
+          />
+        ) : null}
       </View>
+          <View style={styles.entries}>
+            {members.map((member) => (
+              <MomentCard key={member.id} moment={member} onPress={openMember} />
+            ))}
+          </View>
+        </>
+      )}
+      <KeepsakeShareSheet
+        card={{
+          title,
+          subtitle,
+          dateRange: cardDateRange,
+          coverPhotoUri,
+        }}
+        onClose={() => setShareCardVisible(false)}
+        visible={shareCardVisible}
+      />
     </ScrollView>
   );
 }
