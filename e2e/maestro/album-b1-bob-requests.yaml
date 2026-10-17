@@ -1,0 +1,16 @@
+# Flow B1: Enrollment — Bob requests access (device: Bob).
+#
+# Bob signs in on his own device instance, opens the join screen, and stops
+# at the comparison code. The runner captures the displayed fingerprint from
+# the view hierarchy and compares it with Alice's before approving.
+# Env: E2E_ACCOUNT_BUTTON, E2E_ACCOUNT_EMAIL.
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- assertVisible: "E2E test console"
+- tapOn: "${E2E_ACCOUNT_BUTTON}"
+- assertVisible: "Signed in as ${E2E_ACCOUNT_EMAIL}"
+- tapOn: "Continue to the app"
+- openLink: "aoi://album/enroll"
+- assertVisible: "Compare these two codes"

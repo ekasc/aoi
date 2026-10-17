@@ -1,0 +1,28 @@
+# Flow E: Recovery — fresh identity restores from the phrase (device: Alice).
+#
+# Runs after Flow C (a photo exists) and before Flow D (which deletes it).
+# The runner first extracts Alice's 24-word phrase from the recovery-phrase
+# screen's accessibility labels ("Word N of 24: <word>"), then this flow
+# wipes the device (clearState → empty storage, fresh device id), signs in
+# again, restores from the typed phrase, and proves the previously shared
+# photo decrypts (archive lists 1 photo: listing requires verification +
+# successful AEAD open).
+# Env: E2E_ACCOUNT_BUTTON, E2E_ACCOUNT_EMAIL, E2E_PHRASE (24 words).
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- assertVisible: "E2E test console"
+- tapOn: "${E2E_ACCOUNT_BUTTON}"
+- assertVisible: "Signed in as ${E2E_ACCOUNT_EMAIL}"
+- tapOn: "Continue to the app"
+- openLink: "aoi://album/restore"
+- assertVisible: "Enter your recovery phrase"
+- tapOn: "Recovery phrase"
+- inputText: "${E2E_PHRASE}"
+- assertVisible: "24 of 24 words"
+- tapOn: "Restore this album"
+- assertVisible: "Story"
+- openLink: "aoi://dev-e2e"
+- tapOn: "Read archive (E2E)"
+- assertVisible: "Archive: 1 photos"

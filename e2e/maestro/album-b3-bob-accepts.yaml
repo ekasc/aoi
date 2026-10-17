@@ -1,0 +1,16 @@
+# Flow B3: Enrollment — Bob accepts and enters the archive (device: Bob).
+#
+# Bob compares (already done out-of-band), confirms the match, collects the
+# approval, and publishes his own record. Ends inside the archive: the
+# devices screen shows no pending requests for an enrolled member.
+appId: com.ekasc.aoi
+---
+- launchApp
+- openLink: "aoi://album/enroll"
+- assertVisible: "Compare these two codes"
+- tapOn: "The codes match"
+- assertVisible: "Waiting for approval"
+- tapOn: "Check again"
+- assertVisible: "Story"
+- openLink: "aoi://album/devices"
+- assertVisible: "No requests"

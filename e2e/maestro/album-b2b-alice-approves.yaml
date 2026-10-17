@@ -1,0 +1,14 @@
+# Flow B2b: Enrollment — Alice approves after fingerprint match (device: Alice).
+#
+# Runs only after the runner confirms both displayed fingerprints match.
+# Re-selects Bob's claim (selection does not survive relaunch) and approves.
+# Env: E2E_CLAIM_BUTTON (same value as album-b2).
+appId: com.ekasc.aoi
+---
+- launchApp
+- openLink: "aoi://album/devices"
+- tapOn: "Refresh"
+- assertVisible: "Waiting to join"
+- tapOn: "${E2E_CLAIM_BUTTON}"
+- tapOn: "Approve this device"
+- assertVisible: "Approved"

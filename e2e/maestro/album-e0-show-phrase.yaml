@@ -1,0 +1,10 @@
+# Flow E0: helper — show Alice's recovery phrase for runner extraction.
+#
+# NOT a coverage flow on its own: opens the real recovery-phrase screen so
+# scripts/run-e2e.mjs can read the 24 words from the view hierarchy
+# ("Word N of 24: <word>" labels) and feed them to Flow E's fresh install.
+appId: com.ekasc.aoi
+---
+- launchApp
+- openLink: "aoi://album/recovery-phrase"
+- assertVisible: "Write these 24 words down"
