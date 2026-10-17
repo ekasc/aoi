@@ -1,0 +1,4 @@
+export const SPLASH_SETTLE_MS = 550;
+export const SPLASH_TWINKLE_MS = 300;
+export const SPLASH_SCENE_MS = SPLASH_SETTLE_MS + SPLASH_TWINKLE_MS;
+export const SPLASH_EXIT_MS = 200;
