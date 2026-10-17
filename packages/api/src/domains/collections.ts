@@ -3,6 +3,7 @@ import { Effect } from 'effect';
 import {
   type Collection,
   type CollectionItem,
+  type CollectionPreview,
   type CreateCollectionItemRequest,
   type CreateCollectionRequest,
   type UpdateCollectionItemRequest,
@@ -239,6 +240,113 @@ export const listCollectionsProgram = (
     });
 
     return (rows.results ?? []).map(collectionToApi);
+  });
+
+// ── List shelf previews ──────────────────────────────────────────────────
+
+export interface CollectionPreviewCountRow {
+  collection_id: string;
+  status: string | null;
+  n: number;
+}
+
+export interface CollectionPreviewHeadRow {
+  collection_id: string;
+  title: string;
+  cover_url: string | null;
+}
+
+/**
+ * Every shelf's preview for the space, in two bounded queries.
+ *
+ * The Ours screen shows a preview of every shelf. Asking per shelf made that
+ * screen cost one request per list; both of these read the whole space at once
+ * and return a row per shelf, or at most three rows per shelf.
+ */
+export const listCollectionPreviewsProgram = (
+  userId: string
+): Effect.Effect<CollectionPreview[], InternalError, DbService> =>
+  Effect.gen(function* () {
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) {
+      return [];
+    }
+
+    const db = yield* Db;
+    const countRows = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `select collection_id, status, count(*) as n
+             from collection_items
+             where space_id = ? and deleted_at is null
+             group by collection_id, status`
+          )
+          .bind(spaceId)
+          .all<CollectionPreviewCountRow>(),
+      catch: () => new InternalError({}),
+    });
+
+    // The three covers a shelf leads with, numbered so one query covers every
+    // shelf. Ordering matches the per-shelf read: position, then creation.
+    const headRows = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `select collection_id, title, cover_url from (
+               select collection_id, title, cover_url,
+                      row_number() over (
+                        partition by collection_id
+                        order by position asc, created_at asc
+                      ) as rn
+               from collection_items
+               where space_id = ? and deleted_at is null
+             )
+             where rn <= 3
+             order by collection_id asc, rn asc`
+          )
+          .bind(spaceId)
+          .all<CollectionPreviewHeadRow>(),
+      catch: () => new InternalError({}),
+    });
+
+    const counts = new Map<
+      string,
+      { want: number; doing: number; done: number; total: number }
+    >();
+    for (const row of countRows.results ?? []) {
+      const entry =
+        counts.get(row.collection_id) ?? { want: 0, doing: 0, done: 0, total: 0 };
+      const n = Number(row.n) || 0;
+      entry.total += n;
+      if (row.status === 'want' || row.status === 'doing' || row.status === 'done') {
+        entry[row.status] += n;
+      }
+      counts.set(row.collection_id, entry);
+    }
+
+    const heads = new Map<string, { titles: string[]; covers: (string | null)[] }>();
+    for (const row of headRows.results ?? []) {
+      const entry = heads.get(row.collection_id) ?? { titles: [], covers: [] };
+      entry.titles.push(row.title);
+      entry.covers.push(row.cover_url);
+      heads.set(row.collection_id, entry);
+    }
+
+    const previews: CollectionPreview[] = [];
+    for (const [collectionId, entry] of counts) {
+      const head = heads.get(collectionId);
+      previews.push({
+        collectionId,
+        covers: head?.covers ?? [],
+        titles: head?.titles ?? [],
+        counts: { want: entry.want, doing: entry.doing, done: entry.done },
+        total: entry.total,
+      });
+    }
+    return previews.sort((left, right) =>
+      left.collectionId < right.collectionId ? -1 : 1
+    );
   });
 
 // ── Create shelf ─────────────────────────────────────────────────────────

@@ -333,7 +333,7 @@ describe('updateMomentProgram', () => {
   it('404s for a missing moment', async () => {
     const ctx = makeCtx();
     insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    const err = await failureOf(ctx.provide(updateMomentProgram(USER_A, '00000000-0000-4000-8000-0000000000e1', { title: 'x' })));
+    const err = await failureOf(ctx.provide(updateMomentProgram(USER_A, '00000000-0000-4000-8000-0000000000e1', { expectedUpdatedAt: new Date(T0).toISOString(), title: 'x' })));
     expect(err).toBeInstanceOf(NotFoundError);
   });
 
@@ -344,7 +344,7 @@ describe('updateMomentProgram', () => {
     insertSpace(ctx.harness.d1, SPACE_1, USER_A);
     insertMember(ctx.harness.d1, SPACE_1, USER_B, 'partner');
     insertMoment(ctx.harness.d1, '00000000-0000-4000-8000-0000000000e2', SPACE_1, USER_A, T0);
-    const err = await failureOf(ctx.provide(updateMomentProgram(USER_B, '00000000-0000-4000-8000-0000000000e2', { title: 'x' })));
+    const err = await failureOf(ctx.provide(updateMomentProgram(USER_B, '00000000-0000-4000-8000-0000000000e2', { expectedUpdatedAt: new Date(T0).toISOString(), title: 'x' })));
     expect(err).toBeInstanceOf(ForbiddenError);
   });
 
@@ -357,11 +357,11 @@ describe('updateMomentProgram', () => {
     const momentId = '00000000-0000-4000-8000-0000000000e3';
     insertMoment(ctx.harness.d1, momentId, SPACE_1, USER_A, T0);
 
-    const updated = await run(ctx.provide(updateMomentProgram(USER_A, momentId, { title: 'New title', targetAt: null })));
+    const updated = await run(ctx.provide(updateMomentProgram(USER_A, momentId, { expectedUpdatedAt: new Date(T0).toISOString(), title: 'New title', targetAt: null })));
     expect(updated.title).toBe('New title');
-    // The clock is frozen: advance it so the update timestamp moves.
+    expect(Date.parse(updated.updatedAt)).toBe(T0 + 1);
     ctx.harness.clock.advance(60_000);
-    const updatedLater = await run(ctx.provide(updateMomentProgram(USER_A, momentId, { body: 'revised' })));
+    const updatedLater = await run(ctx.provide(updateMomentProgram(USER_A, momentId, { expectedUpdatedAt: updated.updatedAt, body: 'revised' })));
     expect(updatedLater.updatedAt).not.toBe(updatedLater.createdAt);
     expect(updatedLater.body).toBe('revised');
 
@@ -403,6 +403,7 @@ describe('updateMomentProgram', () => {
     });
 
     const updated = await run(ctx.provide(updateMomentProgram(USER_A, momentId, {
+      expectedUpdatedAt: new Date(T0).toISOString(),
       mediaId: newMedia,
       mediaPreview: `/v1/media/${newMedia}/object?variant=display`,
     })));
@@ -435,12 +436,12 @@ describe('updateMomentProgram', () => {
     expect(createFailure).toBeInstanceOf(NotFoundError);
 
     const updateFailure = await failureOf(
-      ctx.provide(updateMomentProgram(USER_A, momentId, { mediaId: ghost }))
+      ctx.provide(updateMomentProgram(USER_A, momentId, { expectedUpdatedAt: new Date(T0).toISOString(), mediaId: ghost }))
     );
     expect(updateFailure).toBeInstanceOf(NotFoundError);
   });
 
-  it('404s and writes no activity when the moment was tombstoned mid-flight', async () => {
+  it('404s and writes no activity when the initial read finds a tombstone', async () => {
     const ctx = makeCtx();
     insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
     insertSpace(ctx.harness.d1, SPACE_1, USER_A);
@@ -448,8 +449,8 @@ describe('updateMomentProgram', () => {
     insertMoment(ctx.harness.d1, momentId, SPACE_1, USER_A, T0);
 
     // Delete first, then try to update the tombstone.
-    await run(ctx.provide(deleteMomentProgram(USER_A, momentId)));
-    const err = await failureOf(ctx.provide(updateMomentProgram(USER_A, momentId, { title: 'late' })));
+    await run(ctx.provide(deleteMomentProgram(USER_A, momentId, { expectedUpdatedAt: new Date(T0).toISOString() })));
+    const err = await failureOf(ctx.provide(updateMomentProgram(USER_A, momentId, { expectedUpdatedAt: new Date(T0).toISOString(), title: 'late' })));
     expect(err).toBeInstanceOf(NotFoundError);
     // Only the delete tombstone exists — the failed update added nothing.
     expect(countActivity(ctx.harness.d1, momentId)).toBe(1);
@@ -465,10 +466,10 @@ describe('deleteMomentProgram', () => {
     insertMember(ctx.harness.d1, SPACE_1, USER_B, 'partner');
     insertMoment(ctx.harness.d1, '00000000-0000-4000-8000-0000000000f1', SPACE_1, USER_A, T0);
 
-    const missing = await failureOf(ctx.provide(deleteMomentProgram(USER_A, '00000000-0000-4000-8000-0000000000ff')));
+    const missing = await failureOf(ctx.provide(deleteMomentProgram(USER_A, '00000000-0000-4000-8000-0000000000ff', { expectedUpdatedAt: new Date(T0).toISOString() })));
     expect(missing).toBeInstanceOf(NotFoundError);
 
-    const other = await failureOf(ctx.provide(deleteMomentProgram(USER_B, '00000000-0000-4000-8000-0000000000f1')));
+    const other = await failureOf(ctx.provide(deleteMomentProgram(USER_B, '00000000-0000-4000-8000-0000000000f1', { expectedUpdatedAt: new Date(T0).toISOString() })));
     expect(other).toBeInstanceOf(ForbiddenError);
   });
 
@@ -481,12 +482,12 @@ describe('deleteMomentProgram', () => {
     const momentId = '00000000-0000-4000-8000-0000000000f2';
     insertMoment(ctx.harness.d1, momentId, SPACE_1, USER_A, T0);
 
-    const first = await run(ctx.provide(deleteMomentProgram(USER_A, momentId)));
+    const first = await run(ctx.provide(deleteMomentProgram(USER_A, momentId, { expectedUpdatedAt: new Date(T0).toISOString() })));
     expect(first).toEqual({ ok: true });
     expect(countActivity(ctx.harness.d1, momentId)).toBe(1);
 
     // Second delete: guard fails → 404, and NO second activity row.
-    const second = await failureOf(ctx.provide(deleteMomentProgram(USER_A, momentId)));
+    const second = await failureOf(ctx.provide(deleteMomentProgram(USER_A, momentId, { expectedUpdatedAt: new Date(T0).toISOString() })));
     expect(second).toBeInstanceOf(NotFoundError);
     expect(countActivity(ctx.harness.d1, momentId)).toBe(1);
 

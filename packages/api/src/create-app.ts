@@ -10,6 +10,7 @@ import { Observability, type ObservabilityService } from './services/observabili
 import { registerOpenApiRoutes } from './openapi';
 import { BetterAuth } from './auth/better-auth';
 import { authRouter } from './routes/session-auth';
+import { e2eAuthRouter } from './routes/e2e-auth';
 import { plusRouter } from './routes/session-plus';
 import { spacesRouter } from './routes/session-spaces';
 import { momentsRouter } from './routes/session-moments';
@@ -179,6 +180,7 @@ export function createApp(layers: RuntimeLayer): OpenAPIHono<AppEnv> {
 
   // ── Domain routes (public auth adapters + protected spaces) ───────────
   app.route('/', authRouter(run));
+  app.route('/', e2eAuthRouter(run));
   app.route('/', plusRouter(run));
   app.route('/', spacesRouter(run));
   app.route('/', momentsRouter(run));

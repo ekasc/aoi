@@ -133,7 +133,16 @@ export const createMomentRequestSchema = z.object({
 
 export type CreateMomentRequest = z.infer<typeof createMomentRequestSchema>;
 
-export const updateMomentRequestSchema = z.object({
+export const momentWritePreconditionSchema = z.object({
+  expectedUpdatedAt: z.string().datetime({ offset: true }).refine(
+    (value) => Number.isFinite(Date.parse(value)), 'Invalid memory version'
+  ),
+});
+
+export const deleteMomentRequestSchema = momentWritePreconditionSchema.strict();
+export type DeleteMomentRequest = z.infer<typeof deleteMomentRequestSchema>;
+
+export const updateMomentRequestSchema = momentWritePreconditionSchema.extend({
   type: momentTypeSchema.optional(),
   title: z.string().optional(),
   body: z.string().optional(),
@@ -161,6 +170,23 @@ export const momentListResponseSchema = z.object({
 });
 
 export type MomentListResponse = z.infer<typeof momentListResponseSchema>;
+
+// Leave room for the space binding under D1's 100-parameter limit.
+export const MOMENT_RECONCILE_LIMIT = 90;
+
+export const reconcileMomentsRequestSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(MOMENT_RECONCILE_LIMIT),
+}).strict();
+
+export type ReconcileMomentsRequest = z.infer<typeof reconcileMomentsRequestSchema>;
+
+// Missing requested ids are no longer visible to this member. Never return
+// deleted content or distinguish deletion from a foreign/nonexistent id.
+export const reconcileMomentsResponseSchema = z.object({
+  moments: z.array(momentSchema).max(MOMENT_RECONCILE_LIMIT),
+});
+
+export type ReconcileMomentsResponse = z.infer<typeof reconcileMomentsResponseSchema>;
 
 /**
  * GET /v1/spaces/current/moments query params.
