@@ -1,7 +1,8 @@
 import type { Collection, CollectionItem } from '@aoi/shared';
 
 import { apiFetch } from '@/features/api-client';
-import type { CollectionsRepository } from '@/features/collections/types';
+import { EMPTY_COLLECTION_PREVIEW } from '@/features/collections/collection-preview';
+import type { CollectionsRepository, CollectionPreview } from '@/features/collections/types';
 
 /** Manual order is the server's `position`; appending puts a new row last. */
 function byPosition<T extends { position: number }>(a: T, b: T): number {
@@ -10,6 +11,9 @@ function byPosition<T extends { position: number }>(a: T, b: T): number {
 
 type CollectionListResponse = { collections: Collection[] };
 type CollectionItemListResponse = { items: CollectionItem[] };
+type CollectionPreviewListResponse = {
+  previews: (CollectionPreview & { collectionId: string })[];
+};
 type CollectionResponse = { collection: Collection };
 type CollectionItemResponse = { item: CollectionItem };
 
@@ -48,6 +52,35 @@ export const remoteCollectionsRepository: CollectionsRepository = {
       `/v1/collections/${collectionId}/items`
     );
     return [...response.items].sort(byPosition);
+  },
+
+  /**
+   * Previews for every shelf in one request. The per-shelf read this replaces
+   * made the Ours screen cost one round trip per list.
+   */
+  async listPreviews(collectionIds) {
+    if (collectionIds.length === 0) {
+      return {};
+    }
+    const response = await apiFetch<CollectionPreviewListResponse>(
+      '/v1/spaces/current/collection-previews'
+    );
+    const out: Record<string, CollectionPreview> = {};
+    for (const collectionId of collectionIds) {
+      out[collectionId] = EMPTY_COLLECTION_PREVIEW;
+    }
+    for (const preview of response.previews) {
+      if (out[preview.collectionId] === undefined) {
+        continue;
+      }
+      out[preview.collectionId] = {
+        covers: preview.covers,
+        counts: preview.counts,
+        titles: preview.titles,
+        total: preview.total,
+      };
+    }
+    return out;
   },
 
   async createItem(collectionId, input) {

@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,15 +20,35 @@ export default function EditListScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const collectionId = typeof params.id === 'string' ? params.id : undefined;
 
-  const { collections, isLoading, updateCollection } = useCollections();
+  const { collections, isLoading, updateCollection, deleteCollection } = useCollections();
 
   const muted = useThemeColor({}, 'muted');
+  const danger = useThemeColor({}, 'danger');
   const accentInk = useThemeColor({}, 'accentInk');
 
   const collection = useMemo(
     () => collections.find((row) => row.id === collectionId),
     [collectionId, collections]
   );
+
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const handleRemove = useCallback(async () => {
+    if (!collectionId || isRemoving) {
+      return;
+    }
+    setIsRemoving(true);
+    setRemoveError(null);
+    try {
+      await deleteCollection(collectionId);
+      router.dismissTo('/(app)/(tabs)/ours');
+    } catch {
+      setRemoveError("Couldn't remove this list. Please try again.");
+      setIsRemoving(false);
+    }
+  }, [collectionId, deleteCollection, isRemoving, router]);
 
   const handleSubmit = useCallback(
     async (values: ListFormValues) => {
@@ -83,6 +103,42 @@ export default function EditListScreen() {
           onSubmit={handleSubmit}
           submitLabel="Save"
         />
+        <View style={styles.removeSection}>
+          {confirmingRemove ? (
+            <>
+              <ThemedText type="bodyEmphasis">Remove “{collection.name}”?</ThemedText>
+              <ThemedText type="caption" style={{ color: muted }}>
+                This removes the list and everything in it for both of you.
+              </ThemedText>
+              {removeError ? (
+                <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+                  {removeError}
+                </ThemedText>
+              ) : null}
+              <View style={styles.removeActions}>
+                <Button
+                  accessibilityLabel={`Confirm remove ${collection.name}`}
+                  disabled={isRemoving}
+                  label={isRemoving ? 'Removing…' : 'Remove list'}
+                  onPress={() => void handleRemove()}
+                  variant="destructive"
+                />
+                <Button
+                  disabled={isRemoving}
+                  label="Keep"
+                  onPress={() => setConfirmingRemove(false)}
+                  variant="secondary"
+                />
+              </View>
+            </>
+          ) : (
+            <Button
+              label="Remove list"
+              onPress={() => setConfirmingRemove(true)}
+              variant="secondary"
+            />
+          )}
+        </View>
       </ScrollView>
     </>
   );
@@ -99,5 +155,13 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing[24],
     paddingTop: Spacing[24],
+  },
+  removeSection: {
+    gap: Spacing[12],
+    marginTop: Spacing[32],
+  },
+  removeActions: {
+    flexDirection: 'row',
+    gap: Spacing[12],
   },
 });

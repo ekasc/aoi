@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { previewFromItems } from '@/features/collections/collection-preview';
 import { createLocalCollectionsRepository } from '@/features/collections/local-collections-repository';
 import type { Collection, CollectionItem } from '@/features/collections/types';
 
@@ -167,5 +168,92 @@ describe('local collections repository', () => {
     const repo = createLocalCollectionsRepository('space-1');
     const collections = await repo.listCollections();
     expect(collections.map((collection) => collection.id)).toEqual(['good']);
+  });
+});
+
+describe('list previews', () => {
+  it('serves every shelf preview from a single read of the store', async () => {
+    const collections = [
+      makeCollection({ id: 'a', name: 'Films to watch', position: 0 }),
+      makeCollection({ id: 'b', name: 'Books to share', position: 1 }),
+      makeCollection({ id: 'c', name: 'Places to go', position: 2 }),
+    ];
+    await seed(
+      'space-1',
+      collections,
+      [
+        makeItem({ id: 'a3', collectionId: 'a', position: 3, title: 'Third', coverUrl: 'https://example.invalid/3.jpg' }),
+        makeItem({ id: 'a1', collectionId: 'a', position: 1, title: 'First' }),
+        makeItem({ id: 'a2', collectionId: 'a', position: 2, title: 'Second', status: 'done' }),
+        makeItem({ id: 'a4', collectionId: 'a', position: 4, title: 'Fourth' }),
+        makeItem({ id: 'b1', collectionId: 'b', position: 1, title: 'B only', status: 'doing' }),
+      ]
+    );
+
+    const repo = createLocalCollectionsRepository('space-1');
+    const readSpy = vi.spyOn(mockStorage, 'getItem');
+    try {
+      const previews = await repo.listPreviews(['a', 'b', 'c']);
+
+      // The regression this replaces: one store read and parse per shelf.
+      expect(readSpy).toHaveBeenCalledTimes(1);
+
+      expect(previews.a).toEqual({
+        covers: [null, null, 'https://example.invalid/3.jpg'],
+        titles: ['First', 'Second', 'Third'],
+        counts: { want: 0, doing: 0, done: 1 },
+        total: 4,
+      });
+      expect(previews.b).toEqual({
+        covers: [null],
+        titles: ['B only'],
+        counts: { want: 0, doing: 1, done: 0 },
+        total: 1,
+      });
+      expect(previews.c).toEqual({
+        covers: [],
+        titles: [],
+        counts: { want: 0, doing: 0, done: 0 },
+        total: 0,
+      });
+    } finally {
+      readSpy.mockRestore();
+    }
+  });
+
+  it('agrees with reading each shelf on its own', async () => {
+    const collections = [
+      makeCollection({ id: 'a', position: 2 }),
+      makeCollection({ id: 'b', position: 0 }),
+      makeCollection({ id: 'c', position: 1 }),
+    ];
+    await seed(
+      'space-1',
+      collections,
+      [
+        makeItem({ id: 'i4', collectionId: 'b', position: 4, status: 'want', title: 'Four' }),
+        makeItem({ id: 'i1', collectionId: 'b', position: 1, status: 'done', title: 'One' }),
+        makeItem({ id: 'i2', collectionId: 'b', position: 2, status: 'done', title: 'Two' }),
+        makeItem({ id: 'i3', collectionId: 'b', position: 3, status: 'doing', title: 'Three' }),
+        makeItem({ id: 'i5', collectionId: 'a', position: 0, title: 'Only' }),
+      ]
+    );
+
+    const repo = createLocalCollectionsRepository('space-1');
+    const previews = await repo.listPreviews(['a', 'b', 'c']);
+
+    for (const id of ['a', 'b', 'c']) {
+      expect(previews[id]).toEqual(previewFromItems(await repo.listItems(id)));
+    }
+    // Four things in b, so only the first three are covers.
+    expect(previews.b.titles).toEqual(['One', 'Two', 'Three']);
+    expect(previews.b.total).toBe(4);
+  });
+
+  it('reports an unknown shelf as empty rather than omitting it', async () => {
+    const repo = createLocalCollectionsRepository('space-1');
+    expect(await repo.listPreviews(['missing'])).toEqual({
+      missing: { covers: [], titles: [], counts: { want: 0, doing: 0, done: 0 }, total: 0 },
+    });
   });
 });

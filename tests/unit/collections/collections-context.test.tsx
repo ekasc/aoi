@@ -14,6 +14,7 @@ const fakeRepository = {
   updateCollection: vi.fn(),
   deleteCollection: vi.fn(),
   listItems: vi.fn(),
+  listPreviews: vi.fn(),
   createItem: vi.fn(),
   updateItem: vi.fn(),
   deleteItem: vi.fn(),

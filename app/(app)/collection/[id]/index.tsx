@@ -6,19 +6,20 @@ import {
   useRouter,
   type Href,
 } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SelectedFilters } from '@/components/collections/selected-filters';
 import { FilterMenu } from '@/components/collections/filter-menu';
-import { ItemListRow, ItemTile } from '@/components/collections/item-tile';
+import { ItemListRow, ItemTile, nextCollectionStatus } from '@/components/collections/item-tile';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { GlassSurface } from '@/components/ui/glass-surface';
@@ -31,20 +32,22 @@ import {
 } from '@/constants/collection-status';
 import { Elevation, Spacing, shadow, withAlpha } from '@/constants/theme';
 import { useCollections } from '@/features/collections/collections-context';
-import type { CollectionItem } from '@/features/collections/types';
+import { COLLECTION_ITEM_TITLE_MAX, type CollectionItem } from '@/features/collections/types';
+import { haptics } from '@/features/haptics/haptics';
 import { useAoiTheme } from '@/features/theme/theme-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 /**
  * A list, as a page rather than a sheet.
  *
- * Browsing only: what is in the list, and the way into one of its things.
- * Adding, editing, and removing a thing all happen on the thing's own page, so
- * this screen never grows an editor inside it. The hierarchy is Lists, then a
- * list, then a thing, and every step is a push — no sheets, no inline forms.
+ * Browsing plus two fast paths: a thing's status flips in place on its tile,
+ * and a title-only quick add sits above the catalogue for rapid capture.
+ * Anything beyond that — annotating, scoring, covering, or removing a thing —
+ * happens on the thing's own page, so the full add form behind the add button
+ * stays the place for curation.
  *
- * Things are re-read whenever the screen regains focus, which is how an add or
- * an edit made on a thing's page shows up here on the way back.
+ * Things are re-read whenever the screen regains focus, which is how an edit
+ * made on a thing's page shows up here on the way back.
  */
 /** The floating add button, the same size the other screens use. */
 const FAB_SIZE = 56;
@@ -60,7 +63,8 @@ export default function CollectionDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const collectionId = typeof params.id === 'string' ? params.id : undefined;
 
-  const { collections, isLoading, listItems, deleteCollection } = useCollections();
+  const { collections, isLoading, listItems, updateItem, createItem } =
+    useCollections();
 
   const muted = useThemeColor({}, 'muted');
   const accentInk = useThemeColor({}, 'accentInk');
@@ -83,12 +87,15 @@ export default function CollectionDetailScreen() {
   const [loadedTick, setLoadedTick] = useState<number | null>(null);
   const itemsLoading = Boolean(collectionId) && loadedTick !== reloadTick;
 
-  const [confirmingListRemove, setConfirmingListRemove] = useState(false);
-  const [isRemovingList, setIsRemovingList] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [filter, setFilter] = useState<CollectionFilter>('all');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [sort, setSort] = useState<CollectionSort>('added');
+  const [statusSavingIds, setStatusSavingIds] = useState<string[]>([]);
+  const [quickTitle, setQuickTitle] = useState('');
+  const [isQuickSaving, setIsQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const quickInputRef = useRef<TextInput>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -143,20 +150,6 @@ export default function CollectionDetailScreen() {
     [filter, items, sort]
   );
 
-  const handleRemoveList = useCallback(async () => {
-    if (!collectionId) {
-      return;
-    }
-    setIsRemovingList(true);
-    setActionError(null);
-    try {
-      await deleteCollection(collectionId);
-      router.back();
-    } catch {
-      setActionError("Couldn't remove this list. Please try again.");
-      setIsRemovingList(false);
-    }
-  }, [collectionId, deleteCollection, router]);
 
   const collectionPathId = collection?.id;
   const itemPath = useCallback(
@@ -169,6 +162,63 @@ export default function CollectionDetailScreen() {
     (item: CollectionItem) => router.push(itemPath(`item/${item.id}`)),
     [itemPath, router]
   );
+  // A tap on a thing's status moves it one step along Want → Doing → Done,
+  // optimistically: the tile flips at once, and a failed write puts it back
+  // and says so, through the same update path the thing's own page uses.
+  const handleToggleStatus = useCallback(
+    async (item: CollectionItem) => {
+      const next = nextCollectionStatus(item.status);
+      const previous = item.status;
+      setStatusSavingIds((ids) => [...ids, item.id]);
+      setItems((current) =>
+        current.map((row) => (row.id === item.id ? { ...row, status: next } : row))
+      );
+      try {
+        const updated = await updateItem(item.id, { status: next });
+        setItems((current) =>
+          current.map((row) =>
+            row.id === item.id ? { ...row, status: updated.status ?? next } : row
+          )
+        );
+      } catch {
+        setItems((current) =>
+          current.map((row) => (row.id === item.id ? { ...row, status: previous } : row))
+        );
+        setActionError(`Couldn't save “${item.title}”. Please try again.`);
+        haptics.error();
+      } finally {
+        setStatusSavingIds((ids) => ids.filter((id) => id !== item.id));
+      }
+    },
+    [updateItem]
+  );
+  // Title-only entry for rapid capture: one field that stays focused, so
+  // adding N things costs N taps instead of N form round trips. Anything
+  // beyond a title stays on the thing's own page, behind the add button.
+  const handleQuickAdd = useCallback(async () => {
+    const title = quickTitle.trim();
+    if (!collectionId || title.length === 0 || isQuickSaving) {
+      return;
+    }
+    setIsQuickSaving(true);
+    setQuickError(null);
+    try {
+      const created = await createItem(collectionId, { title });
+      haptics.success();
+      setItems((current) => [...current, created]);
+      // A filtered list would swallow the new thing — it has no status yet —
+      // so the catalogue resets to everything the entry lands in.
+      setFilter('all');
+      setQuickTitle('');
+      quickInputRef.current?.focus();
+    } catch {
+      // Keep the draft: a failed write must not cost what was typed.
+      setQuickError("Couldn't save this item. Your draft is still here.");
+      haptics.error();
+    } finally {
+      setIsQuickSaving(false);
+    }
+  }, [collectionId, createItem, isQuickSaving, quickTitle]);
   // One list over rows, not things: the grid is a pair per row and the list is
   // one, and either way only the rows in view mount. Three hundred things stop
   // being three hundred covers at once.
@@ -222,6 +272,8 @@ export default function CollectionDetailScreen() {
           divider={index > 0}
           item={row[0]}
           onPress={openItem}
+          onToggleStatus={handleToggleStatus}
+          statusSaving={statusSavingIds.includes(row[0].id)}
         />
       );
     }
@@ -229,7 +281,13 @@ export default function CollectionDetailScreen() {
       <View style={styles.gridRow}>
         {row.map((item) => (
           <View key={item.id} style={styles.gridCell}>
-            <ItemTile colorValue={colorValue} item={item} onPress={openItem} />
+            <ItemTile
+              colorValue={colorValue}
+              item={item}
+              onPress={openItem}
+              onToggleStatus={handleToggleStatus}
+              statusSaving={statusSavingIds.includes(item.id)}
+            />
           </View>
         ))}
         {row.length === 1 ? <View style={styles.gridCell} /> : null}
@@ -243,6 +301,9 @@ export default function CollectionDetailScreen() {
   // after a failed read there is nothing to filter or re-view, so the header
   // stays empty rather than offering switches that do nothing.
   const showControls = items.length > 0 && !itemsLoading && !itemsError;
+  // The quick add only needs the list to be readable. It stays up for an
+  // empty list too, so the first thing lands without a round trip.
+  const showQuickAdd = !itemsLoading && !itemsError;
 
   const viewSwitch = (
     <View style={styles.viewSwitch}>
@@ -297,13 +358,13 @@ export default function CollectionDetailScreen() {
     <View style={styles.state}>
       <ActivityIndicator color={accentInk} />
       <ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
-        Loading things…
+        Loading items…
       </ThemedText>
     </View>
   ) : itemsError ? (
     <View style={styles.state}>
       <ThemedText accessibilityRole="alert" type="body" style={{ color: muted }}>
-        These things could not be loaded right now.
+        These items could not be loaded right now.
       </ThemedText>
       <Button
         label="Try again"
@@ -330,40 +391,6 @@ export default function CollectionDetailScreen() {
     </ThemedText>
   );
 
-  /* The destructive action sits at the foot, above the FAB's clearance. */
-  const footer = (
-    <View style={styles.foot}>
-      {confirmingListRemove ? (
-        <View style={styles.removeBlock}>
-          <ThemedText type="bodyEmphasis">Remove “{collection.name}”?</ThemedText>
-          <ThemedText type="caption" style={{ color: muted }}>
-            This removes the list and everything in it for both of you.
-          </ThemedText>
-          <View style={styles.actions}>
-            <Button
-              accessibilityLabel={`Confirm remove ${collection.name}`}
-              disabled={isRemovingList}
-              label={isRemovingList ? 'Removing…' : 'Remove list'}
-              onPress={() => void handleRemoveList()}
-              variant="destructive"
-            />
-            <Button
-              disabled={isRemovingList}
-              label="Keep"
-              onPress={() => setConfirmingListRemove(false)}
-              variant="secondary"
-            />
-          </View>
-        </View>
-      ) : (
-        <Button
-          label="Remove list"
-          onPress={() => setConfirmingListRemove(true)}
-          variant="secondary"
-        />
-      )}
-    </View>
-  );
 
 
   return (
@@ -395,9 +422,10 @@ export default function CollectionDetailScreen() {
               }),
         }}
       />
-      {/* Editing stays in the chrome; adding moved to the FAB below, the same
-          floating button the other screens use, so it lands under a thumb
-          instead of at the end of the content. */}
+      {/* Editing stays in the chrome; the full add form stays behind the FAB
+          below, the same floating button the other screens use, so curation
+          lands under a thumb instead of at the end of the content. Titles
+          alone go through the quick add above the catalogue. */}
       {isIos ? (
         <Stack.Toolbar placement="right">
           <Stack.Toolbar.Button onPress={() => router.push(itemPath('edit'))}>
@@ -406,10 +434,45 @@ export default function CollectionDetailScreen() {
         </Stack.Toolbar>
       ) : null}
       <View style={[styles.page, { backgroundColor: background }]}>
+        {showQuickAdd ? (
+          <View style={styles.quickAdd}>
+            <View style={styles.quickAddRow}>
+              <TextInput
+                accessibilityLabel="Quick add an item"
+                editable={!isQuickSaving}
+                maxLength={COLLECTION_ITEM_TITLE_MAX}
+                onChangeText={(value) => {
+                  setQuickTitle(value);
+                  if (quickError) {
+                    setQuickError(null);
+                  }
+                }}
+                onSubmitEditing={() => void handleQuickAdd()}
+                placeholder={`Add to ${collection.name}…`}
+                ref={quickInputRef}
+                returnKeyType="done"
+                style={[styles.quickInput, { borderColor: muted, color: text }]}
+                value={quickTitle}
+              />
+              <Button
+                accessibilityLabel="Quick add"
+                disabled={quickTitle.trim().length === 0 || isQuickSaving}
+                label={isQuickSaving ? 'Adding…' : 'Add'}
+                onPress={() => void handleQuickAdd()}
+                size="sm"
+                variant="secondary"
+              />
+            </View>
+            {quickError ? (
+              <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+                {quickError}
+              </ThemedText>
+            ) : null}
+          </View>
+        ) : null}
         <FlatList
           ItemSeparatorComponent={view === 'grid' ? GridRowGap : undefined}
           ListEmptyComponent={empty}
-          ListFooterComponent={footer}
           ListHeaderComponent={header}
           contentContainerStyle={[styles.content, { paddingBottom: fabClearance }]}
           contentInsetAdjustmentBehavior="automatic"
@@ -419,8 +482,8 @@ export default function CollectionDetailScreen() {
           showsVerticalScrollIndicator={false}
         />
         <Pressable
-          accessibilityHint="Adds a thing to this list"
-          accessibilityLabel="Add a thing"
+          accessibilityHint="Adds an item to this list"
+          accessibilityLabel="Add an item"
           accessibilityRole="button"
           onPress={() => router.push(itemPath('item/new'))}
           style={({ pressed }) => [
@@ -481,6 +544,25 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing[24],
     paddingTop: Spacing[16],
+  },
+  // One field and its button, pinned above the catalogue so rapid entry never
+  // scrolls away. The field names the list it feeds, modelling what goes in.
+  quickAdd: {
+    gap: Spacing[8],
+    paddingBottom: Spacing[12],
+    paddingHorizontal: Spacing[24],
+    paddingTop: Spacing[8],
+  },
+  quickAddRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing[12],
+  },
+  quickInput: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    minHeight: 44,
+    paddingVertical: Spacing[8],
   },
   header: {
     gap: Spacing[12],

@@ -130,7 +130,7 @@ describe('Add a thing', () => {
     fireEvent.click(screen.getByLabelText('Add'));
 
     expect(
-      await screen.findByText("Couldn't save this thing. Your draft is still here.")
+      await screen.findByText("Couldn't save this item. Your draft is still here.")
     ).toBeTruthy();
     expect((screen.getByLabelText('Item title') as HTMLInputElement).value).toBe(
       'Perfect Days'

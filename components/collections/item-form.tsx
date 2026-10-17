@@ -102,7 +102,7 @@ export function ItemForm({
       });
     } catch {
       // Keep the draft: a failed write must not cost the reader their words.
-      setError("Couldn't save this thing. Your draft is still here.");
+      setError("Couldn't save this item. Your draft is still here.");
     } finally {
       setIsSaving(false);
     }

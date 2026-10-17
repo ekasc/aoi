@@ -5,9 +5,10 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { collectionStatusLabel } from '@/constants/collection-status';
+import { COLLECTION_STATUS_ORDER, collectionStatusLabel } from '@/constants/collection-status';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
-import type { CollectionItem } from '@/features/collections/types';
+import type { CollectionItem, CollectionStatus } from '@/features/collections/types';
+import { haptics } from '@/features/haptics/haptics';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 /**
@@ -58,13 +59,21 @@ export function ItemCover({
 }
 
 /** The status and score line a thing carries, when it carries either. */
-function ItemMeta({ item }: { item: CollectionItem }) {
+function ItemMeta({
+  item,
+  onToggleStatus,
+  statusSaving = false,
+}: {
+  item: CollectionItem;
+  onToggleStatus?: (item: CollectionItem) => void;
+  statusSaving?: boolean;
+}) {
   const muted = useThemeColor({}, 'muted');
   const textSecondary = useThemeColor({}, 'textSecondary');
   const statusLabel = collectionStatusLabel(item.status);
   const score = item.score ?? null;
 
-  if (!statusLabel && score === null) {
+  if (!statusLabel && !onToggleStatus && score === null) {
     return null;
   }
 
@@ -73,12 +82,14 @@ function ItemMeta({ item }: { item: CollectionItem }) {
       {/* The status is a secondary ink, not the accent. Accent on every
           item's status, the selected filter and the add row at once meant the
           colour marked nothing in particular. */}
-      {statusLabel ? (
+      {onToggleStatus ? (
+        <StatusToggle item={item} onToggleStatus={onToggleStatus} saving={statusSaving} />
+      ) : statusLabel ? (
         <ThemedText type="caption" style={{ color: textSecondary }}>
           {statusLabel}
         </ThemedText>
       ) : null}
-      {statusLabel && score !== null ? (
+      {(statusLabel || onToggleStatus) && score !== null ? (
         <ThemedText accessible={false} type="caption" style={{ color: muted }}>
           ·
         </ThemedText>
@@ -92,6 +103,61 @@ function ItemMeta({ item }: { item: CollectionItem }) {
         </View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * Where a tap on a thing's status goes: one step along Want → Doing → Done,
+ * wrapping back to Want. An unmarked thing enters at Want.
+ */
+export function nextCollectionStatus(status: CollectionItem['status']): CollectionStatus {
+  const index = status ? COLLECTION_STATUS_ORDER.indexOf(status) : -1;
+  return COLLECTION_STATUS_ORDER[(index + 1) % COLLECTION_STATUS_ORDER.length];
+}
+
+/**
+ * A thing's status as a control, for flipping it in place. The tile around it
+ * still opens the thing's own page, where the note, score, and link live.
+ */
+function StatusToggle({
+  item,
+  onToggleStatus,
+  saving,
+}: {
+  item: CollectionItem;
+  onToggleStatus: (item: CollectionItem) => void;
+  saving: boolean;
+}) {
+  const muted = useThemeColor({}, 'muted');
+  const textSecondary = useThemeColor({}, 'textSecondary');
+  // An unmarked thing offers a way in rather than claiming a state it has
+  // not got: the label names the state a tap would set.
+  const currentLabel = collectionStatusLabel(item.status) ?? 'Set status';
+  const nextLabel = collectionStatusLabel(nextCollectionStatus(item.status)) ?? 'Want';
+
+  return (
+    <Pressable
+      accessibilityLabel={`Mark ${item.title} as ${nextLabel}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected: item.status === 'done', busy: saving }}
+      disabled={saving}
+      // The chip stays text-sized so the grid keeps its rhythm; the touch
+      // area extends past the paint instead.
+      hitSlop={12}
+      onPress={(event) => {
+        // The toggle sits inside the tile that opens the thing: holding the
+        // tap here keeps a status change from also navigating there.
+        event.stopPropagation?.();
+        haptics.select();
+        onToggleStatus(item);
+      }}
+      style={styles.statusToggle}
+    >
+      <ThemedText type="caption" style={{ color: textSecondary }}>
+        {currentLabel}
+      </ThemedText>
+      <Ionicons accessible={false} aria-hidden color={muted} name="sync" size={11} />
+    </Pressable>
   );
 }
 
@@ -120,10 +186,14 @@ export const ItemTile = memo(function ItemTile({
   item,
   colorValue,
   onPress,
+  onToggleStatus,
+  statusSaving,
 }: {
   item: CollectionItem;
   colorValue: string | null;
   onPress: (item: CollectionItem) => void;
+  onToggleStatus?: (item: CollectionItem) => void;
+  statusSaving?: boolean;
 }) {
   const text = useThemeColor({}, 'text');
 
@@ -152,7 +222,7 @@ export const ItemTile = memo(function ItemTile({
         <ThemedText numberOfLines={2} type="subheading" style={{ color: text }}>
           {item.title}
         </ThemedText>
-        <ItemMeta item={item} />
+        <ItemMeta item={item} onToggleStatus={onToggleStatus} statusSaving={statusSaving} />
       </View>
     </Pressable>
   );
@@ -164,11 +234,15 @@ export const ItemListRow = memo(function ItemListRow({
   colorValue,
   onPress,
   divider,
+  onToggleStatus,
+  statusSaving,
 }: {
   item: CollectionItem;
   colorValue: string | null;
   onPress: (item: CollectionItem) => void;
   divider: boolean;
+  onToggleStatus?: (item: CollectionItem) => void;
+  statusSaving?: boolean;
 }) {
   const muted = useThemeColor({}, 'muted');
   const border = useThemeColor({}, 'border');
@@ -195,7 +269,7 @@ export const ItemListRow = memo(function ItemListRow({
         <ThemedText numberOfLines={1} type="bodyEmphasis" style={{ color: text }}>
           {item.title}
         </ThemedText>
-        <ItemMeta item={item} />
+        <ItemMeta item={item} onToggleStatus={onToggleStatus} statusSaving={statusSaving} />
         {item.note ? (
           <ThemedText numberOfLines={1} type="caption" style={{ color: muted }}>
             {item.note}
@@ -226,6 +300,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: Spacing[4],
+  },
+  statusToggle: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing[4],
+    paddingVertical: Spacing[4],
   },
   score: {
     alignItems: 'center',

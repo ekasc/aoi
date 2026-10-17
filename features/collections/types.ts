@@ -29,11 +29,25 @@ export {
 import type {
   Collection,
   CollectionItem,
+  CollectionStatus,
   CreateCollectionItemRequest,
   CreateCollectionRequest,
   UpdateCollectionItemRequest,
   UpdateCollectionRequest,
 } from '@aoi/shared';
+
+/**
+ * What one list looks like from the outside, so the Ours screen can show what
+ * is inside a shelf without opening it.
+ */
+export type CollectionPreview = {
+  /** Up to three covers, in list order; null where a thing has no photo. */
+  covers: (string | null)[];
+  /** The same three things' titles, for the placeholder initials. */
+  titles: string[];
+  counts: Record<CollectionStatus, number>;
+  total: number;
+};
 
 export type CollectionsRepository = {
   /** Shelves for the active space, in position order. */
@@ -44,6 +58,11 @@ export type CollectionsRepository = {
 
   /** Items in a shelf, in position order. */
   listItems: (collectionId: string) => Promise<CollectionItem[]>;
+  /**
+   * A preview of every named shelf. One call, so a screen that shows them all
+   * pays for one read of the store instead of one per list.
+   */
+  listPreviews: (collectionIds: string[]) => Promise<Record<string, CollectionPreview>>;
   createItem: (
     collectionId: string,
     input: CreateCollectionItemRequest
@@ -65,6 +84,7 @@ export type CollectionsContextValue = {
   moveCollection: (id: string, direction: -1 | 1) => Promise<void>;
 
   listItems: (collectionId: string) => Promise<CollectionItem[]>;
+  listPreviews: (collectionIds: string[]) => Promise<Record<string, CollectionPreview>>;
   createItem: (
     collectionId: string,
     input: CreateCollectionItemRequest

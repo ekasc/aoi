@@ -90,7 +90,7 @@ export default function EditItemScreen() {
       await deleteItem(collectionId, itemId);
       router.back();
     } catch {
-      setActionError("Couldn't remove this thing. Please try again.");
+      setActionError("Couldn't remove this item. Please try again.");
     }
   }, [collectionId, deleteItem, itemId, router]);
 
@@ -113,7 +113,7 @@ export default function EditItemScreen() {
     return (
       <View style={styles.centered}>
         <ThemedText accessibilityRole="alert" type="body" style={{ color: muted }}>
-          This thing could not be loaded right now.
+          This item could not be loaded right now.
         </ThemedText>
         <ExpoButton
           label="Try again"

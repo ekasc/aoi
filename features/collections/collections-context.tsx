@@ -201,6 +201,16 @@ export function CollectionsProvider({ children }: PropsWithChildren) {
     [repository]
   );
 
+  const listPreviews = useCallback(
+    async (collectionIds: string[]) => {
+      if (!repository || collectionIds.length === 0) {
+        return {};
+      }
+      return repository.listPreviews(collectionIds);
+    },
+    [repository]
+  );
+
   const createItem = useCallback(
     async (collectionId: string, input: CreateCollectionItemRequest) => {
       if (!repository) {
@@ -260,6 +270,7 @@ export function CollectionsProvider({ children }: PropsWithChildren) {
       deleteCollection,
       moveCollection,
       listItems,
+      listPreviews,
       createItem,
       updateItem,
       deleteItem,
@@ -273,6 +284,7 @@ export function CollectionsProvider({ children }: PropsWithChildren) {
       error,
       isLoading,
       listItems,
+      listPreviews,
       moveCollection,
       reload,
       updateCollection,

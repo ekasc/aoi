@@ -3,6 +3,7 @@ import { createElement, type ReactNode } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import { OurLists } from '@/components/collections/our-lists';
+import { previewFromItems } from '@/features/collections/collection-preview';
 import type { Collection, CollectionItem } from '@/features/collections/types';
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +29,12 @@ vi.mock('@/features/collections/collections-context', () => ({
     createCollection: mocks.createCollection,
     moveCollection: mocks.moveCollection,
     listItems: mocks.listItems,
+    listPreviews: async (ids: string[]) =>
+      Object.fromEntries(
+        await Promise.all(
+          ids.map(async (id) => [id, previewFromItems(await mocks.listItems(id))] as const)
+        )
+      ),
   }),
 }));
 

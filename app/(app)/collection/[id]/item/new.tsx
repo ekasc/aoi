@@ -36,7 +36,7 @@ export default function NewItemScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Add a thing' }} />
+      <Stack.Screen options={{ title: 'Add an item' }} />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing[32] }]}
         contentInsetAdjustmentBehavior="automatic"
