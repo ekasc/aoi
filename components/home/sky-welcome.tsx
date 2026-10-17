@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
-import { ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Share, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
@@ -53,8 +53,9 @@ export function SkyWelcome({ details, onEnter }: { details: SkyEntry; onEnter: (
     }
   }, [code, details.name, details.partnerName, sharing]);
   return (
-    <ScrollView contentInsetAdjustmentBehavior="never" style={styles.root}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing[24], paddingBottom: insets.bottom + Spacing[24] }]}>
+    <View
+      style={[styles.content, { paddingTop: insets.top + Spacing[24], paddingBottom: insets.bottom + Spacing[24] }]}
+    >
       <StatusBar style={isDarkBackground(colors.background) ? 'light' : 'dark'} />
       <ThemedText type="meta" style={muted}>aoi</ThemedText>
       <Animated.View style={[styles.invitation, entranceStyle]} testID="sky-invitation-content">
@@ -99,13 +100,12 @@ export function SkyWelcome({ details, onEnter }: { details: SkyEntry; onEnter: (
         ) : null}
         <Button label="Enter your sky" onPress={onEnter} />
       </Animated.View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: { flexGrow: 1, paddingHorizontal: Spacing[24], maxWidth: 560, width: '100%', alignSelf: 'center' },
+  content: { flex: 1, paddingHorizontal: Spacing[24], maxWidth: 560, width: '100%', alignSelf: 'center' },
   invitation: { flex: 1, justifyContent: 'center', gap: Spacing[16], paddingTop: Spacing[24] },
   photo: { width: 88, height: 88, borderRadius: Radii.md },
   codeBlock: { gap: Spacing[8], marginVertical: Spacing[16] },

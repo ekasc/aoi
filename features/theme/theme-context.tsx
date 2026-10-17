@@ -55,7 +55,10 @@ export function AoiThemeProvider({ children }: PropsWithChildren) {
           return;
         }
 
-        if (isBeachThemeId(storedThemeId)) {
+        if (storedThemeId === 'lagoon') {
+          setSelectedThemeIdState('beach');
+          setHasStoredSelection(true);
+        } else if (isBeachThemeId(storedThemeId)) {
           setSelectedThemeIdState(storedThemeId);
           setHasStoredSelection(true);
         } else {

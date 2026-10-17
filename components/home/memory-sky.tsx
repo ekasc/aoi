@@ -1224,7 +1224,7 @@ export function beachMomentKeep(ids: string[], max: number = BEACH_BAND_CREATURE
 /**
  * Where the sand shelf begins, as a fraction of the drawn strip, for the
  * plain strip and the full sky. Immersive (the Us photo field) is
- * water-dominant: the lagoon fills most of the frame and the sand is a shelf
+ * water-dominant: the water fills most of the frame and the sand is a shelf
  * at the bottom, so the field is water you look into, not a flat sand wall.
  */
 export const BEACH_SAND_TOP = 0.52;
@@ -1741,19 +1741,17 @@ export function MemorySky({
   const sandTop = isDark ? SEA_SAND_DARK_TOP : SEA_SAND_LIGHT_TOP;
   const sandDeep = isDark ? SEA_SAND_DARK_DEEP : SEA_SAND_LIGHT_DEEP;
   // Per-theme dusk: the same ramp family as After Hours (dark top, lighter
-  // mid melting into the live background), keyed by the selected preset so
-  // Sunset Shore glows ember, Sea Glass runs teal, Deep Ocean goes pine
-  // night, and Editorial Paper settles to espresso ink. Lagoon is the
-  // exception: a daytime beach (bright cyan water over sunlit sand), where
-  // memories walk as footprints along a shoreline trail instead of shining
-  // as stars (see isBeach below). After Hours keeps
+  // mid melting into the live background), keyed by the selected preset.
+  // Beach is the exception: a daytime beach (bright cyan water over sunlit
+  // sand), where memories walk as footprints along a shoreline trail instead
+  // of shining as stars (see isBeach below). After Hours keeps
   // the canonical LIGHT_/DARK_SKY_* stops via the palette table.
   const activeThemeId = themeId ?? selectedThemeId;
   const stops = skyStopsForTheme(activeThemeId, isDark ? 'dark' : 'light');
   const skyTop = stops.top;
   const skyMid = stops.mid;
-  // Beach mode: the Lagoon theme renders sea life instead of the star field.
-  // Everything else (After Hours included) keeps the stars untouched.
+  // Beach mode: the Beach theme renders sea life instead of the star field.
+  // After Hours keeps the stars untouched.
   const isBeach = isBeachTheme(activeThemeId);
   // Living-sky aura (Us full sky only): the dusk stops breathe with the
   // time of day — dawn gold, dusk ember, night deepened, day canonical —

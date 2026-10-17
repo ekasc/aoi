@@ -741,17 +741,24 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     expect(PLANS_SOURCE).toContain('GlassSurface');
     expect(PLANS_SOURCE).toContain('styles.pillRow');
     expect(PLANS_SOURCE).not.toContain('BlurView');
-    // Same root anchoring as Memories: after FrostedBackdrop, before the
-    // ScrollView/ScreenHeader so scroll offset can never shift the sky.
-    expect(PLANS_SOURCE.indexOf('<FrostedBackdrop')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<MemorySky compact'),
+    // Same root anchoring as Memories: the sky mounts after FrostedBackdrop
+    // and before the stage, so scroll offset can never shift it. Read off the
+    // returned tree, not the file: the chrome is a hoisted const, so its
+    // definition sits above the return even though it renders below.
+    const returnedTree = PLANS_SOURCE.slice(PLANS_SOURCE.lastIndexOf('\treturn ('));
+    expect(returnedTree.indexOf('<FrostedBackdrop')).toBeLessThan(
+      returnedTree.indexOf('{monthChrome}'),
     );
-    // Anchored against the stage, not against the ScrollView text: every
-    // scroller on this screen lives inside the mode stage, and the split's
-    // extracted layer bodies can sit anywhere in the file. The sky being
-    // before the stage is what makes it unshiftable by scroll.
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
-      PLANS_SOURCE.indexOf('styles.modeStage'),
+    expect(PLANS_SOURCE).toContain('<MemorySky compact');
+    // The stage holds every scroller on this screen (`styles.modeStage`), and
+    // it renders after the sky, so no scroll offset can shift the sky.
+    const stage = PLANS_SOURCE.slice(
+      PLANS_SOURCE.indexOf('const drillStage'),
+      PLANS_SOURCE.lastIndexOf('\treturn ('),
+    );
+    expect(stage).toContain('styles.modeStage');
+    expect(returnedTree.indexOf('{monthChrome}')).toBeLessThan(
+      returnedTree.indexOf('{drillStage}'),
     );
     expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
       PLANS_SOURCE.indexOf('styles.pillRow'),
@@ -901,10 +908,13 @@ describe('Tab header normalization (one shared anatomy)', () => {
     // paper.
     expect(TOGETHER_SOURCE).toContain('<ScreenHeader title="Us" tone="onDark"');
     expect(INDEX_SOURCE).toContain('<ScreenHeader title="Memories"');
-    // Not an oversight: Calendar has no view pill. The month pill names the
-    // month; a grid cell lifts the day into the sheet, so there is no week
-    // strip either.
-    expect(PLANS_SOURCE).toContain('<ScreenHeader title="Plans"');
+    // Plans is the deliberate exception: its compact toolbar carries the month
+    // and the view control, and the bottom tab already names the screen, so a
+    // second title would only re-spend the vertical space that change bought
+    // back. Us stays the exception in *tone*; Plans is the exception in
+    // presence, and this pins it so it cannot drift back or spread.
+    expect(PLANS_SOURCE).not.toContain('<ScreenHeader');
+    expect(PLANS_SOURCE).toContain('styles.pillRow');
     expect(PLANS_SOURCE).not.toContain('<WeekStrip');
     // The native stack header is off; the screen renders the title itself.
     expect(MEMORIES_LAYOUT_SOURCE).toContain('headerShown: false');

@@ -159,30 +159,30 @@ describe('Lagoon beach shader', () => {
   });
 });
 
-describe('Lagoon beach theme', () => {  it('registers lagoon after the existing presets without moving the default', () => {
+describe('Beach theme', () => {  it('registers beach alongside after-hours without moving the default', () => {
     expect(BeachThemeOrder[0]).toBe('after-hours');
-    expect(BeachThemeOrder).toContain('lagoon');
-    expect(BeachThemes['lagoon'].name).toBe('Lagoon');
-    expect(BeachThemes['lagoon'].description).toContain('cyan');
+    expect(BeachThemeOrder).toContain('beach');
+    expect(BeachThemes['beach'].name).toBe('Beach');
+    expect(BeachThemes['beach'].description).toContain('cyan');
   });
 
   it('is the only beach theme; after-hours keeps its stars', () => {
-    expect(isBeachTheme('lagoon')).toBe(true);
+    expect(isBeachTheme('beach')).toBe(true);
     expect(isBeachTheme('after-hours')).toBe(false);
-    expect(isBeachTheme('sea-glass')).toBe(false);
+    expect(isBeachTheme('after-hours')).toBe(false);
     expect(isBeachTheme('nope')).toBe(false);
   });
 
-  it('gives lagoon its own bright water ramp, not the wine dusk', () => {
-    const light = skyStopsForTheme('lagoon', 'light');
-    expect(light).toEqual(THEME_SKY_RAMPS['lagoon'].light);
+  it('gives beach its own bright water ramp, not the wine dusk', () => {
+    const light = skyStopsForTheme('beach', 'light');
+    expect(light).toEqual(THEME_SKY_RAMPS['beach'].light);
     expect(light.top).not.toBe(THEME_SKY_RAMPS['after-hours'].light.top);
     expect(light.mid).not.toBe(THEME_SKY_RAMPS['after-hours'].light.mid);
   });
 
-  it('paints a lagoon water ramp distinct from the wine dusk', () => {
-    const light = skyStopsForTheme('lagoon', 'light');
-    expect(light).toEqual(THEME_SKY_RAMPS['lagoon'].light);
+  it('paints a beach water ramp distinct from the wine dusk', () => {
+    const light = skyStopsForTheme('beach', 'light');
+    expect(light).toEqual(THEME_SKY_RAMPS['beach'].light);
     expect(light.top).not.toBe(THEME_SKY_RAMPS['after-hours'].light.top);
     expect(light.mid).not.toBe(THEME_SKY_RAMPS['after-hours'].light.mid);
   });
@@ -205,7 +205,7 @@ describe('MemorySky shell shore', () => {
   it('sets one shell per memory in the header over the beach shader', () => {
     const moments = [makeMoment('h-1'), makeMoment('h-2'), makeMoment('h-3')];
     const view = render(
-      createElement(MemorySky, { moments, themeId: 'lagoon', header: true }),
+      createElement(MemorySky, { moments, themeId: 'beach', header: true }),
     );
     const canvas = skyCanvas(view.container) as HTMLElement;
     // Each shell is a handful of shapes over one contact-shadow oval; the
@@ -222,7 +222,7 @@ describe('MemorySky shell shore', () => {
   it('mounts the same shader and shells in the compact strips behind app headers', () => {
     const moments = [makeMoment('h-1'), makeMoment('h-2'), makeMoment('h-3')];
     const view = render(
-      createElement(MemorySky, { moments, themeId: 'lagoon', compact: true }),
+      createElement(MemorySky, { moments, themeId: 'beach', compact: true }),
     );
     const canvas = skyCanvas(view.container) as HTMLElement;
     expect(canvas.querySelectorAll('[data-skia="Path"]').length).toBeGreaterThanOrEqual(3);
@@ -239,7 +239,7 @@ describe('MemorySky shell shore', () => {
     const view = render(
       createElement(MemorySky, {
         moments: [makeMoment('h-1'), makeMoment('h-2')],
-        themeId: 'lagoon',
+        themeId: 'beach',
         header: true,
       }),
     );
@@ -294,7 +294,7 @@ describe('MemorySky shell shore', () => {
     const moments = Array.from({ length: 30 }, (_, i) => makeMoment(`crowd-${i}`));
     const keep = beachMomentKeep(moments.map((moment) => moment.id));
     const view = render(
-      createElement(MemorySky, { moments, themeId: 'lagoon', compact: true }),
+      createElement(MemorySky, { moments, themeId: 'beach', compact: true }),
     );
     const canvas = skyCanvas(view.container) as HTMLElement;
     expect(keep.size).toBe(BEACH_BAND_CREATURE_MAX);
@@ -312,10 +312,10 @@ describe('MemorySky shell shore', () => {
 
     const shapes = (node: HTMLElement) => node.querySelectorAll('[data-skia]').length;
     const header = render(
-      createElement(MemorySky, { moments, themeId: 'lagoon', header: true }),
+      createElement(MemorySky, { moments, themeId: 'beach', header: true }),
     );
     const compact = render(
-      createElement(MemorySky, { moments, themeId: 'lagoon', compact: true }),
+      createElement(MemorySky, { moments, themeId: 'beach', compact: true }),
     );
     const headerShapes = shapes(skyCanvas(header.container) as HTMLElement);
     const compactShapes = shapes(skyCanvas(compact.container) as HTMLElement);
@@ -330,7 +330,7 @@ describe('MemorySky shell shore', () => {
     const view = render(
       createElement(MemorySky, {
         moments: [],
-        themeId: 'lagoon',
+        themeId: 'beach',
         compact: true,
         daysTogether: 200,
         startDate: '2025-01-01',
@@ -343,11 +343,11 @@ describe('MemorySky shell shore', () => {
   });
 });
 describe('MemorySky beach mode', () => {
-  it('walks shoreline captions under the lagoon theme', () => {
+  it('walks shoreline captions under the beach theme', () => {
     const view = render(
       createElement(MemorySky, {
         moments: [makeMoment('b-1'), makeMoment('b-2')],
-        themeId: 'lagoon',
+        themeId: 'beach',
       }),
     );
     expect(view.container.textContent).toContain('2 shells on your shore');
@@ -366,7 +366,7 @@ describe('MemorySky beach mode', () => {
     const moments = [makeMoment('k-1'), makeMoment('k-2'), makeMoment('k-3')];
     const skyCanvas = (container: HTMLElement) =>
       container.querySelector('[data-testid="skia-canvas"]');
-    const beach = render(createElement(MemorySky, { moments, themeId: 'lagoon' }));
+    const beach = render(createElement(MemorySky, { moments, themeId: 'beach' }));
     const stars = render(createElement(MemorySky, { moments }));
     const canvas = skyCanvas(beach.container) as HTMLElement;
     // Shells over one beach-shader rect; no stars (no circles).
@@ -386,7 +386,7 @@ describe('MemorySky beach mode', () => {
     const view = render(
       createElement(MemorySky, {
         moments,
-        themeId: 'lagoon',
+        themeId: 'beach',
         immersive: true,
         photoStars: true,
         starLimit: null,

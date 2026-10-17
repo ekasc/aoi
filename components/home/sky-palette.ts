@@ -52,12 +52,12 @@ export function starColorForRole(role: 'you' | 'partner'): string {
 }
 
 /**
- * Lagoon is the beach theme: bubbles rise where stars would be, and shells
- * rest along the sand line. True only for `lagoon`, so After Hours and every
- * other dusk keep the star field untouched.
+ * Beach is the beach theme: bubbles rise where stars would be, and shells
+ * rest along the sand line. True only for `beach`, so After Hours keeps
+ * the star field untouched.
  */
 export function isBeachTheme(themeId: string): boolean {
-  return themeId === 'lagoon';
+  return themeId === 'beach';
 }
 
 /**
@@ -128,28 +128,12 @@ export const THEME_SKY_RAMPS: Record<string, Record<SkyMode, SkyRamp>> = {
     light: { top: LIGHT_SKY_TOP, mid: LIGHT_SKY_MID },
     dark: { top: DARK_SKY_TOP, mid: DARK_SKY_MID },
   },
-  'sunset-shore': {
-    light: { top: '#4A2E28', mid: '#C08A67' },
-    dark: { top: '#110C09', mid: '#6B4A3A' },
-  },
-  'sea-glass': {
-    light: { top: '#1E3E3B', mid: '#7FBFB8' },
-    dark: { top: '#0B1211', mid: '#2E5A56' },
-  },
-  'deep-ocean': {
-    light: { top: '#1A3330', mid: '#A89A86' },
-    dark: { top: '#0C100E', mid: '#33544E' },
-  },
-  'editorial-paper': {
-    light: { top: '#2B2620', mid: '#B3A48C' },
-    dark: { top: '#0F0C09', mid: '#5A4A3C' },
-  },
   /**
-   * Lagoon is a daytime beach, not a dusk: bright cyan water at the top
-   * melting into the aqua paper. Dark mode is the same lagoon at night —
-   * deep lagoon water under a teal night, never the wine dusk.
+   * Beach is a daytime beach, not a dusk: bright cyan water at the top
+   * melting into the aqua paper. Dark mode is the same beach at night —
+   * deep water under a teal night, never the wine dusk.
    */
-  'lagoon': {
+  'beach': {
     light: { top: '#1FA8C9', mid: '#9ADFD8' },
     dark: { top: '#06232B', mid: '#136073' },
   },

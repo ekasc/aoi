@@ -89,7 +89,11 @@ vi.mock('react-native', () => {
   };
 });
 
-const themeColorMock = vi.hoisted(() => vi.fn((_overrides: unknown, name: string) => `#${name}`));
+// Each token gets a distinct, CSS-valid colour so happy-dom keeps it on the
+// rendered element (an invalid string like '#primary' is silently dropped).
+const themeColorMock = vi.hoisted(() =>
+  vi.fn((_overrides: unknown, name: string) => `#${name.length.toString(16).padStart(2, '0')}00ff`)
+);
 
 describe('First-page typography', () => {
   it('uses the native system sans for headings and controls on iOS', () => {
@@ -199,8 +203,22 @@ describe('editorial paper foundations', () => {
     expect(screen.getByText('Secondary action')).toBeTruthy();
     expect(screen.getByText('Text action')).toBeTruthy();
     expect(screen.getByText('Destructive action')).toBeTruthy();
-    const disabledLabel = screen.getByText('Disabled state');
-    expect(disabledLabel.parentElement?.style.opacity).toBe('0.55');
+    // The disabled primary is muted, not dimmed: the global 0.55 opacity
+    // would keep the accent fill readable-through, so the disabled primary
+    // wears the disabled ink on its own muted fill instead.
+    const disabledButton = document.querySelector<HTMLDivElement>(
+      '[aria-label="Disabled state"]'
+    );
+    expect(disabledButton).toBeTruthy();
+    const enabledPrimary = document.querySelector<HTMLDivElement>('[aria-label="Primary action"]');
+    expect(disabledButton?.style.opacity).not.toBe('0.55');
+    // The muted fill: the disabled primary's background is the primary
+    // token faded toward the surface (an alpha composite), not the vivid
+    // fill dimmed at 0.55.
+    expect(disabledButton?.style.backgroundColor).not.toBe(enabledPrimary?.style.backgroundColor);
+    expect(disabledButton?.style.backgroundColor?.startsWith(enabledPrimary?.style.backgroundColor ?? '\u0000')).toBe(true);
+    // The label wears the disabled ink, not the primary text ink.
+    expect(disabledButton?.querySelector('span')?.style.color).not.toBe(enabledPrimary?.querySelector('span')?.style.color);
   });
 
   it('renders input states including an error message', () => {
