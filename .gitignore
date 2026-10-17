@@ -68,3 +68,6 @@ assets/models/*.partial
 
 # Visual brainstorming companion artifacts
 .superpowers/
+
+# Built Android packages are produced by the e2e rig, not source.
+*.apk

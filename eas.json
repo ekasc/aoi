@@ -7,7 +7,16 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "channel": "development"
+      "channel": "development",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_AUTH_STUB_MODE": "false",
+        "EXPO_PUBLIC_AUTH_API_BASE_URL": "https://aoi-api.ekasc.workers.dev",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "27942860919-5ia9au1hqc6gl6faqr4ou1o6gctqo36v.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "27942860919-4vl2396jsee0j0h2tjnp27b9dohac6rh.apps.googleusercontent.com"
+      }
     },
     "preview": {
       "distribution": "internal",
