@@ -35,6 +35,7 @@ import {
 import { seedDevCollections } from '@/features/dev/dev-seed-collections';
 import { seedDevSkyPhotos } from '@/features/dev/dev-seed-sky';
 import type { RelationshipSpace } from '@/features/space/types';
+import { getLocalStressConfig } from '@/features/dev/local-stress-config';
 
 const SESSION_STORAGE_KEY = 'aoi.session.v1';
 const SPACE_USER_KEY_PREFIX = 'aoi.space.by-user.v1.';
@@ -77,6 +78,7 @@ let seedPromise: Promise<void> | null = null;
  * is unset.
  */
 export function ensureDevSeed(): Promise<void> {
+  if (getLocalStressConfig()) return Promise.resolve();
   const variant = getDevSeedVariant();
   if (!__DEV__ || !variant) {
     return Promise.resolve();

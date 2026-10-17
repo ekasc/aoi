@@ -20,32 +20,45 @@ import { readPhotoBytes } from '@/features/album/photo-bytes';
 
 const SEED_COUNT = 6;
 
-export async function seedDevSkyPhotos(spaceId: string, userId: string): Promise<void> {
+/**
+ * Put photos into the encrypted album through the real seal-and-upload path.
+ *
+ * `count` exists for stress fixtures: the Us screen reads this album, so a
+ * seeded sky with six stars cannot exercise the star field. `force` skips the
+ * empty-album check for the same reason.
+ */
+export async function seedDevSkyPhotos(
+  spaceId: string,
+  userId: string,
+  count = SEED_COUNT,
+  force = false,
+): Promise<{ seeded: number; existing: number }> {
   const session = await establishAlbumSession({ userId, spaceId });
   if (session.status !== 'ready') {
-    return;
+    return { existing: 0, seeded: 0 };
   }
 
   const existing = await session.client.list();
-  if (existing.length > 0) {
-    return;
+  if (existing.length > 0 && !force) {
+    return { existing: existing.length, seeded: 0 };
   }
 
   const asset = Asset.fromModule(seedPhoto);
   await asset.downloadAsync();
   const uri = asset.localUri ?? asset.uri;
   if (!uri) {
-    return;
+    return { existing: existing.length, seeded: 0 };
   }
 
   let bytes: Uint8Array;
   try {
     bytes = await readPhotoBytes(uri);
   } catch {
-    return;
+    return { existing: existing.length, seeded: 0 };
   }
 
-  for (let index = 0; index < SEED_COUNT; index += 1) {
+  let seeded = 0;
+  for (let index = 0; index < count; index += 1) {
     try {
       const media = sealAlbumMedia(
         session.spaceKey,
@@ -70,8 +83,11 @@ export async function seedDevSkyPhotos(spaceId: string, userId: string): Promise
       });
       await session.client.putObject(intent, fromBase64(media.sealed.ciphertext));
       await session.client.complete(intent.mediaId);
+      seeded += 1;
     } catch {
       // Best-effort: a failed fixture just means fewer stars.
     }
   }
+
+  return { existing: existing.length, seeded };
 }

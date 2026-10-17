@@ -24,6 +24,7 @@
  *   node scripts/dev-agent.mjs targets
  *   node scripts/dev-agent.mjs logs                 # NDJSON on stdout
  *   node scripts/dev-agent.mjs eval "Object.keys(globalThis).length"
+ *   node scripts/dev-agent.mjs eval -- --stdin < bench.js   # multi-line script
  *   node scripts/dev-agent.mjs screenshot           # → .expo/aoi-debug/screenshots/
  *   node scripts/dev-agent.mjs select               # user taps, agent gets JSON
  *   node scripts/dev-agent.mjs report --note "no back button on profile"
@@ -39,6 +40,7 @@
  */
 
 import { WebSocket } from 'ws';
+import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -285,13 +287,18 @@ class AppNotRespondingError extends Error {
   }
 }
 
-function sendWithTimeout(client, method, params, timeoutMs = RESPONSE_TIMEOUT_MS) {
-  return Promise.race([
-    client.send(method, params),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new AppNotRespondingError()), timeoutMs)
-    ),
-  ]);
+async function sendWithTimeout(client, method, params, timeoutMs = RESPONSE_TIMEOUT_MS) {
+  let timer;
+  try {
+    return await Promise.race([
+      client.send(method, params),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new AppNotRespondingError()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function commandTargets() {
@@ -348,53 +355,136 @@ async function commandLogs() {
   });
 }
 
-async function evalExpression(expression, timeoutMs = RESPONSE_TIMEOUT_MS) {
-  await withClient(async (client) => {
-    let result;
+/** Read a piped script, so multi-line benchmarks can compose from the CLI. */
+async function readStdin() {
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+const EVAL_PENDING = '__aoi_eval_pending__';
+
+/**
+ * Wrap a script so its result can be read back reliably.
+ *
+ * Two Hermes quirks shape this. CDP's `awaitPromise` is not honoured, so a
+ * promise comes back as an internal wrapper rather than its value; and a bare
+ * expression statement is not a return value. So the script is compiled once
+ * (as an expression, falling back to a function body that may use `return`),
+ * run detached, and it publishes a plain JSON string when it settles for a
+ * later evaluate to poll.
+ */
+function wrapForResult(script) {
+  return `(() => {
+  const __source = ${JSON.stringify(script)};
+  let __runner;
+  try {
+    __runner = new Function('return (' + __source + '\\n);');
+  } catch (__expressionError) {
+    __runner = new Function(__source);
+  }
+  globalThis.__aoiEval = { state: 'running', payload: null };
+  (async () => {
     try {
-      result = await sendWithTimeout(
+      globalThis.__aoiEval.payload = { ok: true, value: await __runner() };
+    } catch (error) {
+      globalThis.__aoiEval.payload = { ok: false, error: String((error && error.message) || error) };
+    }
+    globalThis.__aoiEval.state = 'done';
+  })();
+})();
+'started';`;
+}
+
+async function evalExpression(expression, timeoutMs = RESPONSE_TIMEOUT_MS) {
+  await withClient(async (client, target) => {
+    const finish = (payload) => {
+      log(typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2));
+    };
+    const bail = (message) => {
+      log(JSON.stringify({ ok: false, error: message }));
+      client.close();
+      process.exitCode = 1;
+    };
+
+    let scheduled;
+    try {
+      scheduled = await sendWithTimeout(
         client,
         'Runtime.evaluate',
-        { expression, returnByValue: true, awaitPromise: true },
+        { expression: wrapForResult(expression), returnByValue: true },
         timeoutMs
       );
     } catch (error) {
-      log(JSON.stringify({ ok: false, error: error.message }));
-      client.close();
-      process.exitCode = 1;
+      bail(error.message);
       return;
     }
-    const remote = result?.result;
-    if (result?.exceptionDetails) {
-      log(
-        JSON.stringify({
-          ok: false,
-          error:
-            result.exceptionDetails.exception?.description ||
-            result.exceptionDetails.text,
-        })
-      );
-      client.close();
-      process.exitCode = 1;
+    // A compile error in the script itself is the most useful thing to report.
+    if (scheduled?.exceptionDetails) {
+      const details = scheduled.exceptionDetails;
+      bail(details.exception?.description || details.text || 'script failed to compile');
       return;
     }
-    if (remote && 'value' in remote) {
-      log(
-        typeof remote.value === 'string'
-          ? remote.value
-          : JSON.stringify(remote.value, null, 2)
-      );
-    } else {
-      log(remote?.description ?? 'undefined');
+
+    // Local debugging note: the app answers on the same target we scheduled on.
+    void target;
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await sleep(50);
+      let poll;
+      try {
+        poll = await sendWithTimeout(
+          client,
+          'Runtime.evaluate',
+          {
+            expression:
+              `globalThis.__aoiEval && globalThis.__aoiEval.state === 'done'` +
+              ` ? JSON.stringify(globalThis.__aoiEval.payload) : '${EVAL_PENDING}'`,
+            returnByValue: true,
+          },
+          timeoutMs
+        );
+      } catch (error) {
+        bail(error.message);
+        return;
+      }
+      const value = poll?.result?.value;
+      if (typeof value === 'string' && value !== EVAL_PENDING) {
+        try {
+          const payload = JSON.parse(value);
+          finish(payload.ok ? payload.value : { ok: false, error: payload.error });
+        } catch {
+          finish(value);
+        }
+        client.close();
+        return;
+      }
     }
-    client.close();
+    bail(`eval did not settle within ${timeoutMs}ms`);
   });
 }
 
 async function commandEval() {
-  const expression = args[1];
-  if (!expression) {
-    fail('eval needs an expression: eval "<javascript>"');
+  // `pnpm run dev:eval -- "<js>"` forwards the `--` separator into argv, so the
+  // expression is the first positional after it, not a fixed index. Passing the
+  // raw `--` through is what made every expression fail to compile.
+  const positional = args.slice(1).filter((arg) => arg !== '--');
+  const fromStdin = args.includes('--stdin');
+  let expression = positional.join(' ');
+  if (fromStdin) {
+    expression = await readStdin();
+  }
+  if (!expression.trim()) {
+    fail(
+      [
+        'eval needs an expression.',
+        '  pnpm run dev:eval -- "<javascript>"',
+        '  pnpm run dev:eval -- --stdin < script.js   (multi-line or composed)',
+      ].join('\n'),
+    );
   }
   await evalExpression(expression, timeout ? Number(timeout) : undefined);
 }
@@ -594,10 +684,158 @@ async function commandReload() {
   });
 }
 
+/**
+ * Sample the app's JS across a script, then report where the time actually
+ * went. `--stdin` supplies the script (same result channel as `eval`),
+ * `--interval` sets the sampling period in microseconds, `--top` bounds the
+ * report, and `--timeout` bounds the run.
+ *
+ * This exists because two plausible guesses about a frame stall were both
+ * wrong. A profile names the hot frames instead of leaving them to inference.
+ */
+function summarizeProfile(profile, top) {
+  const byId = new Map();
+  for (const node of profile.nodes || []) {
+    byId.set(node.id, node);
+  }
+  const selfMicros = new Map();
+  const samples = profile.samples || [];
+  const deltas = profile.timeDeltas || [];
+  for (let index = 0; index < samples.length; index += 1) {
+    const id = samples[index];
+    const delta = deltas[index] ?? 0;
+    selfMicros.set(id, (selfMicros.get(id) ?? 0) + delta);
+  }
+  const merged = new Map();
+  for (const [id, micros] of selfMicros) {
+    const node = byId.get(id);
+    if (!node) {
+      continue;
+    }
+    const frame = node.callFrame || {};
+    const url = (frame.url || '').split('/').pop().split('?')[0];
+    const key = `${frame.functionName || '(anonymous)'}|${url}|${(frame.lineNumber ?? 0) + 1}`;
+    const existing = merged.get(key);
+    const ms = micros / 1000;
+    if (existing) {
+      existing.ms += ms;
+    } else {
+      merged.set(key, {
+        fn: frame.functionName || '(anonymous)',
+        line: (frame.lineNumber ?? 0) + 1,
+        ms,
+        url,
+      });
+    }
+  }
+  const rows = [...merged.values()]
+    .map((row) => ({ ...row, ms: Math.round(row.ms * 10) / 10 }))
+    .sort((left, right) => right.ms - left.ms);
+  return {
+    rows: rows.slice(0, top),
+    sampledFrames: samples.length,
+    totalMs: Math.round(((profile.endTime - profile.startTime) / 1000) * 10) / 10,
+  };
+}
+
+async function commandProfile() {
+  const interval = Number(option('--interval', '200'));
+  const top = Number(option('--top', '25'));
+  const positional = args.slice(1).filter((arg) => arg !== '--');
+  const script = args.includes('--stdin') ? await readStdin() : positional.join(' ');
+  if (!script.trim()) {
+    fail('profile needs a script:\n  pnpm run dev:profile -- --stdin < script.js');
+  }
+  const budgetMs = timeout ? Number(timeout) : 60000;
+
+  await withClient(async (client) => {
+    try {
+      await sendWithTimeout(client, 'Profiler.enable', {}, 8000);
+    } catch (error) {
+      fail(`this target has no CPU profiler: ${error.message}`);
+    }
+    try {
+      await sendWithTimeout(client, 'Profiler.setSamplingInterval', { interval }, 8000);
+    } catch {
+      // A target that rejects a custom interval still samples at its default.
+    }
+    await sendWithTimeout(client, 'Profiler.start', {}, 8000);
+
+    let scheduled;
+    try {
+      scheduled = await sendWithTimeout(
+        client,
+        'Runtime.evaluate',
+        { expression: wrapForResult(script), returnByValue: true },
+        RESPONSE_TIMEOUT_MS
+      );
+    } catch (error) {
+      fail(error.message);
+    }
+    if (scheduled?.exceptionDetails) {
+      fail(
+        scheduled.exceptionDetails.exception?.description ||
+          scheduled.exceptionDetails.text ||
+          'script failed to compile'
+      );
+    }
+
+    const deadline = Date.now() + budgetMs;
+    let scriptResult = null;
+    while (Date.now() < deadline) {
+      await sleep(50);
+      let poll;
+      try {
+        poll = await sendWithTimeout(
+          client,
+          'Runtime.evaluate',
+          {
+            expression:
+              `globalThis.__aoiEval && globalThis.__aoiEval.state === 'done'` +
+              ` ? JSON.stringify(globalThis.__aoiEval.payload) : '${EVAL_PENDING}'`,
+            returnByValue: true,
+          },
+          RESPONSE_TIMEOUT_MS
+        );
+      } catch (error) {
+        fail(error.message);
+      }
+      const value = poll?.result?.value;
+      if (typeof value === 'string' && value !== EVAL_PENDING) {
+        scriptResult = value;
+        break;
+      }
+    }
+
+    let stopped;
+    try {
+      stopped = await sendWithTimeout(client, 'Profiler.stop', {}, 20000);
+    } catch (error) {
+      fail(`could not stop the profiler: ${error.message}`);
+    }
+    const profile = stopped?.profile;
+    if (!profile) {
+      fail('the target returned no profile');
+    }
+    log(
+      JSON.stringify(
+        {
+          profile: summarizeProfile(profile, top),
+          result: scriptResult ? JSON.parse(scriptResult) : null,
+        },
+        null,
+        2
+      )
+    );
+    client.close();
+  });
+}
+
 const handlers = {
   targets: commandTargets,
   logs: commandLogs,
   eval: commandEval,
+  profile: commandProfile,
   screenshot: commandScreenshot,
   select: commandSelect,
   report: commandReport,
@@ -607,7 +845,7 @@ const handlers = {
 const handler = handlers[command];
 if (!handler) {
   fail(
-    `unknown command "${command ?? ''}". Use: targets | logs | eval | screenshot | select | report | reload`
+    `unknown command "${command ?? ''}". Use: targets | logs | eval | profile | screenshot | select | report | reload`
   );
 }
 

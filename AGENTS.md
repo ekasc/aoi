@@ -119,7 +119,69 @@ not re-add the UI to make it pass.
   - `pnpm run dev:logs` — stream `console.log/warn/error` + uncaught
     exceptions as NDJSON (runs until Ctrl-C; `--timeout 5000` to sample).
   - `pnpm run dev:eval -- "<javascript>"` — evaluate inside the app (inspect
-    state, read context, poke functions; promises are awaited).
+    state, read context, poke functions; promises are awaited). For anything
+    multi-line or composed, pipe it: `pnpm run dev:eval -- --stdin < script.js`.
+    A script's last expression is its result; a multi-statement script may use
+    `return`. Add `--timeout <ms>` for slow work.
+  - **Driving and benchmarking the phone.** `__aoiDebug` exposes a dev-only
+    control surface (`features/dev/device-automation.ts`), which is how an agent
+    exercises the real device: there is no host-side tap injection, so a press
+    walks the rendered fiber tree, finds the element by its accessibility label
+    and calls the handler the platform would have called.
+    - `__aoiDebug.inventory()` → every labelled element with role/testID and
+      whether it is pressable. Run this first to learn what to press.
+    - `__aoiDebug.press(labelOrRegex)` → fires it; also `pressAndMeasure` for a
+      timed press. `longPress` via `press(label, { long: true })`.
+    - `__aoiDebug.navigate('/plans')` → routes without a thumb.
+    - `__aoiDebug.measure(name, fn, settleMs)` → action time plus the settle's
+      frame stats; `frameStats(ms)` alone for a bare sample.
+    - `__aoiDebug.sleep(ms)`, `__aoiDebug.screenshot()`, `__aoiDebug.select()`.
+    Frame stats are the JS thread's `requestAnimationFrame` cadence: `fps`,
+    `longestGapMs`, and `droppedFrames` (gaps over 25ms). Read a long gap as a
+    JS-thread stall, not as GPU frame rate. Run benchmarks against the max, not
+    the mean, and remember a dev build is slower than production.
+  - **Measuring a frame stall.** `pnpm run dev:profile -- --stdin < script.js`
+    runs a script under CDP's Profiler domain and reports the hottest frames. On
+    this Hermes target it answers `Unsupported method 'Profiler.enable'`, and
+    Hermes' own sampling profiler is not exposed on `HermesInternal` either, so
+    **the profile path is unavailable on iOS**. Attribute a stall by
+    differential experiment instead: one arm per candidate cause, several
+    samples per arm, compare distributions. Start sampling before the action
+    and include the delay to the first callback. Verify that the action
+    succeeded and that the intended screen became active. The old helper
+    swallows failures and bounds its fiber walk at 6,000 nodes, so a missing
+    press can produce a false clean result. The corrected audit measured all
+    six verified year opens at 161-223ms, not just the first open.
+    `node scripts/perf-audit.mjs` saves raw results under
+    `.expo/aoi-debug/performance/`. Add `--extended` for secondary routes and
+    feed scrolling; run `--media` after either run for video lifecycle checks.
+    These scenarios require the full dev seed and stub mode. They navigate
+    without saving content. Native ref scrolling is not a touch-gesture test.
+  - **The lever for that.** `features/dev/phase-timer.ts` wraps a span in
+    `beginPhase(name)` / `end()`, accumulates by name, and exposes the roll-up
+    as `__aoiDebug.phases()` with `__aoiDebug.resetPhases()`. It is instrumented
+    in the year path, but those render spans currently end BEFORE JSX
+    construction. They exclude the cell maps, child renders, reconciliation,
+    and commit. The density span is asynchronous elapsed time, not CPU time.
+    Do not sum these spans and attribute the remainder to native view creation.
+    That cause remains unconfirmed without fuller instrumentation or a trace.
+  - **Production-shaped stress loads.** Run
+    `node scripts/stress-prodlike.mjs --profile established` or `--profile heavy`
+    for isolated populated databases and mixed authenticated API reads/writes.
+    Add `--host <private-LAN-IP> --device` for the real app's remote repositories
+    on the connected phone. `--ui-only` skips the concurrent API ramp while
+    retaining complete backend pagination checks. The optional client config
+    is development-only, accepts synthetic identities and private HTTP hosts,
+    and never persists the test session. The runner restores
+    `features/dev/local-stress-config.json` to `null` and shuts down its backend.
+    Never commit an active config. Started servers have a ten-minute lifetime
+    bound. Reports and populated databases stay under the ignored
+    `.expo/aoi-debug/performance/`. Use `scripts/stress-assess.mjs` to evaluate
+    the explicit diagnostic budgets; functional success alone is not a pass.
+    Native reports must include `foreground.valid=true`. The runner records
+    AppState transitions and invalidates timings if the app starts inactive or
+    leaves the foreground, even after it returns. Without that record, a long
+    frame gap or pagination interval may be an app switch, not a stall.
   - `pnpm run dev:screenshot` — capture the phone screen. The image lands in
     `.expo/aoi-debug/screenshots/<id>.jpg` (read it directly to see the UI) with
     a sibling `<id>.json` holding the **accessibility inventory**: every
