@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -50,6 +50,7 @@ export function ListForm({
   const [color, setColor] = useState<CollectionColor | null>(initialColor);
   const [isSaving, setIsSaving] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const savingRef = useRef(false);
 
   const { mode } = useAoiTheme();
   const danger = useThemeColor({}, 'danger');
@@ -62,10 +63,11 @@ export function ListForm({
   const canSubmit = trimmedName.length > 0 && !isSaving;
 
   const handleSubmit = async () => {
-    if (!canSubmit) {
+    if (!canSubmit || savingRef.current) {
       return;
     }
 
+    savingRef.current = true;
     setWriteError(null);
     setIsSaving(true);
 
@@ -79,6 +81,7 @@ export function ListForm({
       // Keep the draft: the reader's words are not lost to a network blip.
       setWriteError("Couldn't save this list. Your draft is still here.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };

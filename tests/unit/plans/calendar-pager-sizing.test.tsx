@@ -191,6 +191,7 @@ vi.mock('@/features/calendar/calendar-context', () => ({
     visibleMonth: new Date(2026, 0, 1),
     eventsForDay: {},
     upcomingEvents: [],
+    monthReadState: () => 'unread',
     setSelectedDate: vi.fn(),
     setVisibleMonth: vi.fn(),
     refresh: vi.fn(async () => {}),

@@ -197,6 +197,13 @@ export default function NewCalendarEventScreen() {
     submission,
   ]);
 
+  // A save in flight owns the sheet: neither close affordance may leave while
+  // the event is being written.
+  const handleClose = useCallback(() => {
+    if (submittingRef.current) return;
+    router.back();
+  }, [router]);
+
   const titleInputStyle = useMemo(
     () => [
       styles.titleInput,
@@ -211,6 +218,16 @@ export default function NewCalendarEventScreen() {
     () => [styles.contentContainer, { paddingBottom: insets.bottom + Spacing[24] }],
     [insets.bottom]
   );
+  // The sheet is sized to this form, so there the scroll view has to report its
+  // own height: a scroll view has no intrinsic one, and a `flex: 1` frame
+  // would measure as zero against a parent that is itself sized by that
+  // content. Elsewhere the screen is a plain modal that fills the screen
+  // instead (see `styles.root` / `styles.scroll`).
+  const [formHeight, setFormHeight] = useState<number | undefined>(undefined);
+  const handleFormSizeChange = useCallback((_width: number, height: number) => {
+    setFormHeight(height);
+  }, []);
+  const formHeightStyle = useMemo(() => ({ height: formHeight }), [formHeight]);
   // Keyboard avoidance tracks the reported keyboard height directly, like
   // the composer: KeyboardAvoidingView derives its offset from layout
   // measurements that go stale during the sheet's detent animation, which
@@ -223,6 +240,10 @@ export default function NewCalendarEventScreen() {
     paddingBottom: isIos ? keyboard.height.value : 0,
   }));
 
+  // The sheet's actions belong in the header it already has, beside the title,
+  // and iOS renders `Stack.Toolbar` as real header items. Other platforms keep
+  // the footer: their presentation is a plain modal, not a sized sheet, and
+  // the toolbar is a no-op there.
   const footerStyle = useMemo(
     () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
     [insets.bottom]
@@ -231,15 +252,44 @@ export default function NewCalendarEventScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'New event' }} />
+      {isIos ? (
+        <>
+          <Stack.Toolbar placement="left">
+            <Stack.Toolbar.Button
+              disabled={isSubmitting}
+              icon="xmark"
+              onPress={handleClose}
+            >
+              Cancel
+            </Stack.Toolbar.Button>
+          </Stack.Toolbar>
+          <Stack.Toolbar placement="right">
+            <Stack.Toolbar.Button
+              disabled={isSubmitting || isRangeInvalid}
+              icon="checkmark"
+              onPress={() => void handleSave()}
+            >
+              {isSubmitting ? 'Saving…' : 'Save event'}
+            </Stack.Toolbar.Button>
+          </Stack.Toolbar>
+        </>
+      ) : null}
       <Animated.View
-        style={[styles.root, { backgroundColor: background }, keyboardStyle]}
+        style={[
+          isIos ? styles.sheetRoot : styles.root,
+          { backgroundColor: background },
+          keyboardStyle,
+        ]}
       >
         <ScrollView
           contentContainerStyle={contentContainerStyle}
           contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
+          onContentSizeChange={handleFormSizeChange}
           showsVerticalScrollIndicator={false}
+          style={isIos ? [styles.sheetScroll, formHeightStyle] : undefined}
+          testID="new-event-form"
         >
           <View style={styles.titleBlock}>
             <ThemedText type="meta">The event</ThemedText>
@@ -327,20 +377,34 @@ export default function NewCalendarEventScreen() {
           ) : null}
         </ScrollView>
 
-        <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
-          <Button
-            disabled={isSubmitting || isRangeInvalid}
-            label={isSubmitting ? 'Saving…' : 'Save event'}
-            onPress={handleSave}
-          />
-          <Button disabled={isSubmitting} label="Cancel" variant="secondary" onPress={() => { if (!submittingRef.current) router.back(); }} />
-        </View>
+        {isIos ? null : (
+          <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
+            <Button
+              disabled={isSubmitting || isRangeInvalid}
+              label={isSubmitting ? 'Saving…' : 'Save event'}
+              onPress={handleSave}
+            />
+            <Button disabled={isSubmitting} label="Cancel" variant="secondary" onPress={handleClose} />
+          </View>
+        )}
       </Animated.View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  // A sized sheet (iOS) hugs this form, so the content owns its height there:
+  // anything with `flex: 1` would measure as zero against a parent that is
+  // itself sized by that content. A plain modal elsewhere lays out exactly as
+  // it did before, so only the sheet gets these.
+  sheetRoot: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  sheetScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
   root: {
     flex: 1,
   },

@@ -142,6 +142,10 @@ export default function AuthenticatedAppLayout() {
 										title: "New event",
 										presentation: useFormSheet ? "formSheet" : "modal",
 										...sheetOptions,
+										// The header owns this sheet's actions, so there is no
+										// footer to fill a fixed detent — size the sheet to the
+										// form itself and leave no empty space below it.
+										...(useFormSheet ? { sheetAllowedDetents: 'fitToContents' as const } : {}),
 									}}
 								/>
 								<Stack.Screen
