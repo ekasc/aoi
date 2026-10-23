@@ -23,8 +23,10 @@ const path = resolve(output, `device-${Date.now()}.json`);
 writeFileSync(path, JSON.stringify(report, null, 2) + '\n');
 console.log(path);
 for (const row of report.results) {
-  console.log(`${row.ok ? 'OK' : 'FAIL'} ${row.name}: worst ${row.worstGapMs}ms, missed ${row.estimatedMissed60HzFrames}, action ${row.actionMs}ms${row.error ? `, ${row.error}` : ''}`);
+  console.log(`${row.ok ? 'ACTION VERIFIED' : 'FAIL'} ${row.name}: worst ${row.worstGapMs}ms, missed ${row.estimatedMissed60HzFrames}, action ${row.actionMs}ms${row.error ? `, ${row.error}` : ''}`);
 }
 if (report.before) console.log(`Fibers ${report.before.fibers} -> ${report.after.fibers}`);
 if (report.background) console.log(JSON.stringify({ foreground: report.foreground, background: report.background, activePath: report.activePath }));
-if (report.results.some(row => !row.ok)) process.exitCode = 1;
+console.log('Action success is not a performance pass. Frame gaps are JS-thread measurements, not GPU frame rate.');
+if (!report.foreground?.valid) console.error('INVALID TIMING: foreground continuity was not verified.');
+if (!report.foreground?.valid || report.results.some(row => !row.ok)) process.exitCode = 1;
