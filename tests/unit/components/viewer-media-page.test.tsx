@@ -1,11 +1,39 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { createElement } from 'react';
+import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ViewerVoicePageProps } from '@/components/moments/viewer-media-page';
 
 let sampleListener: ((sample: any) => void) | null = null;
 let videoSurfaceProps: any = null;
+const videoMount = vi.fn();
+const videoUnmount = vi.fn();
+type ScrubEvent = { x: number };
+const scrubHandlers: {
+  start?: () => void;
+  update?: (event: ScrubEvent) => void;
+  end?: (event: ScrubEvent, success: boolean) => void;
+  finalize?: (event: ScrubEvent, success: boolean) => void;
+} = {};
+
+vi.mock('react-native-gesture-handler', () => ({
+  GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+  Gesture: {
+    Pan: () => {
+      const chain = {
+        activeOffsetX: () => chain,
+        failOffsetY: () => chain,
+        onStart: (callback: typeof scrubHandlers.start) => { scrubHandlers.start = callback; return chain; },
+        onUpdate: (callback: typeof scrubHandlers.update) => { scrubHandlers.update = callback; return chain; },
+        onEnd: (callback: typeof scrubHandlers.end) => { scrubHandlers.end = callback; return chain; },
+        onFinalize: (callback: typeof scrubHandlers.finalize) => { scrubHandlers.finalize = callback; return chain; },
+      };
+      return chain;
+    },
+    Tap: () => ({ onEnd: () => ({}) }),
+    Race: () => ({}),
+  },
+}));
 const player = {
   isAudioSamplingSupported: true,
   setAudioSamplingEnabled: vi.fn(),
@@ -40,6 +68,7 @@ vi.mock('@/hooks/use-voice-playback', async (importOriginal) => {
 vi.mock('@/components/media/video-player', () => ({
   VideoSurface: (props: any) => {
     videoSurfaceProps = props;
+    useEffect(() => { videoMount(); return () => { videoUnmount(); }; }, []);
     return createElement('div', { 'data-testid': 'video-surface' });
   },
 }));
@@ -110,6 +139,7 @@ vi.mock('react-native-reanimated', () => {
     useReducedMotion: () => false,
     Easing: { bezier: () => ({}), cubic: {}, in: (v: any) => v, linear: {}, out: (v: any) => v },
     withTiming: (value: any) => value,
+    runOnJS: (callback: unknown) => callback,
     withRepeat: (value: any) => value,
   };
 });
@@ -198,6 +228,39 @@ describe('ViewerVoicePage waveform', () => {
     videoSurfaceProps = null;
     capturedStyleFns.length = 0;
     player.setAudioSamplingEnabled.mockClear();
+    playback.seek.mockClear();
+    playback.setPlaying.mockClear();
+    playback.isPlaying = true;
+    delete scrubHandlers.end;
+  });
+
+  it('seeks to the release position even when the last drag update was throttled', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
+      render(createElement(ViewerVoicePage, voiceProps));
+      const handlers = { ...scrubHandlers };
+      act(() => handlers.start?.());
+      act(() => handlers.update?.({ x: 39 }));
+      act(() => handlers.update?.({ x: 195 }));
+      expect(playback.seek).toHaveBeenCalledTimes(1);
+      act(() => handlers.end?.({ x: 312 }, true));
+      act(() => handlers.finalize?.({ x: 312 }, true));
+      expect(playback.seek.mock.calls.at(-1)?.[0]).toBeCloseTo(26.4);
+      expect(playback.setPlaying.mock.calls).toEqual([[false], [true]]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it.each([true, false])('restores the prior playing=%s state when a scrub is cancelled', async (playing) => {
+    playback.isPlaying = playing;
+    const { ViewerVoicePage } = await import('@/components/moments/viewer-media-page');
+    render(createElement(ViewerVoicePage, voiceProps));
+    const handlers = { ...scrubHandlers };
+    act(() => handlers.start?.());
+    act(() => handlers.finalize?.({ x: 195 }, false));
+    expect(playback.setPlaying.mock.calls).toEqual(playing ? [[false], [true]] : [[false]]);
   });
 
   it('sizes the wave to the width it was given, not a fixed strip', async () => {
@@ -263,6 +326,43 @@ describe('ViewerVideoPage', () => {
   beforeEach(() => {
     videoSurfaceProps = null;
     capturedStyleFns.length = 0;
+    videoMount.mockClear();
+    videoUnmount.mockClear();
+  });
+
+  it('fades without enlarging the poster when dismissing without a thumbnail', async () => {
+    const { ViewerVideoPage } = await import('@/components/moments/viewer-media-page');
+    render(createElement(ViewerVideoPage, {
+      uri: 'https://cdn.test/clip.mp4', posterUri: 'file:///poster.jpg', label: 'Beach dog',
+      width: 390, height: 844, active: false, morph, home,
+    }));
+    const [shell, crop] = capturedStyleFns.slice(-2);
+    try {
+      for (const progress of [0, 0.25, 0.5, 1]) {
+        morph.t.set(progress);
+        expect(crop().transform[0].scale).toBe(1);
+        expect(shell().opacity).toBe(1 - progress);
+      }
+    } finally {
+      morph.t.set(0);
+    }
+  });
+
+  it('requires another play request after paging away and returning', async () => {
+    const { ViewerVideoPage } = await import('@/components/moments/viewer-media-page');
+    const props = {
+      uri: 'https://cdn.test/clip.mp4', label: 'Beach dog',
+      width: 390, height: 844, active: true, morph, home,
+    };
+    const { rerender } = render(createElement(ViewerVideoPage, props));
+    fireEvent.click(screen.getByLabelText('Play video: Beach dog'));
+    expect(videoMount).toHaveBeenCalledTimes(1);
+    rerender(createElement(ViewerVideoPage, { ...props, active: false }));
+    expect(videoUnmount).toHaveBeenCalledTimes(1);
+    rerender(createElement(ViewerVideoPage, props));
+    expect(videoMount).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByLabelText('Play video: Beach dog'));
+    expect(videoMount).toHaveBeenCalledTimes(2);
   });
 
   it('does not start a clip just because the page opened on it', async () => {

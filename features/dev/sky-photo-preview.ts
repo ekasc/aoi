@@ -37,6 +37,6 @@ export function usePreviewSkyPhotos(variant: PreviewVariant): ReturnType<typeof 
     protocolStatus: 'none' as const,
     reload: () => {},
     choosePhotos: async () => { setPhotos(fixtures); },
-    removePhoto: async (id) => { setPhotos((current) => current.filter((photo) => photo.id !== id)); },
+    removeLocalCopy: async (id: string) => { setPhotos((current) => current.map((photo) => photo.id === id ? { ...photo, uri: null } : photo)); },
   };
 }

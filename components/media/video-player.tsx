@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MediaFrame } from '@/components/ui/media-frame';
@@ -35,8 +35,10 @@ export function VideoSurface({
 }) {
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
-    instance.play();
   });
+  useEffect(() => {
+    player.play();
+  }, [player]);
 
   return (
     <VideoView

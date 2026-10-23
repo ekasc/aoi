@@ -1,14 +1,14 @@
 import { useCallback, useMemo } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
-import { runOnJS, useReducedMotion, withSpring } from 'react-native-reanimated';
+import { runOnJS, useReducedMotion, withSpring, withTiming } from 'react-native-reanimated';
 
 import {
-  CLOSE_SPRING,
   DRAG_RESISTANCE_RANGE,
   DRAG_SPRING,
   dampedDragOffset,
-  progressVelocityFor,
+  releaseMotionFor,
+  returnTimingFor,
   scrubProgress,
   shouldDismissOnRelease,
   type ViewerMorph,
@@ -59,10 +59,9 @@ export function useMediaDismiss({
         })
         .onEnd((event) => {
           'worklet';
-          const distance = Math.hypot(event.translationX, event.translationY);
-          const speed = Math.hypot(event.velocityX, event.velocityY);
+          const release = releaseMotionFor(event.translationX, event.translationY, event.velocityX, event.velocityY, windowHeight);
           const t = scrubProgress(event.translationX, event.translationY, windowHeight);
-          if (!shouldDismissOnRelease(t, speed)) {
+          if (!shouldDismissOnRelease(t, release.outwardSpeed)) {
             morph.t.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
             morph.residualX.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
             morph.residualY.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
@@ -75,9 +74,9 @@ export function useMediaDismiss({
             return;
           }
           // Carry the hand's own pace out, the way the photo path does.
-          morph.t.set(withSpring(
+          morph.t.set(withTiming(
             1,
-            { ...CLOSE_SPRING, velocity: progressVelocityFor(distance, speed, windowHeight) },
+            returnTimingFor({ from: morph.t.get(), to: 1, velocity: release.progressVelocity, constrain: true }),
             (finished) => {
               'worklet';
               if (finished) {
@@ -85,8 +84,8 @@ export function useMediaDismiss({
               }
             },
           ));
-          morph.residualX.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityX }));
-          morph.residualY.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityY }));
+          morph.residualX.set(withTiming(0, returnTimingFor({ from: morph.residualX.get(), to: 0, velocity: release.residualVelocityX })));
+          morph.residualY.set(withTiming(0, returnTimingFor({ from: morph.residualY.get(), to: 0, velocity: release.residualVelocityY })));
         })
         .onFinalize((_, success) => {
           'worklet';
@@ -125,11 +124,13 @@ export function useMediaCloseAnimation({
       onClose();
       return;
     }
-    morph.t.set(withSpring(1, CLOSE_SPRING, (finished) => {
+    morph.t.set(withTiming(1, returnTimingFor({ from: morph.t.get(), to: 1, constrain: true }), (finished) => {
       'worklet';
       if (finished) {
         runOnJS(onClose)();
       }
     }));
+    morph.residualX.set(withTiming(0, returnTimingFor({ from: morph.residualX.get(), to: 0 })));
+    morph.residualY.set(withTiming(0, returnTimingFor({ from: morph.residualY.get(), to: 0 })));
   }, [morph, onClose, onDismissStart, reduceMotion]);
 }

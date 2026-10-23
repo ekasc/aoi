@@ -13,17 +13,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-const album = (): ReturnType<typeof useSkyPhotos> => ({ photos: [{ id: 'copy', uri: null, addedAt: '2026-01-01', width: 800, height: 600 }], status: 'ready', readError: null, actionError: null, operation: null, scopeKey: 'scope', reload: vi.fn(), choosePhotos: vi.fn(async () => {}), removePhoto: vi.fn(async () => {}) });
+const album = (): ReturnType<typeof useSkyPhotos> => ({ photos: [{ id: 'copy', uri: null, addedAt: '2026-01-01', width: 800, height: 600 }], status: 'ready', readError: null, actionError: null, operation: null, scopeKey: 'scope', reload: vi.fn(), choosePhotos: vi.fn(async () => {}), removeLocalCopy: vi.fn(async () => {}) });
 
 describe('retained local photo copies', () => {
-  it('keeps old unavailable copies removable and explains that they are not shared memories', () => {
+  it('keeps old unavailable copies removable and says only this phone loses them', () => {
     const value = album();
     render(<LocalPhotosSheet visible onClose={vi.fn()} album={value} />);
     expect(screen.getByText(/These are this phone/)).toBeTruthy();
     expect(screen.getByText('Photo unavailable on this device')).toBeTruthy();
     expect(screen.queryByText(/automatic discovery/i)).toBeNull();
     fireEvent.click(screen.getByText('Remove photo 1'));
-    expect(value.removePhoto).toHaveBeenCalledWith('copy');
+    expect(value.removeLocalCopy).toHaveBeenCalledWith('copy');
     expect(value.choosePhotos).not.toHaveBeenCalled();
   });
   it('disables dismissal and mutation while saving copies', () => {
@@ -32,7 +32,7 @@ describe('retained local photo copies', () => {
     render(<LocalPhotosSheet visible onClose={close} album={value} />);
     expect(screen.getByRole('dialog').getAttribute('data-dismissible')).toBe('false');
     fireEvent.click(screen.getByText('Remove photo 1')); fireEvent.click(screen.getByText('Done'));
-    expect(value.removePhoto).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled();
+    expect(value.removeLocalCopy).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled();
   });
   it('keeps failed reads distinct from empty selection', () => {
     const value = album(); value.photos = []; value.status = 'failed'; value.readError = 'Could not open your local photos.';

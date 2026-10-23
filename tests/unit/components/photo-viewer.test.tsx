@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import * as Reanimated from 'react-native-reanimated';
 
-import { PhotoViewer, type ViewerPhoto } from '@/components/moments/photo-viewer';
+import { PhotoViewer, type PhotoViewerHandle, type ViewerPhoto } from '@/components/moments/photo-viewer';
 
 type TestProps = {
   children?: ReactNode;
@@ -28,10 +28,15 @@ function flattenStyle(style: unknown): Record<string, unknown> {
 }
 
 let capturedList: any = null;
+let layoutViewer: (() => void) | undefined;
 
 vi.mock('react-native', () => {
-  const View = ({ children, style, ...rest }: TestProps) =>
-    createElement('div', { style: flattenStyle(style), ...rest }, children);
+  const View = ({ children, style, ...rest }: TestProps) => {
+    if ('accessibilityViewIsModal' in rest && typeof rest.onLayout === 'function') {
+      layoutViewer = rest.onLayout as () => void;
+    }
+    return createElement('div', { style: flattenStyle(style), ...rest }, children);
+  };
 
   const Text = ({ children, style, ...rest }: TestProps) =>
     createElement('span', { style: flattenStyle(style), ...rest }, children);
@@ -85,6 +90,14 @@ vi.mock('expo-image', () => ({
 }));
 
 const capturedZoomProps: any[] = [];
+const capturedPresentation: { interactive: boolean; onRequestClose: () => void }[] = [];
+
+vi.mock('@/components/moments/viewer-presentation', () => ({
+  ViewerPresentation: (props: { children: ReactNode; interactive: boolean; onRequestClose: () => void }) => {
+    capturedPresentation.push(props);
+    return props.children;
+  },
+}));
 
 vi.mock('@/components/moments/zoomable-photo', () => ({
   OPEN_EASING: {},
@@ -190,6 +203,7 @@ beforeEach(() => {
   capturedZoomProps.length = 0;
   capturedMediaPages.video.length = 0;
   capturedMediaPages.voice.length = 0;
+  capturedPresentation.length = 0;
 });
 
 /**
@@ -217,6 +231,69 @@ const MIXED: ViewerPhoto[] = [
 ];
 
 describe('PhotoViewer across media kinds', () => {
+  it('clears a returning overlay within 80ms when background scrolling interrupts it', () => {
+    const onClose = vi.fn();
+    const ref = { current: null as PhotoViewerHandle | null };
+    const timing = vi.spyOn(Reanimated, 'withTiming');
+    const cancel = vi.spyOn(Reanimated, 'cancelAnimation');
+    try {
+      renderViewer({ ref, onClose, origin: { x: 12, y: 240, width: 96, height: 96 } });
+      const photo = capturedZoomProps.findLast((props) => props.active);
+      act(() => photo.onDismissStart());
+      timing.mockClear();
+      act(() => ref.current?.interruptReturn());
+      expect(timing.mock.calls.at(-1)?.[1]?.duration).toBeLessThanOrEqual(80);
+      expect(cancel).toHaveBeenCalledWith(photo.morph.t);
+      expect(cancel).toHaveBeenCalledWith(photo.morph.residualX);
+      expect(cancel).toHaveBeenCalledWith(photo.morph.residualY);
+      expect(onClose).not.toHaveBeenCalled();
+      const finish = timing.mock.calls.at(-1)?.[2];
+      act(() => finish?.(true, 0));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      timing.mockRestore();
+      cancel.mockRestore();
+    }
+  });
+
+  it('does not interrupt an open viewer when background scroll callbacks arrive before dismissal', () => {
+    const onClose = vi.fn();
+    const ref = { current: null as PhotoViewerHandle | null };
+    renderViewer({ ref, onClose });
+    act(() => ref.current?.interruptReturn());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(capturedZoomProps.findLast((props) => props.active)?.morph.overlay.get()).toBe(0);
+  });
+
+  it('releases the presentation before the return animation completes', () => {
+    const onClose = vi.fn();
+    renderViewer({ onClose, origin: { x: 12, y: 240, width: 96, height: 96 } });
+    act(() => layoutViewer?.());
+    const photo = capturedZoomProps.findLast((props) => props.active);
+    act(() => photo.onImageReady());
+    expect(capturedPresentation.at(-1)?.interactive).toBe(true);
+    act(() => photo.onDismissStart());
+    expect(capturedPresentation.at(-1)?.interactive).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+    act(() => photo.onDismiss());
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restart the opening morph when a photo finishes loading after the presentation failsafe', () => {
+    vi.useFakeTimers();
+    try {
+      renderViewer({ origin: { x: 24, y: 300, width: 96, height: 96 } });
+      act(() => layoutViewer?.());
+      act(() => vi.advanceTimersByTime(400));
+      const photo = capturedZoomProps.findLast((props) => props.active);
+      photo.morph.t.set(0.2);
+      act(() => photo.onImageReady());
+      expect(photo.morph.t.get()).toBe(0.2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('omits the memory navigation action when opened from within a memory response', () => {
     renderViewer({ photos: PHOTOS, onOpenMemory: undefined });
     expect(screen.queryByText('Open memory')).toBeNull();
@@ -258,6 +335,13 @@ describe('PhotoViewer across media kinds', () => {
     const active = capturedMediaPages.video.filter((props) => props.active);
     expect(inactive.length).toBeGreaterThan(0);
     expect(active).toHaveLength(0);
+  });
+
+  it('deactivates playback when scrolling to another page, without waiting for momentum to end', () => {
+    renderViewer({ photos: MIXED, initialIndex: 1 });
+    act(() => capturedList.onScroll?.({ nativeEvent: { contentOffset: { x: 780 } } }));
+    expect(capturedMediaPages.video.at(-1)?.active).toBe(false);
+    expect(capturedMediaPages.voice.at(-1)?.active).toBe(true);
   });
 
   it('keeps Open memory for photos and drops it from the media pages', () => {

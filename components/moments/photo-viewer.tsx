@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 import {
   FlatList,
-  Modal,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -10,8 +9,9 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -37,6 +37,7 @@ import {
   useMediaDismiss,
 } from '@/components/moments/viewer-media-dismiss';
 import { ViewerVideoPage, ViewerVoicePage } from '@/components/moments/viewer-media-page';
+import { ViewerPresentation } from '@/components/moments/viewer-presentation';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { ThemedText } from '@/components/themed-text';
@@ -48,6 +49,11 @@ export type ViewerPageKind = 'photo' | 'video' | 'voice';
 
 /** How long a page that has no thumbnail to morph into takes to arrive. */
 const FADE_DURATION = 180;
+const INTERRUPTED_RETURN_FADE = 64;
+
+export type PhotoViewerHandle = {
+  interruptReturn: () => void;
+};
 
 export type ViewerPhoto = {
   /**
@@ -69,6 +75,7 @@ export type ViewerPhoto = {
 };
 
 export type PhotoViewerProps = {
+  ref?: Ref<PhotoViewerHandle>;
   visible: boolean;
   photos: ViewerPhoto[];
   /** Page the viewer opens on; swiping moves freely after. */
@@ -90,12 +97,8 @@ export type PhotoViewerProps = {
  * Open-memory link that returns to the parent memory of the visible photo.
  * Nothing else.
  *
- * The modal is transparent with `overFullScreen` (the one pairing iOS
- * accepts) and draws its own scrim, so a dismiss drag fades the scrim and
- * reveals the screen behind instead of flashing the system background.
- * Motion is system-gated: the modal fade and the image transition collapse
- * to none under reduced motion. Paging and gestures stay, since the finger
- * drives them.
+ * On iOS the viewer stays in the app's window, so its return animation can
+ * finish without a presented modal blocking the screen underneath.
  */
 /**
  * Puts the pager on the session's page and keeps it there.
@@ -127,6 +130,7 @@ function useCanonicalPage(
 }
 
 export function PhotoViewer({
+  ref,
   visible,
   photos,
   initialIndex = 0,
@@ -134,7 +138,6 @@ export function PhotoViewer({
   onClose,
   onOpenMemory,
 }: PhotoViewerProps) {
-  const reduceMotion = useReducedMotion();
   const total = photos.length;
   // One canonical opening index. The list's scroll position, the counter,
   // and the Open-memory target all read it, so they cannot disagree: an
@@ -156,27 +159,15 @@ export function PhotoViewer({
   }
 
   return (
-    <Modal
-      // Never fade the Modal itself: the overlay's own zoom IS the
-      // presentation, and two animations on the same open read as a flicker.
-      animationType="none"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      statusBarTranslucent
-      transparent
-      visible
-    >
-      <GestureHandlerRootView accessibilityViewIsModal style={styles.root}>
-        <ViewerSession
-          key={sessionKey}
-          photos={photos}
-          initialIndex={safeInitialIndex}
-          origin={origin}
-          onClose={onClose}
-          onOpenMemory={onOpenMemory}
-        />
-      </GestureHandlerRootView>
-    </Modal>
+    <ViewerSession
+      key={sessionKey}
+      viewerRef={ref}
+      photos={photos}
+      initialIndex={safeInitialIndex}
+      origin={origin}
+      onClose={onClose}
+      onOpenMemory={onOpenMemory}
+    />
   );
 }
 
@@ -187,12 +178,14 @@ export function PhotoViewer({
  * while zoomed can't leave paging locked.
  */
 function ViewerSession({
+  viewerRef,
   photos,
   initialIndex,
   origin,
   onClose,
   onOpenMemory,
 }: {
+  viewerRef?: Ref<PhotoViewerHandle>;
   photos: ViewerPhoto[];
   initialIndex: number;
   origin?: PhotoOrigin;
@@ -282,16 +275,37 @@ function ViewerSession({
   const handleDismissStart = useCallback(() => {
     setHandingBack(true);
   }, []);
+  const returnInterrupted = useRef(false);
+  const interruptReturn = useCallback(() => {
+    if (!handingBack || returnInterrupted.current) return;
+    returnInterrupted.current = true;
+    // A scrolling thumbnail is no longer at the saved destination. Stop the
+    // return and hand its image back to the live list rather than chase it.
+    cancelAnimation(t);
+    cancelAnimation(residualX);
+    cancelAnimation(residualY);
+    if (reduceMotion) {
+      onClose();
+      return;
+    }
+    overlay.set(withTiming(0, { duration: INTERRUPTED_RETURN_FADE }, (finished) => {
+      'worklet';
+      if (finished) runOnJS(onClose)();
+    }));
+  }, [handingBack, onClose, overlay, reduceMotion, residualX, residualY, t]);
+  useImperativeHandle(viewerRef, () => ({ interruptReturn }), [interruptReturn]);
   // Only a photo has a clip box to wait for: a video or a voice page has no
   // geometry to morph out of, and gating its presentation on one would hold
   // the page behind the failsafe for no reason.
   const openingIsPhoto = (photos[initialIndex]?.kind ?? 'photo') === 'photo';
   const presented = laidOut && (!openingIsPhoto || geometryReady || overlayFailsafe);
+  const openingStarted = useRef(false);
 
   useLayoutEffect(() => {
-    if (!presented) {
+    if (!presented || openingStarted.current) {
       return;
     }
+    openingStarted.current = true;
     if (!origin || reduceMotion || !geometryReady) {
       // Nothing to morph out of: the page arrives on its own fade.
       t.set(0);
@@ -366,7 +380,7 @@ function ViewerSession({
     onOpenMemory?.(current);
   }, [current, onOpenMemory]);
 
-  const handleMomentumEnd = useCallback(
+  const handlePageScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (!windowWidth) {
         return;
@@ -478,10 +492,10 @@ function ViewerSession({
   }));
 
   return (
+    <ViewerPresentation interactive={presented && !handingBack} onRequestClose={handleClose}>
     <View
-      accessibilityViewIsModal
-      // Until it presents, the modal must not eat touches: a transparent
-      // overlay that cannot be dismissed would freeze the screen behind it.
+      accessibilityViewIsModal={presented && !handingBack}
+      // The return animation stays mounted after the overlay gives input back.
       pointerEvents={presented && !handingBack ? 'auto' : 'none'}
       onLayout={handleRootLayout}
       style={styles.inner}
@@ -505,7 +519,9 @@ function ViewerSession({
           index,
         })}
         keyExtractor={(item, index) => `${item.uri}:${index}`}
-        onMomentumScrollEnd={handleMomentumEnd}
+        onScroll={handlePageScroll}
+        onMomentumScrollEnd={handlePageScroll}
+        scrollEventThrottle={32}
         renderItem={renderPage}
         style={styles.list}
       />
@@ -538,6 +554,7 @@ function ViewerSession({
         </View>
       </Animated.View>
     </View>
+    </ViewerPresentation>
   );
 }
 
@@ -549,9 +566,6 @@ const PAGE_NOUNS: Record<ViewerPageKind, string> = {
 };
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
   inner: {
     flex: 1,
     alignItems: 'center',
@@ -559,6 +573,7 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+    width: '100%',
   },
   page: {
     justifyContent: 'center',

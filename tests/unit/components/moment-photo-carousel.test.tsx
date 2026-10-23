@@ -259,6 +259,13 @@ describe('MomentOrderedImages timeline carousel', () => {
 });
 
 describe('MomentCard photo-set presentation', () => {
+  it('bounds the whole post so an intrinsic-size menu host cannot expand away the carousel scroll range', () => {
+    const { container } = render(
+      <MomentCard moment={threePhotoMoment()} presentation="timeline" rowWidth={390} onPhotoPress={() => {}} />,
+    );
+    expect((container.firstElementChild as HTMLElement).style.width).toBe('390px');
+  });
+
   it('opts timeline into the carousel with fullscreen pages and no detail nav', () => {
     const onPress = vi.fn();
     const onPhotoPress = vi.fn();

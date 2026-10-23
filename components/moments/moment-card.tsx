@@ -42,14 +42,13 @@ export type MomentCardProps = {
 	 */
 	actionsInset?: number;
 	/**
-	 * Definite width for the timeline row, in points.
+	 * Definite width for the timeline entry, in points.
 	 *
 	 * The Memories feed needs this: on iOS an own-moment row is wrapped in the
 	 * native context menu, whose host measures its own children and reports the
-	 * width back. The row's `flex: 1` then resolves against that measured
-	 * width rather than the screen, so a long line never finds an edge to wrap
-	 * at and runs off the display. A number the screen already knows gives the
-	 * row a real constraint the host cannot override.
+	 * width back. Constrain the entire entry, including its photo strip:
+	 * constraining only the text row lets a carousel expand to its content
+	 * width, leaving no overflow to swipe through.
 	 */
 	rowWidth?: number;
 	/**
@@ -400,13 +399,8 @@ function MomentCardComponent({ moment, onPress, onLongPress, onActions, actionsI
 			</View>
 		) : null;
 		return (
-			<View style={[styles.timelineEntry, { borderBottomColor: border }]}>
-				<View
-					style={[
-						styles.timelineRow,
-						rowWidth !== undefined ? { width: rowWidth } : null,
-					]}
-				>
+			<View style={[styles.timelineEntry, { borderBottomColor: border }, rowWidth !== undefined ? { width: rowWidth } : null]}>
+				<View style={styles.timelineRow}>
 					<View
 						accessible={false}
 						accessibilityElementsHidden

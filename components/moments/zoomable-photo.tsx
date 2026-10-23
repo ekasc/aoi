@@ -30,8 +30,9 @@ export const PAN_ACTIVATION = 12;
 export const DRAG_RESIDUAL_FACTOR = 0.08;
 /** Progress at which letting go dismisses. */
 export const DISMISS_PROGRESS = 0.24;
-/** Downward fling that dismisses regardless of distance. */
+/** Outward fling that dismisses regardless of distance. */
 export const DISMISS_VELOCITY = 1050;
+const DISMISS_REVERSAL_VELOCITY = 300;
 /** Open: quick, eased out of the thumbnail into place. */
 export const OPEN_MORPH_DURATION = 300;
 /** Frames to wait before the open animation, so the first frame is laid out. */
@@ -84,17 +85,7 @@ export type ViewerHome = {
 
 /** Open easing: eases out of the thumbnail, weight at the start. */
 export const OPEN_EASING = Easing.bezier(0.22, 1, 0.36, 1);
-/**
- * The close is a spring, not a timing curve: it carries the speed the finger
- * had into the tile and settles. A reversed open curve (slow, then fast)
- * reads as a stall followed by whiplash — momentum, stop, momentum — which is
- * exactly what a hand-off should never feel like.
- *
- * This file is where the app's spring vocabulary was invented, and where
- * three others then grew their own. Both are now the shared tokens; the
- * names stay because they are the words this file reads in.
- */
-export const CLOSE_SPRING = Springs.rest;
+export const RETURN_MORPH_DURATION = 280;
 export const DRAG_SPRING = Springs.rest;
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
@@ -102,6 +93,28 @@ const AnimatedImage = Animated.createAnimatedComponent(Image);
 function clamp(value: number, min: number, max: number): number {
   'worklet';
   return Math.min(max, Math.max(min, value));
+}
+
+/** Cubic Hermite timing: start with the displayed velocity, arrive at rest. */
+export function returnTimingFor({ from, to, velocity = 0, constrain = false }: {
+  from: number;
+  to: number;
+  velocity?: number;
+  constrain?: boolean;
+}) {
+  'worklet';
+  const slope = to === from ? 0 : velocity * RETURN_MORPH_DURATION / 1000 / (to - from);
+  // Progress must not overshoot its crop endpoints. Position offsets may
+  // briefly continue away from home when that is how the finger was moving.
+  const initialSlope = constrain ? clamp(slope, 0, 3) : slope;
+  return {
+    duration: RETURN_MORPH_DURATION,
+    easing: (progress: number) => {
+      'worklet';
+      return progress * progress * (3 - 2 * progress)
+        + initialSlope * progress * (1 - progress) * (1 - progress);
+    },
+  };
 }
 
 /** Pinch scale clamped to the zoom window; non-finite input resets. */
@@ -156,9 +169,10 @@ export const DRAG_RESISTANCE_RANGE = 180;
  * voice note has no tile and shrinks away instead, but the decision is the
  * same decision.
  */
-export function shouldDismissOnRelease(progress: number, speed: number): boolean {
+export function shouldDismissOnRelease(progress: number, outwardSpeed: number): boolean {
   'worklet';
-  return progress >= DISMISS_PROGRESS || speed > DISMISS_VELOCITY;
+  if (outwardSpeed < -DISMISS_REVERSAL_VELOCITY) return false;
+  return progress >= DISMISS_PROGRESS || outwardSpeed > DISMISS_VELOCITY;
 }
 
 /**
@@ -282,6 +296,15 @@ export function buildMorphGeometry(
   };
 }
 
+/** Compensate for the shell so the displayed image scales linearly, without a zoom bump. */
+export function morphCropScale(progress: number, coverScale: number, targetShellScale: number): number {
+  'worklet';
+  const t = clamp(progress, 0, 1);
+  const shellScale = 1 + (targetShellScale - 1) * t;
+  const imageScale = 1 + (coverScale * targetShellScale - 1) * t;
+  return imageScale / shellScale;
+}
+
 /** Cover-fit rect of a source inside a frame (centered, cropped). */
 export function coverRect(sourceWidth: number, sourceHeight: number, frame: Rect): Rect {
   'worklet';
@@ -372,23 +395,40 @@ export function panBoundsForScale(
 }
 
 /**
- * The finger's speed translated into progress per second, so a spring can
- * start the close at exactly the pace the hand let go with. `resistance` is
- * the same constant `scrubProgress` uses, so the two always agree.
+ * Signed radial velocity translated into progress per second, using the
+ * same resistance as the displayed drag.
  */
 export function progressVelocityFor(
   distance: number,
-  speed: number,
+  radialSpeed: number,
   frameHeight: number,
 ): number {
   'worklet';
-  if (!Number.isFinite(distance) || !Number.isFinite(speed) || speed <= 0) {
+  if (!Number.isFinite(distance) || !Number.isFinite(radialSpeed)) {
     return 0;
   }
   const resistance = Math.max(700, frameHeight * 0.9);
   const travelled = Math.max(0, distance);
-  // d(progress)/d(distance) for the exponential scrub, times the speed.
-  return (speed * Math.exp(-travelled / resistance)) / resistance;
+  return (radialSpeed * Math.exp(-travelled / resistance)) / resistance;
+}
+
+/** Derivative of the same damped offsets the drag displays, not raw touch speed. */
+export function releaseMotionFor(dx: number, dy: number, vx: number, vy: number, frameHeight: number) {
+  'worklet';
+  const distance = Math.hypot(dx, dy);
+  const outwardSpeed = distance > 0 ? (dx * vx + dy * vy) / distance : 0;
+  const progressVelocity = progressVelocityFor(distance, outwardSpeed, frameHeight);
+  const progress = scrubProgress(dx, dy, frameHeight);
+  const range = Math.min(DRAG_RESISTANCE_RANGE, frameHeight * 0.2);
+  const attenuation = 1 - progress * 0.5;
+  return {
+    outwardSpeed,
+    progressVelocity,
+    residualVelocityX: (range > 0 ? Math.exp(-Math.abs(dx) / range) : 1) * vx * attenuation
+      - dampedDragOffset(dx, range) * 0.5 * progressVelocity,
+    residualVelocityY: (range > 0 ? Math.exp(-Math.abs(dy) / range) : 1) * vy * attenuation
+      - dampedDragOffset(dy, range) * 0.5 * progressVelocity,
+  };
 }
 
 /**
@@ -510,6 +550,7 @@ export function ZoomablePhoto({
     },
     [
       active,
+      home,
       morph,
       onImageReady,
       panX,
@@ -529,7 +570,6 @@ export function ZoomablePhoto({
    */
   const playDismiss = useCallback(() => {
     onDismissStart?.();
-    const duration = reduceMotion ? 0 : 180;
     if (reduceMotion) {
       morph.t.set(1);
       morph.residualX.set(0);
@@ -537,15 +577,14 @@ export function ZoomablePhoto({
       onDismiss();
       return;
     }
-    morph.t.set(withSpring(1, CLOSE_SPRING, (finished) => {
+    morph.t.set(withTiming(1, returnTimingFor({ from: morph.t.get(), to: 1, constrain: true }), (finished) => {
       'worklet';
       if (finished) {
         runOnJS(onDismiss)();
       }
     }));
-    morph.residualX.set(withSpring(0, CLOSE_SPRING));
-    morph.residualY.set(withSpring(0, CLOSE_SPRING));
-    void duration;
+    morph.residualX.set(withTiming(0, returnTimingFor({ from: morph.residualX.get(), to: 0 })));
+    morph.residualY.set(withTiming(0, returnTimingFor({ from: morph.residualY.get(), to: 0 })));
   }, [morph, onDismiss, onDismissStart, reduceMotion]);
 
   // The viewer's Close control asks for the same finish a swipe plays.
@@ -737,20 +776,20 @@ export function ZoomablePhoto({
           if (!active || isZoomedScale(zoom.get())) {
             return;
           }
-          const distance = Math.hypot(event.translationX, event.translationY);
-          const speed = Math.hypot(event.velocityX, event.velocityY);
+          const release = releaseMotionFor(event.translationX, event.translationY, event.velocityX, event.velocityY, windowHeight);
           const t = scrubProgress(event.translationX, event.translationY, windowHeight);
-          if (shouldDismissOnRelease(t, speed)) {
+          if (shouldDismissOnRelease(t, release.outwardSpeed)) {
             runOnJS(handleDismissStart)();
-            // Continue the motion the hand started, at the hand's own pace, and
-            // settle into the tile: a spring carries that velocity, a timing
-            // curve would restart from zero and stall first.
-            morph.t.set(withSpring(
+            if (reduceMotion) {
+              morph.t.set(1);
+              morph.residualX.set(0);
+              morph.residualY.set(0);
+              runOnJS(onDismiss)();
+              return;
+            }
+            morph.t.set(withTiming(
               1,
-              {
-                ...CLOSE_SPRING,
-                velocity: progressVelocityFor(distance, speed, windowHeight),
-              },
+              returnTimingFor({ from: morph.t.get(), to: 1, velocity: release.progressVelocity, constrain: true }),
               (finished) => {
                 'worklet';
                 if (finished) {
@@ -758,13 +797,13 @@ export function ZoomablePhoto({
                 }
               },
             ));
-            morph.residualX.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityX }));
-            morph.residualY.set(withSpring(0, { ...CLOSE_SPRING, velocity: event.velocityY }));
+            morph.residualX.set(withTiming(0, returnTimingFor({ from: morph.residualX.get(), to: 0, velocity: release.residualVelocityX })));
+            morph.residualY.set(withTiming(0, returnTimingFor({ from: morph.residualY.get(), to: 0, velocity: release.residualVelocityY })));
             return;
           }
-          morph.t.set(withSpring(0, DRAG_SPRING));
-          morph.residualX.set(withSpring(0, DRAG_SPRING));
-          morph.residualY.set(withSpring(0, DRAG_SPRING));
+          morph.t.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+          morph.residualX.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+          morph.residualY.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
         })
         .onFinalize((_, success) => {
           'worklet';
@@ -772,9 +811,9 @@ export function ZoomablePhoto({
             return;
           }
           // Cancelled mid-drag: never park the photo away from fullscreen.
-          morph.t.set(withSpring(0, DRAG_SPRING));
-          morph.residualX.set(withSpring(0, DRAG_SPRING));
-          morph.residualY.set(withSpring(0, DRAG_SPRING));
+          morph.t.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+          morph.residualX.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+          morph.residualY.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
         }),
     [
       active,
@@ -783,6 +822,7 @@ export function ZoomablePhoto({
       onDismiss,
       panX,
       panY,
+      reduceMotion,
       sourceHeight,
       sourceWidth,
       startPanX,
@@ -919,7 +959,7 @@ export function ZoomablePhoto({
   // per-frame width/height animation inside a Modal froze the app.
   const shellStyle = useAnimatedStyle(
     () => {
-      const t = morph.t.get();
+      const t = clamp(morph.t.get(), 0, 1);
       const hasHome = home.valid.get();
       const baseWidth = geometry?.baseWidth ?? frame.width;
       const baseHeight = geometry?.baseHeight ?? frame.height;
@@ -950,7 +990,7 @@ export function ZoomablePhoto({
         // Exact: the box's aspect IS the thumbnail's, so at t = 1 its corners
         // land on the thumbnail's corners at the thumbnail's radius.
         borderRadius: shellRadiusFor(t, home.radius.get(), scale),
-        opacity: morph.overlay.get(),
+        opacity: morph.overlay.get() * (hasHome ? 1 : backdropFor(t)),
       };
     },
     [geometry, frame, home, morph],
@@ -959,9 +999,18 @@ export function ZoomablePhoto({
   // The image turns from contain into the thumbnail's cover crop, so it
   // fills the clip box by the time it lands: one uniform scale, because both
   // rects keep the source aspect.
-  const cropStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.get() }],
-  }));
+  const cropStyle = useAnimatedStyle(() => {
+    if (!home.valid.get()) {
+      return { transform: [{ scale: 1 }] };
+    }
+    const targetScale = Math.min(1, Math.max(
+      home.width.get() / (geometry?.baseWidth ?? frame.width),
+      home.height.get() / (geometry?.baseHeight ?? frame.height),
+    ));
+    return {
+      transform: [{ scale: morphCropScale(morph.t.get(), geometry?.coverScale ?? 1, targetScale) }],
+    };
+  });
 
   /** Once the clip box has laid out, the session may present. */
   const handleMorphLayout = useCallback(() => {
