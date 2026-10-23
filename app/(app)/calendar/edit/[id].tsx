@@ -28,6 +28,7 @@ import {
   formatTimeRange,
   startOfDay,
 } from '@/features/calendar/calendar-date-utils';
+import { usePreventLeave } from '@/hooks/use-prevent-leave';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 /** Quiet reminder choices: minutes before the event starts. */
@@ -98,6 +99,7 @@ export default function EditCalendarEventScreen() {
   const [isWorking, setIsWorking] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // All-day state already carries the stored convention: startsAt is the
   // first day's midnight and endsAt is the midnight after the last day.
@@ -112,6 +114,11 @@ export default function EditCalendarEventScreen() {
     [allDay, endsAt]
   );
   const isRangeInvalid = effectiveEnd.getTime() <= effectiveStart.getTime();
+
+  // A swipe, Cancel or header back while the write is running would drop the
+  // sheet and then let the completion pop the screen underneath it.
+  const blockLeave = useCallback(() => {}, []);
+  usePreventLeave(isWorking, blockLeave);
 
   const handleToggleAllDay = useCallback(() => {
     if (allDay) {
@@ -152,7 +159,13 @@ export default function EditCalendarEventScreen() {
       try {
         const foundEvent = await getEventById(eventId);
 
-        if (!isActive || !foundEvent) {
+        if (!isActive) {
+          return;
+        }
+        if (!foundEvent) {
+          // A deleted or not-yet-synced plan used to leave this screen on
+          // "Loading event…" for good, with only Close.
+          setLoadError('Unable to load this event. Please try again.');
           return;
         }
 
@@ -182,7 +195,12 @@ export default function EditCalendarEventScreen() {
     return () => {
       isActive = false;
     };
-  }, [eventId, getEventById]);
+  }, [eventId, getEventById, loadAttempt]);
+
+  const handleRetryLoad = useCallback(() => {
+    setLoadError('');
+    setLoadAttempt((attempt) => attempt + 1);
+  }, []);
 
   const customInputStyle = useMemo(
     () => [
@@ -267,8 +285,8 @@ export default function EditCalendarEventScreen() {
       });
 
       router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save event');
+    } catch {
+      setError('Could not save this plan. Please try again.');
     } finally {
       setIsWorking(false);
     }
@@ -302,8 +320,8 @@ export default function EditCalendarEventScreen() {
     try {
       await deleteEvent(eventId);
       router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete event');
+    } catch {
+      setError('Could not delete this plan. Please try again.');
     } finally {
       setIsWorking(false);
     }
@@ -324,8 +342,9 @@ export default function EditCalendarEventScreen() {
                     {loadError}
                   </ThemedText>
                   <ThemedText type="supporting" style={{ color: muted }}>
-                    Check your connection and try again.
+                    Check your connection, or try again.
                   </ThemedText>
+                  <Button label="Try again" variant="secondary" onPress={handleRetryLoad} />
                 </>
               ) : (
                 <ThemedText type="body">Loading event…</ThemedText>
@@ -694,7 +713,7 @@ export default function EditCalendarEventScreen() {
             { label: 'Cancel', onPress: () => setConfirmingDelete(false) },
           ]}
           busy={isWorking}
-          description={error || 'This plan will be deleted for both of you. This cannot be undone.'}
+          description="This plan will be deleted for both of you. This cannot be undone."
           onClose={() => {
             if (!isWorking) setConfirmingDelete(false);
           }}

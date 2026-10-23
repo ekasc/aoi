@@ -277,6 +277,7 @@ export default function MemoriesScreen() {
 	const [actionMoment, setActionMoment] = useState<Moment | null>(null);
 	const [confirmMoment, setConfirmMoment] = useState<Moment | null>(null);
 	const [isRemoving, setIsRemoving] = useState(false);
+	const removingRef = useRef(false);
 	const [removeError, setRemoveError] = useState("");
 	const [keptNotice, setKeptNotice] = useState(false);
 	const [view, setView] = useState<MemoriesView>(() =>
@@ -405,6 +406,8 @@ export default function MemoriesScreen() {
 	// margin while every other element sat at 24. A floating control that is
 	// only on screen when nothing is moving cannot need the reservation.
 	const fabVisible = useSharedValue(1);
+	const [fabInteractive, setFabInteractive] = useState(true);
+	const fabHidden = useRef(false);
 	const fabRestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const settleFab = useCallback(() => {
 		if (fabRestTimer.current) {
@@ -412,6 +415,8 @@ export default function MemoriesScreen() {
 		}
 		fabRestTimer.current = setTimeout(() => {
 			fabRestTimer.current = null;
+			fabHidden.current = false;
+			setFabInteractive(true);
 			fabVisible.set(withTiming(1, { duration: Motion.fast }));
 		}, FAB_RESTORE_MS);
 	}, [fabVisible]);
@@ -428,7 +433,11 @@ export default function MemoriesScreen() {
 			clearTimeout(fabRestTimer.current);
 			fabRestTimer.current = null;
 		}
-		fabVisible.set(withTiming(0, { duration: Motion.fast }));
+		if (!fabHidden.current) {
+			fabHidden.current = true;
+			setFabInteractive(false);
+			fabVisible.set(withTiming(0, { duration: Motion.fast }));
+		}
 	}, [fabVisible]);
 	const fabStyle = useAnimatedStyle(() => ({
 		opacity: fabVisible.value,
@@ -894,6 +903,7 @@ export default function MemoriesScreen() {
 		setViewerPhoto(null);
 	}, []);
 
+
 	// Feed photos open the whole set fullscreen: tap a print and the viewer
 	// starts on that page, swiping across the rest of the memory's photos.
 	const handleOpenFeedPhoto = useCallback(
@@ -1228,9 +1238,10 @@ export default function MemoriesScreen() {
 	}, [isRemoving]);
 
 	const handleConfirmDelete = useCallback(async () => {
-		if (!confirmMoment || isRemoving) {
+		if (!confirmMoment || removingRef.current) {
 			return;
 		}
+		removingRef.current = true;
 		setIsRemoving(true);
 		setRemoveError("");
 		try {
@@ -1239,9 +1250,10 @@ export default function MemoriesScreen() {
 		} catch (error) {
 			setRemoveError(error instanceof Error ? error.message : "Couldn't delete this moment right now. Try again?");
 		} finally {
+			removingRef.current = false;
 			setIsRemoving(false);
 		}
-	}, [confirmMoment, isRemoving, removeMoment]);
+	}, [confirmMoment, removeMoment]);
 
 	const confirmSheetActions = useMemo(
 		() => [
@@ -1706,12 +1718,16 @@ export default function MemoriesScreen() {
 				</View>
 			</View>
 			{!showingDedication ? <Animated.View
-				pointerEvents="box-none"
+				pointerEvents={fabInteractive ? "box-none" : "none"}
+				accessibilityElementsHidden={!fabInteractive}
+				importantForAccessibility={fabInteractive ? "auto" : "no-hide-descendants"}
 				style={[styles.fabAnchor, { bottom: fabBottom }, fabStyle]}
 			>
 			<Pressable
 				accessibilityLabel="Add memory"
 				accessibilityRole="button"
+				accessibilityState={{ disabled: !fabInteractive }}
+				disabled={!fabInteractive}
 				onPress={handleOpenEditor}
 				style={({ pressed }) => [
 					styles.fab,
@@ -1751,6 +1767,7 @@ export default function MemoriesScreen() {
 
 			<ActionSheet
 				actions={confirmSheetActions}
+				busy={isRemoving}
 				description="This moment will be deleted from your shared timeline"
 				error={removeError ?? undefined}
 				onClose={handleCloseConfirmSheet}

@@ -379,12 +379,20 @@ const MonthGrid = memo(function MonthGrid({
 	);
 });
 
-/** "Wednesday \u2013 Sep 16, 2026", the way a day header reads. */
-const dayWeekdayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'long' });
-const dayDateFormatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-function formatDayHeading(date: Date): string {
-	const weekday = dayWeekdayFormatter.format(date);
-	const rest = dayDateFormatter.format(date);
+/**
+ * "Wed \u2013 Sep 16", the way a day header reads. The heading shares its row
+ * with Today and add, so it stays short enough to hold one line on a phone;
+ * the year appears only when the day is not in the current one, where it is
+ * the one fact the row cannot imply.
+ */
+const dayDateFormatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' });
+const dayDateWithYearFormatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+function formatDayHeading(date: Date, now: Date): string {
+	const weekday = formatWeekdayShort(date);
+	const rest =
+		date.getFullYear() === now.getFullYear()
+			? dayDateFormatter.format(date)
+			: dayDateWithYearFormatter.format(date);
 	return `${weekday} \u2013 ${rest}`;
 }
 
@@ -414,6 +422,7 @@ export default function PlansScreen() {
 		setSelectedDate,
 		visibleMonth,
 		eventsForDay,
+		monthReadState,
 		setVisibleMonth,
 		refresh: refreshCalendar,
 		isLoading: calendarLoading,
@@ -690,6 +699,72 @@ export default function PlansScreen() {
 		return marks;
 	}, [eventsForDay, goals, anniversaryMarkersByDay]);
 
+	/**
+	 * A month is empty only when the provider has read it successfully and
+	 * every other read that could fill it has succeeded. The pager keeps
+	 * seven pages mounted while the provider answers the visible month plus
+	 * one neighbour, so most pages are deliberately unqueried: those must
+	 * stay silent rather than borrow the meaning of a quiet month. Goals are
+	 * a separate bounded read, so an unresolved or failed goal read is not
+	 * evidence of emptiness either. Goals and the monthiversary mark are real
+	 * content: a month carrying only those is not called empty.
+	 */
+	const monthIsEmpty = useCallback(
+		(month: Date) => {
+			if (monthReadState(month) !== 'loaded') {
+				return false;
+			}
+			if (goals === null || goalsError) {
+				return false;
+			}
+			if (getAnniversaryMarkers(space?.relationshipStartDate, month).length > 0) {
+				return false;
+			}
+			const monthIndex = month.getFullYear() * 12 + month.getMonth();
+			const indexOf = (date: Date) => date.getFullYear() * 12 + date.getMonth();
+			for (const [dayKey, events] of Object.entries(eventsForDay)) {
+				if (events.length === 0) {
+					continue;
+				}
+				const [year, monthNumber] = dayKey.split('-').map(Number);
+				if (year * 12 + (monthNumber - 1) === monthIndex) {
+					return false;
+				}
+			}
+			for (const goal of goals) {
+				if (!goal.targetAt) {
+					continue;
+				}
+				const target = new Date(goal.targetAt);
+				if (!Number.isNaN(target.getTime()) && indexOf(target) === monthIndex) {
+					return false;
+				}
+			}
+			return true;
+		},
+		[
+			eventsForDay,
+			goals,
+			goalsError,
+			monthReadState,
+			space?.relationshipStartDate,
+		],
+	);
+
+	/** Which day the month's empty-state composer opens on. */
+	const monthEntryDate = useCallback(
+		(month: Date) => {
+			if (isSameMonth(now, month)) {
+				return now;
+			}
+			if (isSameMonth(selectedDate, month)) {
+				return selectedDate;
+			}
+			return startOfMonth(month);
+		},
+		[now, selectedDate],
+	);
+
 	// A grid cell opens its day in place, where the month was: no sheet,
 	// no second navigation model. Going back returns to exactly the month
 	// that was there, which never unmounts underneath.
@@ -919,6 +994,7 @@ export default function PlansScreen() {
 	const longPressLog = useRef<Record<string, number>>({});
 	const dayPagerRef = useRef<FlatList<Date> | null>(null);
 	const dayRecenterFraction = useRef(0);
+	const dayPagerPosition = useRef<{ anchor: number; page: number } | null>(null);
 	const DAY_WINDOW_RADIUS = 3;
 	const DAY_WINDOW_SIZE = DAY_WINDOW_RADIUS * 2 + 1;
 	const [dayListHeight, setDayListHeight] = useState(0);
@@ -945,9 +1021,14 @@ export default function PlansScreen() {
 		}
 		const fraction = dayRecenterFraction.current;
 		dayRecenterFraction.current = 0;
+		const previous = dayPagerPosition.current;
+		const page = previous?.anchor === dayAnchor.getTime()
+			? previous.page
+			: DAY_WINDOW_RADIUS + fraction;
+		dayPagerPosition.current = { anchor: dayAnchor.getTime(), page };
 		dayPagerRef.current?.scrollToOffset({
 			animated: false,
-			offset: PAGE_WIDTH * (DAY_WINDOW_RADIUS + fraction),
+			offset: PAGE_WIDTH * page,
 		});
 	}, [DAY_PAGE_HEIGHT, PAGE_WIDTH, dayAnchor]);
 
@@ -964,6 +1045,7 @@ export default function PlansScreen() {
 			}
 			const page = event.nativeEvent.contentOffset.x / PAGE_WIDTH;
 			const index = Math.max(0, Math.min(DAY_WINDOW_SIZE - 1, Math.round(page)));
+			dayPagerPosition.current = { anchor: dayAnchor.getTime(), page };
 			const date = addDays(dayAnchor, index - DAY_WINDOW_RADIUS);
 			if (!focusedDay || !isSameDay(date, focusedDay)) {
 				haptics.select();
@@ -1029,7 +1111,7 @@ export default function PlansScreen() {
 					<Ionicons accessible={false} color={textColor} name="chevron-back" size={22} />
 				</Pressable>
 				<ThemedText numberOfLines={2} type="title" style={styles.dayHeadingText}>
-					{formatDayHeading(headingDate)}
+					{formatDayHeading(headingDate, now)}
 				</ThemedText>
 				{!isSameDay(headingDate, now) ? (
 					<Pressable
@@ -1044,7 +1126,7 @@ export default function PlansScreen() {
 				) : null}
 				{(eventsForDay[toDayKey(headingDate)]?.length ?? 0) > 0 ? (
 					<Pressable
-						accessibilityLabel={`Add a plan on ${formatDayHeading(headingDate)}`}
+						accessibilityLabel={`Add a plan on ${formatDayHeading(headingDate, now)}`}
 						accessibilityRole="button"
 						onPress={() => handlePlanSomething(headingDate)}
 						style={({ pressed }) => [styles.dayBack, pressed ? styles.pressed : undefined]}
@@ -1104,7 +1186,7 @@ export default function PlansScreen() {
 					return (
 						<View
 							accessibilityElementsHidden={!pageIsExposed}
-							accessibilityLabel={`Day page ${formatDayHeading(pageDate)}`}
+							accessibilityLabel={`Day page ${formatDayHeading(pageDate, now)}`}
 							aria-hidden={!pageIsExposed}
 							importantForAccessibility={
 								pageIsExposed ? 'auto' : 'no-hide-descendants'
@@ -1131,7 +1213,7 @@ export default function PlansScreen() {
 							<>
 								<Pressable
 									accessibilityHint={goalsExpanded ? 'Hides this day\u2019s goals' : 'Shows this day\u2019s goals here, without leaving the sheet'}
-									accessibilityLabel={goalsExpanded ? `Hide goals for ${formatDayHeading(pageDate)}` : `Show goals for ${formatDayHeading(pageDate)}`}
+									accessibilityLabel={goalsExpanded ? `Hide goals for ${formatDayHeading(pageDate, now)}` : `Show goals for ${formatDayHeading(pageDate, now)}`}
 									accessibilityRole="button"
 									accessibilityState={{ expanded: goalsExpanded }}
 									onPress={() => {
@@ -1183,7 +1265,7 @@ export default function PlansScreen() {
 								</View>
 								<Pressable
 									accessibilityHint="Opens the event composer for this day"
-									accessibilityLabel={`Plan something on ${formatDayHeading(pageDate)}`}
+									accessibilityLabel={`Plan something on ${formatDayHeading(pageDate, now)}`}
 									accessibilityRole="button"
 									onPress={() => handlePlanSomething(pageDate)}
 									style={({ pressed }) => [
@@ -1201,7 +1283,7 @@ export default function PlansScreen() {
 						<DayTimeline
 							events={pageEvents}
 							nowMinutes={pageIsToday ? nowMinutes : undefined}
-							dayLabel={formatDayHeading(pageDate)}
+							dayLabel={formatDayHeading(pageDate, now)}
 							bottomClearance={fabBottom + Spacing[56]}
 							onCreateAtHour={(hour) => handleCreateAtHour(pageDate, hour)}
 							onOpenEvent={handleOpenEvent}
@@ -1275,6 +1357,39 @@ export default function PlansScreen() {
 						<ThemedText type="subheading" style={styles.monthHeading}>
 							{formatMonthTitle(month)}
 						</ThemedText>
+						{/* A month with nothing in it says so, and offers the way in.
+						    Empty is a successful read, so it is shown only once the
+						    calendar and goal reads have settled; loading and failure
+						    stay distinct above. Monthiversary marks and goals count
+						    as content, so this never contradicts the grid. */}
+						{monthIsEmpty(month) ? (
+							<View style={styles.monthEmptyRow}>
+								<ThemedText
+									accessibilityLiveRegion={
+										isSameMonth(month, currentMonth) ? 'polite' : undefined
+									}
+									type="supporting"
+									style={[styles.monthEmptyText, { color: textColor }]}
+								>
+									No plans in {formatMonthTitle(month)}.
+								</ThemedText>
+								<Pressable
+									accessibilityHint="Opens the event composer for this month"
+									accessibilityLabel={`Plan something in ${formatMonthTitle(month)}`}
+									accessibilityRole="button"
+									onPress={() => handlePlanSomething(monthEntryDate(month))}
+									style={({ pressed }) => [
+										styles.dayEmptyCta,
+										{ backgroundColor: withAlpha(accent, AccentWash) },
+										pressed ? styles.pressed : undefined,
+									]}
+								>
+									<ThemedText type="caption" style={{ color: accentInk }}>
+										Plan something
+									</ThemedText>
+								</Pressable>
+							</View>
+						) : null}
 						<MonthGrid
 							cellWidth={monthColumnWidth}
 							colors={gridColors}
@@ -1722,6 +1837,17 @@ const styles = StyleSheet.create({
 		paddingBottom: Spacing[4],
 		paddingHorizontal: Spacing[16],
 		paddingTop: Spacing[12],
+	},
+	monthEmptyRow: {
+		alignItems: 'center',
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: Spacing[8],
+		paddingBottom: Spacing[8],
+		paddingHorizontal: Spacing[16],
+	},
+	monthEmptyText: {
+		flexShrink: 1,
 	},
 	monthButtonStatus: {
 		width: 20,

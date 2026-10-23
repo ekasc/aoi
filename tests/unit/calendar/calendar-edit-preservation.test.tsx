@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const updateEventSpy = vi.fn(async () => {});
 const backSpy = vi.fn();
@@ -56,7 +56,7 @@ const storedEvent = {
   isOwn: true,
 };
 
-const getEventById = vi.fn(async () => ({ ...storedEvent }));
+const getEventById = vi.fn(async (): Promise<typeof storedEvent | null> => ({ ...storedEvent }));
 
 beforeEach(() => {
   updateEventSpy.mockClear();
@@ -65,6 +65,52 @@ beforeEach(() => {
 });
 
 describe('EditCalendarEventScreen preservation', () => {
+  it('says a plan could not be loaded and offers a retry, instead of loading forever', async () => {
+    getEventById.mockResolvedValueOnce(null);
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    // A deleted or not-yet-synced plan used to sit on "Loading event…" with
+    // only Close, so the screen never told the reader anything.
+    await waitFor(() =>
+      expect(screen.getByText('Unable to load this event. Please try again.')).toBeTruthy(),
+    );
+    expect(screen.queryByText('Loading event…')).toBeNull();
+
+    fireEvent.click(screen.getByText('Try again'));
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    expect(getEventById).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks dismissal while a save is in flight', async () => {
+    let finish: () => void = () => {};
+    updateEventSpy.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }) as never,
+    );
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    fireEvent.click(screen.getByText('Save changes'));
+
+    // The guard covers the header back and the sheet's swipe, not only the
+    // buttons, so a in-flight write cannot be dropped mid-flight.
+    await waitFor(() =>
+      expect((globalThis as { __preventLeave?: { prevent: boolean } }).__preventLeave?.prevent).toBe(true),
+    );
+    await act(async () => finish());
+    await waitFor(() =>
+      expect((globalThis as { __preventLeave?: { prevent: boolean } }).__preventLeave?.prevent).toBe(false),
+    );
+  });
+
+
   it('keeps untouched reminder arrays instead of resetting them', async () => {
     const { default: EditCalendarEventScreen } = await import(
       '@/app/(app)/calendar/edit/[id]'

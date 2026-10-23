@@ -94,6 +94,15 @@ export type CalendarDaySummary = {
 
 export type CalendarMonthSummary = Record<string, CalendarDaySummary>;
 
+/**
+ * Whether the provider's month window answers a given month. `loaded` is a
+ * successful read covering that month, `loading` is a read in flight, and
+ * `unread` is a month outside every successful read. Only `loaded` may be
+ * read as evidence that a month is empty: an unqueried or pending page must
+ * never borrow the meaning of a quiet one.
+ */
+export type CalendarMonthReadState = 'loaded' | 'loading' | 'unread';
+
 export type CalendarContextValue = {
   events: CalendarEvent[];
   /**
@@ -118,6 +127,11 @@ export type CalendarContextValue = {
    */
   refresh: () => Promise<void>;
   eventsForDay: Record<string, CalendarEvent[]>;
+  /**
+   * Whether `events` is a successful read covering `month`. Callers must not
+   * call a month empty unless this says `loaded`.
+   */
+  monthReadState: (month: Date) => CalendarMonthReadState;
   getEventById: (eventId: string) => Promise<CalendarEvent | null>;
   /**
    * Events in any range, for views that are not the visible month. The year

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
+import * as Reanimated from 'react-native-reanimated';
 
 import {
   groupFeedChronological,
@@ -237,8 +238,8 @@ vi.mock('react-native', () => {
       children
     ));
   };
-  const Pressable = ({ children, onPress, accessibilityLabel }: any) =>
-    React.createElement('div', { 'aria-label': accessibilityLabel, onClick: onPress }, children);
+  const Pressable = ({ children, onPress, accessibilityLabel, disabled }: any) =>
+    React.createElement('div', { 'aria-label': accessibilityLabel, 'aria-disabled': disabled, onClick: disabled ? undefined : onPress }, children);
   const TextInput = ({ onChangeText, accessibilityLabel, value, placeholder }: any) =>
     React.createElement('input', {
       'aria-label': accessibilityLabel,
@@ -428,13 +429,13 @@ vi.mock('@/components/themed-text', () => ({
 }));
 
 vi.mock('@/components/ui/action-sheet', () => ({
-  ActionSheet: ({ visible, title, actions }: any) =>
+  ActionSheet: ({ visible, title, actions, busy }: any) =>
     visible
       ? createElement(
           'div',
           { 'data-testid': `sheet:${title ?? ''}` },
           (actions ?? []).map((a: any) =>
-            createElement('button', { key: a.label, onClick: a.onPress }, a.label),
+            createElement('button', { key: a.label, onClick: a.onPress, disabled: busy }, a.label),
           ),
         )
       : null,
@@ -724,6 +725,26 @@ describe('Memories story feed (oldest-first archive)', () => {
     expect(refreshMoments).toHaveBeenCalledTimes(1);
   });
 
+  it('does not open the composer from the hidden floating button while scrolling', async () => {
+    feedMoments = [makeMoment()];
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    const view = render(createElement(MemoriesScreen));
+    await act(async () => {});
+    vi.useFakeTimers();
+    try {
+      pushSpy.mockClear();
+      act(() => capturedList.onScroll(scrollEvent(320)));
+      fireEvent.click(screen.getByLabelText('Add memory'));
+      expect(pushSpy).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(2000));
+      fireEvent.click(screen.getByLabelText('Add memory'));
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it('offers the dedication as the only invitation on an empty archive', async () => {
     spaceState.partnerJoined = false;
     try {
@@ -735,7 +756,7 @@ describe('Memories story feed (oldest-first archive)', () => {
       expect(feedLayer().getByText('No memories yet')).toBeTruthy();
       // The mock emits no layout/scroll events: empty content must still paint.
       expect(capturedLayerStyles.get('feed-layer')?.opacity).not.toBe(0);
-      fireEvent.click(feedLayer().getByText('Leave something'));
+      fireEvent.click(feedLayer().getByText('Add your first memory'));
       expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/moment/new', params: { dedication: 'partner' } });
 
       // Whether the partner has joined is a fact about the space, and the Space
@@ -849,18 +870,12 @@ describe('Memories story feed (oldest-first archive)', () => {
     }
   });
 
-  it('gives the gallery its own empty face instead of the feed invitation', async () => {
+  it('opens the memory editor from an empty gallery', async () => {
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
     await act(async () => {});
-    // Both lists stay mounted, so one shared face would put the dedication in
-    // the gallery too and read the same invitation twice.
-    expect(within(screen.getByTestId('feed-layer')).getByText('For June.')).toBeTruthy();
-    expect(within(screen.getByTestId('gallery-layer')).getByText('No media yet')).toBeTruthy();
-    expect(within(screen.getByTestId('gallery-empty')).getByText('No media yet')).toBeTruthy();
-    expect(within(screen.getByTestId('gallery-empty')).queryByTestId('story-feed')).toBeNull();
-    expect(within(screen.getByTestId('gallery-layer')).queryByText('For June.')).toBeNull();
-    expect(within(screen.getByTestId('gallery-layer')).queryByText('Copy invite code')).toBeNull();
+    fireEvent.click(within(screen.getByTestId('gallery-empty')).getByText('Add a photo, video or voice memory'));
+    expect(pushSpy).toHaveBeenCalledWith('/(app)/moment/new');
   });
 
   it('keeps the gallery empty indicator outside the scrolled list for text-only memories', async () => {
@@ -1004,6 +1019,25 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
     expect(removeMoment).toHaveBeenCalledWith('mine', capturedVersion);
   });
 
+  it('blocks repeat confirmation while a memory deletion is pending', async () => {
+    removeMoment.mockClear();
+    (process.env as { EXPO_OS?: string }).EXPO_OS = 'ios';
+    feedMoments = [makeMoment({ id: 'mine', isOwn: true })];
+    let finish = () => {};
+    removeMoment.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    render(createElement(MemoriesScreen));
+    await act(async () => {});
+    fireEvent.click(screen.getByTestId('native-moment-menu').querySelector('[data-menu-action="delete"]') as HTMLElement);
+    const button = screen.getByTestId('sheet:Delete this moment?').querySelector('button');
+    if (!button) throw new Error('Delete confirmation missing');
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(removeMoment).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('sheet:Delete this moment?').querySelector('button')?.disabled).toBe(true);
+    await act(async () => { finish(); });
+  });
+
   it('opens the app sheet from the ellipsis on iOS, routing Edit to the editor', async () => {
     (process.env as any).EXPO_OS = 'ios';
     feedMoments = [
@@ -1078,6 +1112,33 @@ describe('own-moment native context menu (iOS @expo/ui MenuView)', () => {
       pathname: '/(app)/moment/[id]',
       params: { id: 'trip', at: '2026-03-16T10:00:00.000Z' },
     });
+  });
+
+  it('interrupts the returning image when the reader starts scrolling the background list', async () => {
+    feedMoments = [makeMoment({ id: 'trip', type: 'media', mediaPreview: 'file:///cover.jpg' })];
+    const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
+    const timing = vi.spyOn(Reanimated, 'withTiming');
+    try {
+      render(createElement(MemoriesScreen));
+      await act(async () => {});
+      const beginBackgroundDrag = capturedList.onScrollBeginDrag;
+      fireEvent.click(screen.getByLabelText('Open feed photo'));
+      fireEvent.click(screen.getByLabelText('Close photo'));
+      timing.mockClear();
+      act(() => beginBackgroundDrag());
+      expect(timing.mock.calls.at(-1)?.[1]?.duration).toBeLessThanOrEqual(80);
+      const finish = timing.mock.calls.at(-1)?.[2];
+      act(() => finish?.(true, 0));
+      // The retired overlay must not retain the next viewer's state.
+      fireEvent.click(screen.getByLabelText('Open feed photo'));
+      fireEvent.click(screen.getByLabelText('Open memory'));
+      expect(pushSpy).toHaveBeenCalledWith({
+        pathname: '/(app)/moment/[id]',
+        params: { id: 'trip', at: '2026-03-15T10:00:00.000Z' },
+      });
+    } finally {
+      timing.mockRestore();
+    }
   });
 });
 

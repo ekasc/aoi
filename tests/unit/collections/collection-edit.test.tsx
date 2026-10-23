@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 
 import type { Collection } from '@/features/collections/types';
 
@@ -26,6 +27,7 @@ vi.mock('@/features/collections/collections-context', () => ({
 }));
 
 vi.mock('expo-router', () => ({
+  useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
   useRouter: () => ({ push: mocks.push, back: mocks.back, dismissTo: mocks.dismissTo }),
   useLocalSearchParams: () => ({ id: 'shelf-1' }),
   Stack: { Screen: () => null },

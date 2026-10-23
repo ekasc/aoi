@@ -1,5 +1,5 @@
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,29 +34,47 @@ export default function EditListScreen() {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const mountedRef = useRef(false);
+  const focusRef = useRef<symbol | null>(null);
+  const removingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    focusRef.current = Symbol();
+    return () => { focusRef.current = null; };
+  }, []));
 
   const handleRemove = useCallback(async () => {
-    if (!collectionId || isRemoving) {
+    if (!collectionId || removingRef.current || !mountedRef.current) {
       return;
     }
+    removingRef.current = true;
+    const focus = focusRef.current;
     setIsRemoving(true);
     setRemoveError(null);
     try {
       await deleteCollection(collectionId);
-      router.dismissTo('/(app)/(tabs)/ours');
+      if (mountedRef.current && focus !== null && focusRef.current === focus) router.dismissTo('/(app)/(tabs)/ours');
     } catch {
-      setRemoveError("Couldn't remove this list. Please try again.");
-      setIsRemoving(false);
+      if (mountedRef.current) setRemoveError("Couldn't remove this list. Please try again.");
+    } finally {
+      removingRef.current = false;
+      if (mountedRef.current) setIsRemoving(false);
     }
-  }, [collectionId, deleteCollection, isRemoving, router]);
+  }, [collectionId, deleteCollection, router]);
 
   const handleSubmit = useCallback(
     async (values: ListFormValues) => {
       if (!collectionId) {
         return;
       }
+      const focus = focusRef.current;
       await updateCollection(collectionId, { name: values.name, color: values.color });
-      router.back();
+      if (mountedRef.current && focus !== null && focusRef.current === focus) router.back();
     },
     [collectionId, router, updateCollection]
   );

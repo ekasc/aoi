@@ -1,5 +1,5 @@
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -22,14 +22,27 @@ export default function NewItemScreen() {
   const collectionId = typeof params.id === 'string' ? params.id : undefined;
 
   const { createItem } = useCollections();
+  const mountedRef = useRef(false);
+  const focusRef = useRef<symbol | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    focusRef.current = Symbol();
+    return () => { focusRef.current = null; };
+  }, []));
 
   const handleSubmit = useCallback(
     async (values: ItemFormValues) => {
       if (!collectionId) {
         return;
       }
+      const focus = focusRef.current;
       await createItem(collectionId, values);
-      router.back();
+      if (mountedRef.current && focus !== null && focusRef.current === focus) router.back();
     },
     [collectionId, createItem, router]
   );
