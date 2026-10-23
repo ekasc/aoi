@@ -12,10 +12,9 @@ import { ZipStoreWriter, type ZipAppendSink } from '@/features/export/zip-store'
  * currently authorized to read: one ZIP with manifest.json, one JSON part
  * per dataset, and original media bytes under media/. Generation happens
  * on-device from the same authenticated endpoints the app already uses,
- * so every pairing-isolation, sealed-letter, tombstone, and archived-space
+ * so every pairing-isolation, tombstone, and archived-space
  * rule is enforced server-side with zero new backend surface:
  * - no active Space (non-member, archived, deleted) → honest failure;
- * - sealed letter bodies arrive only when the API includes them (opened);
  * - purged account fields never appear (the API never returns them);
  * - Plus state is never consulted — Free and Plus export identically.
  *
@@ -64,7 +63,6 @@ export type RawExportManifest = {
     moments: number;
     calendarEvents: number;
     somedayItems: number;
-    letters: number;
     responses: number;
     partnerDetails: number;
     mediaFiles: number;
@@ -317,8 +315,6 @@ export async function exportRawArchive(
     )) as unknown;
     const somedayRes = (await deps.fetchJson('/v1/spaces/current/someday')) as { items?: unknown[] };
     const question = (await deps.fetchJson('/v1/spaces/current/question')) as unknown;
-    // Shelf shape exactly as the API authorizes it: sealed bodies absent.
-    const lettersRes = (await deps.fetchJson('/v1/spaces/current/letters')) as { letters?: unknown[] };
     const details = partnerDetailListResponseSchema.parse(await deps.fetchJson('/v1/users/me/partner-details')).details;
     const responses: MomentResponse[] = [];
     let responseCursor: string | undefined;
@@ -372,7 +368,6 @@ export async function exportRawArchive(
     await zip.addBytes('calendar-events.json', encode(events));
     await zip.addBytes('someday.json', encode(somedayRes?.items ?? []));
     await zip.addBytes('question.json', encode(question));
-    await zip.addBytes('letters.json', encode(lettersRes?.letters ?? []));
     await zip.addBytes('responses.json', encode(responses));
     await zip.addBytes('partner-details.json', encode(details));
 
@@ -416,7 +411,6 @@ export async function exportRawArchive(
         moments: moments.length,
         calendarEvents: asArray(events).length,
         somedayItems: asArray(somedayRes?.items).length,
-        letters: asArray(lettersRes?.letters).length,
         responses: responses.length,
         partnerDetails: details.length,
         mediaFiles: mediaTargets.length - errors.length,

@@ -137,7 +137,7 @@ export function visiblePendingRecords(
 /** Archive filter for the Memories tab. */
 export type FeedTypeFilter = 'all' | 'photos' | 'notes' | 'voice';
 
-/** The kinds the archive is expected to hold; letters land next. */
+/** The kinds the archive is expected to hold. */
 export type FeedArchiveType = 'photos' | 'notes' | 'voice' | 'other';
 
 /** Which archive bucket a memory belongs to. */

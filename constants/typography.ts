@@ -91,7 +91,7 @@ export const Typography = {
     letterSpacing: 0.05,
   },
   /**
-   * The serif every content form writes into: a moment's title, a letter's
+   * The serif every content form writes into: a moment's title, a memory's
    * words, an event's name. The display serif is what makes writing here feel
    * like writing rather than like filling in a field, and it needs more
    * leading than `title` because the reader is producing the text, not just
@@ -104,7 +104,7 @@ export const Typography = {
     letterSpacing: -0.2,
   },
   /**
-   * The reading surface: a letter's words, a memory's note, a moment's
+   * The reading surface: a memory's note, a moment's
    * detail body. Serif, because this is the app's own writing rather than a
    * label, and looser than `body` because the reader is here to stay.
    *

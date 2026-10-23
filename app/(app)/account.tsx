@@ -367,8 +367,8 @@ export default function AccountScreen() {
 			<View style={styles.section}>
 				<SectionHeading title="Your data" muted={muted} />
 				<ThemedText type="body">
-					Download everything you can see right now, notes, photos, letters,
-					plans, as one archive file. Free for everyone, before or without
+					Download everything you can see right now, notes, photos, plans, as
+					one archive file. Free for everyone, before or without
 					deleting anything.
 				</ThemedText>
 				<Button
@@ -424,14 +424,14 @@ export default function AccountScreen() {
 					{serverPlus?.isPlus
 						? `Plus is active on your shared Space, ${formatBytes(serverPlus.mediaUsedBytes)} of ${formatBytes(serverPlus.mediaLimitBytes)} media used.`
 						: serverPlus
-							? `Free Space, ${formatBytes(serverPlus.mediaLimitBytes)} media, ${serverPlus.futureLetterLimit ?? 1} future letter at a time.`
+							? `Free Space, ${formatBytes(serverPlus.mediaLimitBytes)} of media.`
 							: plusStatus === "loading"
 								? "Checking your plan…"
 								: plusStatus === "unavailable"
 									? "Purchasing is currently unavailable."
 									: isPlus
 										? "You have Plus on this account."
-										: "Plus brings more room, more future letters, and PDF keepsakes to your shared Space."}
+										: "Plus brings more room and PDF keepsakes to your shared Space."}
 				</ThemedText>
 				<Button
 					label={isPlus ? "View Plus" : "Unlock Plus"}
@@ -534,7 +534,7 @@ export default function AccountScreen() {
 					},
 					{ label: "Cancel", onPress: handleCloseConfirm },
 				]}
-				description="Export your data first — it stays free, before or without deleting anything. This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, letters, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
+				description="Export your data first — it stays free, before or without deleting anything. This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
 				onClose={handleCloseConfirm}
 				title="Delete your account?"
 				visible={confirming === "delete"}

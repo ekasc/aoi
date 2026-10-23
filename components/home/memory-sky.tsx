@@ -197,11 +197,10 @@ export function backgroundAtAlpha(color: string, alpha: number): string {
   return color;
 }
 
-/** What the Us sky is holding its breath for: a letter come due, or a
- *  question waiting on both of you. Null means a quiet sky. Us-only
- *  (`immersive`, which Us sets on its own); working-screen strips
- *  without `immersive` never glow. */
-export type SkyGlowKind = 'letter' | 'question';
+/** What the Us sky is holding its breath for: a question waiting on both of
+ *  you. Null means a quiet sky. Us-only (`immersive`, which Us sets on its
+ *  own); working-screen strips without `immersive` never glow. */
+export type SkyGlowKind = 'question';
 
 /** Time-of-day aura phase for the Us sky, derived from `now`. */
 export type DayPhase = 'dawn' | 'day' | 'dusk' | 'night';
@@ -235,9 +234,9 @@ export function tintSkyMidForPhase(skyMid: string, phase: DayPhase): string {
 }
 
 /**
- * Us sky mood: the whole gradient runs a few degrees warmer when a letter
- * is waiting, cooler when a question is. No shapes, no pulse — just light.
- * Pure so it stays testable; applied only to the Us (`immersive`) stops.
+ * Us sky mood: the whole gradient runs cooler when a question is waiting.
+ * No shapes, no pulse — just light. Pure so it stays testable; applied only
+ * to the Us (`immersive`) stops.
  */
 export function moodSkyStops(
   skyTop: string,
@@ -246,9 +245,6 @@ export function moodSkyStops(
   glow: SkyGlowKind | null,
 ): [string, string] {
   const mid = tintSkyMidForPhase(skyMid, phase);
-  if (glow === 'letter') {
-    return [mixHex(skyTop, '#8A4B3C', 0.16), mixHex(mid, '#A9765B', 0.16)];
-  }
   if (glow === 'question') {
     return [mixHex(skyTop, '#3A3F66', 0.16), mixHex(mid, '#6E6E9E', 0.16)];
   }

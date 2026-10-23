@@ -1,6 +1,5 @@
 import { parseRelationshipStart } from '@/features/calendar/calendar-date-utils';
 import type { CalendarEvent } from '@/features/calendar/types';
-import type { Letter } from '@/features/letters/types';
 import { getDaysTogether } from '@/features/time-together/time-together';
 
 export type SkyHistoryMonth = {
@@ -71,11 +70,6 @@ function isBefore(asOf: Date, iso: string | null | undefined): boolean {
   if (!iso) return false;
   const ms = new Date(iso).getTime();
   return !Number.isNaN(ms) && asOf.getTime() < ms;
-}
-
-/** Readiness still needs the existing seal-date check after this creation-date filter. */
-export function lettersAsOf(letters: Letter[], asOf: Date): Letter[] {
-  return letters.filter((letter) => !isBefore(asOf, letter.createdAt));
 }
 
 export function eventsAsOf(events: CalendarEvent[], asOf: Date): CalendarEvent[] {

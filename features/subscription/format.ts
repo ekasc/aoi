@@ -9,8 +9,3 @@ export function formatBytes(bytes: number): string {
   const gib = mib / 1024;
   return `${Math.round(gib * 10) / 10} GiB`;
 }
-
-/** "1 future letter" / "3 future letters". */
-export function formatLetterCount(count: number): string {
-  return count === 1 ? '1 future letter' : `${count} future letters`;
-}
