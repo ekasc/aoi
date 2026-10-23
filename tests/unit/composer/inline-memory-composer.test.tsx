@@ -236,6 +236,7 @@ vi.mock('react-native', () => {
     Pressable,
     ScrollView,
     StyleSheet: { create: (s: any) => s, hairlineWidth: 1, absoluteFill: {}, absoluteFillObject: {} },
+    ActivityIndicator: () => null,
     AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
     Linking: { openSettings: openSettingsSpy },
     InteractionManager: { runAfterInteractions: (callback: () => void) => { callback(); return { cancel: vi.fn() }; } },
@@ -533,6 +534,7 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
   it('finished recording stages via the shared pipeline (no second pipeline)', async () => {
     await renderComposer();
     fireEvent.focus(screen.getByLabelText('Keep something'));
+    await act(async () => { fireEvent.click(screen.getByLabelText('Record a voice note')); });
     expect(mockAudioStatus).toBeTruthy();
     await act(async () => {
       mockAudioStatus?.({ isFinished: true, hasError: false, url: 'file:///tap-voice.m4a' });
@@ -566,6 +568,7 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
     mockDraft = makeDraft({ body: 'voice memory' });
     addAssetsSpy.mockImplementationOnce(() => new Promise(() => {}));
     await renderComposer();
+    await act(async () => { fireEvent.click(screen.getByLabelText('Record a voice note')); });
     await act(async () => {
       mockAudioStatus?.({ isFinished: true, hasError: false, url: 'file:///staging.m4a' });
     });

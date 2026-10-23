@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -46,12 +46,36 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
   const danger = useThemeColor({}, 'danger');
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [recordFailed, setRecordFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const phase = useRef<'idle' | 'starting' | 'recording' | 'stopping'>('idle');
+  const generation = useRef(0);
+  const mounted = useRef(true);
+  const callbacks = useRef({ onRecorded, onError, onRecordingChange, disabled });
+  useLayoutEffect(() => {
+    callbacks.current = { onRecorded, onError, onRecordingChange, disabled };
+  }, [onRecorded, onError, onRecordingChange, disabled]);
+  const acceptingStatus = useRef(false);
   const lastHandledUri = useRef<string | null>(null);
+  // Whether this instance locked the audio session for capture. Restoring it
+  // drops iOS back to playback routing; the native mode change also stops any
+  // recorder that is still running, so it may only run once capture has ended.
+  const audioModeActive = useRef(false);
+  const restoreAudioMode = useCallback(() => {
+    if (!audioModeActive.current) return;
+    audioModeActive.current = false;
+    // Partial modes fill unspecified fields from the native defaults, so pass
+    // the silent-mode flag back explicitly instead of resetting it to false.
+    void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+  }, []);
 
   const handleRecordingStatus = useCallback(
     (status: RecordingStatus) => {
+      if (!mounted.current || callbacks.current.disabled || !acceptingStatus.current) return;
       if (status.isFinished && status.hasError) {
-        onError?.('Voice recording failed. Try again?');
+        acceptingStatus.current = false;
+        restoreAudioMode();
+        if (phase.current !== 'stopping') phase.current = 'idle';
+        callbacks.current.onError?.('Voice recording failed. Try again?');
         return;
       }
       if (
@@ -61,10 +85,13 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
         status.url !== lastHandledUri.current
       ) {
         lastHandledUri.current = status.url;
-        onRecorded(status.url);
+        acceptingStatus.current = false;
+        restoreAudioMode();
+        if (phase.current !== 'stopping') phase.current = 'idle';
+        callbacks.current.onRecorded(status.url);
       }
     },
-    [onRecorded, onError]
+    [restoreAudioMode]
   );
 
   const recorder = useAudioRecorder(
@@ -75,16 +102,46 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
   const isRecording = recorderState.isRecording;
 
   useEffect(() => {
-    onRecordingChange?.(isRecording);
-  }, [isRecording, onRecordingChange]);
+    if (!disabled) onRecordingChange?.(isRecording);
+  }, [disabled, isRecording, onRecordingChange]);
 
   const stopRecording = useCallback(async () => {
+    if (phase.current !== 'recording') return;
+    phase.current = 'stopping';
+    const attempt = generation.current;
+    setBusy(true);
     try {
       await recorder.stop();
     } catch {
-      onError?.('Voice recording failed. Try again?');
+      if (mounted.current && !callbacks.current.disabled && generation.current === attempt && acceptingStatus.current) {
+        if (!recorder.isRecording) acceptingStatus.current = false;
+        callbacks.current.onError?.('Voice recording failed. Try again?');
+      }
+    } finally {
+      const stillRecording = recorder.isRecording;
+      phase.current = mounted.current && stillRecording ? 'recording' : 'idle';
+      if (!stillRecording) restoreAudioMode();
+      if (mounted.current) setBusy(false);
     }
-  }, [recorder, onError]);
+  }, [recorder, restoreAudioMode]);
+
+  useLayoutEffect(() => {
+    if (!disabled) return;
+    generation.current += 1;
+    acceptingStatus.current = false;
+    void stopRecording();
+  }, [disabled, stopRecording]);
+
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      generation.current += 1;
+      acceptingStatus.current = false;
+      restoreAudioMode();
+      // useAudioRecorder owns release of its shared native object on unmount.
+    };
+  }, [restoreAudioMode]);
 
   // Auto-stop at the cap.
   useEffect(() => {
@@ -94,54 +151,75 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
   }, [isRecording, recorderState.durationMillis, stopRecording]);
 
   const handlePress = useCallback(async () => {
-    if (disabled) {
+    if (!mounted.current || callbacks.current.disabled) {
       return;
     }
 
-    if (isRecording) {
+    if (phase.current === 'recording') {
       haptics.tap();
       await stopRecording();
       return;
     }
 
+    if (phase.current !== 'idle') return;
+    phase.current = 'starting';
+    setBusy(true);
+    acceptingStatus.current = false;
+    const attempt = generation.current;
+    const isCurrent = () => mounted.current && !callbacks.current.disabled && generation.current === attempt;
+
     setRecordFailed(false);
-    const permission = await requestRecordingPermissionsAsync();
-
-    if (!permission.granted) {
-      setPermissionDenied(true);
-      onError?.('Microphone access is needed for voice traces.');
-      return;
-    }
-
     try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!isCurrent()) return;
+      if (!permission.granted) {
+        setPermissionDenied(true);
+        callbacks.current.onError?.('Microphone access is needed for voice traces.');
+        return;
+      }
+      setPermissionDenied(false);
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      audioModeActive.current = true;
+      if (!isCurrent()) { restoreAudioMode(); return; }
       await recorder.prepareToRecordAsync();
+      if (!isCurrent()) { restoreAudioMode(); return; }
       haptics.impact();
       recorder.record();
+      phase.current = 'recording';
+      acceptingStatus.current = true;
     } catch {
-      setRecordFailed(true);
-      onError?.('Could not start voice recording. Try again?');
+      restoreAudioMode();
+      if (isCurrent()) {
+        setRecordFailed(true);
+        callbacks.current.onError?.('Could not start voice recording. Try again?');
+      }
+    } finally {
+      if (phase.current === 'starting') phase.current = 'idle';
+      if (mounted.current) setBusy(false);
     }
-  }, [disabled, isRecording, recorder, stopRecording, onError]);
+  }, [recorder, restoreAudioMode, stopRecording]);
 
   if (compact) {
     return (
       <Pressable
         accessibilityLabel={isRecording ? 'Stop recording voice note' : 'Record a voice note'}
         accessibilityRole="button"
-        disabled={disabled}
+        accessibilityState={{ disabled: Boolean(disabled) || busy, busy }}
+        disabled={disabled || busy}
         onPress={() => void handlePress()}
         style={[
           styles.recordButton,
           { backgroundColor: isRecording ? danger : surface2 },
-          disabled ? styles.disabled : null,
+          disabled || busy ? styles.disabled : null,
         ]}
       >
-        <Ionicons
-          color={isRecording ? onAccent : accentInk}
-          name={isRecording ? 'stop' : 'mic-outline'}
-          size={20}
-        />
+        {busy ? <ActivityIndicator color={accentInk} /> : (
+          <Ionicons
+            color={isRecording ? onAccent : accentInk}
+            name={isRecording ? 'stop' : 'mic-outline'}
+            size={20}
+          />
+        )}
       </Pressable>
     );
   }
@@ -151,19 +229,22 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
       <Pressable
         accessibilityLabel={isRecording ? 'Stop recording voice note' : 'Record a voice note'}
         accessibilityRole="button"
-        disabled={disabled}
+        accessibilityState={{ disabled: Boolean(disabled) || busy, busy }}
+        disabled={disabled || busy}
         onPress={() => void handlePress()}
         style={[
           styles.recordButton,
           { backgroundColor: isRecording ? danger : surface2 },
-          disabled ? styles.disabled : null,
+          disabled || busy ? styles.disabled : null,
         ]}
       >
-        <Ionicons
-          color={isRecording ? onAccent : accentInk}
-          name={isRecording ? 'stop' : 'mic-outline'}
-          size={20}
-        />
+        {busy ? <ActivityIndicator color={accentInk} /> : (
+          <Ionicons
+            color={isRecording ? onAccent : accentInk}
+            name={isRecording ? 'stop' : 'mic-outline'}
+            size={20}
+          />
+        )}
       </Pressable>
       <ThemedText type="caption" style={{ color: muted }}>
         {permissionDenied
