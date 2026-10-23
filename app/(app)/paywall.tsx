@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { NativeSheet } from '@/components/ui/native-sheet';
 import { Surface } from '@/components/ui/surface';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
+import { getLegalLinks } from '@/features/legal/legal-links';
 import { PLUS_FEATURES } from '@/features/subscription/limits';
 import { SKY_HISTORY_PLUS } from '@/features/home/sky-history';
 import { formatBytes } from '@/features/subscription/format';
@@ -46,6 +47,16 @@ export default function PaywallScreen() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [explaining, setExplaining] = useState(false);
+  const legal = getLegalLinks();
+  const openLink = async (url: string | null) => {
+    if (!url) return;
+    setError('');
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setError('Could not open this link. Please try again.');
+    }
+  };
   const background = useThemeColor({}, 'background');
   const accent = useThemeColor({}, 'accent');
   const accentInk = useThemeColor({}, 'accentInk');
@@ -60,7 +71,17 @@ export default function PaywallScreen() {
   // as a trick once someone notices it.
   const selectedPlan = plans.find((p) => p.id === selected) ?? null;
   const storeUnavailable = status === 'unavailable';
-  const canPurchase = isAvailable && !storeUnavailable && Boolean(selectedPlan) && !busy && !activationPending;
+  // Plus belongs to the shared Space: a partner's purchase covers both of you.
+  // The store entitlement only knows this account, so the space snapshot has
+  // the final say on whether there is anything left to sell.
+  const spacePlusActive = serverPlus?.isPlus === true;
+  const canPurchase =
+    isAvailable &&
+    !storeUnavailable &&
+    !spacePlusActive &&
+    Boolean(selectedPlan) &&
+    !busy &&
+    !activationPending;
 
   const handlePurchase = async () => {
     if (!canPurchase || !selectedPlan || operationRef.current) return;
@@ -124,7 +145,7 @@ export default function PaywallScreen() {
 
   const handleCloseExplanation = useCallback(() => setExplaining(false), []);
 
-  if (isPlus) {
+  if (isPlus || spacePlusActive) {
     return (
       <View style={[styles.center, { backgroundColor: background, paddingTop: Spacing[24] }]}>
         <ThemedText type="title">You have Aoi Plus</ThemedText>
@@ -282,8 +303,23 @@ export default function PaywallScreen() {
 
       <View style={styles.fine}>
         <ThemedText type="caption" style={{ color: textMuted, textAlign: 'center' }}>
-          Billed through Apple / Google where available. Cancel anytime. Prices vary by region.
+          Payment is charged to your store account when you confirm. Subscriptions renew automatically unless canceled at least 24 hours before the current period ends. Manage or cancel in your store account settings. Prices vary by region.
         </ThemedText>
+        {legal.privacyUrl ? (
+          <Button label="Privacy policy" variant="ghost" onPress={() => void openLink(legal.privacyUrl)} />
+        ) : null}
+        {legal.termsUrl ? (
+          <Button label="Terms of service" variant="ghost" onPress={() => void openLink(legal.termsUrl)} />
+        ) : null}
+        {Platform.OS === 'ios' || Platform.OS === 'android' ? (
+          <Button
+            label="Manage subscriptions"
+            variant="ghost"
+            onPress={() => void openLink(Platform.OS === 'ios'
+              ? 'https://apps.apple.com/account/subscriptions'
+              : 'https://play.google.com/store/account/subscriptions')}
+          />
+        ) : null}
         <Pressable
           accessibilityHint="Explains what Aoi Plus includes"
           accessibilityLabel="Why Plus?"

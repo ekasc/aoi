@@ -26,6 +26,11 @@
       }
     },
     "production": {
+      "node": "22.18.0",
+      "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_AUTH_STUB_MODE": "false"
+      },
       "autoIncrement": true,
       "channel": "production"
     }

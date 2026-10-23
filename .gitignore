@@ -71,3 +71,6 @@ assets/models/*.partial
 
 # Built Android packages are produced by the e2e rig, not source.
 *.apk
+
+# Separate launch-film project: its own toolchain, 250 MB of rendered media.
+films/

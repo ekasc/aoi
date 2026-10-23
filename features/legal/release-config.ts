@@ -19,8 +19,13 @@ const PLACEHOLDER_HOSTS = ['aoi.example', 'example.com', 'localhost', '127.0.0.1
 
 function isPlaceholderUrl(value: string | undefined): boolean {
   if (!value) return true;
-  const lowered = value.trim().toLowerCase();
-  return PLACEHOLDER_HOSTS.some((host) => lowered.includes(host));
+  try {
+    const url = new URL(value.trim());
+    return url.protocol !== 'https:' || !!url.username || !!url.password ||
+      PLACEHOLDER_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  } catch {
+    return true;
+  }
 }
 
 function isWeakSecret(value: string | undefined): boolean {
@@ -38,6 +43,12 @@ export function validateClientReleaseConfig(
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>
 ): ReleaseProblem[] {
   const problems: ReleaseProblem[] = [];
+
+  for (const name of ['EXPO_PUBLIC_DEV_SEED', 'AOI_DEV_NO_CAPABILITIES']) {
+    if (env[name]?.trim() && env[name] !== 'false' && env[name] !== '0') {
+      problems.push({ key: `dev.${name}`, fix: `Unset ${name} for a production build.` });
+    }
+  }
 
   if (env.EXPO_PUBLIC_AUTH_STUB_MODE !== 'false') {
     problems.push({
@@ -63,19 +74,16 @@ export function validateClientReleaseConfig(
     }
   }
 
-  // RevenueCat: submission needs the iOS key at minimum; Android without
-  // one is a fail-closed store, which is only acceptable if Android is
-  // deliberately out of scope for the release.
-  if (!env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.trim()) {
+  if (!env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.trim().startsWith('appl_')) {
     problems.push({
       key: 'billing.revenuecat-ios-key',
-      fix: 'Set EXPO_PUBLIC_REVENUECAT_IOS_KEY to the production public SDK key.',
+      fix: 'Set EXPO_PUBLIC_REVENUECAT_IOS_KEY to the Apple public SDK key (appl_), not a test or secret key.',
     });
   }
-  if (!env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY?.trim()) {
+  if (!env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY?.trim().startsWith('goog_')) {
     problems.push({
       key: 'billing.revenuecat-android-key',
-      fix: 'Set EXPO_PUBLIC_REVENUECAT_ANDROID_KEY, or formally descope Android purchasing (store goes fail-closed).',
+      fix: 'Set EXPO_PUBLIC_REVENUECAT_ANDROID_KEY to the Google public SDK key (goog_), not a test or secret key.',
     });
   }
 
@@ -85,10 +93,11 @@ export function validateClientReleaseConfig(
     ['legal.support-url', 'EXPO_PUBLIC_SUPPORT_URL'],
   ] as const) {
     const value = env[name]?.trim();
-    if (!value || !/^(https:\/\/|mailto:)/i.test(value) || isPlaceholderUrl(value)) {
+    const supportEmail = name === 'EXPO_PUBLIC_SUPPORT_URL' && /^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(value ?? '');
+    if (!supportEmail && isPlaceholderUrl(value)) {
       problems.push({
         key,
-        fix: `Set ${name} to the real https:// (or mailto: for support) destination. Placeholder links are a release blocker.`,
+        fix: `Set ${name} to a real HTTPS destination${name === 'EXPO_PUBLIC_SUPPORT_URL' ? ' or support mailto address' : ''}.`,
       });
     }
   }
@@ -104,6 +113,10 @@ export function validateWorkerReleaseConfig(
   env: Record<string, string | undefined>
 ): ReleaseProblem[] {
   const problems: ReleaseProblem[] = [];
+
+  if (env.AOI_E2E_MODE === 'true' || env.AOI_E2E_SECRET?.trim()) {
+    problems.push({ key: 'auth.e2e-config', fix: 'Remove AOI_E2E_MODE and AOI_E2E_SECRET from production.' });
+  }
 
   if (isWeakSecret(env.BETTER_AUTH_SECRET)) {
     problems.push({

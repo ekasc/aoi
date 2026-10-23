@@ -134,7 +134,7 @@
 **How to Request Refund:**
 - iOS: Through App Store
 - Android: Through Google Play
-- Web: Email support@aoi.app
+- Web: Email support@aoiapp.com
 - Processing: 5-10 business days
 
 ---

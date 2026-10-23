@@ -138,6 +138,7 @@ export default function AccountScreen() {
 
 	const [signOutError, setSignOutError] = useState("");
 	const [deleteError, setDeleteError] = useState("");
+	const [linkError, setLinkError] = useState("");
 	const [showGuide, setShowGuide] = useState(false);
 	const [leaveError, setLeaveError] = useState("");
 	const [confirming, setConfirming] = useState<"delete" | "leave" | null>(null);
@@ -287,10 +288,11 @@ export default function AccountScreen() {
 		return rows;
 	}, [legal]);
 	const openLegalLink = useCallback(async (url: string) => {
+		setLinkError("");
 		try {
 			await Linking.openURL(url);
 		} catch {
-			// Link failure is quiet tender-error policy: the row stays for retry.
+			setLinkError("Could not open this link. Please try again.");
 		}
 	}, []);
 
@@ -473,6 +475,7 @@ export default function AccountScreen() {
 					<Divider />
 					<View style={styles.section}>
 						<SectionHeading title="Support & legal" muted={muted} />
+						{linkError ? <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>{linkError}</ThemedText> : null}
 						{legalRows.map((row) => (
 							<Button
 								key={row.label}
@@ -539,7 +542,7 @@ export default function AccountScreen() {
 					},
 					{ label: "Cancel", onPress: handleCloseConfirm },
 				]}
-				description="Export your data first — it stays free, before or without deleting anything. This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
+				description="Export your data first — it stays free, before or without deleting anything. Deleting your account does not cancel your Apple or Google subscription. Cancel it in your store account settings first. This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
 				onClose={handleCloseConfirm}
 				title="Delete your account?"
 				visible={confirming === "delete"}

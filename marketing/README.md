@@ -152,8 +152,8 @@ Technical specs:
 ## Contact
 
 Questions about these files?
-- Marketing: marketing@aoi.app
-- Technical: dev@aoi.app
+- Marketing: marketing@aoiapp.com
+- Technical: dev@aoiapp.com
 
 ---
 
