@@ -40,6 +40,7 @@ import {
 } from "@/components/moments/gallery-tile";
 import { MomentCard } from "@/components/moments/moment-card";
 import { FirstPageDedication } from '@/components/moments/first-page-dedication';
+import { PartnerInvitation } from '@/components/space/partner-invitation';
 import { PhotoViewer, type ViewerPhoto } from "@/components/moments/photo-viewer";
 import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { PendingMemoryRow } from "@/components/moments/pending-memory-row";
@@ -1318,6 +1319,7 @@ export default function MemoriesScreen() {
 							Photos, videos and voice notes you keep together
 							collect here.
 						</ThemedText>
+						<Button label="Add a photo, video or voice memory" onPress={handleOpenEditor} />
 					</>
 				) : firstPage.kind === 'dedication' ? (
 					// The words arrive last, on their own window of the master
@@ -1326,7 +1328,8 @@ export default function MemoriesScreen() {
 					// room being entered or a screen being swapped.
 					<Animated.View style={wordsStyle} testID="arrival-words">
 						<FirstPageDedication partnerName={firstPage.partnerName} waiting={firstPage.waiting}
-							sinceLabel={daysTogetherLabel} onCompose={handleLeaveSomething} onSkip={handleSkipFirstPage} />
+							sinceLabel={daysTogetherLabel} onCompose={handleLeaveSomething} onSkip={handleSkipFirstPage}
+							invitation={<PartnerInvitation variant="inline" />} />
 					</Animated.View>
 				) : (
 					<>

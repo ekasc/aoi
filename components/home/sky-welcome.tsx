@@ -73,6 +73,7 @@ export function SkyWelcome({ details, onEnter }: { details: SkyEntry; onEnter: (
         ) : <ThemedText style={muted}>{details.partnerName ? `${details.partnerName} is already here.` : 'Your space is ready.'}</ThemedText>}
         {details.kind === 'created' ? (
           <>
+            <ThemedText type="body" style={muted}>Send this invite to your partner. They sign in on their phone and join your space with this code. You can start adding memories while you wait.</ThemedText>
             {/* The link is the good path and the share sheet is the natural way
                 to send one, so sharing leads and copying is the fallback for
                 when there is no one to message yet. */}
@@ -98,7 +99,7 @@ export function SkyWelcome({ details, onEnter }: { details: SkyEntry; onEnter: (
             ) : null}
           </>
         ) : null}
-        <Button label="Enter your sky" onPress={onEnter} />
+        <Button label="Go to Memories" onPress={onEnter} />
       </Animated.View>
     </View>
   );

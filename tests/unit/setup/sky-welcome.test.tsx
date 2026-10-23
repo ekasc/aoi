@@ -25,7 +25,7 @@ describe('destination sky invitation', () => {
     expect(screen.getByLabelText('Your invite code, M A Y A 1 6')).toBeTruthy();
     expect(onEnter).not.toHaveBeenCalled();
 
-    const enter = screen.getByLabelText('Enter your sky');
+    const enter = screen.getByLabelText('Go to Memories');
     expect(enter.getAttribute('accessibilityrole')).toBe('button');
     fireEvent.click(enter);
     expect(onEnter).toHaveBeenCalledOnce();
@@ -88,6 +88,6 @@ describe('destination sky invitation', () => {
     expect(screen.getByText('Maya is already here.')).toBeTruthy();
     expect(screen.queryByLabelText('Copy code instead')).toBeNull();
     expect(screen.queryByLabelText('Share invite')).toBeNull();
-    expect(screen.getByLabelText('Enter your sky')).toBeTruthy();
+    expect(screen.getByLabelText('Go to Memories')).toBeTruthy();
   });
 });

@@ -9,14 +9,17 @@ const INVITE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
  * not have aoi yet. So a shared invite carries both, and the message says the
  * code in words too, so a link that never opens still leaves them able to join.
  *
- * The universal link's host is a placeholder until aoi has a domain. It is
- * parsed here so the shape is pinned by a test rather than discovered on
- * someone's phone; until the domain exists, the custom scheme is the one that
- * works.
+ * The universal link's host is the domain aoi owns. Owning it is not the same
+ * as the link working: nothing serves
+ * `/.well-known/apple-app-site-association` yet, and no `associatedDomains` is
+ * declared, so the custom scheme is still the path that opens the app. The
+ * shape is pinned here, by a test, so the day the plumbing lands it is a config
+ * change rather than a discovery on someone's phone (see
+ * `docs/decisions/invite-link-domain.md`).
  */
 export const INVITE_LINK_SCHEME = 'aoi';
 export const INVITE_LINK_HOST = 'join';
-export const INVITE_UNIVERSAL_HOST = 'aoi.app';
+export const INVITE_UNIVERSAL_HOST = 'aoiapp.com';
 
 export function normalizeInviteCode(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, '');
@@ -99,10 +102,10 @@ export function inviteMessage(code: string, yourName: string, partnerName: strin
   return [
     `${who}${yourName} invited you to their space on aoi.`,
     '',
-    `Open the link and it will bring you straight here.`,
+    `If Aoi is installed, open this link to join my space:`,
     `${inviteAppLink(normalized)}`,
     '',
-    `Or enter the code ${normalized.split('').join(' ')} in aoi.`,
+    `If the link does not open, sign in to Aoi and choose to join an existing space. Enter the code ${normalized.split('').join(' ')}.`,
   ].join('\n');
 }
 

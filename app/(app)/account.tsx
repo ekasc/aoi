@@ -11,6 +11,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemeSelector } from "@/components/theme/theme-selector";
+import { WelcomeSheet } from "@/components/info/welcome-sheet";
+import { PartnerInvitation } from "@/components/space/partner-invitation";
 import { ThemedText } from "@/components/themed-text";
 import { ActionSheet } from "@/components/ui/action-sheet";
 import { Button } from "@/components/ui/button";
@@ -18,29 +20,13 @@ import { Divider } from "@/components/ui/divider";
 import { Spacing } from "@/constants/theme";
 import { exportRawArchive } from "@/features/export/raw-export";
 import { getLegalLinks } from "@/features/legal/legal-links";
+import { formatRelationshipDate } from "@/features/relationship/relationship-date";
 import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
 import { formatBytes } from "@/features/subscription/format";
 import { useSubscription } from "@/features/subscription/subscription-context";
 import { haptics } from "@/features/haptics/haptics";
 import { useThemeColor } from "@/hooks/use-theme-color";
-
-function formatRelationshipDate(value: string | null | undefined) {
-	if (!value) {
-		return null;
-	}
-	const date = new Date(value);
-
-	if (Number.isNaN(date.getTime())) {
-		return null;
-	}
-
-	return date.toLocaleDateString("en-US", {
-		month: "long",
-		day: "numeric",
-		year: "numeric",
-	});
-}
 
 function InfoRow({
 	label,
@@ -152,6 +138,7 @@ export default function AccountScreen() {
 
 	const [signOutError, setSignOutError] = useState("");
 	const [deleteError, setDeleteError] = useState("");
+	const [showGuide, setShowGuide] = useState(false);
 	const [leaveError, setLeaveError] = useState("");
 	const [confirming, setConfirming] = useState<"delete" | "leave" | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
@@ -181,6 +168,8 @@ export default function AccountScreen() {
 	const handleEditRelationship = useCallback(() => {
 		router.push("/(app)/profile/edit-relationship");
 	}, [router]);
+
+
 
 	const handlePlus = useCallback(() => {
 		router.push("/(app)/paywall");
@@ -329,6 +318,15 @@ export default function AccountScreen() {
 				<ThemeSelector showDescriptions={false} />
 			</View>
 
+			<View style={styles.section}>
+				<SectionHeading title="Getting started" muted={muted} />
+				<Button label="How to use Aoi" variant="secondary" onPress={() => setShowGuide(true)} />
+			</View>
+			<WelcomeSheet visible={showGuide} onClose={() => setShowGuide(false)} onStart={() => {
+				setShowGuide(false);
+				router.navigate('/(app)/(tabs)/(memories)');
+			}} />
+
 			<Divider />
 
 			<View style={styles.section}>
@@ -360,6 +358,9 @@ export default function AccountScreen() {
 					onPress={handleEditRelationship}
 					muted={muted}
 				/>
+				{/* One stable place for pairing: membership when connected, the
+				    invitation when not. Never a floating reminder on every tab. */}
+				<PartnerInvitation />
 			</View>
 
 			<Divider />
@@ -416,6 +417,7 @@ export default function AccountScreen() {
 				</View>
 			</View>
 
+
 			<Divider />
 
 			<View style={styles.section}>
@@ -462,6 +464,9 @@ export default function AccountScreen() {
 					exactly as they are.
 				</ThemedText>
 			</View>
+
+			<Divider />
+
 
 			{legalRows.length > 0 ? (
 				<>

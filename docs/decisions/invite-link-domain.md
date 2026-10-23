@@ -1,6 +1,7 @@
 ---
-status: blocked-on-domain
+status: blocked-on-associated-domains
 date: 2026-09-30
+updated: 2026-10-17
 ---
 
 # Invite links: the universal link is not shippable yet
@@ -19,12 +20,16 @@ that flattened the query into the path. It ignores links that are not ours.
 
 ## What is blocked
 
-`INVITE_UNIVERSAL_HOST` in `features/space/invite-code.ts` is `aoi.app`, which
-is a placeholder. Nothing is known about whether that domain exists, resolves,
-or is ours. There is no `apple-app-site-association` file, and no
-`associatedDomains` in the app config.
+The domain is owned. `INVITE_UNIVERSAL_HOST` in `features/space/invite-code.ts`
+is now `aoiapp.com`, and the builders and the parser agree on it.
 
-So `https://aoi.app/join?code=…` in a shared message is a link to nothing.
+Owning it is not the same as the link working. Nothing serves
+`/.well-known/apple-app-site-association`, and no `associatedDomains` is
+declared in the app config, so the operating system has no reason to hand
+`https://aoiapp.com/join?code=…` to the app rather than to a browser.
+
+So the universal link in a shared message still points at a web page that does
+not exist, and the custom scheme remains the path that works.
 
 ## Why the message carries it anyway
 
@@ -34,7 +39,7 @@ are the fallback behind it. That is why this is blocked rather than reverted.
 
 ## What unblocks it
 
-1. Own the domain and point it at somewhere that serves
+1. Point `aoiapp.com` at somewhere that serves
    `/.well-known/apple-app-site-association`, with the app's team ID and
    `com.ekasc.aoi`. Android needs the same file at
    `/.well-known/assetlinks.json`.
@@ -48,3 +53,8 @@ are the fallback behind it. That is why this is blocked rather than reverted.
 Nobody has tapped a link on a second device. The tests prove the code agrees
 with itself about a URL it constructed. They do not prove a message sent
 between two phones opens the app.
+
+Whether `associatedDomains` can be provisioned on a free personal team is also
+unchecked. If it cannot, this whole path is gated the way push and Sign in with
+Apple are, and the domain alone does not unblock it. Confirm that before
+building any of the plumbing above.
