@@ -30,6 +30,9 @@ const DEV_BUNDLE_SUFFIX = '.dev';
 const PROD_BUNDLE_ID = 'com.ekasc.aoi';
 
 module.exports = ({ config }) => {
+  if (process.env.EAS_BUILD_PROFILE === 'production' && STRIP) {
+    throw new Error('AOI_DEV_NO_CAPABILITIES must be unset for production builds.');
+  }
   if (!STRIP) {
     return config;
   }

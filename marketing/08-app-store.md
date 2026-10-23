@@ -323,13 +323,13 @@ CTA: "Download"
 ## Review Response Templates
 
 ### Positive Review (5 stars)
-"Thank you so much! We're thrilled you're enjoying Aoi. If you have any suggestions or feedback, we'd love to hear from you at hello@aoi.app 💙"
+"Thank you so much! We're thrilled you're enjoying Aoi. If you have any suggestions or feedback, we'd love to hear from you at hello@aoiapp.com 💙"
 
 ### Feature Request
 "Thanks for the suggestion! We're always looking for ways to improve Aoi. We'll add this to our feature request list. Keep the ideas coming!"
 
 ### Bug Report
-"Sorry to hear you're experiencing an issue! Please email us at support@aoi.app with details and we'll get it fixed right away."
+"Sorry to hear you're experiencing an issue! Please email us at support@aoiapp.com with details and we'll get it fixed right away."
 
 ### Pricing Concern
 "We understand price matters! The $9.99 one-time purchase helps us stay ad-free and privacy-focused. No subscriptions, ever. We hope you'll give us a try—we think it's worth it!"
@@ -440,7 +440,7 @@ Launch markets
 • [Improvement]: Brief description
 • Bug fixes and performance improvements
 
-Thank you for using Aoi! If you love the app, please leave a review. Questions? Contact us at support@aoi.app 💙
+Thank you for using Aoi! If you love the app, please leave a review. Questions? Contact us at support@aoiapp.com 💙
 
 ### Version X.X - Bug Fix
 **What's New:**

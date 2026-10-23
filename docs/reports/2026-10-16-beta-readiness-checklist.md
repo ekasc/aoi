@@ -18,7 +18,11 @@ location so they can be spot-checked. Nothing was executed against a deployed en
 External testers may be invited when all four are true:
 
 - [ ] **G1 — Every P0 below is checked.**
-- [ ] **G2 — `pnpm run typecheck && pnpm run lint && pnpm run test:unit && pnpm run a11y:audit` is green on a committed revision.**
+- [x] **G2 — `pnpm run typecheck && pnpm run lint && pnpm run test:unit && pnpm run a11y:audit` is green on a committed revision.**
+  Verified 2026-10-17 on `681f50a`: typecheck clean, lint 0 errors (13 pre-existing warnings),
+  **2068 tests in 220 files pass**, a11y 0 findings across 143 files. Also run and passing:
+  **integration project, 600 tests / 41 files** (real Hono routes + D1 shim + real crypto), which G2's
+  command list above does not include. All local: CI has not run on this branch.
 - [ ] **G3 — A tester can install without your laptop.** TestFlight, or an ad-hoc build whose profile does not expire in seven days.
 - [ ] **G4 — A crash or failed request on a tester's phone reaches you.** Without this, a beta produces anecdotes instead of bug reports.
 
@@ -270,6 +274,37 @@ Acceptance: publish an update and see it land on a tester's installed build.
 - [ ] Tablet claim: `supportsTablet: true` with no tablet pass, no breakpoint token, and no iPad evidence in `docs/design/`.
 
 ---
+
+## Deliberately deferred
+
+Decided 2026-10-17. Not defects — decisions, recorded so they are not rediscovered as surprises.
+
+- [ ] **Monetisation route: deferred until ~$50k ARR.** No web checkout, no link-out entitlement work, no
+  per-jurisdiction payment branching until then. Rationale: the saving is roughly 5–10 percentage points,
+  not the headline 30% — a small subscription app pays **15%** through Apple's Small Business Program and
+  Google's first-$1M tier, not 30%. Below ~$50k/year that difference is under $5k/year, less than the
+  engineering, VAT/GST registration, dunning and refunds a self-serve web checkout costs. Revisit at ~$50k
+  ARR, at ~$100k ARR where it clearly pays for itself, or if the US App Store link-out rate is decided and
+  stays at zero.
+- [ ] **Enrol in the App Store Small Business Program.** 30% → 15% for one form, no engineering.
+  Google's 15% tier applies automatically under $1M. Enrolment is still open as of the beta.
+- [ ] **Preserve the architectural door.** The entitlement must stay server-authoritative (the RevenueCat
+  webhook at `packages/api/src/domains/plus.ts` → `refreshServerPlus`) and purchases must stay behind
+  RevenueCat, which abstracts store-versus-web. Concretely: no store-specific purchase copy or flow
+  assumptions in the paywall, so a second purchase channel is additive rather than a rewrite.
+- [ ] **The real decision point is the first store submission**, not now. The EU's unified terms (effective
+  2026-10-01) lock a developer into their chosen payment mix for 12 months, and no submission has been
+  made yet, so nothing is locked. Decide the mix before submitting, not after.
+- [ ] **If that day comes, use a merchant of record** (Paddle / Lemon Squeezy, ~5%) rather than raw Stripe,
+  unless VAT registration in every selling jurisdiction is something you actually want to own.
+
+Context for whenever this is picked back up — the numbers move, so re-check before acting: US App Store
+link-outs are permitted with **no commission collected**, under court order, with Apple's proposed 5–15%
+rate still undecided and the retroactivity question open. Google's US External Content Links program
+charges **10% on subscriptions** and requires monthly transaction reporting. EU App Store rates under the
+2026-10-01 terms are 15% for link-outs, 20% for in-app alternative payments, 26% for Apple IAP, and a 5%
+Core Technology Commission for distribution outside the App Store. None of this is legal advice, and both
+stores rewrote their guidelines on 2026-10-01.
 
 ## Closed and verified — keep this
 
