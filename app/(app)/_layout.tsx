@@ -5,7 +5,6 @@ import { ActivityIndicator, View } from "react-native";
 
 import { CalendarProvider } from "@/features/calendar/calendar-context";
 import { CollectionsProvider } from "@/features/collections/collections-context";
-import { LettersProvider } from "@/features/letters/letters-context";
 import { PartnerDetailsProvider } from "@/features/partner-details/partner-details-context";
 import { PushProvider } from "@/features/push/push-context";
 import { QuestionProvider } from "@/features/question/question-context";
@@ -78,193 +77,167 @@ export default function AuthenticatedAppLayout() {
 				<SomedayProvider>
 					<QuestionProvider>
 						<SqueezeProvider>
-							<LettersProvider>
-							<PushProvider>
-								<ResponsesProvider>
-								<ComposerProvider>
-								<SqueezeOverlay />
-							<Stack
-									screenOptions={{
-										contentStyle: { backgroundColor: colors.background },
-										headerStyle: { backgroundColor: colors.background },
-										headerTintColor: colors.text,
-										headerShadowVisible: false,
-										headerTitleStyle: Typography.navigationTitle,
-										headerTitleAlign: "center",
-										headerBackButtonDisplayMode: "minimal",
-									}}
-								>
-								<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-								<Stack.Screen name="account" options={{ title: "Account" }} />
-								{/* Legacy compat redirect (P2A): no header flash before it resolves. */}
-								<Stack.Screen name="profile" options={{ headerShown: false }} />
-								{/* Legacy setting deep link: redirects into Account. */}
-								<Stack.Screen name="settings" options={{ headerShown: false }} />
-									<Stack.Screen
-										name="moment/trace"
-										options={{
-											title: "Keep this",
-											presentation: "pageSheet",
-											...sheetOptions,
-										}}
-									/>
+						<PushProvider>
+							<ResponsesProvider>
+							<ComposerProvider>
+							<SqueezeOverlay />
+						<Stack
+								screenOptions={{
+									contentStyle: { backgroundColor: colors.background },
+									headerStyle: { backgroundColor: colors.background },
+									headerTintColor: colors.text,
+									headerShadowVisible: false,
+									headerTitleStyle: Typography.navigationTitle,
+									headerTitleAlign: "center",
+									headerBackButtonDisplayMode: "minimal",
+								}}
+							>
+							<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+							<Stack.Screen name="account" options={{ title: "Account" }} />
+							{/* Legacy compat redirect (P2A): no header flash before it resolves. */}
+							<Stack.Screen name="profile" options={{ headerShown: false }} />
+							{/* Legacy setting deep link: redirects into Account. */}
+							<Stack.Screen name="settings" options={{ headerShown: false }} />
 								<Stack.Screen
-									name="moment/new"
+									name="moment/trace"
 									options={{
-										title: "New memory",
-										// The header owns Cancel/title/Save on iOS
-										// (Screen.Title + header toolbars in the
-										// composer). Other platforms keep the
-										// composer's custom top bar, so the native
-										// header stays hidden there.
-										headerShown: process.env.EXPO_OS === "ios",
+										title: "Keep this",
+										presentation: "pageSheet",
+										...sheetOptions,
+									}}
+								/>
+							<Stack.Screen
+								name="moment/new"
+								options={{
+									title: "New memory",
+									// The header owns Cancel/title/Save on iOS
+									// (Screen.Title + header toolbars in the
+									// composer). Other platforms keep the
+									// composer's custom top bar, so the native
+									// header stays hidden there.
+									headerShown: process.env.EXPO_OS === "ios",
+									presentation: useFormSheet ? "formSheet" : "modal",
+									...sheetOptions,
+								}}
+							/>
+								<Stack.Screen
+									name="moment/[id]"
+									options={{
+										title: "Memory",
 										presentation: useFormSheet ? "formSheet" : "modal",
 										...sheetOptions,
 									}}
 								/>
-									<Stack.Screen
-										name="moment/[id]"
-										options={{
-											title: "Memory",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="moment/edit/[id]"
-										options={{
-											title: "Edit moment",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="calendar/new-event"
-										options={{
-											title: "New event",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="calendar/edit/[id]"
-										options={{
-											title: "Edit event",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="calendar/year"
-										options={{ title: "Year" }}
-									/>
-									<Stack.Screen
-										name="profile/edit-relationship"
-										options={{
-											title: "Edit relationship",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-											...(useFormSheet ? { sheetAllowedDetents: 'fitToContents' as const } : {}),
-										}}
-									/>
-									<Stack.Screen
-										name="partner"
-										options={{
-											title: "About",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="chapter/[id]"
-										options={{
-											title: "Chapter",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									{/* A list is a place you go into, not a task you finish, so
-									    it is a normal push — back button, swipe, the lot.
-									    Its editor and each thing's editor are pushes too,
-									    which keeps every list screen a browsing surface. */}
-									<Stack.Screen
-										name="collection/new"
-										options={{
-											title: "New list",
-											presentation: "formSheet",
-											sheetAllowedDetents: [0.5, 1.0],
-											sheetInitialDetentIndex: 0,
-											sheetGrabberVisible: true,
-											sheetExpandsWhenScrolledToEdge: true,
-											contentStyle: { backgroundColor: colors.background },
-										}}
-									/>
-									<Stack.Screen name="collection/[id]/index" options={{ title: "List" }} />
-									<Stack.Screen name="collection/[id]/edit" options={{ title: "Edit list" }} />
-									<Stack.Screen name="collection/[id]/item/new" options={{ title: "Add an item" }} />
-									<Stack.Screen name="collection/[id]/item/[itemId]" options={{ title: "Item" }} />
-									<Stack.Screen name="album/enroll" options={{ title: "Join this album" }} />
-									<Stack.Screen name="album/devices" options={{ title: "Devices" }} />
-									<Stack.Screen
-										name="album/recovery-phrase"
-										options={{ title: "Recovery phrase" }}
-									/>
-									<Stack.Screen name="album/restore" options={{ title: "Restore album" }} />
-									<Stack.Screen name="album/check-photo" options={{ title: "Shared album" }} />
-									<Stack.Screen name="album/local-photos" options={{ title: "Local photo copies" }} />
-									<Stack.Screen
-										name="question"
-										options={{
-											title: "This week",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="letters"
-										options={{
-											title: "Letters",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="letter/new"
-										options={{
-											title: "Write a letter",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="letter/[id]"
-										options={{
-											title: "Letter",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="paywall"
-										options={{
-											title: "Aoi Plus",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-									<Stack.Screen
-										name="goal-new"
-										options={{
-											title: "New goal",
-											presentation: useFormSheet ? "formSheet" : "modal",
-											...sheetOptions,
-										}}
-									/>
-								</Stack>
-								</ComposerProvider>
-								</ResponsesProvider>
-							</PushProvider>
-							</LettersProvider>
+								<Stack.Screen
+									name="moment/edit/[id]"
+									options={{
+										title: "Edit moment",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+								<Stack.Screen
+									name="calendar/new-event"
+									options={{
+										title: "New event",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+								<Stack.Screen
+									name="calendar/edit/[id]"
+									options={{
+										title: "Edit event",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+								<Stack.Screen
+									name="calendar/year"
+									options={{ title: "Year" }}
+								/>
+								<Stack.Screen
+									name="profile/edit-relationship"
+									options={{
+										title: "Edit relationship",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+										...(useFormSheet ? { sheetAllowedDetents: 'fitToContents' as const } : {}),
+									}}
+								/>
+								<Stack.Screen
+									name="partner"
+									options={{
+										title: "About",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+								<Stack.Screen
+									name="chapter/[id]"
+									options={{
+										title: "Chapter",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+								{/* A list is a place you go into, not a task you finish, so
+								    it is a normal push — back button, swipe, the lot.
+								    Its editor and each thing's editor are pushes too,
+								    which keeps every list screen a browsing surface. */}
+								<Stack.Screen
+									name="collection/new"
+									options={{
+										title: "New list",
+										presentation: "formSheet",
+										sheetAllowedDetents: [0.5, 1.0],
+										sheetInitialDetentIndex: 0,
+										sheetGrabberVisible: true,
+										sheetExpandsWhenScrolledToEdge: true,
+										contentStyle: { backgroundColor: colors.background },
+									}}
+								/>
+								<Stack.Screen name="collection/[id]/index" options={{ title: "List" }} />
+								<Stack.Screen name="collection/[id]/edit" options={{ title: "Edit list" }} />
+								<Stack.Screen name="collection/[id]/item/new" options={{ title: "Add an item" }} />
+								<Stack.Screen name="collection/[id]/item/[itemId]" options={{ title: "Item" }} />
+								<Stack.Screen name="album/enroll" options={{ title: "Join this album" }} />
+								<Stack.Screen name="album/devices" options={{ title: "Devices" }} />
+								<Stack.Screen
+									name="album/recovery-phrase"
+									options={{ title: "Recovery phrase" }}
+								/>
+								<Stack.Screen name="album/restore" options={{ title: "Restore album" }} />
+								<Stack.Screen name="album/check-photo" options={{ title: "Shared album" }} />
+								<Stack.Screen name="album/local-photos" options={{ title: "Local photo copies" }} />
+								<Stack.Screen
+									name="question"
+									options={{
+										title: "This week",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+								<Stack.Screen
+									name="paywall"
+									options={{
+										title: "Aoi Plus",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+								<Stack.Screen
+									name="goal-new"
+									options={{
+										title: "New goal",
+										presentation: useFormSheet ? "formSheet" : "modal",
+										...sheetOptions,
+									}}
+								/>
+							</Stack>
+							</ComposerProvider>
+							</ResponsesProvider>
+						</PushProvider>
 					</SqueezeProvider>
 					</QuestionProvider>
 				</SomedayProvider>

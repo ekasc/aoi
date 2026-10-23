@@ -4,7 +4,6 @@ import { useEffect, type PropsWithChildren } from 'react';
 import { isStubMode } from '@/features/api-client';
 import { notificationsModule } from '@/features/notifications/notifications-module';
 import { useCalendar } from '@/features/calendar/calendar-context';
-import { useLetters } from '@/features/letters/letters-context';
 import { useSpace } from '@/features/space/space-context';
 import { useMoments } from '@/features/moments/moments-context';
 import { registerDevicePushToken } from '@/features/push/register-push-token';
@@ -23,7 +22,7 @@ let registeredThisSession = false;
  * - Listens for received pushes and routes them: `squeeze` lights up the
  *   real overlay through the squeeze context; `moment_*` gently refreshes
  *   the timeline so partner changes appear without waiting for app focus;
- *   `letter_sealed` quietly refreshes the letters shelf; `event_*`
+ *   `event_*`
  *   refreshes the calendar (a partner planned / shifted / let go of a plan
  *   — the push never says which).
  *   Pushes received while backgrounded/killed only surface when the user
@@ -37,7 +36,6 @@ export function PushProvider({ children }: PropsWithChildren) {
   const { receiveSqueeze } = useSqueeze();
   const { refresh } = useMoments();
   const { refresh: refreshCalendar } = useCalendar();
-  const { reload: reloadLetters } = useLetters();
   const { refreshSpace } = useSpace();
 
   useEffect(() => {
@@ -87,13 +85,6 @@ export function PushProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      if (data.kind === 'letter_sealed') {
-        // They sealed something — the shelf picks it up quietly. The push
-        // itself never says what, or when.
-        void reloadLetters();
-        return;
-      }
-
       if (
         data.kind === 'event_added' ||
         data.kind === 'event_updated' ||
@@ -109,7 +100,7 @@ export function PushProvider({ children }: PropsWithChildren) {
         // Somebody joined the space while this app was closed or idle. The
         // space itself is the thing that changed, so re-read it: the waiting
         // empty state and the partner's name both depend on it.
-        void refreshSpace();
+        void refreshSpace().catch(() => undefined);
         return;
       }
 
@@ -138,7 +129,6 @@ export function PushProvider({ children }: PropsWithChildren) {
     receiveSqueeze,
     refresh,
     refreshCalendar,
-    reloadLetters,
     refreshSpace,
   ]);
 

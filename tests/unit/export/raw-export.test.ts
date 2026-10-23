@@ -110,19 +110,6 @@ function fixtures() {
     '/v1/spaces/current/responses?limit=100': { responses: [] },
     '/v1/spaces/current/someday': { items: [{ id: 's-1', title: 'Kyoto' }] },
     '/v1/spaces/current/question': { weekKey: '2026-W03', answers: [{ answer: 'our song' }] },
-    '/v1/spaces/current/letters': {
-      letters: [
-        { id: 'l-sealed', caption: 'Later', sealedUntil: '2027-01-01T00:00:00.000Z', authorName: 'Deleted member' },
-        {
-          id: 'l-open',
-          caption: 'Now',
-          body: 'opened words',
-          sealedUntil: '2026-01-01T00:00:00.000Z',
-          openedAt: '2026-01-02T00:00:00.000Z',
-          authorName: 'Deleted member',
-        },
-      ],
-    },
   } as Record<string, unknown>;
 }
 
@@ -321,7 +308,6 @@ describe('exportRawArchive', () => {
       'calendar-events.json',
       'someday.json',
       'question.json',
-      'letters.json',
       'responses.json',
       'partner-details.json',
       'manifest.json',
@@ -355,7 +341,6 @@ describe('exportRawArchive', () => {
       moments: 3,
       calendarEvents: 1,
       somedayItems: 1,
-      letters: 2,
       responses: 0,
       partnerDetails: 0,
       mediaFiles: 1,
@@ -373,16 +358,6 @@ describe('exportRawArchive', () => {
     expect([...store.files.keys()].some((k) => k.startsWith(`${tmpUri}/`))).toBe(false);
   });
 
-  it('omits sealed letter bodies and keeps opened ones (API-authorized shape)', async () => {
-    const { deps, sink } = makeDeps();
-    await exportRawArchive({ userId: 'user-a' }, deps);
-    const letters = decode(zipEntries(sink.bytes), 'letters.json') as Record<string, unknown>[];
-    const sealed = letters.find((l) => l.id === 'l-sealed');
-    const opened = letters.find((l) => l.id === 'l-open');
-    expect(sealed).toBeDefined();
-    expect('body' in (sealed ?? {})).toBe(false);
-    expect(opened).toMatchObject({ body: 'opened words' });
-  });
 
   it('never leaks purged account identity from tombstone-shaped payloads', async () => {
     const { deps, sink } = makeDeps();

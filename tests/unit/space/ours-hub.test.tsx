@@ -329,7 +329,7 @@ describe('Account Plus usage', () => {
     mockSpace = waitingSpace();
     await renderAccount();
 
-    expect(screen.getByText(/Free Space, 250 MiB media, 1 future letter/)).toBeTruthy();
+    expect(screen.getByText(/Free Space, 250 MiB of media\./)).toBeTruthy();
   });
 
   it('shows active Plus usage from server state', async () => {

@@ -4,13 +4,10 @@ import {
   clampSkyHistoryIndex,
   eventsAsOf,
   formatRelationshipAge,
-  lettersAsOf,
   skyHistoryMonths,
 } from '@/features/home/sky-history';
 import { usHistory } from '@/features/home/us-history';
-import { findReadyLetter } from '@/features/home/us-focal';
 import type { CalendarEvent } from '@/features/calendar/types';
-import type { Letter } from '@/features/letters/types';
 import type { Moment } from '@/features/moments/types';
 
 const now = new Date('2026-09-15T20:00:00');
@@ -27,17 +24,6 @@ const memory = (id: string, occurredAt: string, type: Moment['type'] = 'note'): 
   authorRole: 'you',
 });
 
-const letter = (id: string, sealedUntil: string, createdAt: string): Letter => ({
-  id,
-  authorRole: 'you',
-  authorName: 'Maya',
-  caption: null,
-  sealedUntil,
-  createdAt,
-  isOpened: false,
-  readyToOpen: false,
-  openedAt: null,
-});
 
 const event = (id: string, startsAt: string, endsAt: string, createdAt: string): CalendarEvent => ({
   id,
@@ -202,20 +188,5 @@ describe('content after the selected month is not visible', () => {
     expect(usHistory(years, '2024-01-01', january2025.asOf).chapters.map((chapter) => chapter.id)).toEqual(['anniversary:1:2025']);
   });
 
-  it('hides plans and letters written after the vantage', () => {
-    const asOf = october2024.asOf;
-    expect(lettersAsOf([letter('later', '2024-11-01T09:00:00', '2024-11-05T10:00:00'), letter('earlier', '2024-10-20T09:00:00', '2024-01-02T10:00:00')], asOf).map((item) => item.id))
-      .toEqual(['earlier']);
-    expect(eventsAsOf([event('later', '2024-12-01T18:00:00', '2024-12-01T20:00:00', '2024-11-01T10:00:00'), event('earlier', '2024-09-01T18:00:00', '2024-09-01T20:00:00', '2024-08-01T10:00:00')], asOf).map((item) => item.id))
-      .toEqual(['earlier']);
-  });
 
-  it('keeps a future-sealed letter hidden while the reader stands before its seal', () => {
-    const sealed = letter('sealed', '2024-12-01T09:00:00', '2024-01-01T10:00:00');
-    // Written in January, opens in December: June must not reveal it.
-    const june = skyHistoryMonths('2024-01-01', now).find((month) => month.label === 'Jun 2024')!.asOf;
-    expect(lettersAsOf([sealed], june).map((item) => item.id)).toEqual(['sealed']);
-    expect(findReadyLetter(lettersAsOf([sealed], june), june)).toBeNull();
-    expect(findReadyLetter(lettersAsOf([sealed], now), now)?.id).toBe('sealed');
-  });
 });

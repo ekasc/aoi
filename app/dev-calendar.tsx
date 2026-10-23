@@ -8,7 +8,6 @@ import {
 	PREVIEW_SESSION,
 	PREVIEW_SPACE,
 } from '@/features/dev/preview';
-import { LettersProvider } from '@/features/letters/letters-context';
 import { MomentsProvider } from '@/features/moments/moments-context';
 import { PartnerDetailsProvider } from '@/features/partner-details/partner-details-context';
 import { PushProvider } from '@/features/push/push-context';
@@ -54,7 +53,6 @@ export default function DevCalendar() {
 						<SomedayProvider>
 							<MomentsProvider>
 								<SqueezeProvider>
-									<LettersProvider>
 									<PushProvider>
 									<DevErrorBoundary label={`CalendarDev:${selected}`}>
 										{selected === 'year' ? (
@@ -64,7 +62,6 @@ export default function DevCalendar() {
 										)}
 									</DevErrorBoundary>
 									</PushProvider>
-									</LettersProvider>
 								</SqueezeProvider>
 							</MomentsProvider>
 						</SomedayProvider>

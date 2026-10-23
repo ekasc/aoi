@@ -700,7 +700,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[8],
   },
   input: {
-    // Display serif like the letter editor: writing should feel like
+    // Display serif like the memory form: writing should feel like
     // writing, content first. No fixed tall box — the empty hint sits
     // right under the first line instead of a 240pt void.
     ...Typography.inputDisplay,

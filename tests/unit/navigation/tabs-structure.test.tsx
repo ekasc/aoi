@@ -504,15 +504,6 @@ vi.mock('@/features/moments/use-resurface-notification', () => ({
   useResurfaceNotification: () => {},
 }));
 
-vi.mock('@/features/letters/letters-context', () => ({
-  useLetters: () => ({
-    letters: [],
-    isLoading: false,
-    error: null,
-    reload: vi.fn(async () => {}),
-  }),
-}));
-
 vi.mock('@/features/question/question-context', () => ({
   useQuestion: () => ({
     state: {

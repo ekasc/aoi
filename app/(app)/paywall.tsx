@@ -21,7 +21,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * is reachable, themeable and announced properly.
  */
 const PLUS_EXPLANATION =
-  'Plus gives your shared archive more storage, more letters for the future, PDF chapter keepsakes, and Sky History — the ability to rewind your sky to any month you have been together. Your live sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
+  'Plus gives your shared archive more storage, PDF chapter keepsakes, and Sky History — the ability to rewind your sky to any month you have been together. Your live sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
 
 export default function PaywallScreen() {
   const router = useRouter();
@@ -31,17 +31,12 @@ export default function PaywallScreen() {
   const soughtFeature =
     feature === 'sky-history'
       ? SKY_HISTORY_PLUS
-      : feature === 'letter-limit'
+      : feature === 'keepsake'
         ? {
-            title: 'Seal what is waiting',
-            body: 'Your draft stays right here. Plus lets your shared Space hold more than one future letter.',
+            title: 'Take this chapter home',
+            body: 'Keep the month as a PDF you can print and gift.',
           }
-        : feature === 'keepsake'
-          ? {
-              title: 'Take this chapter home',
-              body: 'Keep the month as a PDF you can print and gift.',
-            }
-          : null;
+        : null;
   const insets = useSafeAreaInsets();
   const { status, isPlus, isAvailable, plans, purchase, restore, refresh, serverPlus, activationPending } = useSubscription();
   const [selected, setSelected] = useState<string | null>(null);

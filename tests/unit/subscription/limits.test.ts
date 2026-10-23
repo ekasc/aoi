@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { PLUS_FEATURES } from '@/features/subscription/limits';
-import { formatBytes, formatLetterCount } from '@/features/subscription/format';
+import { formatBytes } from '@/features/subscription/format';
 
 describe('subscription benefits (v1 contract)', () => {
   it('adds Sky History without dropping the existing benefits', () => {
     expect([...PLUS_FEATURES]).toEqual([
       'More storage for your shared archive',
-      'More letters for the future',
       'PDF chapter keepsakes',
       'Sky History — revisit your sky at any point in time',
     ]);
@@ -28,8 +27,4 @@ describe('usage formatting', () => {
     expect(formatBytes(5 * 1024 * 1024 * 1024)).toBe('5 GiB');
   });
 
-  it('formats letter counts', () => {
-    expect(formatLetterCount(1)).toBe('1 future letter');
-    expect(formatLetterCount(3)).toBe('3 future letters');
-  });
 });

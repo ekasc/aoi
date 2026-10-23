@@ -185,7 +185,6 @@ describe('paywall (v1 benefit contract)', () => {
     const { container } = await renderPaywall();
 
     expect(screen.getByText(/More storage for your shared archive/)).toBeTruthy();
-    expect(screen.getByText(/More letters for the future/)).toBeTruthy();
     expect(screen.getByText(/PDF chapter keepsakes/)).toBeTruthy();
     const copy = container.textContent ?? '';
     expect(copy).not.toMatch(/location|Memory Wall|everything unlocked|unlimited/i);
