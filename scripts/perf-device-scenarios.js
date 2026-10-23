@@ -4,6 +4,8 @@
     throw new Error('Performance scenarios require stub mode and the full dev seed');
   }
   const D = globalThis.__aoiDebug;
+  const foreground = D.trackForeground();
+  try {
   const sleep = D.sleep;
   function fibers() {
     const hook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -164,6 +166,9 @@
   globalThis.__aoiPerfAudit = { fibers, controls, press, has, snapshot, sample, activePath, back };
   return {
     environment: { stub: true, seed: 'full', development: __DEV__, platform: 'connected device', oracle: 'JS requestAnimationFrame gaps, including first callback delay; not GPU fps' },
-    before, after, results, labels,
+    before, after, results, labels, foreground: foreground.snapshot(),
   };
+  } finally {
+    foreground.stop();
+  }
 })()
