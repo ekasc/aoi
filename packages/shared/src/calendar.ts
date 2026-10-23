@@ -117,14 +117,14 @@ export const calendarEventRowSchema = z.object({
 export type CalendarEventRow = z.infer<typeof calendarEventRowSchema>;
 
 export const createCalendarEventRequestSchema = z.object({
-  title: z.string().min(1),
+  title: z.string().min(1).max(500),
   startsAt: z.string(),
   endsAt: z.string(),
   actor: calendarActorSchema,
-  actorName: z.string(),
+  actorName: z.string().max(128),
   label: calendarLabelSchema,
-  location: z.string().optional(),
-  reminderMinutesBefore: z.array(z.number()).optional(),
+  location: z.string().max(1000).optional(),
+  reminderMinutesBefore: z.array(z.number().int().min(0).max(525600)).max(10).optional(),
   allDay: z.boolean().optional(),
   together: z.boolean().optional(),
   /** 'weekly' expands into concrete weekly instances server-side. */
@@ -136,13 +136,13 @@ export type CreateCalendarEventRequest = z.infer<
 >;
 
 export const updateCalendarEventRequestSchema = z.object({
-  title: z.string().min(1).optional(),
+  title: z.string().min(1).max(500).optional(),
   startsAt: z.string().optional(),
   endsAt: z.string().optional(),
   label: calendarLabelSchema.optional(),
   /** Null clears the location, undefined leaves it alone. */
-  location: z.string().nullable().optional(),
-  reminderMinutesBefore: z.array(z.number()).optional(),
+  location: z.string().max(1000).nullable().optional(),
+  reminderMinutesBefore: z.array(z.number().int().min(0).max(525600)).max(10).optional(),
   allDay: z.boolean().optional(),
   together: z.boolean().optional(),
   /** Applies to this single instance only — never regenerates a series. */

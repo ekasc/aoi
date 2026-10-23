@@ -107,8 +107,8 @@ export type Moment = z.infer<typeof momentSchema>;
 
 export const createMomentRequestSchema = z.object({
   type: momentTypeSchema,
-  title: z.string().optional(),
-  body: z.string().optional(),
+  title: z.string().max(500).optional(),
+  body: z.string().max(10000).optional(),
   occurredAt: z.string().optional(),
   targetAt: z.string().nullable().optional(),
   mediaPreview: z.string().nullable().optional(),
@@ -144,8 +144,8 @@ export type DeleteMomentRequest = z.infer<typeof deleteMomentRequestSchema>;
 
 export const updateMomentRequestSchema = momentWritePreconditionSchema.extend({
   type: momentTypeSchema.optional(),
-  title: z.string().optional(),
-  body: z.string().optional(),
+  title: z.string().max(500).optional(),
+  body: z.string().max(10000).optional(),
   occurredAt: z.string().optional(),
   targetAt: z.string().nullable().optional(),
   mediaPreview: z.string().nullable().optional(),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createApp } from '../../create-app';
+import { createApp, makeRun } from '../../create-app';
+import { e2eAuthRouter } from '../../routes/e2e-auth';
 import { makeTestHarness, type ShimD1 } from '../../effects/test-harness';
 
 const NOW = Date.parse('2026-01-15T00:00:00.000Z');
@@ -42,6 +43,7 @@ describe('the e2e session bootstrap gate', () => {
     const harness = makeTestHarness();
     insertUser(harness.d1);
     const app = createApp(harness.layer);
+    app.route('/', e2eAuthRouter(makeRun(harness.layer)));
     const response = await post(app, { email: EMAIL, secret: 'run-secret' });
     expect(response.status).toBe(404);
   });
@@ -52,6 +54,7 @@ describe('the e2e session bootstrap gate', () => {
     });
     insertUser(harness.d1);
     const app = createApp(harness.layer);
+    app.route('/', e2eAuthRouter(makeRun(harness.layer)));
     expect(
       (await post(app, { email: EMAIL, secret: 'nope' })).status
     ).toBe(401);
@@ -66,6 +69,7 @@ describe('the e2e session bootstrap gate', () => {
     });
     insertUser(harness.d1);
     const app = createApp(harness.layer);
+    app.route('/', e2eAuthRouter(makeRun(harness.layer)));
     const minted = await post(app, { email: EMAIL, secret: 'run-secret' });
     expect(minted.status).toBe(201);
     const { token, userId } = (await minted.json()) as { token: string; userId: string };
@@ -81,5 +85,18 @@ describe('the e2e session bootstrap gate', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(authed.status).toBe(200);
+  });
+});
+
+
+describe('production route isolation', () => {
+  it('does not expose test sign-in even if test configuration is accidentally supplied', async () => {
+    const harness = makeTestHarness({ config: { AOI_E2E_MODE: 'true', AOI_E2E_SECRET: 'run-secret' } });
+    insertUser(harness.d1);
+    const app = createApp(harness.layer);
+    const response = await post(app, { email: EMAIL, secret: 'run-secret' });
+    expect(response.status).toBe(404);
+    const sessions = await harness.d1.prepare('select count(*) as count from user_sessions').first<{ count: number }>();
+    expect(sessions?.count).toBe(0);
   });
 });

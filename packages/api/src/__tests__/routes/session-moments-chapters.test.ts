@@ -91,6 +91,21 @@ function bucketsParam(bounds: Array<[number, number]>): string {
 }
 
 describe('chapter bucket summary (bounded, absolute bounds, no bodies)', () => {
+  it('rejects oversized memory writes at the HTTP boundary without storing them', async () => {
+    const { harness, app } = makeApp();
+    insertUser(harness.d1);
+    for (const fields of [{ body: 'x'.repeat(10001) }, { title: 'x'.repeat(501) }]) {
+      const response = await app.request('/v1/spaces/current/moments', {
+        method: 'POST',
+        headers: { ...auth(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'note', ...fields }),
+      });
+      expect(response.status).toBe(400);
+    }
+    const stored = await harness.d1.prepare('select count(*) as count from moments').first<{ count: number }>();
+    expect(stored?.count).toBe(0);
+  });
+
   it('counts per bucket with earliest-photo covers, goals excluded, hasOlder explicit', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1);
