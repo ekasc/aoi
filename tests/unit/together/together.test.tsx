@@ -6,12 +6,11 @@ import type { SkyPhoto } from '@/features/album/sky-photo-repository';
 import type { ViewerPhoto } from '@/components/moments/photo-viewer';
 
 const state = vi.hoisted(() => ({
-  photos: [] as SkyPhoto[], letters: [] as Record<string, unknown>[], status: 'ready', readError: null as string | null,
+  photos: [] as SkyPhoto[], status: 'ready', readError: null as string | null,
   operation: null as string | null, actionError: null as string | null, scopeKey: 'album-a', reload: vi.fn(), choosePhotos: vi.fn().mockResolvedValue(undefined),
   sendSqueeze: vi.fn(), isSending: false, lastSentAt: null, push: vi.fn(), isPlus: true, startDate: '2026-03-10' as string | null,
 }));
 vi.mock('@/features/album/use-sky-photos', () => ({ useSkyPhotos: () => state }));
-vi.mock('@/features/letters/letters-context', () => ({ useLetters: () => ({ letters: state.letters }) }));
 vi.mock('@/features/squeeze/squeeze-context', () => ({ useSqueeze: () => state }));
 vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { relationshipStartDate: state.startDate } }) }));
 vi.mock('@/features/dev/preview', () => ({ usePreviewVariant: () => ({ active: false, variant: 'full' }), skyPreviewStart: () => ({ monthsBack: 0, entitlement: null }) }));
@@ -35,7 +34,7 @@ const press = async (element: Element) => { await act(async () => { fireEvent.cl
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-15T20:00:00'));
-  Object.assign(state, { photos: [], letters: [], status: 'ready', readError: null, operation: null, actionError: null, scopeKey: 'album-a', isPlus: true, isSending: false, startDate: '2026-03-10' });
+  Object.assign(state, { photos: [], status: 'ready', readError: null, operation: null, actionError: null, scopeKey: 'album-a', isPlus: true, isSending: false, startDate: '2026-03-10' });
   vi.clearAllMocks();
 });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -81,7 +80,6 @@ describe('Us photo sky', () => {
     expect(screen.getByText('No photos yet.')).toBeTruthy();
     expect(screen.getByText('Choose photos')).toBeTruthy();
     expect(screen.queryByLabelText('Revisit your sky')).toBeNull();
-    expect(screen.getByText('Photos are encrypted on this device. They appear to your partner in your shared sky.')).toBeTruthy();
     await press(screen.getByLabelText('Choose photos'));
     expect(state.choosePhotos).toHaveBeenCalledOnce();
     expect(screen.queryByText('Local photo copies')).toBeNull();
@@ -135,7 +133,6 @@ describe('Us photo sky', () => {
     state.actionError = 'Could not add these photos. Please try again.';
     render(<UsScreen />);
     expect(screen.getByText(state.actionError).getAttribute('accessibilityrole')).toBe('alert');
-    expect(screen.getByText('Photos are encrypted on this device. They appear to your partner in your shared sky.')).toBeTruthy();
     expect(screen.getByLabelText('Choose photos').getAttribute('accessibilityhint')).toContain('encrypted on this device');
     await press(screen.getByLabelText('Choose photos'));
     expect(state.choosePhotos).toHaveBeenCalledOnce();
@@ -228,6 +225,9 @@ describe('Us photo sky', () => {
     render(<UsScreen />);
     await press(screen.getByLabelText('Revisit your sky'));
     await press(screen.getByLabelText('Earlier date'));
+    // The picker stands down while a panel is open, so it cannot cover the
+    // panel's own controls; closing the panel brings it back.
+    await press(screen.getByLabelText('Revisit your sky'));
     await press(screen.getByLabelText('Choose photos'));
     expect(state.choosePhotos).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText('Sky history')).toBeNull();

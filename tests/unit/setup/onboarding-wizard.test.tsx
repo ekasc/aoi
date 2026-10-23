@@ -221,6 +221,17 @@ describe('setup wizard screen', () => {
     expect(screen.getByText('Sign out')).toBeTruthy();
   });
 
+  it('opens a door through the sheet\'s scroll container', () => {
+    // The sheet scrolls so a short screen can still reach the form. A scroll
+    // container is also a touch responder, so the rule that survives the change
+    // is that a door still answers a press rather than being eaten as a drag.
+    const goIdentity = vi.fn();
+    flowMock.current = flow({ goIdentity });
+    render(createElement(OnboardingWizard));
+    fireEvent.click(screen.getByLabelText("We'll begin by creating our space"));
+    expect(goIdentity).toHaveBeenCalledOnce();
+  });
+
   it('signs out when the sheet\'s sign-out control is pressed', () => {
     const signOut = vi.fn();
     flowMock.current = flow({ signOut });

@@ -5,7 +5,6 @@ import { StyleSheet, View } from 'react-native';
 import { FontFamilies } from '@/constants/typography';
 import { useAoiTheme } from '@/features/theme/theme-context';
 import { useSkyEntry } from '@/components/home/sky-entry-provider';
-import { InvitePendingTag } from '@/components/space/invite-pending-tag';
 
 // System tab bar (iOS 26 liquid glass, Android Material 3) with the app's
 // envelope/paper iconography. SF Symbols on iOS with filled selected
@@ -51,16 +50,16 @@ export default function TabsLayout() {
       <NativeTabs.Trigger name="together" contentStyle={{ backgroundColor: colors.background }}>
         <NativeTabs.Trigger.Label>Us</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'envelope', selected: 'envelope.fill' }}
+          sf={{ default: 'sparkles', selected: 'sparkles' }}
           src={{
             default: (
               <NativeTabs.Trigger.VectorIcon
                 family={Ionicons}
-                name="mail-outline"
+                name="sparkles-outline"
               />
             ),
             selected: (
-              <NativeTabs.Trigger.VectorIcon family={Ionicons} name="mail" />
+              <NativeTabs.Trigger.VectorIcon family={Ionicons} name="sparkles" />
             ),
           }}
         />
@@ -114,7 +113,6 @@ export default function TabsLayout() {
         porting it to RN first, not un-deleting this.
       */}
     </NativeTabs>
-    <InvitePendingTag />
     </View>
   );
 }

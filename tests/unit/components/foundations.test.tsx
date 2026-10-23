@@ -6,7 +6,7 @@ import DevFoundations from '@/app/dev-foundations';
 import { Button } from '@/components/ui/button';
 import { PaperTextInput } from '@/components/ui/text-input';
 import { FirstPageDedication } from '@/components/moments/first-page-dedication';
-import { FontFamilies, Typography } from '@/constants/typography';
+import { FontFamilies } from '@/constants/typography';
 
 // The shared react-native mock passes Pressable `style` straight through,
 // but Button computes `style={({ pressed }) => ...}`. Resolve press-state
@@ -101,20 +101,16 @@ describe('First-page typography', () => {
     expect(FontFamilies.display).toBe(FontFamilies.body);
   });
 
-  it.each([true, false])('keeps invitation sentences separate (waiting=%s)', (waiting) => {
-    render(<FirstPageDedication partnerName="June" waiting={waiting} sinceLabel="1 day together"
-      onCompose={() => {}} onSkip={() => {}} />);
-    expect(screen.getByText('No memories yet')).toBeTruthy();
-    const opening = screen.getByText('Leave a photo, a few words, or your voice.');
-    const ending = screen.getByText(waiting
-      ? 'Something to find when they arrive.' : 'A little something to begin with.');
-    expect(opening).not.toBe(ending);
-    expect(opening.textContent).not.toContain('\n');
-    expect(opening.style.textAlign).toBe('center');
-    expect(opening.style.alignSelf).toBe('stretch');
-    expect(ending.style.alignSelf).toBe('stretch');
-    expect(opening.style.fontSize).toBe(`${Typography.body.fontSize}px`);
-    expect(ending.style.fontSize).toBe(`${Typography.supporting.fontSize}px`);
+  it('starts a memory or dismisses the dedication when requested', () => {
+    const onCompose = vi.fn();
+    const onSkip = vi.fn();
+    render(<FirstPageDedication partnerName="June" waiting sinceLabel="1 day together"
+      onCompose={onCompose} onSkip={onSkip} />);
+    fireEvent.click(screen.getByText('Add your first memory'));
+    expect(onCompose).toHaveBeenCalledOnce();
+    expect(onSkip).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Not now'));
+    expect(onSkip).toHaveBeenCalledOnce();
   });
 });
 

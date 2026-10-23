@@ -17,9 +17,11 @@ export const COPIED_FEEDBACK_MS = 2200;
 export function useCopyToClipboard(resetAfterMs: number = COPIED_FEEDBACK_MS) {
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generation = useRef(0);
 
   useEffect(
     () => () => {
+      generation.current += 1;
       if (timer.current) {
         clearTimeout(timer.current);
       }
@@ -32,8 +34,10 @@ export function useCopyToClipboard(resetAfterMs: number = COPIED_FEEDBACK_MS) {
       if (!value) {
         return;
       }
+      const request = ++generation.current;
       void Clipboard.setStringAsync(value).then(
         () => {
+          if (request !== generation.current) return;
           // The value, not a boolean: one screen may hold several copyable
           // things and a single flag would report the wrong one as copied. A
           // caller asking about a value it did not copy gets `false`.

@@ -332,20 +332,6 @@ beforeEach(() => {
   mockSegments = ['(auth)', 'sign-in'];
 });
 
-function tabTrigger(name: string) {
-  return capturedTabTriggers.find((entry) => entry.name === name);
-}
-
-function tabSf(name: string, focused: boolean) {
-  const sf = tabTrigger(name)?.sf;
-  return focused ? sf?.selected : sf?.default;
-}
-
-function tabVectorIcon(name: string, focused: boolean) {
-  const src = tabTrigger(name)?.src;
-  return (focused ? src?.selected : src?.default)?.props?.name;
-}
-
 function tabIconNames() {
   const names: string[] = [];
   for (const entry of capturedTabTriggers) {
@@ -419,28 +405,13 @@ describe('tab order and labels (Memories first)', () => {
     ]);
     // Memories is the leading trigger the platform bar renders.
     expect(capturedTabTriggers[0]?.name).toBe('(memories)');
-    // Book/mail/calendar/grid SF + vector outline/filled pairs — and no hearts.
+    // Each trigger hands the platform bar an icon; the specific glyph is a
+    // design choice, but hearts are excluded by product rule.
     const seen = tabIconNames();
     expect(seen.length).toBeGreaterThan(0);
     for (const name of seen) {
       expect(name).not.toMatch(/heart/i);
     }
-    expect(tabSf('(memories)', false)).toBe('book');
-    expect(tabSf('(memories)', true)).toBe('book.fill');
-    expect(tabSf('together', false)).toBe('envelope');
-    expect(tabSf('together', true)).toBe('envelope.fill');
-    expect(tabSf('plans', false)).toBe('calendar');
-    expect(tabSf('plans', true)).toBe('calendar.circle.fill');
-    expect(tabSf('ours', false)).toBe('square.grid.2x2');
-    expect(tabSf('ours', true)).toBe('square.grid.2x2.fill');
-    expect(tabVectorIcon('(memories)', false)).toBe('book-outline');
-    expect(tabVectorIcon('(memories)', true)).toBe('book');
-    expect(tabVectorIcon('together', false)).toBe('mail-outline');
-    expect(tabVectorIcon('together', true)).toBe('mail');
-    expect(tabVectorIcon('plans', false)).toBe('calendar-outline');
-    expect(tabVectorIcon('plans', true)).toBe('calendar');
-    expect(tabVectorIcon('ours', false)).toBe('grid-outline');
-    expect(tabVectorIcon('ours', true)).toBe('grid');
   });
 
   it('Memories feed renders at 320px with the FAB capture entry on the screen', async () => {

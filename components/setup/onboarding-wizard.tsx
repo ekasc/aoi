@@ -1,7 +1,9 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -30,6 +32,11 @@ import { haptics } from '@/features/haptics/haptics';
 // Setup collects identity on paper. Memories owns the invitation and its sky.
 
 const PAGE_GUTTER = Spacing[24];
+/** The invite code's shape: six cells at their natural width, and the gaps. */
+const OTP_CELL = 46;
+const OTP_GAP = Spacing[8];
+const OTP_ROW_WIDTH = OTP_CELL * 6 + OTP_GAP * 5;
+
 /** Front matter is numbered in lowercase roman: the fork, then the space. */
 const FOLIO: Record<string, string> = {
   welcome: 'i',
@@ -43,9 +50,30 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
+  /**
+   * The viewport the sheet is read inside.
+   *
+   * The sheet used to be a fixed column, which is correct only while the page
+   * fits: on a 320x568 screen, or with the keyboard up, or at a large text
+   * size, the form was taller than the column and its lower half — the date
+   * row, Continue, Back — was painted outside it and could not be reached.
+   * Scrolling the whole sheet keeps every step's actions and the sign-out line
+   * on the page at any height.
+   */
+  fill: {
+    flex: 1,
+  },
+  scrollContent: {
+    // Grows to the viewport when the page is short, so the welcome step still
+    // centres its doors, and to its own content when it is tall.
+    flexGrow: 1,
+  },
   sheet: {
     alignSelf: 'center',
-    flex: 1,
+    // A grow, not `flex: 1`: a zero basis let the sheet be shorter than its own
+    // rows, which is what let the form overlap the footer instead of pushing it
+    // down. With basis auto it can never be smaller than what it holds.
+    flexGrow: 1,
     maxWidth: 560,
     width: '100%',
   },
@@ -82,7 +110,7 @@ const styles = StyleSheet.create({
    * what made the head jump downward at the very moment it should have risen.
    */
   page: {
-    flex: 1,
+    flexGrow: 1,
   },
   /**
    * The page's body: the consequence, directly under the head.
@@ -92,7 +120,7 @@ const styles = StyleSheet.create({
    * belongs at the foot of the page rather than spread through the middle.
    */
   body: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: PAGE_GUTTER,
     paddingTop: Spacing[8],
   },
@@ -192,21 +220,28 @@ const styles = StyleSheet.create({
    */
   otpGroup: {
     alignItems: 'center',
-    alignSelf: 'center',
+    alignSelf: 'stretch',
     gap: Spacing[8],
   },
   otpRow: {
     flexDirection: 'row',
-    gap: Spacing[8],
+    gap: OTP_GAP,
+    maxWidth: OTP_ROW_WIDTH,
+    width: '100%',
   },
   otpBox: {
     alignItems: 'center',
     borderCurve: 'continuous',
     borderRadius: Radii.md,
     borderWidth: StyleSheet.hairlineWidth,
+    // Six fixed cells do not fit a 320pt screen inside the page gutter, which
+    // pushed the row past the margin. They keep their natural size and give
+    // width back proportionally when the row is narrower, so the shape stays a
+    // row on every screen.
+    flexShrink: 1,
     height: 56,
     justifyContent: 'center',
-    width: 46,
+    width: OTP_CELL,
   },
   /**
    * Invisible but real: it carries the keyboard, the autofill and the paste,
@@ -824,6 +859,7 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
   const palette = useStepPalette();
   const dark = isDarkBackground(colors.background);
   const reduceMotion = useReducedMotion();
+  const isIos = process.env.EXPO_OS === 'ios';
   // Measured, not assumed: how far the head has to travel to sit in the middle
   // of the page depends on how tall the head is and how much room the page has.
   const [restShift, setRestShift] = useState(0);
@@ -870,77 +906,97 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
       style={[styles.root, { backgroundColor: colors.background }]}>
       {!inert ? <StatusBar style={dark ? 'light' : 'dark'} /> : null}
 
-      <View
-        style={[
-          styles.sheet,
-          {
-            paddingBottom: insets.bottom + Spacing[24],
-            paddingTop: insets.top + Spacing[16],
-          },
-        ]}
+      {/* The keyboard lifts the sheet rather than covering the field, and the
+          scroll keeps whatever the lift leaves room for reachable. Both halves
+          are needed: avoidance alone still leaves a form taller than a short
+          screen. */}
+      <KeyboardAvoidingView
+        behavior={isIos ? 'padding' : undefined}
+        style={styles.fill}
       >
-        <View style={styles.head}>
-          <ThemedText style={{ color: palette.muted }} type="meta">
-            aoi
-          </ThemedText>
-          <ThemedText style={{ color: palette.muted }} type="meta">
-            {FOLIO[visibleFlow.step]}
-          </ThemedText>
-        </View>
-
-        <View
-          onLayout={(event) => measurePage(event.nativeEvent.layout.height)}
-          style={styles.page}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={styles.fill}
         >
-        <View
-          onLayout={(event) => measureHead(event.nativeEvent.layout.height)}
-          style={[styles.titleBlock, headStyle]}
-        >
-          {/* The first half of the sentence never unmounts and never
-              re-animates. Only what the step adds moves, so choosing a door
-              reads as the sentence continuing rather than as a new sheet
-              arriving with the same words on it. */}
-          {/* A step down from the doors' ink: the lead-in is the sentence's
-              opening, and the doors are what the page is actually asking. */}
-          <ThemedText style={{ color: palette.secondary }} type="title">
-            We&rsquo;ll begin by
-          </ThemedText>
-          <DoorBlock flow={visibleFlow} palette={palette} />
-        </View>
+          <View
+            style={[
+              styles.sheet,
+              {
+                paddingBottom: insets.bottom + Spacing[24],
+                paddingTop: insets.top + Spacing[16],
+              },
+            ]}
+          >
+            <View style={styles.head}>
+              <ThemedText style={{ color: palette.muted }} type="meta">
+                aoi
+              </ThemedText>
+              <ThemedText style={{ color: palette.muted }} type="meta">
+                {FOLIO[visibleFlow.step]}
+              </ThemedText>
+            </View>
 
-        {/* Inert while the head is at rest: transparent is not the same as
-            absent, and a laid-out body over the doors swallows the taps that
-            choose one. */}
-        <View
-          pointerEvents={atTop ? 'auto' : 'none'}
-          style={[
-            styles.body,
-            { justifyContent: 'flex-start' },
-            bodyStyle,
-          ]}
-        >
-          {/*
-            Only the consequence arrives.
+            <View
+              onLayout={(event) => measurePage(event.nativeEvent.layout.height)}
+              style={styles.page}
+            >
+              <View
+                onLayout={(event) => measureHead(event.nativeEvent.layout.height)}
+                style={[styles.titleBlock, headStyle]}
+              >
+                {/* The first half of the sentence never unmounts and never
+                    re-animates. Only what the step adds moves, so choosing a
+                    door reads as the sentence continuing rather than as a new
+                    sheet arriving with the same words on it. */}
+                {/* A step down from the doors' ink: the lead-in is the
+                    sentence's opening, and the doors are what the page is
+                    actually asking. */}
+                <ThemedText style={{ color: palette.secondary }} type="title">
+                  We&rsquo;ll begin by
+                </ThemedText>
+                <DoorBlock flow={visibleFlow} palette={palette} />
+              </View>
 
-            This used to be keyed on the step, so every transition remounted
-            the whole body: the door slid up the screen while saying the same
-            words in the same place, which is what made the changes read as
-            turbulence. A door that has not changed must not move. The parts
-            that are genuinely new carry their own entrance below.
-          */}
-          <Animated.View key={visibleFlow.step} style={styles.stepBody}>
-            {visibleFlow.step === 'identity' ? (
-              <IdentityStep flow={visibleFlow} palette={palette} />
-            ) : null}
-            {visibleFlow.step === 'join' ? <JoinStep flow={visibleFlow} palette={palette} /> : null}
-          </Animated.View>
-        </View>
-        </View>
+              {/* Inert while the head is at rest: transparent is not the same as
+                  absent, and a laid-out body over the doors swallows the taps
+                  that choose one. */}
+              <View
+                pointerEvents={atTop ? 'auto' : 'none'}
+                style={[
+                  styles.body,
+                  { justifyContent: 'flex-start' },
+                  bodyStyle,
+                ]}
+              >
+                {/*
+                  Only the consequence arrives.
 
-        <View style={styles.footer}>
-          <SignOut flow={flow} palette={palette} />
-        </View>
-      </View>
+                  This used to be keyed on the step, so every transition
+                  remounted the whole body: the door slid up the screen while
+                  saying the same words in the same place, which is what made
+                  the changes read as turbulence. A door that has not changed
+                  must not move. The parts that are genuinely new carry their
+                  own entrance below.
+                */}
+                <Animated.View key={visibleFlow.step} style={styles.stepBody}>
+                  {visibleFlow.step === 'identity' ? (
+                    <IdentityStep flow={visibleFlow} palette={palette} />
+                  ) : null}
+                  {visibleFlow.step === 'join' ? (
+                    <JoinStep flow={visibleFlow} palette={palette} />
+                  ) : null}
+                </Animated.View>
+              </View>
+            </View>
+
+            <View style={styles.footer}>
+              <SignOut flow={flow} palette={palette} />
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
