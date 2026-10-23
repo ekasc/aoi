@@ -5,8 +5,10 @@ import { createElement, type ReactNode } from 'react';
 import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
 import { BeachThemeOrder, BeachThemes } from '@/constants/theme-presets';
 
-const { animatedValues } = vi.hoisted(() => ({
+const { animatedValues, animations, motion } = vi.hoisted(() => ({
   animatedValues: [] as { v: unknown; setValue: (v: unknown) => void }[],
+  animations: [] as { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }[],
+  motion: { reduced: false },
 }));
 
 type TestProps = {
@@ -89,7 +91,13 @@ let capturedTrackLayout: ((event: {
 beforeEach(() => {
   capturedTrackLayout = null;
   animatedValues.length = 0;
+  animations.length = 0;
+  motion.reduced = false;
 });
+
+vi.mock('react-native-reanimated', () => ({
+  useReducedMotion: () => motion.reduced,
+}));
 
 vi.mock('react-native', () => {
   const View = ({ children, style, onLayout, ...rest }: TestProps) => {
@@ -136,12 +144,14 @@ vi.mock('react-native', () => {
     Animated: {
       View,
       Value: MockAnimatedValue,
-      timing: (value: { setValue: (v: unknown) => void }, config: { toValue: unknown }) => ({
-        start: (done?: () => void) => {
-          value.setValue(config.toValue);
-          done?.();
-        },
-      }),
+      timing: (value: { setValue: (v: unknown) => void }, config: { toValue: unknown }) => {
+        const animation = {
+          start: vi.fn(() => value.setValue(config.toValue)),
+          stop: vi.fn(),
+        };
+        animations.push(animation);
+        return animation;
+      },
     },
     Easing: {
       bezier: () => ({}),
@@ -279,6 +289,36 @@ describe('Feed/Gallery tab accessibility', () => {
 
     // One segment width (194) plus the 4pt gap: the thumb glides there.
     expect(animatedValues[0]?.v).toBe(198);
+  });
+
+  it('stops interrupted selection motion and stops again on unmount', () => {
+    const { rerender, unmount } = render(
+      <SegmentedControl onChange={() => {}} options={options} value="feed" />
+    );
+    act(() => capturedTrackLayout?.({ nativeEvent: { layout: { width: 400 } } }));
+    rerender(<SegmentedControl onChange={() => {}} options={options} value="gallery" />);
+    expect(animations).toHaveLength(1);
+    expect(animations[0].stop).not.toHaveBeenCalled();
+
+    rerender(<SegmentedControl onChange={() => {}} options={options} value="feed" />);
+    expect(animations[0].stop).toHaveBeenCalledTimes(1);
+    expect(animations[1].start).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(animations[1].stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels active motion before snapping when reduced motion is enabled', () => {
+    const { rerender } = render(
+      <SegmentedControl onChange={() => {}} options={options} value="feed" />
+    );
+    act(() => capturedTrackLayout?.({ nativeEvent: { layout: { width: 400 } } }));
+    rerender(<SegmentedControl onChange={() => {}} options={options} value="gallery" />);
+
+    motion.reduced = true;
+    rerender(<SegmentedControl onChange={() => {}} options={options} value="feed" />);
+    expect(animations[0].stop).toHaveBeenCalledTimes(1);
+    expect(animations).toHaveLength(1);
+    expect(animatedValues[0].v).toBe(0);
   });
 
   it('removes faded tabs from the accessibility tree and disables taps', () => {
