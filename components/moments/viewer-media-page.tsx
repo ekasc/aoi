@@ -74,6 +74,9 @@ export function ViewerVideoPage({
   const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
   const textPrimary = useThemeColor({}, 'textPrimary');
   const [started, setStarted] = useState(false);
+  if (!active && started) {
+    setStarted(false);
+  }
   const [stillSize, setStillSize] = useState<{ width: number; height: number } | null>(null);
   const handlePlay = useCallback(() => setStarted(true), []);
   const handleStillLoad = useCallback((event: { source?: { width?: number; height?: number } }) => {
@@ -198,12 +201,10 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
   const live = useRef(true);
   const [scrubSeconds, setScrubSeconds] = useState<number | null>(null);
 
-  useEffect(
-    () => () => {
-      live.current = false;
-    },
-    [],
-  );
+  useEffect(() => {
+    live.current = true;
+    return () => { live.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!scrubbing.get()) {
@@ -229,6 +230,9 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
 
   const finishScrub = useCallback(
     (resume: boolean) => {
+      if (!live.current) {
+        return;
+      }
       setScrubSeconds(null);
       if (resume && wasPlaying.current) {
         setPlaying(true);
@@ -282,10 +286,19 @@ function PlayingVoicePage({ label, uri }: { label: string; uri: string }) {
         playhead.set(scrubFractionForOffset(event.x, waveWidth));
         runOnJS(scrubTo)(event.x, false);
       })
-      .onFinalize((_, success) => {
+      .onEnd((event, success) => {
         'worklet';
+        if (success) {
+          runOnJS(scrubTo)(event.x, true);
+        }
+      })
+      .onFinalize(() => {
+        'worklet';
+        if (!scrubbing.get()) {
+          return;
+        }
         scrubbing.set(false);
-        runOnJS(finishScrub)(success);
+        runOnJS(finishScrub)(true);
       });
 
     const tap = Gesture.Tap()

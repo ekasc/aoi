@@ -41,7 +41,7 @@ import {
 import { MomentCard } from "@/components/moments/moment-card";
 import { FirstPageDedication } from '@/components/moments/first-page-dedication';
 import { PartnerInvitation } from '@/components/space/partner-invitation';
-import { PhotoViewer, type ViewerPhoto } from "@/components/moments/photo-viewer";
+import { PhotoViewer, type PhotoViewerHandle, type ViewerPhoto } from "@/components/moments/photo-viewer";
 import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { PendingMemoryRow } from "@/components/moments/pending-memory-row";
 import { ThemedText } from "@/components/themed-text";
@@ -290,6 +290,7 @@ export default function MemoriesScreen() {
 		/** Window frame of the tile that opened this session (morph origin). */
 		origin?: PhotoOrigin;
 	} | null>(null);
+	const viewerRef = useRef<PhotoViewerHandle>(null);
 
 	// Pinned overlay header: a single fixed row — the title on the left, the
 	// Feed/Gallery switcher on the right. The feed scrolls underneath it; the
@@ -393,6 +394,7 @@ export default function MemoriesScreen() {
 		return () => clearTimeout(timer);
 	}, [placed, feed.isLoading, feed.error, seenCursor, markReady]);
 	const handleScrollBeginDrag = useCallback(() => {
+		viewerRef.current?.interruptReturn();
 		// A real drag: the reader owns the position from here.
 		readerScrolledRef.current = true;
 	}, []);
@@ -1757,6 +1759,7 @@ export default function MemoriesScreen() {
 			/>
 
 			<PhotoViewer
+				ref={viewerRef}
 				photos={viewerPhoto?.photos ?? []}
 				initialIndex={viewerPhoto?.index ?? 0}
 				origin={viewerPhoto?.origin}

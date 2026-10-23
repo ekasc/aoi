@@ -4,7 +4,9 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
 import {
+  backdropFor,
   buildMorphGeometry,
+  morphCropScale,
   shellRadiusFor,
   type ViewerHome,
   type ViewerMorph,
@@ -61,7 +63,7 @@ export function MorphShell({
 
   const shellStyle = useAnimatedStyle(
     () => {
-      const t = morph.t.value;
+      const t = Math.max(0, Math.min(1, morph.t.value));
       const hasHome = home.valid.value;
       const baseWidth = geometry?.baseWidth ?? frame.width;
       const baseHeight = geometry?.baseHeight ?? frame.height;
@@ -82,14 +84,24 @@ export function MorphShell({
           { scale },
         ],
         borderRadius: shellRadiusFor(t, home.radius.value, scale),
+        opacity: hasHome ? 1 : backdropFor(t),
       };
     },
     [frame, geometry, home, morph],
   );
 
-  const cropStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.value }],
-  }));
+  const cropStyle = useAnimatedStyle(() => {
+    if (!home.valid.value) {
+      return { transform: [{ scale: 1 }] };
+    }
+    const targetScale = Math.min(1, Math.max(
+      home.width.value / (geometry?.baseWidth ?? frame.width),
+      home.height.value / (geometry?.baseHeight ?? frame.height),
+    ));
+    return {
+      transform: [{ scale: morphCropScale(morph.t.value, geometry?.coverScale ?? 1, targetScale) }],
+    };
+  });
 
   return (
     <View style={styles.center}>
