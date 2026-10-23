@@ -131,15 +131,14 @@ async function createPhotoMoment(
   token: string,
   mediaId: string,
   clientId: string
-): Promise<string> {
+): Promise<{ id: string; updatedAt: string }> {
   const res = await app.request('/v1/spaces/current/moments', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...auth(token) },
     body: JSON.stringify({ type: 'media', title: 'Lake', mediaId, clientId }),
   });
   expect(res.status).toBe(201);
-  const body = (await res.json()) as { id: string };
-  return body.id;
+  return (await res.json()) as { id: string; updatedAt: string };
 }
 
 async function mediaUsedBytes(app: ReturnType<typeof makeApp>['app'], token: string): Promise<number> {
@@ -159,12 +158,13 @@ describe('moment deletion releases unreferenced media', () => {
     const { harness, app } = makeApp();
     const spaceId = await setupPairedSpace(app, harness);
     const key = insertCompleteMedia(harness, spaceId, MEDIA_A);
-    const momentId = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-del-1');
+    const { id: momentId, updatedAt: expectedUpdatedAt } = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-del-1');
     expect(await mediaUsedBytes(app, TOKEN_A)).toBe(SIZE);
 
     const deleted = await app.request(`/v1/moments/${momentId}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_A),
+      headers: { ...auth(TOKEN_A), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt }),
     });
     expect(deleted.status).toBe(200);
 
@@ -185,13 +185,14 @@ describe('moment deletion releases unreferenced media', () => {
     const { harness, app } = makeApp();
     const spaceId = await setupPairedSpace(app, harness);
     insertCompleteMedia(harness, spaceId, MEDIA_A);
-    const first = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-shared-1');
+    const { id: first, updatedAt: expectedUpdatedAt } = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-shared-1');
     await createPhotoMoment(app, TOKEN_B, MEDIA_A, 'client-shared-2');
     expect(await mediaUsedBytes(app, TOKEN_A)).toBe(SIZE);
 
     const deleted = await app.request(`/v1/moments/${first}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_A),
+      headers: { ...auth(TOKEN_A), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt }),
     });
     expect(deleted.status).toBe(200);
 
@@ -207,15 +208,18 @@ describe('moment deletion releases unreferenced media', () => {
     const { harness, app } = makeApp();
     const spaceId = await setupPairedSpace(app, harness);
     insertCompleteMedia(harness, spaceId, MEDIA_A);
-    const momentId = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-repeat-1');
-    expect((await app.request(`/v1/moments/${momentId}`, { method: 'DELETE', headers: auth(TOKEN_A) })).status).toBe(
+    const { id: momentId, updatedAt: expectedUpdatedAt } = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-repeat-1');
+    expect((await app.request(`/v1/moments/${momentId}`, {
+      method: 'DELETE', headers: { ...auth(TOKEN_A), 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedUpdatedAt }),
+    })).status).toBe(
       200
     );
     const tombstonedAt = mediaRow(harness, MEDIA_A)?.deleted_at;
 
     const again = await app.request(`/v1/moments/${momentId}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_A),
+      headers: { ...auth(TOKEN_A), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt }),
     });
     expect(again.status).toBe(404);
     expect(mediaRow(harness, MEDIA_A)?.deleted_at).toBe(tombstonedAt);
@@ -227,13 +231,13 @@ describe('moment deletion releases unreferenced media', () => {
     const spaceId = await setupPairedSpace(app, harness);
     insertCompleteMedia(harness, spaceId, MEDIA_A);
     insertCompleteMedia(harness, spaceId, MEDIA_B);
-    const momentId = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-replace-1');
+    const { id: momentId, updatedAt: expectedUpdatedAt } = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-replace-1');
     expect(await mediaUsedBytes(app, TOKEN_A)).toBe(2 * SIZE);
 
     const updated = await app.request(`/v1/moments/${momentId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ mediaId: MEDIA_B }),
+      body: JSON.stringify({ expectedUpdatedAt, mediaId: MEDIA_B }),
     });
     expect(updated.status).toBe(200);
 
@@ -247,12 +251,13 @@ describe('moment deletion releases unreferenced media', () => {
     const { harness, app } = makeApp();
     const spaceId = await setupPairedSpace(app, harness);
     insertCompleteMedia(harness, spaceId, MEDIA_A);
-    const first = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-race-1');
+    const { id: first, updatedAt: firstVersion } = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-race-1');
     // Legitimate second reference lands first…
-    const middle = await createPhotoMoment(app, TOKEN_B, MEDIA_A, 'client-race-2');
+    const { id: middle, updatedAt: middleVersion } = await createPhotoMoment(app, TOKEN_B, MEDIA_A, 'client-race-2');
     const deleted = await app.request(`/v1/moments/${first}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_A),
+      headers: { ...auth(TOKEN_A), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt: firstVersion }),
     });
     expect(deleted.status).toBe(200);
     expect(mediaRow(harness, MEDIA_A)?.deleted_at).toBeNull();
@@ -260,7 +265,8 @@ describe('moment deletion releases unreferenced media', () => {
     // …and once truly unreferenced + tombstoned, nothing can reattach to it.
     const deletedMiddle = await app.request(`/v1/moments/${middle}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_B),
+      headers: { ...auth(TOKEN_B), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt: middleVersion }),
     });
     expect(deletedMiddle.status).toBe(200);
     expect(mediaRow(harness, MEDIA_A)?.deleted_at).toBeTypeOf('number');
@@ -276,12 +282,13 @@ describe('moment deletion releases unreferenced media', () => {
     const { harness, app } = makeApp();
     const spaceId = await setupPairedSpace(app, harness);
     insertPendingMedia(harness, spaceId, MEDIA_A);
-    const momentId = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-pending-1');
+    const { id: momentId, updatedAt: expectedUpdatedAt } = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-pending-1');
     expect(await mediaUsedBytes(app, TOKEN_A)).toBe(SIZE);
 
     const deleted = await app.request(`/v1/moments/${momentId}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_A),
+      headers: { ...auth(TOKEN_A), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt }),
     });
     expect(deleted.status).toBe(200);
     expect(mediaRow(harness, MEDIA_A)?.deleted_at).toBeTypeOf('number');
@@ -300,10 +307,11 @@ describe('physical purge after logical deletion', () => {
     const { harness, app } = makeApp();
     const spaceId = await setupPairedSpace(app, harness);
     const key = insertCompleteMedia(harness, spaceId, MEDIA_A);
-    const momentId = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-purge-1');
+    const { id: momentId, updatedAt: expectedUpdatedAt } = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-purge-1');
     const deleted = await app.request(`/v1/moments/${momentId}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_A),
+      headers: { ...auth(TOKEN_A), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt }),
     });
     expect(deleted.status).toBe(200);
     // Age past the soft-delete purge horizon.

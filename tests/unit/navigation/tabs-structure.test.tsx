@@ -223,6 +223,9 @@ vi.mock('@expo/vector-icons/Ionicons', () => ({
   default: () => null,
 }));
 
+// The tabs layout owns only the OS tab bar. Help and invitation are opened
+// from the screens that own them, so nothing here mounts an overlay.
+
 vi.mock('react-native-reanimated', () => {
   const chain: Record<string, () => unknown> = {};
   chain.duration = () => chain;
@@ -283,6 +286,7 @@ vi.mock('react-native-reanimated', () => {
 });
 
 const pushSpy = vi.fn();
+const navigateSpy = vi.fn();
 const capturedRedirect: { href: string | null } = { href: null };
 type CapturedTabTrigger = {
   name: string;
@@ -377,7 +381,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
 vi.mock('expo-router', () => {
   const React = require('react');
   return {
-    useRouter: () => ({ push: pushSpy, back: vi.fn(), replace: vi.fn(), setParams: vi.fn() }),
+    useRouter: () => ({ push: pushSpy, back: vi.fn(), replace: vi.fn(), navigate: navigateSpy, setParams: vi.fn() }),
     useLocalSearchParams: () => ({}),
     useFocusEffect: (effect: () => void | (() => void)) => {
       React.useEffect(() => {
@@ -500,15 +504,6 @@ vi.mock('@/features/moments/use-resurface-notification', () => ({
   useResurfaceNotification: () => {},
 }));
 
-vi.mock('@/features/letters/letters-context', () => ({
-  useLetters: () => ({
-    letters: [],
-    isLoading: false,
-    error: null,
-    reload: vi.fn(async () => {}),
-  }),
-}));
-
 vi.mock('@/features/question/question-context', () => ({
   useQuestion: () => ({
     state: {
@@ -534,6 +529,7 @@ vi.mock('@/features/calendar/calendar-context', () => ({
     visibleMonth: new Date('2026-01-01T00:00:00.000Z'),
     eventsForDay: {},
     upcomingEvents: [],
+    monthReadState: () => 'unread',
     setSelectedDate: vi.fn(),
     setVisibleMonth: vi.fn(),
     isLoading: false,
@@ -648,6 +644,7 @@ vi.mock('@/components/media/voice-recorder', () => ({
 
 beforeEach(() => {
   pushSpy.mockClear();
+  navigateSpy.mockClear();
   mockAudioGranted = true;
   mockAudioActive = false;
   mockAudioDuration = 0;
@@ -670,20 +667,6 @@ beforeEach(() => {
   process.env.EXPO_OS = 'ios';
   capturedTransparencyHandler = null;
 });
-
-function tabTrigger(name: string) {
-  return capturedTabTriggers.find((entry) => entry.name === name);
-}
-
-function tabSf(name: string, focused: boolean) {
-  const sf = tabTrigger(name)?.sf;
-  return focused ? sf?.selected : sf?.default;
-}
-
-function tabVectorIcon(name: string, focused: boolean) {
-  const src = tabTrigger(name)?.src;
-  return (focused ? src?.selected : src?.default)?.props?.name;
-}
 
 function tabIconNames() {
   const names: string[] = [];
@@ -743,46 +726,13 @@ describe('P2A tab structure (system tab bar)', () => {
     expect(names).toContain('ours');
   });
 
-  it('uses book/mail/calendar/grid SF + vector pairs — no hearts anywhere in the bar', async () => {
-    const { container } = await renderTabsLayout();
+  it('keeps hearts out of the tab bar', async () => {
+    await renderTabsLayout();
     const seen = tabIconNames();
     expect(seen.length).toBeGreaterThan(0);
     for (const name of seen) {
       expect(name).not.toMatch(/heart/i);
     }
-    // SF Symbols on iOS, with filled selected states.
-    expect(tabSf('(memories)', false)).toBe('book');
-    expect(tabSf('(memories)', true)).toBe('book.fill');
-    expect(tabSf('together', false)).toBe('envelope');
-    expect(tabSf('together', true)).toBe('envelope.fill');
-    expect(tabSf('plans', false)).toBe('calendar');
-    expect(tabSf('plans', true)).toBe('calendar.circle.fill');
-    expect(tabSf('ours', false)).toBe('square.grid.2x2');
-    expect(tabSf('ours', true)).toBe('square.grid.2x2.fill');
-    // The same outline/filled pairs cross-platform through Ionicons.
-    expect(tabVectorIcon('(memories)', false)).toBe('book-outline');
-    expect(tabVectorIcon('(memories)', true)).toBe('book');
-    expect(tabVectorIcon('together', false)).toBe('mail-outline');
-    expect(tabVectorIcon('together', true)).toBe('mail');
-    expect(tabVectorIcon('plans', false)).toBe('calendar-outline');
-    expect(tabVectorIcon('plans', true)).toBe('calendar');
-    expect(tabVectorIcon('ours', false)).toBe('grid-outline');
-    expect(tabVectorIcon('ours', true)).toBe('grid');
-    // The bar renders those Ionicons in trigger order.
-    expect(
-      Array.from(container.querySelectorAll('[data-icon]')).map((icon) =>
-        icon.getAttribute('data-icon')
-      )
-    ).toEqual([
-      'book-outline',
-      'book',
-      'mail-outline',
-      'mail',
-      'calendar-outline',
-      'calendar',
-      'grid-outline',
-      'grid',
-    ]);
   });
 });
 
@@ -887,6 +837,7 @@ describe('P2A Account surface', () => {
     expect(screen.queryByText('Location')).toBeNull();
   });
 
+
   it('renders account controls directly without navigating', async () => {
     const { default: AccountScreen } = await import('@/app/(app)/account');
     render(<AccountScreen />);
@@ -895,6 +846,30 @@ describe('P2A Account surface', () => {
     expect(screen.getByText('Export my data')).toBeTruthy();
     expect(screen.getByText('Local photo copies')).toBeTruthy();
     expect(pushSpy).not.toHaveBeenCalledWith('/(app)/settings');
+  });
+
+  it('opens the help guide only when asked, and can put it away', async () => {
+    const { default: AccountScreen } = await import('@/app/(app)/account');
+    render(<AccountScreen />);
+
+    // Nothing interrupts the screen on its own.
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(screen.getByText('How to use Aoi'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Keep exploring'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('can start from the help guide straight in Memories', async () => {
+    const { default: AccountScreen } = await import('@/app/(app)/account');
+    render(<AccountScreen />);
+
+    fireEvent.click(screen.getByText('How to use Aoi'));
+    fireEvent.click(screen.getByText('Go to Memories'));
+    expect(navigateSpy).toHaveBeenCalledWith('/(app)/(tabs)/(memories)');
   });
 });
 

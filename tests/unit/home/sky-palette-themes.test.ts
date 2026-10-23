@@ -100,11 +100,11 @@ describe('per-theme sky ramps', () => {
   });
 
   it('resolves stops per theme and falls back to after-hours for unknown ids', () => {
-    expect(skyStopsForTheme('sea-glass', 'light')).toEqual(
-      THEME_SKY_RAMPS['sea-glass'].light,
+    expect(skyStopsForTheme('beach', 'light')).toEqual(
+      THEME_SKY_RAMPS['beach'].light,
     );
-    expect(skyStopsForTheme('deep-ocean', 'dark')).toEqual(
-      THEME_SKY_RAMPS['deep-ocean'].dark,
+    expect(skyStopsForTheme('beach', 'dark')).toEqual(
+      THEME_SKY_RAMPS['beach'].dark,
     );
     expect(skyStopsForTheme('nope', 'light')).toEqual(
       THEME_SKY_RAMPS['after-hours'].light,

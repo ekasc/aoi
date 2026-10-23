@@ -20,6 +20,12 @@ export default function Index() {
 	}
 
 	if (status === "signed_out") {
+		// E2E builds land on the test console instead of the public sign-in,
+		// which needs a native sheet no emulator can answer. Past that
+		// screen everything is production code.
+		if (__DEV__ && process.env.EXPO_PUBLIC_E2E_MODE === "true") {
+			return <Redirect href="/dev-e2e" />;
+		}
 		return <Redirect href="/(public)" />;
 	}
 

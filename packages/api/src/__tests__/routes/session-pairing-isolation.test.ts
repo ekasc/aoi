@@ -505,13 +505,14 @@ describe('pairing isolation mutation sweep (C cannot alter B history)', () => {
 
     const patchMoment = await app.request(
       `/v1/moments/${s.noteId}`,
-      json(TOKEN_C, { title: 'C was here' }, 'PATCH')
+      json(TOKEN_C, { title: 'C was here', expectedUpdatedAt: new Date(T0).toISOString() }, 'PATCH')
     );
     expect([403, 404]).toContain(patchMoment.status);
 
     const deleteMoment = await app.request(`/v1/moments/${s.noteId}`, {
       method: 'DELETE',
-      headers: auth(TOKEN_C),
+      headers: { ...auth(TOKEN_C), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUpdatedAt: new Date(T0).toISOString() }),
     });
     expect([403, 404]).toContain(deleteMoment.status);
 

@@ -6,6 +6,7 @@ import {
   collectionItemListResponseSchema,
   collectionItemSchema,
   collectionListResponseSchema,
+  collectionPreviewListResponseSchema,
   collectionSchema,
   createCollectionItemRequestSchema,
   createCollectionItemResponseSchema,
@@ -25,6 +26,7 @@ import {
   deleteCollectionProgram,
   listCollectionItemsProgram,
   listCollectionsProgram,
+  listCollectionPreviewsProgram,
   updateCollectionItemProgram,
   updateCollectionProgram,
 } from '../domains/collections';
@@ -52,6 +54,17 @@ export function collectionsRouter(run: RunProgram): Hono {
     async (c) => {
       const result = await run(listCollectionsProgram(c.var.userId));
       return c.json(collectionListResponseSchema.parse({ collections: result }));
+    }
+  );
+
+  // ── Preview every shelf at once ───────────────────────────────────────
+  router.get(
+    '/v1/spaces/current/collection-previews',
+    requireAuth,
+    rateLimitGeneral,
+    async (c) => {
+      const result = await run(listCollectionPreviewsProgram(c.var.userId));
+      return c.json(collectionPreviewListResponseSchema.parse({ previews: result }));
     }
   );
 

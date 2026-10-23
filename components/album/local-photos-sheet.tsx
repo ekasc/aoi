@@ -28,9 +28,9 @@ export function LocalPhotosSheet({ visible, onClose, album }: {
         data={album.photos} keyExtractor={(photo) => photo.id}
         ListHeaderComponent={<View style={styles.section}>
         <ThemedText type="title">Local photo copies</ThemedText>
-        <ThemedText type="body">These photos are not part of your shared archive. To share a photo with your partner, keep it in Memories.</ThemedText>
+        <ThemedText type="body">These are this phone’s copies. The same photos also live in your shared sky for your partner — removing a copy here removes only this phone’s copy. To share a photo with your partner, keep it in Memories.</ThemedText>
         <ThemedText type="caption" style={{ color: muted }}>
-          Copies stay on this device. Aoi does not upload or share them. Removing a copy here does not delete the original from your gallery.
+          Copies stay on this device. Removing one here does not delete the original from your gallery, or the photo from your shared sky.
         </ThemedText>
         {album.status === 'loading' ? <ThemedText accessibilityLiveRegion="polite">Opening your local photos…</ThemedText> : null}
         {album.readError ? <ThemedText accessibilityRole="alert">{album.readError}</ThemedText> : null}
@@ -38,7 +38,7 @@ export function LocalPhotosSheet({ visible, onClose, album }: {
         {album.status === 'ready' && album.photos.length === 0 ? <ThemedText>No photos selected yet.</ThemedText> : null}
         </View>}
         renderItem={({ item: photo, index }) => (
-          <LocalPhotoRow key={`${photo.id}:${photo.uri}`} photo={photo} index={index} busy={busy} border={border} onRemove={album.removePhoto} />
+          <LocalPhotoRow key={`${photo.id}:${photo.uri}`} photo={photo} index={index} busy={busy} border={border} onRemove={album.removeLocalCopy} />
         )}
         ListFooterComponent={<View style={styles.section}>
         {album.operation === 'removing' ? <ThemedText accessibilityLiveRegion="polite">Removing local copy…</ThemedText> : null}

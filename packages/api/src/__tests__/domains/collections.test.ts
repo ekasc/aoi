@@ -9,6 +9,7 @@ import {
   deleteCollectionProgram,
   listCollectionItemsProgram,
   listCollectionsProgram,
+  listCollectionPreviewsProgram,
   updateCollectionItemProgram,
   updateCollectionProgram,
 } from '../../domains/collections';
@@ -266,5 +267,90 @@ describe('collections domain — membership gating + isolation', () => {
     // B (SPACE_1) cannot touch C's shelf; C cannot touch A's shelf.
     expect(await failureOf(ctx.provide(deleteCollectionProgram(USER_B, theirs.id)))).toBeInstanceOf(NotFoundError);
     expect(await failureOf(ctx.provide(deleteCollectionProgram(USER_C, ours.id)))).toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('collections domain — shelf previews', () => {
+  it('leads with the first three things by position and counts every one', async () => {
+    const ctx = makeCtx();
+    seedCouple(ctx);
+    const shelf = await run(
+      ctx.provide(createCollectionProgram(USER_A, { name: 'Films to watch' }))
+    );
+
+    const first = await run(
+      ctx.provide(createCollectionItemProgram(USER_A, shelf.id, { title: 'First', status: 'done' }))
+    );
+    const second = await run(
+      ctx.provide(createCollectionItemProgram(USER_A, shelf.id, { title: 'Second' }))
+    );
+    const third = await run(
+      ctx.provide(
+        createCollectionItemProgram(USER_A, shelf.id, {
+          title: 'Third',
+          coverUrl: 'https://example.invalid/3.jpg',
+        })
+      )
+    );
+    const fourth = await run(
+      ctx.provide(createCollectionItemProgram(USER_A, shelf.id, { title: 'Fourth', status: 'doing' }))
+    );
+
+    // Reordered so position, not insertion order, decides which three lead.
+    await run(ctx.provide(updateCollectionItemProgram(USER_A, fourth.id, { position: 0 })));
+    await run(ctx.provide(updateCollectionItemProgram(USER_A, third.id, { position: 1 })));
+    await run(ctx.provide(updateCollectionItemProgram(USER_A, second.id, { position: 2 })));
+    await run(ctx.provide(updateCollectionItemProgram(USER_A, first.id, { position: 3 })));
+
+    const previews = await run(ctx.provide(listCollectionPreviewsProgram(USER_A)));
+    expect(previews).toHaveLength(1);
+    expect(previews[0].collectionId).toBe(shelf.id);
+    expect(previews[0].titles).toEqual(['Fourth', 'Third', 'Second']);
+    expect(previews[0].covers).toEqual([null, 'https://example.invalid/3.jpg', null]);
+    // Every thing is counted, not just the three the shelf shows.
+    expect(previews[0].counts).toEqual({ want: 0, doing: 1, done: 1 });
+    expect(previews[0].total).toBe(4);
+  });
+
+  it('does not mix things between shelves or between spaces', async () => {
+    const ctx = makeCtx();
+    seedCouple(ctx);
+    const films = await run(ctx.provide(createCollectionProgram(USER_A, { name: 'Films' })));
+    const books = await run(ctx.provide(createCollectionProgram(USER_A, { name: 'Books' })));
+    await run(ctx.provide(createCollectionProgram(USER_A, { name: 'Nothing in it yet' })));
+    const theirs = await run(ctx.provide(createCollectionProgram(USER_C, { name: 'Theirs' })));
+
+    await run(ctx.provide(createCollectionItemProgram(USER_A, films.id, { title: 'A' })));
+    await run(ctx.provide(createCollectionItemProgram(USER_A, films.id, { title: 'B' })));
+    await run(ctx.provide(createCollectionItemProgram(USER_A, books.id, { title: 'C' })));
+    await run(ctx.provide(createCollectionItemProgram(USER_C, theirs.id, { title: 'D' })));
+
+    const ours = await run(ctx.provide(listCollectionPreviewsProgram(USER_A)));
+    const byId = Object.fromEntries(ours.map((preview) => [preview.collectionId, preview]));
+    // A shelf with nothing in it has no preview to send; the client shows it empty.
+    expect(Object.keys(byId).sort()).toEqual([books.id, films.id].sort());
+    expect(byId[films.id].titles).toEqual(['A', 'B']);
+    expect(byId[films.id].total).toBe(2);
+    expect(byId[books.id].titles).toEqual(['C']);
+
+    const otherSpace = await run(ctx.provide(listCollectionPreviewsProgram(USER_C)));
+    expect(otherSpace.map((preview) => preview.collectionId)).toEqual([theirs.id]);
+  });
+
+  it('stops counting a thing once it is removed', async () => {
+    const ctx = makeCtx();
+    seedCouple(ctx);
+    const shelf = await run(ctx.provide(createCollectionProgram(USER_A, { name: 'Places to go' })));
+    const kept = await run(ctx.provide(createCollectionItemProgram(USER_A, shelf.id, { title: 'Kept' })));
+    const removed = await run(ctx.provide(createCollectionItemProgram(USER_A, shelf.id, { title: 'Removed' })));
+
+    await run(ctx.provide(deleteCollectionItemProgram(USER_A, removed.id)));
+
+    const previews = await run(ctx.provide(listCollectionPreviewsProgram(USER_A)));
+    expect(previews[0].titles).toEqual(['Kept']);
+    expect(previews[0].total).toBe(1);
+
+    await run(ctx.provide(deleteCollectionItemProgram(USER_A, kept.id)));
+    expect(await run(ctx.provide(listCollectionPreviewsProgram(USER_A)))).toEqual([]);
   });
 });

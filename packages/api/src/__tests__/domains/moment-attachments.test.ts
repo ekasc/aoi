@@ -462,7 +462,7 @@ describe('update + delete with attachments', () => {
       ctx.provide(createMomentProgram(USER_A, { type: 'media', attachments: [{ mediaId: oldImg, kind: 'image' }] }))
     );
     const updated = await run(
-      ctx.provide(updateMomentProgram(USER_A, created.moment.id, { attachments: [{ mediaId: newAud, kind: 'audio' }] }))
+      ctx.provide(updateMomentProgram(USER_A, created.moment.id, { expectedUpdatedAt: created.moment.updatedAt, attachments: [{ mediaId: newAud, kind: 'audio' }] }))
     );
 
     expect(updated.attachments).toEqual([{ mediaId: newAud, kind: 'audio', url: mediaObjectUrl(newAud, 'original') }]);
@@ -483,7 +483,7 @@ describe('update + delete with attachments', () => {
       ctx.provide(createMomentProgram(USER_A, { type: 'media', attachments: [{ mediaId: img, kind: 'image' }] }))
     );
 
-    const updated = await run(ctx.provide(updateMomentProgram(USER_A, created.moment.id, { title: 'retitled' })));
+    const updated = await run(ctx.provide(updateMomentProgram(USER_A, created.moment.id, { expectedUpdatedAt: created.moment.updatedAt, title: 'retitled' })));
     expect(updated.title).toBe('retitled');
     expect(updated.attachments.map((a) => a.mediaId)).toEqual([img]);
     expect(updated.mediaId).toBe(img);
@@ -498,7 +498,7 @@ describe('update + delete with attachments', () => {
       ctx.provide(createMomentProgram(USER_A, { type: 'media', attachments: [{ mediaId: img, kind: 'image' }] }))
     );
 
-    const cleared = await run(ctx.provide(updateMomentProgram(USER_A, created.moment.id, { attachments: [] })));
+    const cleared = await run(ctx.provide(updateMomentProgram(USER_A, created.moment.id, { expectedUpdatedAt: created.moment.updatedAt, attachments: [] })));
     expect(cleared.attachments).toEqual([]);
     expect(cleared.mediaId ?? null).toBeNull();
     expect(mediaDeletedAt(ctx.harness.d1, img)).toBeTypeOf('number');
@@ -513,7 +513,7 @@ describe('update + delete with attachments', () => {
       ctx.provide(createMomentProgram(USER_A, { type: 'media', attachments: [{ mediaId: img, kind: 'image' }] }))
     );
 
-    const err = await failureOf(ctx.provide(updateMomentProgram(USER_B, created.moment.id, { attachments: [] })));
+    const err = await failureOf(ctx.provide(updateMomentProgram(USER_B, created.moment.id, { expectedUpdatedAt: created.moment.updatedAt, attachments: [] })));
     expect(err).toBeInstanceOf(ForbiddenError);
   });
 
@@ -548,11 +548,11 @@ describe('update + delete with attachments', () => {
       ctx.provide(createMomentProgram(USER_A, { type: 'media', attachments: [{ mediaId: solo, kind: 'image' }] }))
     );
 
-    await run(ctx.provide(deleteMomentProgram(USER_A, first.moment.id)));
+    await run(ctx.provide(deleteMomentProgram(USER_A, first.moment.id, { expectedUpdatedAt: first.moment.updatedAt })));
     // Still referenced by the legacy row → stays live.
     expect(mediaDeletedAt(ctx.harness.d1, shared)).toBeNull();
 
-    await run(ctx.provide(deleteMomentProgram(USER_A, soloMoment.moment.id)));
+    await run(ctx.provide(deleteMomentProgram(USER_A, soloMoment.moment.id, { expectedUpdatedAt: soloMoment.moment.updatedAt })));
     // Unreferenced → tombstoned for the retryable purge (quota released now).
     expect(mediaDeletedAt(ctx.harness.d1, solo)).toBeTypeOf('number');
   });

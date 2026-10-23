@@ -23,7 +23,8 @@ function pngSize(path: string): { width: number; height: number } {
 describe('app icon set', () => {
   it('ships the generated set at platform sizes', () => {
     expect(pngSize(join(IMAGES, 'icon.png'))).toEqual({ width: 1024, height: 1024 });
-    expect(pngSize(join(IMAGES, 'splash-icon.png'))).toEqual({ width: 1024, height: 1024 });
+    expect(pngSize(join(IMAGES, 'splash.png'))).toEqual({ width: 512, height: 512 });
+    expect(pngSize(join(IMAGES, 'splash-dark.png'))).toEqual({ width: 512, height: 512 });
     expect(pngSize(join(IMAGES, 'android-icon-foreground.png'))).toEqual({ width: 1024, height: 1024 });
     expect(pngSize(join(IMAGES, 'android-icon-background.png'))).toEqual({ width: 512, height: 512 });
     expect(pngSize(join(IMAGES, 'android-icon-monochrome.png'))).toEqual({ width: 432, height: 432 });
@@ -45,7 +46,8 @@ describe('app icon set', () => {
         'midnight-scrim.png',
         'midnight-window.jpg',
         'midnight-window.source.md',
-        'splash-icon.png',
+        'splash-dark.png',
+        'splash.png',
       ].sort()
     );
   });
@@ -53,7 +55,7 @@ describe('app icon set', () => {
   it('dev-only splash experiments are not reachable in production', () => {
     const root = join(import.meta.dirname, '../../..');
     expect(existsSync(join(root, 'app/splash-lab.tsx'))).toBe(false);
-    expect(existsSync(join(root, 'components/splash'))).toBe(false);
+    expect(readFileSync(join(root, 'app/dev-splash.tsx'), 'utf8')).toContain('if (!__DEV__) return <Redirect href="/" />');
     expect(existsSync(join(root, 'config/splash-variant.ts'))).toBe(false);
   });
 });

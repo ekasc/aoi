@@ -17,6 +17,7 @@ import { AudioPlayer } from '@/components/media/audio-player';
 import { MediaFrame } from '@/components/ui/media-frame';
 import { Radii, Spacing } from '@/constants/theme';
 import { resolveStagedUri } from '@/features/composer/staged-uri';
+import { bump, recordMedia } from '@/features/dev/measurement-recorder';
 import type { Moment } from '@/features/moments/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -184,11 +185,28 @@ export function FeedPhoto({
   const backgroundSubtle = useThemeColor({}, 'backgroundSubtle');
   const [measuredAspect, setMeasuredAspect] = useState<number | null>(null);
   const handleLoad = useCallback((event: { source: { width: number; height: number } }) => {
+    bump('mediaLoadEnd');
+    recordMedia('loadEnd', { uri });
     const { width, height } = event.source;
     if (Number.isFinite(width) && Number.isFinite(height) && height > 0) {
       setMeasuredAspect(clampPhotoAspect(width / height));
     }
-  }, []);
+  }, [uri]);
+  // Diagnosis only. These come from the native image loader, which no JS fetch
+  // instrumentation can see. They record that the client observed a load; they
+  // do not prove a network transfer, because a cache hit loads too.
+  const handleLoadStart = useCallback(() => {
+    bump('mediaLoadStart');
+    recordMedia('loadStart', { uri });
+  }, [uri]);
+  const handleDisplay = useCallback(() => {
+    bump('mediaDisplay');
+    recordMedia('display', { uri });
+  }, [uri]);
+  const handleError = useCallback(() => {
+    bump('mediaError');
+    recordMedia('error', { uri });
+  }, [uri]);
   const frame = (
     <View
       style={[
@@ -206,6 +224,9 @@ export function FeedPhoto({
         style={styles.image}
         contentFit="cover"
         transition={200}
+        onLoadStart={handleLoadStart}
+        onDisplay={handleDisplay}
+        onError={handleError}
         onLoad={aspectRatio === undefined ? handleLoad : undefined}
       />
     </View>

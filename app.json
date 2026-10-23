@@ -8,13 +8,12 @@
     "scheme": "aoi",
     "userInterfaceStyle": "automatic",
     "ios": {
-		"NSPhotoLibraryUsageDescription": "Aoi uses the photos you choose from your library for your shared memories. Photos you add to your shared album are encrypted on your device before they are uploaded.",
-		"NSPhotoLibraryAddUsageDescription": "Aoi saves photos you choose to keep as memories.",
-
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "com.ekasc.aoi",
       "deploymentTarget": "16.4",
       "infoPlist": {
+        "NSPhotoLibraryAddUsageDescription": "Aoi saves photos you choose to keep as memories.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
@@ -38,18 +37,20 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       "./plugins/expo-dev-menu-fab",
       "./plugins/with-ios-scene-delegate",
 			"./plugins/with-ios-personal-team",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/splash.png",
+          "imageWidth": 140,
           "resizeMode": "contain",
-          "backgroundColor": "#FCF9F2",
+          "backgroundColor": "#F6F2F7",
           "dark": {
-            "backgroundColor": "#16120E"
+            "image": "./assets/images/splash-dark.png",
+            "backgroundColor": "#120D13"
           }
         }
       ],

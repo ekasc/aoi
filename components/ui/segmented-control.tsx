@@ -99,12 +99,14 @@ export function SegmentedControl<T extends string>({
       thumbX.setValue(target);
       return;
     }
-    Animated.timing(thumbX, {
+    const animation = Animated.timing(thumbX, {
       toValue: target,
       duration: THUMB_DURATION_MS,
       easing: Easing.out(Easing.exp),
       useNativeDriver: true,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [selectedIndex, trackWidth, segmentWidth, thumbX, reduceMotion]);
 
   return (

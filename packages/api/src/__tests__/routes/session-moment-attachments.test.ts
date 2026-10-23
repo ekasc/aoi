@@ -226,12 +226,12 @@ describe('moment attachments routes', () => {
       body: JSON.stringify({ type: 'media', attachments: [{ mediaId: img, kind: 'image' }] }),
     });
     expect(created.status).toBe(201);
-    const { id } = (await created.json()) as { id: string };
+    const { id, updatedAt } = (await created.json()) as { id: string; updatedAt: string };
 
     const patched = await app.request(`/v1/moments/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ attachments: [{ mediaId: aud, kind: 'audio' }] }),
+      body: JSON.stringify({ expectedUpdatedAt: updatedAt, attachments: [{ mediaId: aud, kind: 'audio' }] }),
     });
     expect(patched.status).toBe(200);
     const patchedJson = (await patched.json()) as {

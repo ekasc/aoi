@@ -27,10 +27,6 @@ const pushApiMock = vi.hoisted(() => ({
   registerPushToken: vi.fn(async () => {}),
 }));
 
-const lettersMock = vi.hoisted(() => ({
-  reload: vi.fn(async () => {}),
-}));
-
 const calendarMock = vi.hoisted(() => ({
   refresh: vi.fn(async () => {}),
 }));
@@ -47,9 +43,6 @@ vi.mock('@/features/space/space-context', () => ({
 
 vi.mock('@/features/moments/moments-context', () => ({
   useMoments: () => ({ refresh: momentsMock.refresh }),
-}));
-vi.mock('@/features/letters/letters-context', () => ({
-  useLetters: () => ({ reload: lettersMock.reload }),
 }));
 vi.mock('@/features/calendar/calendar-context', () => ({
   useCalendar: () => ({ refresh: calendarMock.refresh }),

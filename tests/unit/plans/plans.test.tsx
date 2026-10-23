@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { createElement, forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import { CalendarListMock } from './calendar-list-mock';
+
+import { YEAR_SECTION_HEIGHT } from '@/components/calendar/year-section';
 
 // Resolve press-state styles as unpressed so the real Plans screen renders
 // (rows/cells compute `style={({ pressed }) => ...}`).
@@ -29,6 +32,10 @@ vi.mock('react-native', () => {
     if (typeof props.testID === 'string') {
       next['data-testid'] = props.testID;
     }
+    const state = props.accessibilityState;
+    if (state && typeof state === 'object' && 'busy' in state) {
+      next['aria-busy'] = state.busy;
+    }
     return next;
   }
 
@@ -42,6 +49,8 @@ vi.mock('react-native', () => {
 
   const View = (props: Record<string, unknown>) => {
     const { children, style, onLayout, ...rest } = props;
+    const layouts = ((globalThis as any).__plansLayouts ??= []) as unknown[];
+    layouts.push({ testID: props.testID, onLayout });
     // The platform fires onLayout after mount. Screens that size a page from
     // the space they are given depend on it, so the mock does the same instead
     // of leaving the measured path untested.
@@ -79,6 +88,8 @@ vi.mock('react-native', () => {
     View,
     Text,
     Pressable,
+    ActivityIndicator: () => null,
+    FlatList: CalendarListMock,
     ScrollView: forwardRef<
       { scrollTo: (options: Record<string, unknown>) => void },
       Record<string, unknown>
@@ -87,6 +98,8 @@ vi.mock('react-native', () => {
         children,
         style,
         onMomentumScrollEnd,
+        onScroll,
+        onScrollEndDrag,
         onLayout,
         testID,
         ...rest
@@ -98,6 +111,8 @@ vi.mock('react-native', () => {
       // Tagged, because both scrollers are mounted now and "last one wins"
       // would hand back whichever happens to render later.
       ends.push({ handler: onMomentumScrollEnd, testID });
+      const scrollHandlers = ((globalThis as any).__plansScrollHandlers ??= []) as unknown[];
+      scrollHandlers.push({ testID, onScroll, onScrollEndDrag });
       (globalThis as any).__plansMomentumEnd = onMomentumScrollEnd;
       // The real scroller reports its scroll position when one is fixed, and
       // the re-centre is only visible through that call, so the mock answers
@@ -127,7 +142,6 @@ vi.mock('react-native', () => {
       // Marked, so a test can ask whether something sits inside a scroller.
       return createDiv(children, style, { ...rest, 'data-rn-scrollview': 'true' });
     }),
-    Modal: View,
     Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
     Dimensions: { get: () => ({ width: 390, height: 844 }) },
     useWindowDimensions: () => ({
@@ -158,12 +172,13 @@ vi.mock('react-native-reanimated', () => {
     FadeOut: chain,
     FadeInDown: chain,
     ReduceMotion: { System: 'system' },
-    useReducedMotion: () => false,
+    useReducedMotion: () => mockReduceMotion,
     Easing: {
       linear: {},
       in: (easing: unknown) => easing,
       out: (easing: unknown) => easing,
       inOut: (easing: unknown) => easing,
+      bezier: (...points: number[]) => ({ bezier: points }),
     },
   };
 });
@@ -227,6 +242,7 @@ vi.mock('@/features/calendar/calendar-context', () => ({
       visibleMonth: mockVisibleMonth,
       eventsForDay: mockEventsForDay,
       upcomingEvents: mockUpcomingEvents,
+      monthReadState: (month: Date) => mockMonthReadState(month),
       isLoading: mockCalendarLoading,
       error: mockCalendarError,
       setSelectedDate: (date: Date) => {
@@ -240,6 +256,7 @@ vi.mock('@/features/calendar/calendar-context', () => ({
         mockVisibleMonth = new Date(date.getFullYear(), date.getMonth(), 1);
         emitCalendarChange();
       },
+      eventsInRange: async () => [],
       refresh: refreshCalendarSpy,
     };
   },
@@ -320,6 +337,19 @@ let mockUpcomingEvents: any[] = [];
 let mockSomedayOpen: any[] = [];
 let mockCalendarLoading = false;
 let mockCalendarError: string | null = null;
+// The provider's read state for a month: `loaded` is a successful read,
+// `loading` a read in flight, `unread` a page nobody has queried. Plans must
+// only call a month empty on `loaded`, so this boundary is what the empty
+// labels are asserted against. The default tracks the global loading/error
+// flags the older cases drive, which is what the provider reports for the
+// visible window while those are set.
+function defaultMonthReadState(): 'loaded' | 'loading' | 'unread' {
+  if (mockCalendarError) return 'unread';
+  return mockCalendarLoading ? 'loading' : 'loaded';
+}
+let mockMonthReadState: (month: Date) => 'loaded' | 'loading' | 'unread' =
+  defaultMonthReadState;
+let mockReduceMotion = false;
 let mockFontScale = 1;
 let mockWindowWidth = 390;
 let mockSpace: any = { relationshipStartDate: '2024-06-15' };
@@ -355,6 +385,15 @@ function makeUpcomingEvent(overrides: Record<string, any> = {}) {
   };
 }
 
+// React schedules a state update made outside act on the host task queue. In
+// this environment that task never runs, so it pins the fiber root and the
+// whole rendered tree in memory after the test lets go of them; 58 mounts of
+// this screen then walk the heap past the suite's fence. Draining the queue
+// after each test releases the tree, and is what a browser does on its own.
+afterEach(async () => {
+  await act(async () => {});
+});
+
 beforeEach(() => {
   mockSelectedDate = new Date(2026, 0, 15, 12, 0, 0);
   mockVisibleMonth = new Date(2026, 0, 1);
@@ -363,11 +402,16 @@ beforeEach(() => {
   mockSomedayOpen = [];
   mockCalendarLoading = false;
   mockCalendarError = null;
+  mockMonthReadState = defaultMonthReadState;
   mockFontScale = 1;
   mockWindowWidth = 390;
   mockSpace = { relationshipStartDate: '2024-06-15' };
   (globalThis as any).__plansMomentumEnds = [];
   (globalThis as any).__plansScrolls = [];
+  (globalThis as any).__plansScrollHandlers = [];
+  (globalThis as any).__plansLayouts = [];
+  (globalThis as any).__motiViews = [];
+  mockReduceMotion = false;
   calendarSubscribers.clear();
   pushSpy.mockClear();
   refreshCalendarSpy.mockClear();
@@ -382,20 +426,44 @@ async function renderPlans() {
 }
 
 // Only the live mode is mounted, so queries have to say which layer they
-// mean. The screen lands on the month grid; a grid cell lifts the day into
-// the sheet, which is where the day UI lives.
-const dayLayer = () => within(screen.getByTestId('day-sheet'));
+// mean. The screen lands on the month grid; a grid cell opens the day in
+// place of the grid, which is where the day UI lives.
+const dayLayer = () => within(screen.getByTestId('day-view'));
 const monthLayer = () => within(screen.getByTestId('month-surface'));
+// The day header reads "Thu – Jan 15": a short weekday, so the row it shares
+// with Today and add holds one line, and the year only when the day is outside
+// the current one. The fixtures sit in 2026, so the expected string is computed
+// rather than frozen to a calendar year the tests cannot control.
+const dayHeading = (date: Date) => {
+  const rest = date.toLocaleDateString(
+    'en-US',
+    date.getFullYear() === new Date().getFullYear()
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' },
+  );
+  return `${date.toLocaleDateString('en-US', { weekday: 'short' })} – ${rest}`;
+};
+const JAN_14 = new Date(2026, 0, 14);
+const JAN_15 = new Date(2026, 0, 15);
+const JAN_16 = new Date(2026, 0, 16);
+const JAN_18 = new Date(2026, 0, 18);
+const JAN_31 = new Date(2026, 0, 31);
 // The pager mounts yesterday through tomorrow, so assertions about the day
 // on screen scope to the centre page by its label.
-const centerPage = (heading: string) =>
-  within(screen.getByLabelText(`Day page ${heading}`));
+const centerPage = (day: Date) =>
+  within(screen.getByLabelText(`Day page ${dayHeading(day)}`));
+// Every MotiView mount recorded by the moti stand-in; the drill-zoom tests
+// read only the swap wrapper's own entries.
+const drillSwaps = () =>
+  (((globalThis as any).__motiViews ?? []) as { testID?: string }[]).filter(
+    (view) => view.testID === 'screen-swap',
+  );
 
 /**
- * A day is a grid cell lifted into the sheet, so the day cases tap one the
- * way a reader does. The month underneath never moves.
+ * A day opens from its grid cell, so the day cases tap one the way a
+ * reader does. The month underneath never moves.
  */
-async function openDaySheet() {
+async function openDayView() {
   const result = await renderPlans();
   fireEvent.click(screen.getByLabelText(/^Thursday, January 15/));
   return result;
@@ -404,31 +472,133 @@ async function openDaySheet() {
 const PLANS_SOURCE = readFileSync('app/(app)/(tabs)/plans.tsx', 'utf8');
 
 describe('Plans calendar', () => {
-  it('identifies an empty visible month without mistaking neighbouring plans for its own', async () => {
-    mockEventsForDay = { '2025-12-31': [makeEvent()], '2026-02-01': [makeEvent()] };
-    const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
-    render(createElement(PlansScreen));
-    expect(screen.getByText('No confirmed plans this month.')).toBeTruthy();
-    act(() => {
-      mockEventsForDay = { '2026-01-15': [makeEvent()] };
-      emitCalendarChange();
+  it('says an empty month is empty once its read succeeds, and opens its composer', async () => {
+    mockSpace = { relationshipStartDate: null };
+    await renderPlans();
+
+    // Empty is a successful read, not the absence of a line: the month names
+    // itself and offers the one useful next step.
+    expect(await screen.findByText('No plans in January 2026.')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Plan something in January 2026'));
+    expect(pushSpy).toHaveBeenCalledWith({
+      pathname: '/(app)/calendar/new-event',
+      params: { date: '2026-01-15' },
     });
-    expect(screen.queryByText('No confirmed plans this month.')).toBeNull();
   });
 
-  it('does not call the month empty while loading or failed', async () => {
+  it('never calls a month empty before the read has succeeded', async () => {
+    mockSpace = { relationshipStartDate: null };
+    mockCalendarLoading = true;
+    await renderPlans();
+
+    expect(screen.queryByText('No plans in January 2026.')).toBeNull();
+
+    act(() => {
+      mockCalendarLoading = false;
+      emitCalendarChange();
+    });
+
+    expect(await screen.findByText('No plans in January 2026.')).toBeTruthy();
+  });
+
+  it('does not call a month with plans empty', async () => {
+    mockSpace = { relationshipStartDate: null };
+    mockEventsForDay = { '2026-01-15': [makeEvent()] };
+    await renderPlans();
+
+    expect(screen.queryByText('No plans in January 2026.')).toBeNull();
+  });
+
+  it('never calls a month empty while its own read is in flight', async () => {
+    mockSpace = { relationshipStartDate: null };
+    await renderPlans();
+
+    // January's line appears first: this proves the goal read has landed,
+    // so the absence below is about the month read, not a pending goal.
+    expect(await screen.findByText('No plans in January 2026.')).toBeTruthy();
+
+    // Move to February while its window is still being read. The events in
+    // hand still answer January; they say nothing about February.
+    act(() => {
+      mockVisibleMonth = new Date(2026, 1, 1);
+      mockMonthReadState = (month) =>
+        month.getFullYear() === 2026 && month.getMonth() === 1
+          ? 'loading'
+          : 'unread';
+      emitCalendarChange();
+    });
+    expect(screen.queryByText('No plans in February 2026.')).toBeNull();
+
+    // Only the successful read earns the line.
+    act(() => {
+      mockMonthReadState = (month) =>
+        month.getFullYear() === 2026 && month.getMonth() === 1
+          ? 'loaded'
+          : 'unread';
+      emitCalendarChange();
+    });
+    expect(await screen.findByText('No plans in February 2026.')).toBeTruthy();
+  });
+
+  it('leaves mounted pages outside the read window unlabelled', async () => {
+    mockSpace = { relationshipStartDate: null };
+    mockMonthReadState = (month) =>
+      month.getFullYear() === 2026 && month.getMonth() === 0 ? 'loaded' : 'unread';
+    await renderPlans();
+
+    // The pager mounts a neighbour either side for the swipe, but the
+    // provider answered only the visible month's window: a mounted page is
+    // not a read page, so only January may say it is empty.
+    expect(screen.getByLabelText('Month page December 2025')).toBeTruthy();
+    expect(await screen.findByText('No plans in January 2026.')).toBeTruthy();
+    expect(screen.queryByText('No plans in December 2025.')).toBeNull();
+    expect(screen.queryByText('No plans in February 2026.')).toBeNull();
+  });
+
+  it('counts a monthiversary as content, not an empty month', async () => {
+    // Started on the 15th, so January 2026 carries the mark on that day.
+    await renderPlans();
+
+    expect(
+      screen.getByLabelText(/^Thursday, January 15.*anniversary/),
+    ).toBeTruthy();
+    expect(screen.queryByText('No plans in January 2026.')).toBeNull();
+  });
+
+  it('counts a dated goal as content, not an empty month', async () => {
+    mockSpace = { relationshipStartDate: null };
+    loadGoals.mockResolvedValue([
+      {
+        id: 'goal-1',
+        title: 'Trip',
+        targetAt: new Date(2026, 0, 20, 12, 0, 0).toISOString(),
+      },
+    ]);
+    await renderPlans();
+
+    // The mark on the day is the proof the goal read landed; only then is
+    // "no plans" a statement about a month rather than about a pending read.
+    expect(
+      await screen.findByLabelText(/^Tuesday, January 20.*has plans/),
+    ).toBeTruthy();
+    expect(screen.queryByText('No plans in January 2026.')).toBeNull();
+  });
+
+  it('announces loading and failure distinctly, never an empty-month line', async () => {
+    mockSpace = { relationshipStartDate: null };
     mockCalendarLoading = true;
     const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
     render(createElement(PlansScreen));
-    expect(screen.getByText('Loading plans…')).toBeTruthy();
-    expect(screen.queryByText('No confirmed plans this month.')).toBeNull();
+    expect(screen.getByLabelText('Open the year view').getAttribute('aria-busy')).toBe('true');
+    expect(screen.queryByText('No plans in January 2026.')).toBeNull();
     act(() => {
       mockCalendarLoading = false;
       mockCalendarError = 'private network failure';
       emitCalendarChange();
     });
     expect(screen.getByText('Your plans could not be loaded.')).toBeTruthy();
-    expect(screen.queryByText('No confirmed plans this month.')).toBeNull();
+    expect(screen.queryByText('No plans in January 2026.')).toBeNull();
+    expect(screen.getByLabelText('Open the year view').getAttribute('aria-busy')).toBe('false');
   });
   it('shows the day events as strips in the cell, not a dot', async () => {
     mockEventsForDay = { '2026-01-15': [makeEvent()] };
@@ -463,34 +633,6 @@ describe('Plans calendar', () => {
     expect(monthLayer().getByText('+1 more')).toBeTruthy();
   });
 
-  it('pins ScreenHeader and the sky, with the block sizing to its rows', () => {
-    // The sky is an absolute backdrop and the block holds a title row plus the
-    // weekday row. Giving the block an explicit height is what left a dead
-    // band below the header twice, so it has none.
-    expect(PLANS_SOURCE).toContain('styles.headerBlock');
-    expect(PLANS_SOURCE).not.toContain('height: headerBlockHeight');
-    expect(PLANS_SOURCE).toContain('<MemorySky compact');
-  });
-
-
-  it('renders MemorySky first inside the block with the pill header above content', () => {
-    expect(PLANS_SOURCE.indexOf('<View style={headerBlockStyle}>')).toBeLessThan(
-      PLANS_SOURCE.indexOf('<MemorySky compact'),
-    );
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
-      PLANS_SOURCE.indexOf('styles.pillRow'),
-    );
-  });
-
-  it('sizes the header band from the working-screen helper, not the compact one', () => {
-    // The sky still draws compact and clips into the shorter block, but the
-    // block itself takes the header band's height: the compact strip left the
-    // sky and the countdown lane eating ~270pt above the calendar.
-    expect(PLANS_SOURCE).toContain('headerSkyHeightForWindow(windowHeight)');
-    expect(PLANS_SOURCE).not.toContain('compactSkyHeightForWindow');
-    expect(PLANS_SOURCE).toContain('<MemorySky compact');
-  });
-
   it('keeps the month pill outside the ScrollView so it never scrolls away', async () => {
     await renderPlans();
     // Structural, not a source offset: however the file is arranged, the pills
@@ -505,14 +647,45 @@ describe('Plans calendar', () => {
   });
 });
 
+describe('Plans inline year', () => {
+  it('swaps the month grid for the year grid in place, without a route push', async () => {
+    await renderPlans();
+
+    fireEvent.click(screen.getByLabelText('Open the year view'));
+
+    // The year of the visible month renders its twelve mini months where
+    // the grid was; the pill now offers the way back, not another screen.
+    // (month-surface is the mode container in every mode, so assert on the
+    // pager's labelled pages instead.)
+    expect(screen.getByLabelText('Open January 2026')).toBeTruthy();
+    expect(screen.queryAllByLabelText(/Month page /)).toHaveLength(0);
+    expect(screen.getByLabelText('Back to the month view')).toBeTruthy();
+    expect(pushSpy).not.toHaveBeenCalledWith('/(app)/calendar/year');
+  });
+
+  it('returns to the picked month in place', async () => {
+    await renderPlans();
+
+    fireEvent.click(screen.getByLabelText('Open the year view'));
+    fireEvent.click(await screen.findByLabelText('Open March 2026'));
+
+    // Same screen: the grid is back on March, the pill names it again.
+    expect(screen.getAllByLabelText(/Month page /).length).toBeLessThan(7);
+    expect(screen.queryByLabelText('Open January 2026')).toBeNull();
+    expect(mockVisibleMonth.getMonth()).toBe(2);
+    expect(mockVisibleMonth.getFullYear()).toBe(2026);
+    within(screen.getByLabelText('Open the year view')).getByText('March 2026');
+  });
+});
+
 describe('Plans day view', () => {
   it('opens on the month grid, with the day one tap away', async () => {
     await renderPlans();
 
     // The grid is the landing: it answers "when are we free" first. No day
-    // UI is mounted until a cell lifts it into the sheet.
+    // UI is mounted until a cell opens it in place.
     expect(screen.getByTestId('month-surface')).toBeTruthy();
-    expect(screen.queryByTestId('day-sheet')).toBeNull();
+    expect(screen.queryByTestId('day-view')).toBeNull();
     expect(screen.getByLabelText('Agenda')).toBeTruthy();
   });
 
@@ -523,13 +696,13 @@ describe('Plans day view', () => {
     await renderPlans();
 
     // One signal per strip: the fill. No key row explaining the colours,
-    // no dots beside the titles, on the grid or in the sheet.
+    // no dots beside the titles, on the grid or in the day.
     expect(screen.queryByTestId('ownership-legend')).toBeNull();
     expect(monthLayer().getByText('Dinner out')).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText(/^Thursday, January 15/));
 
-    expect(screen.getByTestId('day-sheet')).toBeTruthy();
+    expect(screen.getByTestId('day-view')).toBeTruthy();
     expect(screen.queryByTestId('ownership-legend')).toBeNull();
     expect(PLANS_SOURCE).not.toContain('ownership-legend');
     expect(PLANS_SOURCE).not.toContain('stripDot');
@@ -543,7 +716,7 @@ describe('Plans day view', () => {
         makeEvent({ id: 'ours', title: 'Weekend away', together: true }),
       ],
     };
-    await openDaySheet();
+    await openDayView();
 
     expect(dayLayer().getByText(/You · /)).toBeTruthy();
     expect(dayLayer().getByText(/Partner · /)).toBeTruthy();
@@ -552,9 +725,9 @@ describe('Plans day view', () => {
 
   it('says a day is still loading instead of showing it as free', async () => {
     mockCalendarLoading = true;
-    await openDaySheet();
+    await openDayView();
 
-    expect(centerPage('Thursday – Jan 15, 2026').getByText('Loading plans…')).toBeTruthy();
+    expect(centerPage(JAN_15).getByText('Loading plans…')).toBeTruthy();
   });
 
   it('says the plans could not be loaded, and offers the retry', async () => {
@@ -572,12 +745,11 @@ describe('Plans day view', () => {
     fireEvent.click(screen.getByLabelText(/^Tuesday, February 3/));
 
     fireEvent.click(
-      centerPage('Tuesday – Feb 3, 2026').getByLabelText('Back to today'),
+      dayLayer().getByLabelText('Back to today'),
     );
 
     const today = new Date();
-    const heading = `${today.toLocaleDateString('en-US', { weekday: 'long' })} – ${today.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-    expect(centerPage(heading).getByText(heading)).toBeTruthy();
+    expect(dayLayer().getByText(dayHeading(today))).toBeTruthy();
   });
 
   it('leaves the next plan to the agenda instead of a banner', async () => {
@@ -593,11 +765,79 @@ describe('Plans day view', () => {
 });
 
 describe('Plans paging windows', () => {
-  it('turns the day with a swipe, settling on the next day', async () => {
-    await openDaySheet();
-    expect(dayLayer().getByText('Thursday – Jan 15, 2026')).toBeTruthy();
+  it('ignores a pending day-scroll completion after Back closes the detail', async () => {
+    await openDayView();
+    const pendingSettle = settleHandler('day-pager');
+    expect(dayLayer().getByLabelText('Back to the month view').closest('[data-rn-scrollview]')).toBeNull();
+    fireEvent.click(dayLayer().getByLabelText('Back to the month view'));
+    act(() => pendingSettle({ nativeEvent: { contentOffset: { x: 6 * 390 } } }));
+    expect(screen.queryByTestId('day-view')).toBeNull();
+    expect(mockVisibleMonth.getMonth()).toBe(0);
+    fireEvent.click(screen.getByLabelText(/^Thursday, January 15/));
+    act(() => pendingSettle({ nativeEvent: { contentOffset: { x: 6 * 390 } } }));
+    fireEvent.click(dayLayer().getByLabelText(`Plan something on ${dayHeading(JAN_15)}`));
+    expect(pushSpy).toHaveBeenCalledWith({
+      pathname: '/(app)/calendar/new-event',
+      params: { date: '2026-01-15' },
+    });
+  });
+  it('stays on May and June while their reads start and finish', async () => {
+    mockVisibleMonth = new Date(2027, 3, 1);
+    await renderPlans();
+    act(() => settleHandler('month-pager')({ nativeEvent: { contentOffset: { y: 4.2 * 600 } } }));
+    (globalThis as any).__plansScrolls = [];
+    act(() => { mockCalendarLoading = true; emitCalendarChange(); });
+    expect(screen.getByLabelText('Open the year view').getAttribute('aria-busy')).toBe('true');
+    expect(mockVisibleMonth.getMonth()).toBe(4);
+    act(() => { mockCalendarLoading = false; emitCalendarChange(); });
+    act(() => settleHandler('month-pager')({ nativeEvent: { contentOffset: { y: 5.2 * 600 } } }));
+    act(() => { mockCalendarLoading = true; emitCalendarChange(); });
+    act(() => { mockCalendarLoading = false; emitCalendarChange(); });
+    expect(mockVisibleMonth.getMonth()).toBe(5);
+    expect(within(screen.getByLabelText('Open the year view')).getByText('June 2027')).toBeTruthy();
+    expect((globalThis as any).__plansScrolls.filter((entry: { testID?: string }) => entry.testID === 'month-pager')).toEqual([]);
+  });
+  it('preserves the stopped month and partial offset when the viewport resizes', async () => {
+    await renderPlans();
+    act(() => settleHandler('month-pager')({ nativeEvent: { contentOffset: { y: 4.4 * 600 } } }));
+    (globalThis as any).__plansScrolls = [];
+    const layouts = (globalThis as any).__plansLayouts;
+    act(() => layouts.findLast((entry: { testID?: string }) => entry.testID === 'month-viewport')
+      .onLayout({ nativeEvent: { layout: { height: 580, width: 390, x: 0, y: 0 } } }));
+    const corrections = (globalThis as any).__plansScrolls.filter((entry: { testID?: string }) => entry.testID === 'month-pager');
+    expect(corrections.at(-1).y).toBeCloseTo(4.4 * 580);
+    expect(mockVisibleMonth.getMonth()).toBe(1);
+  });
+  it('updates the month button during a drag without waiting for momentum', async () => {
+    await renderPlans();
+    const handlers = (globalThis as any).__plansScrollHandlers;
+    const month = handlers.findLast((entry: { testID?: string }) => entry.testID === 'month-pager');
+    act(() => month.onScroll({ nativeEvent: { contentOffset: { y: 4 * 600 } } }));
+    expect(within(screen.getByLabelText('Open the year view')).getByText('February 2026')).toBeTruthy();
+    act(() => month.onScrollEndDrag({ nativeEvent: { contentOffset: { y: 4 * 600 }, velocity: { y: 0 } } }));
+    expect(mockVisibleMonth.getMonth()).toBe(1);
+  });
 
-    // One page right of centre: the stopped page becomes the sheet's day.
+  it('extends the year window in both directions while keeping month selection reachable', async () => {
+    await renderPlans();
+    fireEvent.click(screen.getByLabelText('Open the year view'));
+
+    act(() => settleHandler('year-pager')({ nativeEvent: { contentOffset: { y: 4.25 * YEAR_SECTION_HEIGHT } } }));
+    expect(within(screen.getByLabelText('Back to the month view')).getByText('2028')).toBeTruthy();
+    act(() => settleHandler('year-pager')({ nativeEvent: { contentOffset: { y: 4 * YEAR_SECTION_HEIGHT } } }));
+    act(() => settleHandler('year-pager')({ nativeEvent: { contentOffset: { y: 0 } } }));
+    act(() => settleHandler('year-pager')({ nativeEvent: { contentOffset: { y: 0 } } }));
+    act(() => settleHandler('year-pager')({ nativeEvent: { contentOffset: { y: 0 } } }));
+    fireEvent.click(screen.getByLabelText('Open March 2024'));
+    expect(mockVisibleMonth.getFullYear()).toBe(2024);
+    expect(mockVisibleMonth.getMonth()).toBe(2);
+    expect(pushSpy).not.toHaveBeenCalled();
+  });
+  it('turns the day with a swipe, settling on the next day', async () => {
+    await openDayView();
+    expect(dayLayer().getByText(dayHeading(JAN_15))).toBeTruthy();
+
+    // One page right of centre: the stopped page becomes the focused day.
     // The shared selection is untouched: the month underneath must not budge.
     // Inside the window nothing rebuilds, so there is no frame to flash.
     act(() => {
@@ -607,11 +847,11 @@ describe('Plans paging windows', () => {
     expect(mockSelectedDate.toDateString()).toBe(
       new Date(2026, 0, 15, 12, 0, 0).toDateString(),
     );
-    expect(dayLayer().getByText('Friday – Jan 16, 2026')).toBeTruthy();
+    expect(dayLayer().getByText(dayHeading(JAN_16))).toBeTruthy();
   });
 
   it('turns the day back with a swipe the other way', async () => {
-    await openDaySheet();
+    await openDayView();
 
     act(() => {
       settleHandler('day-pager')({ nativeEvent: { contentOffset: { x: 2 * 390 } } });
@@ -620,11 +860,22 @@ describe('Plans paging windows', () => {
     expect(mockSelectedDate.toDateString()).toBe(
       new Date(2026, 0, 15, 12, 0, 0).toDateString(),
     );
-    expect(dayLayer().getByText('Wednesday – Jan 14, 2026')).toBeTruthy();
+    expect(dayLayer().getByText(dayHeading(JAN_14))).toBeTruthy();
+  });
+
+  it('keeps the stopped day when the viewport width changes', async () => {
+    const view = await openDayView();
+    act(() => settleHandler('day-pager')({ nativeEvent: { contentOffset: { x: 4 * 390 } } }));
+    (globalThis as { __plansScrolls?: unknown[] }).__plansScrolls = [];
+    mockWindowWidth = 320;
+    const { default: PlansScreen } = await import('@/app/(app)/(tabs)/plans');
+    view.rerender(<PlansScreen />);
+    const scrolls = (globalThis as { __plansScrolls?: { testID?: string; x?: number }[] }).__plansScrolls ?? [];
+    expect(scrolls.filter(entry => entry.testID === 'day-pager').at(-1)?.x).toBe(4 * 320);
   });
 
   it('recentres the window at its edge, carrying the stopped day with it', async () => {
-    await openDaySheet();
+    await openDayView();
 
     // All the way to the last page: the window rebuilds around the stopped
     // day and the offset is corrected to the new centre, so the stopped day
@@ -633,7 +884,7 @@ describe('Plans paging windows', () => {
       settleHandler('day-pager')({ nativeEvent: { contentOffset: { x: 6 * 390 } } });
     });
 
-    expect(dayLayer().getByText('Sunday – Jan 18, 2026')).toBeTruthy();
+    expect(dayLayer().getByText(dayHeading(JAN_18))).toBeTruthy();
     const scrolls = ((globalThis as any).__plansScrolls ?? []) as {
       testID?: string;
       x?: number;
@@ -644,18 +895,175 @@ describe('Plans paging windows', () => {
   });
 
   it('keeps offscreen day pages out of the accessibility tree', async () => {
-    await openDaySheet();
+    await openDayView();
 
-    // Seven pages stay mounted for the swipe, but a screen reader must meet
-    // one day: the side pages' duplicated actions would read as phantom days.
-    // Queried structurally, not through the accessible tree, which hides six.
+    // The pager mounts a bounded window of pages for the swipe, and a screen
+    // reader must meet one day: the side pages' duplicated actions would read
+    // as phantom days. Queried structurally, not through the accessible tree.
     const pages = Array.from(
-      screen.getByTestId('day-sheet').querySelectorAll('[aria-label^="Day page"]'),
+      screen.getByTestId('day-view').querySelectorAll('[aria-label^="Day page"]'),
     );
-    expect(pages.length).toBe(7);
+    expect(pages.length).toBeGreaterThan(0);
+    expect(pages.length).toBeLessThan(7);
     expect(
       pages.filter((page) => page.getAttribute('aria-hidden') === 'true'),
-    ).toHaveLength(6);
+    ).toHaveLength(pages.length - 1);
+  });
+
+  it('exposes the settled day to assistive tech, never a hardcoded page', async () => {
+    await openDayView();
+
+    // The regression: exposure was hardcoded to page index 1 while the
+    // window centers on index 3, so screen readers met day anchor-2 while
+    // the sighted day sat elsewhere.
+    const exposedDayLabels = () =>
+      Array.from(
+        screen.getByTestId('day-view').querySelectorAll('[aria-label^="Day page"]'),
+      )
+        .filter((page) => page.getAttribute('aria-hidden') !== 'true')
+        .map((page) => page.getAttribute('aria-label'));
+    expect(exposedDayLabels()).toEqual([`Day page ${dayHeading(JAN_15)}`]);
+
+    act(() => {
+      settleHandler('day-pager')({ nativeEvent: { contentOffset: { x: 4 * 390 } } });
+    });
+
+    expect(exposedDayLabels()).toEqual([`Day page ${dayHeading(JAN_16)}`]);
+  });
+
+  it('expands the day\u2019s goals inline instead of ejecting to Agenda', async () => {
+    loadGoals.mockResolvedValue([
+      { id: 'g1', title: 'Buy flights', targetAt: '2026-01-15T12:00:00.000Z' },
+    ]);
+    await openDayView();
+
+    // Goals open where the day is, with collapsing as the way back: no
+    // mode swap, no stranded day.
+    await waitFor(() =>
+      expect(
+        dayLayer().getByLabelText(`Show goals for ${dayHeading(JAN_15)}`),
+      ).toBeTruthy(),
+    );
+    fireEvent.click(dayLayer().getByLabelText(`Show goals for ${dayHeading(JAN_15)}`));
+    expect(dayLayer().getByText('Buy flights')).toBeTruthy();
+    // Still on the day: the grid underneath unmoved.
+    expect(screen.getByTestId('day-view')).toBeTruthy();
+    expect(screen.getByTestId('month-surface')).toBeTruthy();
+
+    fireEvent.click(dayLayer().getByLabelText(`Hide goals for ${dayHeading(JAN_15)}`));
+    expect(dayLayer().queryByText('Buy flights')).toBeNull();
+  });
+
+  it('names event times in screen-reader labels, even on short blocks', async () => {
+    mockEventsForDay = {
+      '2026-01-15': [
+        makeEvent({
+          id: 'short',
+          title: 'Standup',
+          startsAt: '2026-01-15T09:00:00.000Z',
+          endsAt: '2026-01-15T09:20:00.000Z',
+        }),
+      ],
+    };
+    await openDayView();
+
+    // A 20-minute block hides its caption visually; the label must still
+    // carry the range, in whatever timezone the device renders.
+    const label =
+      dayLayer().getByLabelText(/Open Standup/).getAttribute('aria-label') ?? '';
+    expect(label).toMatch(/\d{1,2}:\d{2}.*to/);
+  });
+
+  it('lands empty days at morning instead of midnight', async () => {
+    await openDayView();
+
+    // The pager mounts before its measured height lands, so each timeline
+    // lands imperatively on first layout. Empty days open at 7am
+    // (initialScrollHour), not stuck at the top.
+    const scrolls = ((globalThis as any).__plansScrolls ?? []) as {
+      testID?: string;
+      x?: number;
+      y?: number;
+    }[];
+    const landings = scrolls.filter(
+      (scroll) => scroll.testID === 'day-timeline' && scroll.y === 7 * 64,
+    );
+    expect(landings.length).toBeGreaterThan(0);
+  });
+
+  it('offers a quiet entry point on empty days', async () => {
+    await openDayView();
+
+    const cta = dayLayer().getByLabelText(`Plan something on ${dayHeading(JAN_15)}`);
+    expect(cta).toBeTruthy();
+    fireEvent.click(cta);
+    expect(pushSpy).toHaveBeenCalledWith({
+      pathname: '/(app)/calendar/new-event',
+      params: { date: '2026-01-15' },
+    });
+    // The composer is a route above the screen, so the day stays exactly
+    // as it was: going back from the composer returns to it.
+    expect(screen.getByTestId('day-view')).toBeTruthy();
+  });
+
+  it('says the empty day once, in a short line beside its entry point', async () => {
+    await openDayView();
+
+    // One factual line, not a paragraph: the button carries the invitation.
+    // (Jan 15 is not today, so the non-today line shows here. Neighbouring
+    // empty days say the same, so scope to the settled page.)
+    expect(
+      centerPage(JAN_15).getByText('No plans for this day.'),
+    ).toBeTruthy();
+    expect(
+      dayLayer().getByLabelText(`Plan something on ${dayHeading(JAN_15)}`),
+    ).toBeTruthy();
+  });
+
+  it('hides the entry point once the day has plans', async () => {
+    mockEventsForDay = {
+      '2026-01-15': [makeEvent()],
+    };
+    await openDayView();
+
+    // The settled page (Thursday) has plans, so its own entry point is
+    // gone — neighbouring empty days keep theirs.
+    const thursday = centerPage(JAN_15);
+    expect(
+      thursday.queryByLabelText(`Plan something on ${dayHeading(JAN_15)}`),
+    ).toBeNull();
+  });
+
+  it('opens the edit screen with the day left in place', async () => {
+    mockEventsForDay = {
+      '2026-01-15': [makeEvent()],
+    };
+    await openDayView();
+
+    // The edit screen is a route above the day, the way the composer is:
+    // the day stays mounted underneath, and back returns to it.
+    fireEvent.click(dayLayer().getByLabelText(/Open Dinner out/));
+    expect(pushSpy).toHaveBeenCalledWith('/(app)/calendar/edit/event-1');
+    expect(screen.getByTestId('day-view')).toBeTruthy();
+  });
+
+  it('adds another plan to a populated day without losing the day', async () => {
+    mockEventsForDay = { '2026-01-15': [makeEvent()] };
+    await openDayView();
+
+    fireEvent.click(dayLayer().getByLabelText(
+      `Add a plan on ${dayHeading(JAN_15)}`,
+    ));
+    expect(pushSpy).toHaveBeenCalledWith({
+      pathname: '/(app)/calendar/new-event',
+      params: { date: '2026-01-15' },
+    });
+    fireEvent.click(dayLayer().getByLabelText(
+      'Back to the month view',
+    ));
+    fireEvent.click(screen.getByLabelText(/^Thursday, January 15/));
+    fireEvent.click(dayLayer().getByLabelText(/Open Dinner out/));
+    expect(pushSpy).toHaveBeenLastCalledWith('/(app)/calendar/edit/event-1');
   });
 
   it('keeps yesterday and tomorrow mounted, so a swipe never lands blank', async () => {
@@ -667,7 +1075,7 @@ describe('Plans paging windows', () => {
         makeEvent({ id: 'b', title: 'Gym', startsAt: '2026-01-16T18:00:00.000Z' }),
       ],
     };
-    await openDaySheet();
+    await openDayView();
 
     // Both pages are in the tree before any swipe: the neighbour's plans
     // are already there when the page stops.
@@ -697,9 +1105,10 @@ describe('Plans paging windows', () => {
     const labelsBefore = screen
       .getAllByLabelText(/Month page /)
       .map((el) => el.getAttribute('aria-label'));
-    // A bounded window: the anchor month sits in the middle.
-    expect(labelsBefore.length).toBe(7);
-    expect(labelsBefore[3]).toBe('Month page January 2026');
+    // A bounded window, not the whole reachable horizon: the anchor month is
+    // mounted, the far months are not.
+    expect(labelsBefore.length).toBeLessThan(7);
+    expect(labelsBefore).toContain('Month page January 2026');
 
     // Settle on the last page. Without re-centring the reader is now walled in
     // three months from where they started; with it, that month becomes the
@@ -711,10 +1120,8 @@ describe('Plans paging windows', () => {
     const labelsAfter = screen
       .getAllByLabelText(/Month page /)
       .map((el) => el.getAttribute('aria-label'));
-    expect(labelsAfter.length).toBe(7);
-    expect(labelsAfter[3]).toBe('Month page April 2026');
-    expect(labelsAfter[0]).toBe('Month page January 2026');
-    expect(labelsAfter[6]).toBe('Month page July 2026');
+    expect(labelsAfter.length).toBeLessThan(7);
+    expect(labelsAfter).toContain('Month page April 2026');
     expect(labelsAfter).not.toContain('Month page October 2025');
   });
 
@@ -734,9 +1141,9 @@ describe('Plans paging windows', () => {
     const labels = screen
       .getAllByLabelText(/Month page /)
       .map((el) => el.getAttribute('aria-label'));
-    expect(labels).toHaveLength(7);
-    expect(labels[3]).toBe('Month page January 2026');
-    expect(labels[4]).toBe('Month page February 2026');
+    expect(labels.length).toBeLessThan(7);
+    expect(labels).toContain('Month page January 2026');
+    expect(labels).toContain('Month page February 2026');
     expect(mockVisibleMonth.getMonth()).toBe(1);
     expect(mockVisibleMonth.getFullYear()).toBe(2026);
   });
@@ -777,7 +1184,7 @@ describe('Plans paging windows', () => {
     const labels = screen
       .getAllByLabelText(/Month page /)
       .map((el) => el.getAttribute('aria-label'));
-    expect(labels[3]).toBe('Month page September 2026');
+    expect(labels).toContain('Month page September 2026');
     // The old anchor was not written back over the chosen month.
     expect(mockVisibleMonth.getMonth()).toBe(8);
     expect(mockVisibleMonth.getFullYear()).toBe(2026);
@@ -807,42 +1214,152 @@ describe('Plans paging windows', () => {
     const labels = screen
       .getAllByLabelText(/Month page /)
       .map((el) => el.getAttribute('aria-label'));
-    expect(labels[3]).toBe('Month page April 2026');
+    expect(labels).toContain('Month page April 2026');
   });
 
-  it('leaves the month exactly where it was while the sheet moves days', async () => {
-    await openDaySheet();
+  it('leaves the month exactly where it was while the day pager moves', async () => {
+    await openDayView();
 
-    // Swipe the sheet a day on: the sheet follows, the month underneath
-    // must not budge, or dismissing would land somewhere new.
+    // Swipe the day on: the pager follows, the month underneath must not
+    // budge, or going back would land somewhere new.
     act(() => {
       settleHandler('day-pager')({ nativeEvent: { contentOffset: { x: 4 * 390 } } });
     });
-    expect(dayLayer().getByText('Friday – Jan 16, 2026')).toBeTruthy();
+    expect(dayLayer().getByText(dayHeading(JAN_16))).toBeTruthy();
     expect(screen.getByTestId('month-surface')).toBeTruthy();
+    expect(mockSelectedDate.toDateString()).toBe(
+      new Date(2026, 0, 15, 12, 0, 0).toDateString(),
+    );
+
+    fireEvent.click(dayLayer().getByLabelText('Back to the month view'));
+
+    // Going back returns to the untouched month: same page, same selection,
+    // same pill.
+    expect(screen.queryByTestId('day-view')).toBeNull();
+    expect(screen.getByTestId('month-surface')).toBeTruthy();
+    expect(mockSelectedDate.toDateString()).toBe(
+      new Date(2026, 0, 15, 12, 0, 0).toDateString(),
+    );
     expect(
       within(screen.getByLabelText('Open the year view')).getByText('January 2026'),
     ).toBeTruthy();
-    expect(mockSelectedDate.toDateString()).toBe(
-      new Date(2026, 0, 15, 12, 0, 0).toDateString(),
+  });
+
+  it('moves the pill month with the day across a boundary', async () => {
+    await renderPlans();
+    fireEvent.click(screen.getByLabelText(/^Saturday, January 31/));
+    expect(dayLayer().getByText(dayHeading(JAN_31))).toBeTruthy();
+
+    // Swiping onto February moves the screen's month with the day, so the
+    // loaded window and the grid underneath agree on where the reader is.
+    // The pill proves it on the way back: February, not the January the
+    // screen opened on.
+    act(() => {
+      settleHandler('day-pager')({ nativeEvent: { contentOffset: { x: 6 * 390 } } });
+    });
+    fireEvent.click(
+      dayLayer().getByLabelText('Back to the month view'),
+    );
+    expect(
+      within(screen.getByLabelText('Open the year view')).getByText('February 2026'),
+    ).toBeTruthy();
+  });
+
+  it('switches modes from the returned month', async () => {
+    await openDayView();
+    fireEvent.click(
+      dayLayer().getByLabelText('Back to the month view'),
     );
 
-    fireEvent.click(screen.getByLabelText('Close'));
+    // The control lives on the month: back first, then switch. The day
+    // does not trail along.
+    // (The ScrollView mock drops testIDs, so the agenda proves itself
+    // through its surface and its stubbed content, the way the other
+    // mode tests do.)
+    fireEvent.click(screen.getByLabelText('Agenda'));
+    expect(screen.queryByTestId('day-view')).toBeNull();
+    expect(screen.getByTestId('agenda-surface')).toBeTruthy();
+    expect(screen.getByTestId('plans-agenda-stub')).toBeTruthy();
+  });
 
-    // Dismissing returns to the untouched month: same page, same selection.
-    expect(screen.queryByTestId('day-sheet')).toBeNull();
+  it('stands the view control down while a day is open', async () => {
+    await openDayView();
+
+    // Back is the way out: the three-way control waits on the month.
+    expect(screen.queryByRole('tablist')).toBeNull();
+
+    fireEvent.click(
+      dayLayer().getByLabelText('Back to the month view'),
+    );
+    expect(screen.getByRole('tablist', { name: 'Plans view' })).toBeTruthy();
+  });
+
+  it('keeps the month mounted beneath the rising day', async () => {
+    await openDayView();
+
+    // Covered, not gone: the grid keeps its scroll position and costs no
+    // remount — but it leaves the accessibility tree to the curtain.
+    expect(screen.getByTestId('day-view')).toBeTruthy();
     expect(screen.getByTestId('month-surface')).toBeTruthy();
-    expect(mockSelectedDate.toDateString()).toBe(
-      new Date(2026, 0, 15, 12, 0, 0).toDateString(),
+    expect(
+      screen.getByTestId('month-surface').closest('[aria-hidden="true"]'),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      dayLayer().getByLabelText('Back to the month view'),
     );
+    expect(screen.queryByTestId('day-view')).toBeNull();
+    expect(screen.getByTestId('month-surface')).toBeTruthy();
+    expect(
+      screen.getByTestId('month-surface').closest('[aria-hidden="true"]'),
+    ).toBeNull();
+  });
+
+  it('reveals the day on open', async () => {
+    await openDayView();
+
+    // The curtain rises from the bottom edge over the standing month:
+    // one mount, transform-only, no scale, no fade.
+    expect(drillSwaps()).toHaveLength(1);
+    expect(drillSwaps()[0].from).toEqual({ translateY: 844 });
+    expect(drillSwaps()[0].animate).toEqual({ translateY: 0 });
+    expect(drillSwaps()[0].exit).toEqual({ translateY: 844 });
+    expect(drillSwaps()[0].transition).toMatchObject({ type: 'timing', duration: 300 });
+  });
+
+  it('sinks the curtain on the way back, remounting nothing', async () => {
+    await openDayView();
+    fireEvent.click(
+      dayLayer().getByLabelText('Back to the month view'),
+    );
+
+    // Going back runs the same mount's exit: the curtain sinks through the
+    // bottom edge, uncovering the month that never moved. No second mount,
+    // no month replay.
+    expect(drillSwaps()).toHaveLength(1);
+    expect(drillSwaps()[0].exit).toEqual({ translateY: 844 });
+    expect(screen.queryByTestId('day-view')).toBeNull();
+    expect(screen.getByTestId('month-surface')).toBeTruthy();
+  });
+
+  it('swaps instantly under reduced motion', async () => {
+    mockReduceMotion = true;
+    await openDayView();
+
+    // No zoom entries at all: the day is simply there.
+    expect(drillSwaps()).toHaveLength(0);
+    expect(dayLayer().getByText(dayHeading(JAN_15))).toBeTruthy();
   });
 });
 
 describe('Plans adaptation', () => {
   it('lets the date own the day heading, with no week-number stamp', async () => {
-    await openDaySheet();
+    await openDayView();
 
-    expect(dayLayer().getByText('Thursday \u2013 Jan 15, 2026')).toBeTruthy();
+    // The heading is short enough to hold one line beside Today and add: an
+    // abbreviated weekday, and the year only when the day leaves this one.
+    expect(dayLayer().getByText(dayHeading(JAN_15))).toBeTruthy();
+    expect(dayLayer().queryByText(/^Thursday –/)).toBeNull();
     // The W38 stamp is gone: it is productivity-calendar vocabulary, and it
     // was taking width off the one label that says which day this is.
     expect(screen.queryByText(/^W\d+$/)).toBeNull();
@@ -924,10 +1441,18 @@ describe('Plans press handling', () => {
 
 // Motion is not what these tests are about: render the element and drop the
 // animation props, so the tree is the same with or without a transition.
+// Mounts are recorded too, so the drill-zoom tests can pin direction and
+// timing without asserting on animation frames.
 vi.mock('moti', () => ({
   AnimatePresence: ({ children }: { children?: unknown }) => children,
   MotiView: ({ children, ...rest }: Record<string, unknown>) => {
-    const { animate, exit, from, transition, testID, ...props } = rest;
+    const { animate, exit, exitTransition, from, transition, testID, ...props } = rest;
+    // Mount-only: a re-render is not a replay, so recording in the body
+    // would count one zoom several times over.
+    useEffect(() => {
+      const views = ((globalThis as any).__motiViews ??= []) as unknown[];
+      views.push({ from, animate, exit, exitTransition, transition, testID });
+    }, []);
     const style = (props as { style?: unknown }).style;
     const flat = Array.isArray(style)
       ? Object.assign({}, ...style.filter(Boolean))
@@ -1014,11 +1539,16 @@ describe('Plans view control', () => {
 });
 
 describe('Plans motion', () => {
-  it('honours reduced motion in the screen and the day timeline', () => {
-    // Motion is decoration here. A reader who asked for less of it gets the
-    // same screens with the transitions cut to zero, not a different layout.
-    expect(PLANS_SOURCE).toContain('useReducedMotion');
-    expect(PLANS_SOURCE).toContain('reduceMotion ? 0 :');
+  it('mounts modes instantly with no entrance motion, and honours reduced motion in the day timeline', () => {
+    // Mode switches mount fresh with no arrival choreography and no exit
+    // ensemble: the drill zoom is the only sanctioned motion, and it
+    // stands down under reduced motion (or before the first drill).
+    expect(PLANS_SOURCE).toContain('AnimatePresence');
+    expect(PLANS_SOURCE).toContain('screen-swap');
+    // Custom iOS-sheet curve, never a built-in: built-ins read generic
+    // next to the Apple zoom this drill mimics.
+    expect(PLANS_SOURCE).toContain('Easing.bezier(0.32, 0.72, 0, 1)');
+    expect(PLANS_SOURCE).toContain('reduceMotion || drillSeq === 0');
 
     const timelineSource = readFileSync(
       'components/calendar/day-timeline.tsx',

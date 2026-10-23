@@ -137,5 +137,32 @@ export const collectionItemListResponseSchema = z.object({
 
 export type CollectionItemListResponse = z.infer<typeof collectionItemListResponseSchema>;
 
+/**
+ * What a shelf looks like from the outside: the covers it leads with, how many
+ * things are in it, and how far along they are.
+ *
+ * Read as one list for the whole space rather than one shelf at a time, because
+ * the screen that shows every shelf would otherwise need a request per shelf.
+ */
+export const collectionPreviewSchema = z.object({
+  collectionId: z.string(),
+  /** Up to three covers in list order; null where a thing has no photo. */
+  covers: z.array(z.string().nullable()),
+  /** The same three things' titles, for the placeholder initials. */
+  titles: z.array(z.string()),
+  counts: z.object({
+    want: z.number().int().nonnegative(),
+    doing: z.number().int().nonnegative(),
+    done: z.number().int().nonnegative(),
+  }),
+  total: z.number().int().nonnegative(),
+});
+
+export type CollectionPreview = z.infer<typeof collectionPreviewSchema>;
+
+export const collectionPreviewListResponseSchema = z.object({
+  previews: z.array(collectionPreviewSchema),
+});
+
 export const createCollectionResponseSchema = z.object({ collection: collectionSchema });
 export const createCollectionItemResponseSchema = z.object({ item: collectionItemSchema });

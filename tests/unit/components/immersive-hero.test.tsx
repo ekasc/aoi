@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
+import { Pressable } from 'react-native';
 
 // ThemedText reads the app theme, which is the point of the change: the
 // landing no longer carries its own colours. Mocked rather than wrapped,
@@ -23,14 +24,10 @@ const THEME_COLOR: Record<string, string> = {
   borderStrong: '#5C4255',
 };
 
-const CTA = 'Cta marker copy';
-const LEGAL = 'Legal marker copy';
-
 function renderHero(variant?: 'welcome' | 'signin') {
   return render(
     createElement(ImmersiveHero, {
-      cta: createElement('div', null, CTA),
-      legal: createElement('div', null, LEGAL),
+      cta: createElement('div', null, 'cta'),
       theme: THEME,
       ...(variant ? { variant } : {}),
     })
@@ -38,37 +35,36 @@ function renderHero(variant?: 'welcome' | 'signin') {
 }
 
 describe('ImmersiveHero', () => {
-  it('renders wordmark, headline, body, and auth controls in order', () => {
-    const { container } = renderHero();
-    const text = container.textContent ?? '';
-    const wordmark = text.indexOf('aoi');
-    const headline = text.indexOf('The world');
-    const body = text.indexOf('A private place for your moments');
-    const cta = text.indexOf(CTA);
-    const legal = text.indexOf(LEGAL);
-    expect(wordmark).toBeGreaterThanOrEqual(0);
-    expect(headline).toBeGreaterThan(wordmark);
-    expect(body).toBeGreaterThan(headline);
-    expect(cta).toBeGreaterThan(body);
-    expect(legal).toBeGreaterThan(cta);
-  });
+  it.each(['welcome', 'signin'] as const)(
+    'gives the screen one heading and keeps the wordmark out of the outline (%s)',
+    (variant) => {
+      const { container } = renderHero(variant);
+      const headers = container.querySelectorAll('[accessibilityrole="header"]');
+      expect(headers.length).toBe(1);
 
-  it('puts the header role on the headline, not the wordmark', () => {
-    const { container } = renderHero();
-    const headers = container.querySelectorAll('[accessibilityrole="header"]');
-    expect(headers.length).toBe(1);
-    expect(headers[0].textContent).toContain('The world');
-  });
+      // The wordmark is set at body scale on purpose; if it became a heading
+      // it would compete with the line underneath for "first thing read".
+      const wordmark = container.querySelector('[accessibilityrole="text"]');
+      expect(wordmark).not.toBeNull();
+      expect(wordmark).not.toBe(headers[0]);
+    }
+  );
 
-  it('uses the signin headline that preserves the welcome-back meaning', () => {
-    renderHero('signin');
-    expect(screen.getByText(/Welcome/i)).toBeTruthy();
-  });
+  it('leaves an auth control it is handed actionable', () => {
+    const onPress = vi.fn();
+    render(
+      createElement(ImmersiveHero, {
+        theme: THEME,
+        cta: createElement(Pressable, {
+          accessibilityRole: 'button',
+          accessibilityLabel: 'Continue with Apple',
+          onPress,
+        }),
+      })
+    );
 
-  it('renders no keepsake stationery', () => {
-    const { container } = renderHero();
-    expect(container.querySelector('[testid="keepsake-art"]')).toBeNull();
-    expect(container.querySelector('[testid="keepsake-seal"]')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Continue with Apple'));
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   it('takes its palette from the app theme, not from a fixed midnight copy', () => {

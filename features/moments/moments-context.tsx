@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,12 @@ import {
 import { AppState } from 'react-native';
 
 import { isStubMode } from '@/features/api-client';
+import {
+  bump,
+  incrementTotals,
+  recordSpan,
+  recorderNow,
+} from '@/features/dev/measurement-recorder';
 import {
   buildSimulatedPartnerPost,
   CLEAR_SIMULATED_POSTS_KEY,
@@ -23,6 +30,7 @@ import { mediaObjectUrl } from '@aoi/shared';
 import { getPreviewSeedMoments, usePreviewVariant } from '@/features/dev/preview';
 import {
   fetchMoments,
+  reconcileMoments,
   createMoment as remoteCreateMoment,
   updateMoment as remoteUpdateMoment,
   deleteMoment as remoteDeleteMoment,
@@ -43,6 +51,10 @@ const _useRemote = !isStubMode();
 // wide opening window because the reader scrolls an archive.
 const MOMENTS_PAGE_LIMIT = 100;
 
+function isWriteConflict(error: unknown): boolean {
+  return error instanceof Error && 'status' in error && error.status === 409;
+}
+
 // ── Helpers (both modes) ─────────────────────────────────────────────────
 
 /**
@@ -51,7 +63,13 @@ const MOMENTS_PAGE_LIMIT = 100;
  * `maintainVisibleContentPosition` moves the reader's row).
  */
 function sortMomentsOldestFirst(moments: Moment[]) {
-  return [...moments].sort(compareOldestFirst);
+  return moments.map((moment) => ({ moment, time: occurredMs(moment) }))
+    .sort((left, right) => {
+      if (left.time !== right.time) return left.time < right.time ? -1 : 1;
+      if (left.moment.id === right.moment.id) return 0;
+      return left.moment.id < right.moment.id ? -1 : 1;
+    })
+    .map(({ moment }) => moment);
 }
 
 /** Milliseconds, or -Infinity when the date cannot be read. */
@@ -72,21 +90,12 @@ function compareOldestFirst(left: Moment, right: Moment): number {
   return left.id < right.id ? -1 : 1;
 }
 
-/**
- * Rows strictly older than the given row, oldest first. A head refresh keeps
- * these: they are deeper history the reader already paged to, and the server
- * page that just arrived says nothing about them.
- */
-function olderThan(anchor: Moment): (moment: Moment) => boolean {
-  return (moment) => compareOldestFirst(moment, anchor) < 0;
-}
-
 function normalizeText(value?: string) {
   return value?.trim() ?? '';
 }
 
 /** Append a fetched page without duplicating rows already held. */
-function mergeMomentsById(current: Moment[], incoming: Moment[]): Moment[] {
+export function mergeMomentsById(current: Moment[], incoming: Moment[]): Moment[] {
   if (incoming.length === 0) {
     return [...current];
   }
@@ -95,6 +104,67 @@ function mergeMomentsById(current: Moment[], incoming: Moment[]): Moment[] {
     byId.set(moment.id, moment);
   }
   return sortMomentsOldestFirst([...byId.values()]);
+}
+
+/**
+ * Prepend a page of strictly older memories, or null when that is not provable.
+ *
+ * Pagination walks backwards through an archive already held oldest-first, so
+ * the ordinary case is a straight prepend and the full rebuild-and-sort that
+ * reconciles arbitrary input is not needed. The conditions below are the whole
+ * safety argument, and they are checked rather than assumed:
+ *
+ *   - the page is not empty, and does not repeat an id inside itself
+ *   - it is itself in oldest-first order
+ *   - its newest record is strictly older than the oldest record already held
+ *   - it shares no id with what is already held
+ *
+ * Age ordering alone does NOT rule out a shared id, which is the trap here: a
+ * partner can redate a row this side already holds, and the page would then
+ * present an id already in the window with an older date. So the ids are
+ * compared directly.
+ *
+ * That comparison is a set lookup per held row, and it is what makes this worth
+ * doing at all: it replaces the general merge's sort, where every comparison
+ * parses two dates.
+ *
+ * Anything that can reorder history keeps the general merge. A head refresh
+ * prunes rows the server no longer returns, and a redated row can move across
+ * the window in either direction.
+ */
+export function appendOlderPage(current: Moment[], incoming: Moment[]): Moment[] | null {
+  if (incoming.length === 0) {
+    return null;
+  }
+
+  const incomingIds = new Set<string>();
+  for (const moment of incoming) {
+    if (incomingIds.has(moment.id)) {
+      return null;
+    }
+    incomingIds.add(moment.id);
+  }
+
+  for (let index = 1; index < incoming.length; index += 1) {
+    if (compareOldestFirst(incoming[index - 1], incoming[index]) > 0) {
+      return null;
+    }
+  }
+
+  if (
+    current.length > 0 &&
+    compareOldestFirst(incoming[incoming.length - 1], current[0]) >= 0
+  ) {
+    return null;
+  }
+
+  for (const moment of current) {
+    if (incomingIds.has(moment.id)) {
+      return null;
+    }
+  }
+
+  return [...incoming, ...current];
 }
 
 /**
@@ -170,8 +240,24 @@ const MomentsContext = createContext<MomentsContextValue | undefined>(undefined)
 
 function useRemoteMoments(): MomentsContextValue {
   const [moments, setMoments] = useState<Moment[]>([]);
+  const loadedMomentsRef = useRef(moments);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The feed belongs to one space: nothing fires before the space is ready
+  // (credentials are unpublished until session restore, so an eager mount
+  // fetch 401s with no tokens and sticks until a manual retry), and the
+  // archive below is always the current space's.
+  const { space } = useSpace();
+  const spaceId = space?.id ?? null;
+  const spaceIdRef = useRef(spaceId);
+  useLayoutEffect(() => {
+    loadedMomentsRef.current = moments;
+    spaceIdRef.current = spaceId;
+  }, [moments, spaceId]);
+  // Which archive the refs/state below belong to. Reset on change so a
+  // previous space's rows, cursor, and in-flight responses can neither
+  // linger nor merge into the new archive.
+  const activeSpaceIdRef = useRef<string | null>(null);
   // Request-sequence guards: overlapping focus refreshes can resolve out of
   // order, and only the newest request may write state (never let a stale
   // response overwrite fresh data).
@@ -193,7 +279,15 @@ function useRemoteMoments(): MomentsContextValue {
   const [pagingError, setPagingError] = useState<string | null>(null);
 
   const loadMoments = useCallback(async () => {
+    const requestSpaceId = activeSpaceIdRef.current;
+    if (!requestSpaceId) return;
+    const loaded = loadedMomentsRef.current;
     const requestId = ++momentsRequestSeq.current;
+    const assertCurrent = () => {
+      if (requestId !== momentsRequestSeq.current || requestSpaceId !== spaceIdRef.current) {
+        throw new Error('Memory refresh superseded');
+      }
+    };
     headLoadsInFlightRef.current += 1;
     loadsInFlightRef.current += 1;
     // Background refreshes stay silent once data exists — no spinner flicker
@@ -204,40 +298,23 @@ function useRemoteMoments(): MomentsContextValue {
     setError(null);
 
     try {
-      const response = await fetchMoments(undefined, MOMENTS_PAGE_LIMIT);
-
-      if (requestId !== momentsRequestSeq.current) {
-        return; // A newer request is in flight, drop this stale response.
-      }
-      const page = sortMomentsOldestFirst(response.moments);
-      const oldestInPage = page[0];
-      hasMomentsData.current = true;
-      // A refresh re-reads the HEAD of the archive, it does not throw away
-      // the deeper pages the reader already opened: rows older than this
-      // page survive, rows inside it are whatever the server just said (so a
-      // deleted row inside that window does disappear).
-      //
-      // Consistency model, deliberate: the head window is refreshed, deeper
-      // pages are not, and the cursor only moves forward. Consequences, in
-      // both directions:
-      //   deep -> head (a partner redates an old memory forward): the row
-      //     lands once, from the page, and the stale deep copy is replaced.
-      //   head -> deep (a partner redates a loaded head memory backward past
-      //     this page): the local copy is pruned as if deleted and the new
-      //     copy sits on a page nothing has fetched, so the row stays out of
-      //     the loaded window until a fresh archive load pages back to it.
-      // The alternative, never pruning, keeps genuinely deleted rows on
-      // screen forever, and tombstone activity is no longer fetched, so the
-      // cursor window is the only signal available.
-      setMoments((prev) => {
-        if (!oldestInPage) {
-          return [];
-        }
-        // mergeMomentsById also de-dupes by id: a memory whose date moved out
-        // of the deep window and into this page (a partner edit) must land
-        // once, as the server's copy, not once per date it has worn.
-        return mergeMomentsById(prev.filter(olderThan(oldestInPage)), page);
+      const requestStartedAt = recorderNow();
+      const response = await fetchMoments(undefined, MOMENTS_PAGE_LIMIT);      recordSpan('request.moments.head', requestStartedAt, {
+        records: response.moments.length,
+        status: 200,
       });
+
+      assertCurrent();
+      const reconciled = await reconcileMoments(loaded, assertCurrent);
+      assertCurrent();
+      const loadedIds = new Set(loaded.map((moment) => moment.id));
+      hasMomentsData.current = true;
+      // Revalidation happens after the head read. For known ids it wins even
+      // when the head still contains a just-deleted or just-redated snapshot.
+      setMoments(mergeMomentsById(
+        response.moments.filter((moment) => !loadedIds.has(moment.id)),
+        reconciled
+      ));
       // The cursor is the deepest page boundary the reader has reached. A
       // refresh only owns it before paging has started — otherwise it would
       // rewind the window and leave a hole between the head and the cursor.
@@ -246,7 +323,7 @@ function useRemoteMoments(): MomentsContextValue {
       }
       setHasMoreMoments(momentsCursorRef.current !== null);
     } catch (err) {
-      if (requestId !== momentsRequestSeq.current) {
+      if (requestId !== momentsRequestSeq.current || requestSpaceId !== spaceIdRef.current) {
         return;
       }
       // The cursor and hasMore are untouched: a head load that failed must
@@ -262,8 +339,20 @@ function useRemoteMoments(): MomentsContextValue {
   }, []);
 
   const refresh = useCallback(async () => {
+    if (activeSpaceIdRef.current !== spaceId) {
+      activeSpaceIdRef.current = spaceId;
+      momentsRequestSeq.current += 1;
+      momentsCursorRef.current = undefined;
+      hasMomentsData.current = false;
+      loadMoreInFlightRef.current = false;
+      setMoments([]);
+      loadedMomentsRef.current = [];
+      setError(null);
+      setPagingError(null);
+      setHasMoreMoments(false);
+    }
     await loadMoments();
-  }, [loadMoments]);
+  }, [loadMoments, spaceId]);
 
   const loadMoreMoments = useCallback(async (): Promise<boolean> => {
     // Never page against a head load that is still in flight: it may be
@@ -282,14 +371,33 @@ function useRemoteMoments(): MomentsContextValue {
     const generation = momentsRequestSeq.current;
     setPagingError(null);
     try {
+      const requestStartedAt = recorderNow();
       const response = await fetchMoments(momentsCursorRef.current, MOMENTS_PAGE_LIMIT);
+      incrementTotals('pageRequests');
+      recordSpan('request.moments.page', requestStartedAt, {
+        records: response.moments.length,
+        status: 200,
+      });
       if (generation !== momentsRequestSeq.current) {
         return true; // Superseded: the newer operation owns the window now.
       }
       momentsCursorRef.current = response.nextCursor ?? null;
       setHasMoreMoments(momentsCursorRef.current !== null);
       hasMomentsData.current = true;
-      setMoments((prev) => mergeMomentsById(prev, response.moments));
+      // Older pages prepend; the general merge is the fallback for a page the
+      // fast path cannot prove is strictly older and self-consistent.
+      setMoments((prev) => {
+        // React may evaluate this updater more than once for one update, so it
+        // is counted as attempted merge work. Committed work is attributed by
+        // the Profiler instead of being inferred from here.
+        const mergeStartedAt = recorderNow();
+        const next =
+          appendOlderPage(prev, response.moments) ??
+          mergeMomentsById(prev, response.moments);
+        bump('mergeEvaluations');
+        recordSpan('merge.attempted', mergeStartedAt, { held: prev.length });
+        return next;
+      });
       return momentsCursorRef.current !== null;
     } catch (err) {
       // The cursor doesn't advance on failure, so a retry fetches the same
@@ -355,19 +463,22 @@ function useRemoteMoments(): MomentsContextValue {
   }, []);
 
   useEffect(() => {
+    if (!spaceId) {
+      return;
+    }
     void refresh();
-  }, [refresh]);
+  }, [refresh, spaceId]);
 
   // Pick up partner edits/deletes when the app returns to focus.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
+      if (nextAppState === 'active' && spaceId) {
         void refresh();
       }
     });
 
     return () => subscription.remove();
-  }, [refresh]);
+  }, [refresh, spaceId]);
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const created = await remoteCreateMoment(input);
@@ -378,9 +489,33 @@ function useRemoteMoments(): MomentsContextValue {
     return created;
   }, []);
 
+  const reloadConflictedMoment = useCallback(async (momentId: string, requestSpaceId: string | null) => {
+    if (!requestSpaceId || spaceIdRef.current !== requestSpaceId) return;
+    const generation = ++momentsRequestSeq.current;
+    const assertCurrent = () => {
+      if (generation !== momentsRequestSeq.current || spaceIdRef.current !== requestSpaceId) {
+        throw new Error('Memory refresh superseded');
+      }
+    };
+    try {
+      const latest = await reconcileMoments([{ id: momentId }], assertCurrent);
+      assertCurrent();
+      setMoments((prev) => mergeMomentsById(prev.filter((moment) => moment.id !== momentId), latest));
+    } catch {
+      // The original conflict remains actionable even if its follow-up read fails.
+    }
+  }, []);
+
   const updateMoment = useCallback(
     async (momentId: string, patch: UpdateMomentInput) => {
-      const updated = await remoteUpdateMoment(momentId, patch);
+      const requestSpaceId = spaceIdRef.current;
+      let updated: Moment;
+      try {
+        updated = await remoteUpdateMoment(momentId, patch);
+      } catch (error) {
+        if (isWriteConflict(error)) await reloadConflictedMoment(momentId, requestSpaceId);
+        throw error;
+      }
       // The mutation invalidates any in-flight refresh: bump the sequence so a
       // stale snapshot (fetched before this change) is dropped on arrival.
       momentsRequestSeq.current += 1;
@@ -390,19 +525,25 @@ function useRemoteMoments(): MomentsContextValue {
         )
       );
     },
-    []
+    [reloadConflictedMoment]
   );
 
   const removeMoment = useCallback(
-    async (momentId: string) => {
-      await remoteDeleteMoment(momentId);
+    async (momentId: string, expectedUpdatedAt: string) => {
+      const requestSpaceId = spaceIdRef.current;
+      try {
+        await remoteDeleteMoment(momentId, expectedUpdatedAt);
+      } catch (error) {
+        if (isWriteConflict(error)) await reloadConflictedMoment(momentId, requestSpaceId);
+        throw error;
+      }
       // The mutation invalidates any in-flight refresh of both slices: bump
       // the sequences so stale snapshots (fetched before this change) are
       // dropped on arrival and never resurrect the deleted row.
       momentsRequestSeq.current += 1;
       setMoments((prev) => prev.filter((moment) => moment.id !== momentId));
     },
-    []
+    [reloadConflictedMoment]
   );
 
   return useMemo(
@@ -444,6 +585,8 @@ function useStubMoments(): MomentsContextValue {
   const preview = usePreviewVariant();
   const [localMoments, setLocalMoments] = useState<Moment[]>([]);
   const [hiddenMomentIds, setHiddenMomentIds] = useState<Set<string>>(new Set());
+  // Synchronous writes prevent two callers in one React batch from using the same version.
+  const localWrites = useRef(new Map<string, Moment | null>());
 
   const baseMoments = useMemo(
     // Dev-preview routes render a rich visual spread (photos/voice/months).
@@ -470,6 +613,7 @@ function useStubMoments(): MomentsContextValue {
 
   const addMoment = useCallback(async (input: CreateMomentInput) => {
     const nextMoment = toLocalMoment(input);
+    localWrites.current.set(nextMoment.id, nextMoment);
     // Pure updater: the next list is derived from the current one inside the
     // updater, and the promise resolves once the caller's own await settles.
     // (The old version resolved a promise from inside the updater, which is a
@@ -530,43 +674,42 @@ function useStubMoments(): MomentsContextValue {
 
   const updateMoment = useCallback(
     async (momentId: string, patch: UpdateMomentInput) => {
-      const now = new Date().toISOString();
+      const existing = localWrites.current.has(momentId)
+        ? localWrites.current.get(momentId)
+        : moments.find((moment) => moment.id === momentId);
+      if (!existing || Date.parse(existing.updatedAt ?? existing.createdAt) !== Date.parse(patch.expectedUpdatedAt)) {
+        throw new Error('This memory changed on another device. Reopen it before trying again.');
+      }
+      const now = new Date(Math.max(Date.now(), Date.parse(existing.updatedAt ?? existing.createdAt) + 1)).toISOString();
+      const updatedMoment: Moment = { ...existing, updatedAt: now };
+      if (patch.type !== undefined) updatedMoment.type = patch.type;
+      if (patch.title !== undefined) updatedMoment.title = normalizeText(patch.title);
+      if (patch.body !== undefined) updatedMoment.body = normalizeText(patch.body);
+      if (patch.occurredAt !== undefined) updatedMoment.occurredAt = patch.occurredAt;
+      if (patch.targetAt !== undefined) updatedMoment.targetAt = patch.targetAt;
+      if (patch.mediaPreview !== undefined) updatedMoment.mediaPreview = patch.mediaPreview ?? undefined;
+      if (patch.audioUri !== undefined) updatedMoment.audioUri = patch.audioUri;
+      if (patch.mediaId !== undefined) updatedMoment.mediaId = patch.mediaId;
+      if (patch.attachments !== undefined) {
+        updatedMoment.attachments = toStoredAttachments({ attachments: patch.attachments });
+      }
+      localWrites.current.set(momentId, updatedMoment);
       setLocalMoments((currentMoments) => {
-        const existing =
-          currentMoments.find((moment) => moment.id === momentId) ??
-          baseMoments.find((moment) => moment.id === momentId);
-
-        if (!existing) {
-          return currentMoments;
-        }
-
-        const updatedMoment: Moment = { ...existing, updatedAt: now };
-        if (patch.type !== undefined) updatedMoment.type = patch.type;
-        if (patch.title !== undefined) updatedMoment.title = normalizeText(patch.title);
-        if (patch.body !== undefined) updatedMoment.body = normalizeText(patch.body);
-        if (patch.occurredAt !== undefined) updatedMoment.occurredAt = patch.occurredAt;
-        if (patch.targetAt !== undefined) updatedMoment.targetAt = patch.targetAt;
-        if (patch.mediaPreview !== undefined) {
-          updatedMoment.mediaPreview = patch.mediaPreview ?? undefined;
-        }
-        if (patch.audioUri !== undefined) updatedMoment.audioUri = patch.audioUri;
-        if (patch.mediaId !== undefined) updatedMoment.mediaId = patch.mediaId;
-        // Stub mode applies an attachment replacement exactly like create:
-        // omitting it leaves the set alone, and `[]` clears it.
-        if (patch.attachments !== undefined) {
-          updatedMoment.attachments = toStoredAttachments({
-            attachments: patch.attachments,
-          });
-        }
-
         const rest = currentMoments.filter((moment) => moment.id !== momentId);
         return [...rest, updatedMoment];
       });
     },
-    [baseMoments]
+    [moments]
   );
 
-  const removeMoment = useCallback(async (momentId: string) => {
+  const removeMoment = useCallback(async (momentId: string, expectedUpdatedAt: string) => {
+    const existing = localWrites.current.has(momentId)
+      ? localWrites.current.get(momentId)
+      : moments.find((moment) => moment.id === momentId);
+    if (!existing || Date.parse(existing.updatedAt ?? existing.createdAt) !== Date.parse(expectedUpdatedAt)) {
+      throw new Error('This memory changed on another device. Reopen it before trying again.');
+    }
+    localWrites.current.set(momentId, null);
     setLocalMoments((currentMoments) =>
       currentMoments.filter((moment) => moment.id !== momentId)
     );
@@ -575,7 +718,7 @@ function useStubMoments(): MomentsContextValue {
       nextIds.add(momentId);
       return nextIds;
     });
-  }, []);
+  }, [moments]);
 
   const refresh = useCallback(async () => {
     // Local data is always current — nothing to sync in stub mode.

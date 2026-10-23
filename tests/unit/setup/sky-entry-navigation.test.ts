@@ -19,7 +19,15 @@ describe('destination-owned sky', () => {
 
   it('reveals native tabs with the crossfade and clears entry on account change', () => {
     expect(readFileSync('app/(app)/(tabs)/_layout.tsx', 'utf8')).toContain("hidden={entry !== null && entry.kind !== 'fading'}");
-    expect(readFileSync('app/_layout.tsx', 'utf8')).toContain("SkyEntryProvider key={user?.id ?? 'signed-out'}");
+    // The entry resets in place when the account changes — never via a `key`
+    // on the provider, which remounted the whole navigation stack on every
+    // login and logout and replayed the boot sequence underneath.
+    const root = readFileSync('app/_layout.tsx', 'utf8');
+    expect(root).toContain('<SkyEntryProvider userId={user?.id ?? null}>');
+    expect(root).not.toContain('SkyEntryProvider key=');
+    const provider = readFileSync('components/home/sky-entry-provider.tsx', 'utf8');
+    expect(provider).toContain('lastUserId');
+    expect(provider).toContain('setEntry(null)');
   });
 
   it('covers the destination with the outgoing form until the canvas is laid out', () => {

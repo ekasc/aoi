@@ -183,7 +183,7 @@ Delete your entire account:
 
 ### GDPR (European Users)
 - Lawful basis: Contract (providing the service you paid for)
-- Data Protection Officer: Contact privacy@aoi.app
+- Data Protection Officer: Contact privacy@aoiapp.com
 - Supervisory authority: You can complain to your local data protection authority
 - Cross-border transfers: Data may be processed in the US (adequacy decision in place)
 
@@ -253,7 +253,7 @@ We comply with applicable privacy laws globally. Contact us for jurisdiction-spe
 
 We don't knowingly collect data from children under 16. If we discover we have, we delete it immediately.
 
-Parents: If your child under 16 is using Aoi, contact us at privacy@aoi.app and we'll remove the account.
+Parents: If your child under 16 is using Aoi, contact us at privacy@aoiapp.com and we'll remove the account.
 
 ## Changes to This Policy
 
@@ -268,10 +268,10 @@ If you don't agree with changes, you can export your data and delete your accoun
 
 ## Contact Us
 
-**Privacy Questions:** privacy@aoi.app
-**Data Requests:** data@aoi.app
-**Security Issues:** security@aoi.app (see Security section below)
-**General Support:** support@aoi.app
+**Privacy Questions:** privacy@aoiapp.com
+**Data Requests:** data@aoiapp.com
+**Security Issues:** security@aoiapp.com (see Security section below)
+**General Support:** support@aoiapp.com
 
 **Response Time:** We respond to privacy inquiries within 48 hours.
 
@@ -281,7 +281,7 @@ If you don't agree with changes, you can export your data and delete your accoun
 
 We take security seriously. If you find a security issue:
 
-1. Email security@aoi.app
+1. Email security@aoiapp.com
 2. Include detailed description
 3. Allow us reasonable time to fix before public disclosure
 4. We'll acknowledge receipt within 24 hours
@@ -386,4 +386,4 @@ In a world where every app wants to exploit your data, we're choosing a differen
 **Next Review:** August 2025  
 **Version:** 1.0
 
-**Questions?** privacy@aoi.app
+**Questions?** privacy@aoiapp.com

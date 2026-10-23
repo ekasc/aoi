@@ -15,6 +15,9 @@ vi.mock('expo-audio', () => ({
       pause: vi.fn(),
     };
   },
+  // The player's transport state; this file only cares which URI reached the
+  // player, so an idle status is enough.
+  useAudioPlayerStatus: () => ({ playing: false, currentTime: 0, duration: 0 }),
 }));
 
 // Marker transform proves the player resolves through the shared util

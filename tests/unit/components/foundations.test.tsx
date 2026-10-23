@@ -6,7 +6,7 @@ import DevFoundations from '@/app/dev-foundations';
 import { Button } from '@/components/ui/button';
 import { PaperTextInput } from '@/components/ui/text-input';
 import { FirstPageDedication } from '@/components/moments/first-page-dedication';
-import { FontFamilies, Typography } from '@/constants/typography';
+import { FontFamilies } from '@/constants/typography';
 
 // The shared react-native mock passes Pressable `style` straight through,
 // but Button computes `style={({ pressed }) => ...}`. Resolve press-state
@@ -89,7 +89,11 @@ vi.mock('react-native', () => {
   };
 });
 
-const themeColorMock = vi.hoisted(() => vi.fn((_overrides: unknown, name: string) => `#${name}`));
+// Each token gets a distinct, CSS-valid colour so happy-dom keeps it on the
+// rendered element (an invalid string like '#primary' is silently dropped).
+const themeColorMock = vi.hoisted(() =>
+  vi.fn((_overrides: unknown, name: string) => `#${name.length.toString(16).padStart(2, '0')}00ff`)
+);
 
 describe('First-page typography', () => {
   it('uses the native system sans for headings and controls on iOS', () => {
@@ -97,20 +101,16 @@ describe('First-page typography', () => {
     expect(FontFamilies.display).toBe(FontFamilies.body);
   });
 
-  it.each([true, false])('keeps invitation sentences separate (waiting=%s)', (waiting) => {
-    render(<FirstPageDedication partnerName="June" waiting={waiting} sinceLabel="1 day together"
-      onCompose={() => {}} onSkip={() => {}} />);
-    expect(screen.getByText('No memories yet')).toBeTruthy();
-    const opening = screen.getByText('Leave a photo, a few words, or your voice.');
-    const ending = screen.getByText(waiting
-      ? 'Something to find when they arrive.' : 'A little something to begin with.');
-    expect(opening).not.toBe(ending);
-    expect(opening.textContent).not.toContain('\n');
-    expect(opening.style.textAlign).toBe('center');
-    expect(opening.style.alignSelf).toBe('stretch');
-    expect(ending.style.alignSelf).toBe('stretch');
-    expect(opening.style.fontSize).toBe(`${Typography.body.fontSize}px`);
-    expect(ending.style.fontSize).toBe(`${Typography.supporting.fontSize}px`);
+  it('starts a memory or dismisses the dedication when requested', () => {
+    const onCompose = vi.fn();
+    const onSkip = vi.fn();
+    render(<FirstPageDedication partnerName="June" waiting sinceLabel="1 day together"
+      onCompose={onCompose} onSkip={onSkip} />);
+    fireEvent.click(screen.getByText('Add your first memory'));
+    expect(onCompose).toHaveBeenCalledOnce();
+    expect(onSkip).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Not now'));
+    expect(onSkip).toHaveBeenCalledOnce();
   });
 });
 
@@ -199,8 +199,22 @@ describe('editorial paper foundations', () => {
     expect(screen.getByText('Secondary action')).toBeTruthy();
     expect(screen.getByText('Text action')).toBeTruthy();
     expect(screen.getByText('Destructive action')).toBeTruthy();
-    const disabledLabel = screen.getByText('Disabled state');
-    expect(disabledLabel.parentElement?.style.opacity).toBe('0.55');
+    // The disabled primary is muted, not dimmed: the global 0.55 opacity
+    // would keep the accent fill readable-through, so the disabled primary
+    // wears the disabled ink on its own muted fill instead.
+    const disabledButton = document.querySelector<HTMLDivElement>(
+      '[aria-label="Disabled state"]'
+    );
+    expect(disabledButton).toBeTruthy();
+    const enabledPrimary = document.querySelector<HTMLDivElement>('[aria-label="Primary action"]');
+    expect(disabledButton?.style.opacity).not.toBe('0.55');
+    // The muted fill: the disabled primary's background is the primary
+    // token faded toward the surface (an alpha composite), not the vivid
+    // fill dimmed at 0.55.
+    expect(disabledButton?.style.backgroundColor).not.toBe(enabledPrimary?.style.backgroundColor);
+    expect(disabledButton?.style.backgroundColor?.startsWith(enabledPrimary?.style.backgroundColor ?? '\u0000')).toBe(true);
+    // The label wears the disabled ink, not the primary text ink.
+    expect(disabledButton?.querySelector('span')?.style.color).not.toBe(enabledPrimary?.querySelector('span')?.style.color);
   });
 
   it('renders input states including an error message', () => {

@@ -1,4 +1,5 @@
 import { StyleSheet, View } from 'react-native';
+import type { ReactNode } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * floating caption, because a reader who is not ready is not refusing and
  * should not have to dismiss anything.
  */
-export function FirstPageDedication({ partnerName, waiting, sinceLabel, onCompose, onSkip }: {
+export function FirstPageDedication({ partnerName, waiting, sinceLabel, onCompose, onSkip, invitation }: {
   partnerName: string;
   waiting: boolean;
   /**
@@ -24,6 +25,11 @@ export function FirstPageDedication({ partnerName, waiting, sinceLabel, onCompos
   sinceLabel: string | null;
   onCompose: () => void;
   onSkip: () => void;
+  /**
+   * The quiet second action, owned by the screen because inviting needs the
+   * space. It sits after this page's own actions so saving stays primary.
+   */
+  invitation?: ReactNode;
 }) {
   const muted = useThemeColor({}, 'muted');
   return (
@@ -40,12 +46,15 @@ export function FirstPageDedication({ partnerName, waiting, sinceLabel, onCompos
         </ThemedText>
         <ThemedText type="supporting" textBreakStrategy="balanced" lineBreakStrategyIOS="standard"
           style={[styles.copy, { color: muted }]}>
-          {waiting ? 'Something to find when they arrive.' : 'A little something to begin with.'}
+          {waiting ? 'Save a memory now. Your partner can see it after they join.' : 'Saved memories appear in both of your feeds.'}
         </ThemedText>
       </View>
       <View style={styles.actions}>
-        <Button label="Leave something" onPress={onCompose} />
+        <Button label="Add your first memory" onPress={onCompose} />
         <Button label="Not now" size="sm" variant="ghost" onPress={onSkip} />
+        {/* Saving comes first; inviting is the quiet second thing. The
+            invitation itself stays hidden once a partner has joined. */}
+        {invitation}
       </View>
     </View>
   );

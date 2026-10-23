@@ -1,14 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
-import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 
 import type { SessionUser } from '@/features/session/types';
 import { useSession } from '@/features/session/session-context';
-import {
-  findInviteCode,
-  isInviteCodeFormat,
-  normalizeInviteCode,
-} from '@/features/space/invite-code';
+import { isInviteCodeFormat, normalizeInviteCode } from '@/features/space/invite-code';
 import { takeInvite } from '@/features/space/invite-handoff';
 import type { PartnerName, PartnerNameProblem } from '@/features/space/partner-name';
 import { checkPartnerName, spaceNameForPair } from '@/features/space/partner-name';
@@ -83,8 +78,6 @@ export type OnboardingFlow = {
   /** The space's own name and picture, for the beat that shows it exists. */
   spaceName: string;
   spacePhotoUri: string | null;
-  /** Fill the code field from the clipboard. False when nothing usable is there. */
-  pasteCode: () => Promise<boolean>;
   /** Leave setup for Story. */
   enterStory: () => void;
   /**
@@ -206,22 +199,6 @@ export function useOnboardingFlow(): OnboardingFlow {
    * smell and, on iOS 16 and later, a system prompt the reader did not ask
    * for; asking first turns the same read into something they did.
    */
-  const pasteCode = useCallback(async () => {
-    let text = '';
-    try {
-      text = (await Clipboard.getStringAsync()) ?? '';
-    } catch {
-      return false;
-    }
-    const found = findInviteCode(text);
-    if (!found) {
-      return false;
-    }
-    setInviteCode(found);
-    clearError();
-    return true;
-  }, [clearError]);
-
   /**
    * The name the create will actually use, or null when the field holds
    * something that is not a name. This is the single gate: the submit reads
@@ -328,7 +305,16 @@ export function useOnboardingFlow(): OnboardingFlow {
       });
       setStep('joined');
     } catch (caughtError) {
-      setError(getErrorMessage(caughtError, 'Unable to join with this invite code.'));
+      const raw = caughtError instanceof Error ? caughtError.message : '';
+      const offline =
+        caughtError instanceof TypeError || /network|fetch failed|offline/i.test(raw);
+      setError(
+        offline
+          ? 'You seem to be offline. Check your connection, then try again — the code is still here.'
+          : /not found/i.test(raw)
+            ? "That code didn't match a space. Check it with them — or ask them to send a fresh one."
+            : getErrorMessage(caughtError, 'Unable to join with this invite code.'),
+      );
     } finally {
       submittingRef.current = false;
       setCreating(false);
@@ -363,7 +349,6 @@ export function useOnboardingFlow(): OnboardingFlow {
     partnerName: mintedIdentity.partnerName ?? joinedPartnerName,
     spaceName: mintedIdentity.name,
     spacePhotoUri: mintedIdentity.photoUri,
-    pasteCode,
     enterStory,
     // A Space minted or joined here is never skipped past: both beats exist to
     // be read before the reader is handed the app.

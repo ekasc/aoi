@@ -1,0 +1,22 @@
+# Flow C: Media — Alice uploads, Bob decrypts, both restart (devices: both).
+#
+# The E2E console trigger ("Upload test photo (E2E)") seals a bundled
+# fixture through the REAL stack: uploadProtocolPhoto → reservation →
+# presigned PUT → finalisation → signed manifest. "Read archive (E2E)"
+# verifies + decrypts (a photo is listed only if its manifest verifies and
+# its ciphertext opens). The runner compares the listed media id on both
+# devices and performs the unauthorized-identity HTTP checks.
+# Env: E2E_ACCOUNT_BUTTON, E2E_ACCOUNT_EMAIL.
+appId: com.ekasc.aoi
+---
+- launchApp
+- openLink: "aoi://dev-e2e"
+- tapOn: "Upload test photo (E2E)"
+- assertVisible: "Archive: uploaded "
+- tapOn: "Read archive (E2E)"
+- assertVisible: "Archive: 1 photos"
+# Restart: the photo must remain accessible.
+- launchApp
+- openLink: "aoi://dev-e2e"
+- tapOn: "Read archive (E2E)"
+- assertVisible: "Archive: 1 photos"

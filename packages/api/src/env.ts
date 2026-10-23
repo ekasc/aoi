@@ -152,7 +152,7 @@ export interface WorkerEnv {
   LOG_LEVEL?: string;
   /** Secrets — injected via `wrangler secret` / `.dev.vars`, never committed. */
   BETTER_AUTH_SECRET?: string;
-  /** Canonical public origin for Better Auth (e.g. https://api.aoi.app). */
+  /** Canonical public origin for Better Auth (e.g. https://api.aoiapp.com). */
   BETTER_AUTH_URL?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;

@@ -48,32 +48,13 @@ describe('After Hours theme foundation', () => {
   it('is the default for new installs and first in order', () => {
     expect(DEFAULT_BEACH_THEME_ID).toBe('after-hours');
     expect(BeachThemeOrder[0]).toBe('after-hours');
-    expect(BeachThemeOrder).toEqual([
-      'after-hours',
-      'editorial-paper',
-      'sunset-shore',
-      'sea-glass',
-      'deep-ocean',
-      'lagoon',
-    ]);
+    expect(BeachThemeOrder).toEqual(['after-hours', 'beach']);
   });
 
-  it('preserves the 4 existing palette ids exactly', () => {
-    for (const id of ['sunset-shore', 'sea-glass', 'deep-ocean', 'editorial-paper']) {
-      expect(BeachThemes[id as keyof typeof BeachThemes]).toBeDefined();
-    }
-    expect(BeachThemes['lagoon']).toBeDefined();
-    expect(Object.keys(BeachThemes).sort()).toEqual(
-      ['after-hours', 'deep-ocean', 'editorial-paper', 'lagoon', 'sea-glass', 'sunset-shore'].sort()
-    );
-  });
-
-  it('leaves existing palettes untouched', () => {
-    expect(BeachThemes['editorial-paper'].light.background).toBe('#FCF9F2');
-    expect(BeachThemes['editorial-paper'].dark.background).toBe('#16120E');
-    expect(BeachThemes['sunset-shore'].light.accent).toBe('#4ECDC4');
-    expect(BeachThemes['sea-glass'].dark.background).toBe('#0F1716');
-    expect(BeachThemes['deep-ocean'].light.partnerAccent).toBe('#D4A373');
+  it('keeps exactly the two supported palettes', () => {
+    expect(BeachThemes['beach']).toBeDefined();
+    expect(BeachThemes['beach'].name).toBe('Beach');
+    expect(Object.keys(BeachThemes).sort()).toEqual(['after-hours', 'beach']);
   });
 
   it('names the preset After Hours with a plain description', () => {

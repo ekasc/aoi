@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 
+import { CalendarListMock } from './calendar-list-mock';
+
 const { backSpy, setSelectedDateSpy, setVisibleMonthSpy } = vi.hoisted(() => ({
   backSpy: vi.fn(),
   setSelectedDateSpy: vi.fn(),
@@ -63,36 +65,11 @@ vi.mock('react-native', () => {
     },
     ScrollView: ({ children, style, ...rest }: Record<string, unknown>) =>
       createElement('div', { ...withAria(rest), style: flattenStyle(style) }, children as never),
-    // The real list mounts a window around its opening index, not every item:
-    // the year screen holds seventeen years, and rendering all of them here
-    // made this file cost seconds of the suite budget and time out under load.
-    // Respecting the window keeps the mock honest and the test cheap, and it
-    // fails if the screen ever drops back to an unbounded list.
-    FlatList: ({
-      data,
-      renderItem,
-      style,
-      initialScrollIndex = 0,
-      windowSize = 21,
-      ...rest
-    }: {
-      data?: unknown[];
-      renderItem?: (info: { item: unknown; index: number }) => unknown;
-      style?: unknown;
-      initialScrollIndex?: number;
-      windowSize?: number;
-    }) => {
-      const items = data ?? [];
-      const start = Math.max(0, initialScrollIndex - Math.floor(windowSize / 2));
-      const visible = items.slice(start, start + windowSize);
-      return createElement(
-        'div',
-        { ...withAria(rest as Record<string, unknown>), style: flattenStyle(style) },
-        visible.map((item, offset) =>
-          renderItem?.({ index: start + offset, item }),
-        ) as never,
-      );
-    },
+    // The shared list mock mounts its opening window, not every row: the year
+    // grid is virtualized by month row, so rendering the whole reachable
+    // horizon here would both lie about cost and time the suite out.
+    FlatList: CalendarListMock,
+    ActivityIndicator: () => null,
     Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
     useWindowDimensions: () => ({ fontScale: 1, height: 844, scale: 3, width: 390 }),
   };
@@ -180,12 +157,22 @@ describe('Calendar year view', () => {
     const { default: YearScreen } = await import('@/app/(app)/calendar/year');
     render(<YearScreen />);
 
-    // Twelve months for each year in the window, not one month at a time.
+    // The grid opens on this year with a bounded window of months mounted,
+    // never the whole reachable horizon: virtualization is the contract, so
+    // the months need not land on year boundaries.
     const months = screen.getAllByLabelText(/^Open [A-Z][a-z]+ \d{4}$/);
     expect(months.length).toBeGreaterThanOrEqual(12);
-    expect(months.length % 12).toBe(0);
+    expect(months.length).toBeLessThan(12 * 3);
 
     const thisYear = new Date().getFullYear();
+    const yearsShown = new Set(
+      months.map((el) => Number(/(\d{4})$/.exec(el.getAttribute('aria-label') ?? '')?.[1])),
+    );
+    for (const year of yearsShown) {
+      expect(Math.abs(year - thisYear)).toBeLessThanOrEqual(1);
+    }
+    expect(yearsShown.has(thisYear)).toBe(true);
+
     const septemberThisYear = screen.getByLabelText(`Open September ${thisYear}`);
     fireEvent.click(septemberThisYear);
 

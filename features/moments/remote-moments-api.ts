@@ -1,3 +1,11 @@
+import {
+  MOMENT_RECONCILE_LIMIT,
+  momentListResponseSchema,
+  momentSchema,
+  reconcileMomentsResponseSchema,
+  type MomentListResponse,
+} from '@aoi/shared';
+
 import { apiFetch } from '@/features/api-client';
 import type {
   CreateMomentInput,
@@ -5,10 +13,7 @@ import type {
   UpdateMomentInput,
 } from '@/features/moments/types';
 
-export interface MomentListResponse {
-  moments: Moment[];
-  nextCursor?: string;
-}
+export type { MomentListResponse } from '@aoi/shared';
 
 export async function fetchMoments(
   cursor?: string,
@@ -28,11 +33,42 @@ export async function fetchMoments(
   if (range?.type !== undefined) {
     path += `&type=${encodeURIComponent(range.type)}`;
   }
-  return apiFetch<MomentListResponse>(path);
+  return momentListResponseSchema.parse(await apiFetch<unknown>(path));
+}
+
+/** Revalidate only loaded records, with at most three bounded requests in flight. */
+export async function reconcileMoments(
+  loaded: readonly Pick<Moment, 'id'>[],
+  assertCurrent: () => void
+): Promise<Moment[]> {
+  const ids = [...new Set(loaded.map((moment) => moment.id))];
+  const moments: Moment[] = [];
+  for (let offset = 0; offset < ids.length; offset += MOMENT_RECONCILE_LIMIT * 3) {
+    const requests: Promise<Moment[]>[] = [];
+    for (let start = offset; start < Math.min(offset + MOMENT_RECONCILE_LIMIT * 3, ids.length); start += MOMENT_RECONCILE_LIMIT) {
+      const batch = ids.slice(start, start + MOMENT_RECONCILE_LIMIT);
+      requests.push((async () => {
+        assertCurrent();
+        const result = await apiFetch<unknown>('/v1/spaces/current/moments/reconcile', {
+          method: 'POST',
+          body: JSON.stringify({ ids: batch }),
+        });
+        assertCurrent();
+        const parsed = reconcileMomentsResponseSchema.parse(result);
+        const requested = new Set(batch);
+        if (parsed.moments.some((moment) => !requested.has(moment.id))) {
+          throw new Error('Unexpected memory in refresh response');
+        }
+        return parsed.moments;
+      })());
+    }
+    moments.push(...(await Promise.all(requests)).flat());
+  }
+  return moments;
 }
 
 export async function createMoment(input: CreateMomentInput): Promise<Moment> {
-  return apiFetch<Moment>('/v1/spaces/current/moments', {
+  return momentSchema.parse(await apiFetch<unknown>('/v1/spaces/current/moments', {
     method: 'POST',
     body: JSON.stringify({
       type: input.type,
@@ -52,16 +88,17 @@ export async function createMoment(input: CreateMomentInput): Promise<Moment> {
       // result server-side instead of creating a second moment.
       clientId: input.clientId,
     }),
-  });
+  }));
 }
 
 export async function updateMoment(
   momentId: string,
   input: UpdateMomentInput
 ): Promise<Moment> {
-  return apiFetch<Moment>(`/v1/moments/${momentId}`, {
+  return momentSchema.parse(await apiFetch<unknown>(`/v1/moments/${momentId}`, {
     method: 'PATCH',
     body: JSON.stringify({
+      expectedUpdatedAt: input.expectedUpdatedAt,
       type: input.type,
       title: input.title,
       body: input.body,
@@ -73,12 +110,12 @@ export async function updateMoment(
       // Omitted = attachments untouched; supplied (even `[]`) = replace.
       ...(input.attachments !== undefined ? { attachments: input.attachments } : {}),
     }),
-  });
+  }));
 }
 
-export async function deleteMoment(momentId: string): Promise<void> {
+export async function deleteMoment(momentId: string, expectedUpdatedAt: string): Promise<void> {
   await apiFetch(`/v1/moments/${momentId}`, {
     method: 'DELETE',
+    body: JSON.stringify({ expectedUpdatedAt }),
   });
 }
-

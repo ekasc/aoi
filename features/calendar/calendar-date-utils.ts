@@ -1,5 +1,10 @@
 import type { CalendarEvent } from '@/features/calendar/types';
 
+const monthTitleFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
+const weekdayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' });
+const dateTitleFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+const timeFormatter = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
+
 export function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -41,37 +46,22 @@ export function isSameMonth(left: Date, right: Date) {
 }
 
 export function formatMonthTitle(date: Date) {
-  return date.toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
+  return monthTitleFormatter.format(date);
 }
 
 export function formatWeekdayShort(date: Date) {
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-  });
+  return weekdayFormatter.format(date);
 }
 
 export function formatDateTitle(date: Date) {
-  return date.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  return dateTitleFormatter.format(date);
 }
 
 export function formatTimeRange(startIso: string, endIso: string) {
   const start = new Date(startIso);
   const end = new Date(endIso);
 
-  return `${start.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })} - ${end.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })}`;
+  return `${timeFormatter.format(start)} - ${timeFormatter.format(end)}`;
 }
 
 export function monthBounds(date: Date) {

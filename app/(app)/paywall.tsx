@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import { NativeSheet } from '@/components/ui/native-sheet';
 import { Surface } from '@/components/ui/surface';
 import { Radii, Spacing, withAlpha } from '@/constants/theme';
+import { getLegalLinks } from '@/features/legal/legal-links';
 import { PLUS_FEATURES } from '@/features/subscription/limits';
 import { SKY_HISTORY_PLUS } from '@/features/home/sky-history';
+import { formatBytes } from '@/features/subscription/format';
 import { useSubscription } from '@/features/subscription/subscription-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -20,16 +22,24 @@ import { useThemeColor } from '@/hooks/use-theme-color';
  * is reachable, themeable and announced properly.
  */
 const PLUS_EXPLANATION =
-  'Plus gives your shared archive more storage, more letters for the future, PDF chapter keepsakes, and Sky History — the ability to rewind your sky to any month you have been together. Your live sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
+  'Plus gives your shared archive more storage, PDF chapter keepsakes, and Sky History — the ability to rewind your sky to any month you have been together. Your live sky, shared memories, plans and everyday resurfacing stay free. One purchase covers both of you.';
 
 export default function PaywallScreen() {
   const router = useRouter();
   // Which lock sent the reader here. One line about the feature they were
   // trying to use, above the unchanged plan shelf — not a second paywall.
   const { feature } = useLocalSearchParams<{ feature?: string }>();
-  const soughtFeature = feature === 'sky-history' ? SKY_HISTORY_PLUS : null;
+  const soughtFeature =
+    feature === 'sky-history'
+      ? SKY_HISTORY_PLUS
+      : feature === 'keepsake'
+        ? {
+            title: 'Take this chapter home',
+            body: 'Keep the month as a PDF you can print and gift.',
+          }
+        : null;
   const insets = useSafeAreaInsets();
-  const { status, isPlus, isAvailable, plans, purchase, restore, refresh, activationPending } = useSubscription();
+  const { status, isPlus, isAvailable, plans, purchase, restore, refresh, serverPlus, activationPending } = useSubscription();
   const [selected, setSelected] = useState<string | null>(null);
   const [operation, setOperation] = useState<'purchase' | 'restore' | 'refresh' | null>(null);
   const operationRef = useRef(false);
@@ -37,6 +47,16 @@ export default function PaywallScreen() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [explaining, setExplaining] = useState(false);
+  const legal = getLegalLinks();
+  const openLink = async (url: string | null) => {
+    if (!url) return;
+    setError('');
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setError('Could not open this link. Please try again.');
+    }
+  };
   const background = useThemeColor({}, 'background');
   const accent = useThemeColor({}, 'accent');
   const accentInk = useThemeColor({}, 'accentInk');
@@ -51,7 +71,17 @@ export default function PaywallScreen() {
   // as a trick once someone notices it.
   const selectedPlan = plans.find((p) => p.id === selected) ?? null;
   const storeUnavailable = status === 'unavailable';
-  const canPurchase = isAvailable && !storeUnavailable && Boolean(selectedPlan) && !busy && !activationPending;
+  // Plus belongs to the shared Space: a partner's purchase covers both of you.
+  // The store entitlement only knows this account, so the space snapshot has
+  // the final say on whether there is anything left to sell.
+  const spacePlusActive = serverPlus?.isPlus === true;
+  const canPurchase =
+    isAvailable &&
+    !storeUnavailable &&
+    !spacePlusActive &&
+    Boolean(selectedPlan) &&
+    !busy &&
+    !activationPending;
 
   const handlePurchase = async () => {
     if (!canPurchase || !selectedPlan || operationRef.current) return;
@@ -115,12 +145,14 @@ export default function PaywallScreen() {
 
   const handleCloseExplanation = useCallback(() => setExplaining(false), []);
 
-  if (isPlus) {
+  if (isPlus || spacePlusActive) {
     return (
       <View style={[styles.center, { backgroundColor: background, paddingTop: Spacing[24] }]}>
         <ThemedText type="title">You have Aoi Plus</ThemedText>
         <ThemedText type="body" style={styles.sub}>
-          Plus is active on this account.
+          {serverPlus?.isPlus
+            ? `Plus is active on your shared Space, ${formatBytes(serverPlus.mediaUsedBytes)} of ${formatBytes(serverPlus.mediaLimitBytes)} media used.`
+            : 'Plus is active on this account.'}
         </ThemedText>
         <Button label="Back" onPress={() => router.back()} />
       </View>
@@ -271,8 +303,23 @@ export default function PaywallScreen() {
 
       <View style={styles.fine}>
         <ThemedText type="caption" style={{ color: textMuted, textAlign: 'center' }}>
-          Billed through Apple / Google where available. Cancel anytime. Prices vary by region.
+          Payment is charged to your store account when you confirm. Subscriptions renew automatically unless canceled at least 24 hours before the current period ends. Manage or cancel in your store account settings. Prices vary by region.
         </ThemedText>
+        {legal.privacyUrl ? (
+          <Button label="Privacy policy" variant="ghost" onPress={() => void openLink(legal.privacyUrl)} />
+        ) : null}
+        {legal.termsUrl ? (
+          <Button label="Terms of service" variant="ghost" onPress={() => void openLink(legal.termsUrl)} />
+        ) : null}
+        {Platform.OS === 'ios' || Platform.OS === 'android' ? (
+          <Button
+            label="Manage subscriptions"
+            variant="ghost"
+            onPress={() => void openLink(Platform.OS === 'ios'
+              ? 'https://apps.apple.com/account/subscriptions'
+              : 'https://play.google.com/store/account/subscriptions')}
+          />
+        ) : null}
         <Pressable
           accessibilityHint="Explains what Aoi Plus includes"
           accessibilityLabel="Why Plus?"

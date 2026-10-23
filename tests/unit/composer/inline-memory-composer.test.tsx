@@ -236,6 +236,7 @@ vi.mock('react-native', () => {
     Pressable,
     ScrollView,
     StyleSheet: { create: (s: any) => s, hairlineWidth: 1, absoluteFill: {}, absoluteFillObject: {} },
+    ActivityIndicator: () => null,
     AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
     Linking: { openSettings: openSettingsSpy },
     InteractionManager: { runAfterInteractions: (callback: () => void) => { callback(); return { cancel: vi.fn() }; } },
@@ -336,7 +337,7 @@ describe('Memory editor opens directly with keyboard + controls (no collapse)', 
   it('saves a dedication through the same durable queue, with no automatic message', async () => {
     mockDraft = makeDraft({ body: 'This made me think of you.' });
     await renderComposer({ dedication: true });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Keep'));
     await act(async () => {});
     expect(saveSpy).toHaveBeenCalledOnce();
     expect(backSpy).toHaveBeenCalledOnce();
@@ -353,7 +354,7 @@ describe('Memory editor opens directly with keyboard + controls (no collapse)', 
     expect(screen.getByLabelText('Record a voice note')).toBeTruthy();
     expect(screen.getByText('New memory')).toBeTruthy();
     expect(screen.getByText('Cancel')).toBeTruthy();
-    expect(screen.getByText('Save')).toBeTruthy();
+    expect(screen.getByText('Keep')).toBeTruthy();
     expect(screen.queryByText('Library')).toBeNull();
     expect(screen.queryByText('Camera')).toBeNull();
   });
@@ -533,6 +534,7 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
   it('finished recording stages via the shared pipeline (no second pipeline)', async () => {
     await renderComposer();
     fireEvent.focus(screen.getByLabelText('Keep something'));
+    await act(async () => { fireEvent.click(screen.getByLabelText('Record a voice note')); });
     expect(mockAudioStatus).toBeTruthy();
     await act(async () => {
       mockAudioStatus?.({ isFinished: true, hasError: false, url: 'file:///tap-voice.m4a' });
@@ -556,7 +558,7 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
     await act(async () => {});
     expect(screen.getByLabelText('Stop recording voice note')).toBeTruthy();
     await act(async () => {
-      fireEvent.click(screen.getByText('Save'));
+      fireEvent.click(screen.getByText('Keep'));
     });
     expect(saveSpy).not.toHaveBeenCalled();
     expect(backSpy).not.toHaveBeenCalled();
@@ -566,12 +568,13 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
     mockDraft = makeDraft({ body: 'voice memory' });
     addAssetsSpy.mockImplementationOnce(() => new Promise(() => {}));
     await renderComposer();
+    await act(async () => { fireEvent.click(screen.getByLabelText('Record a voice note')); });
     await act(async () => {
       mockAudioStatus?.({ isFinished: true, hasError: false, url: 'file:///staging.m4a' });
     });
 
     expect((globalThis as any).__preventLeave.prevent).toBe(true);
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Keep'));
     expect(saveSpy).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByLabelText('More options'));
@@ -589,7 +592,7 @@ describe('InlineMemoryComposer voice (single tap-toggle, shared pipeline)', () =
     saveSpy.mockImplementationOnce(() => new Promise(() => {}));
     await renderComposer();
     await act(async () => {
-      fireEvent.click(screen.getByText('Save'));
+      fireEvent.click(screen.getByText('Keep'));
     });
     expect(screen.getByLabelText('Record a voice note').getAttribute('aria-disabled')).toBe('true');
   });
@@ -601,7 +604,7 @@ describe('Memory editor date, attachments, durable save', () => {
     let finish: (result: { clientId: string }) => void = () => {};
     saveSpy.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     await renderComposer();
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Keep'));
     expect(screen.getByText('Cancel').closest('button')?.disabled).toBe(true);
     fireEvent.click(screen.getByText('Cancel'));
     const leave = vi.fn();
@@ -703,12 +706,12 @@ describe('Memory editor date, attachments, durable save', () => {
 
   it('Save stays disabled until nonempty, then durably enqueues and dismisses', async () => {
     const first = await renderComposer();
-    expect(screen.getByText('Save').closest('button')?.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Keep').closest('button')?.hasAttribute('disabled')).toBe(true);
     first.unmount();
     mockDraft = makeDraft({ body: 'hello' });
     await renderComposer();
     await act(async () => {
-      fireEvent.click(screen.getByText('Save'));
+      fireEvent.click(screen.getByText('Keep'));
     });
     expect(saveSpy).toHaveBeenCalledTimes(1);
     expect(backSpy).toHaveBeenCalledTimes(1);
@@ -719,7 +722,7 @@ describe('Memory editor date, attachments, durable save', () => {
     mockDraft = makeDraft({ body: 'unsent thought' });
     await renderComposer();
     await act(async () => {
-      fireEvent.click(screen.getByText('Save'));
+      fireEvent.click(screen.getByText('Keep'));
     });
     expect(saveSpy).toHaveBeenCalledTimes(1);
     expect(backSpy).not.toHaveBeenCalled();
@@ -799,7 +802,7 @@ describe('Memory editor date, attachments, durable save', () => {
     mockDraft = makeDraft({ body: 'rich memory with photo' });
     await renderComposer();
     await act(async () => {
-      fireEvent.click(screen.getByText('Save'));
+      fireEvent.click(screen.getByText('Keep'));
     });
     expect(screen.getByText('See Plus')).toBeTruthy();
     expect(refreshServerPlusSpy).toHaveBeenCalled();

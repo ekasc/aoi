@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 
+const openUrlSpy = vi.hoisted(() => vi.fn(async (_url: string) => {}));
 const pushSpy = vi.fn();
 const backSpy = vi.fn();
 const purchaseSpy = vi.fn(async () => ({ ok: true }));
 const restoreSpy = vi.fn(async () => ({ ok: true, isPlus: false }));
 const refreshSpy = vi.fn(async () => {});
 let activationPending = false;
+let serverPlus: { isPlus: boolean; mediaUsedBytes: number; mediaLimitBytes: number } | null = null;
 
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: pushSpy, back: backSpy, replace: vi.fn() }),
@@ -32,7 +34,7 @@ vi.mock('@/features/subscription/subscription-context', () => ({
     restore: restoreSpy,
     refresh: refreshSpy,
     activationPending,
-    serverPlus: null,
+    serverPlus,
     refreshServerPlus: vi.fn(async () => {}),
   }),
 }));
@@ -107,6 +109,7 @@ vi.mock('react-native', () => {
       return createElement('div', { ...rest, 'data-scrollview': 'true' }, children);
     },
     Alert: { alert: vi.fn() },
+    Linking: { openURL: openUrlSpy },
   };
 });
 
@@ -119,6 +122,7 @@ let mockPlans = [
 ];
 
 beforeEach(() => {
+  openUrlSpy.mockReset().mockResolvedValue(undefined);
   pushSpy.mockClear();
   backSpy.mockClear();
   purchaseSpy.mockClear();
@@ -126,6 +130,7 @@ beforeEach(() => {
   restoreSpy.mockReset().mockResolvedValue({ ok: true, isPlus: false });
   refreshSpy.mockReset();
   activationPending = false;
+  serverPlus = null;
   mockPlans = [
     { id: MONTHLY_ID, title: 'Monthly', priceString: '€3.99', period: 'monthly' },
     { id: YEARLY_ID, title: 'Yearly', priceString: '€29.99', period: 'yearly' },
@@ -174,6 +179,19 @@ describe('paywall (v1 benefit contract)', () => {
     expect(screen.getByText('Purchase received, confirming Plus on your Space…')).toBeTruthy();
   });
 
+  it('does not sell a second subscription to a member whose Space already has Plus', async () => {
+    // Plus belongs to the shared Space. This account has no store
+    // entitlement, so the shelf used to stay live and offered a purchase the
+    // partner had already paid for.
+    serverPlus = { isPlus: true, mediaUsedBytes: 1024, mediaLimitBytes: 4096 };
+    await renderPaywall();
+
+    expect(screen.getByText('You have Aoi Plus')).toBeTruthy();
+    expect(screen.getByText(/Plus is active on your shared Space/)).toBeTruthy();
+    expect(screen.queryByLabelText('Monthly, €3.99')).toBeNull();
+    expect(screen.queryByText('Continue, €3.99')).toBeNull();
+  });
+
   it('provides a plan reload action after a successful empty offering read', async () => {
     mockPlans = [];
     await renderPaywall();
@@ -185,7 +203,6 @@ describe('paywall (v1 benefit contract)', () => {
     const { container } = await renderPaywall();
 
     expect(screen.getByText(/More storage for your shared archive/)).toBeTruthy();
-    expect(screen.getByText(/More letters for the future/)).toBeTruthy();
     expect(screen.getByText(/PDF chapter keepsakes/)).toBeTruthy();
     const copy = container.textContent ?? '';
     expect(copy).not.toMatch(/location|Memory Wall|everything unlocked|unlimited/i);
@@ -269,5 +286,35 @@ describe('paywall (v1 benefit contract)', () => {
 
     expect(purchaseSpy).toHaveBeenCalledTimes(1);
     expect(purchaseSpy).toHaveBeenCalledWith(MONTHLY_ID);
+  });
+});
+
+
+describe('store policy actions', () => {
+  it('opens configured policies and store subscription management', async () => {
+    vi.stubEnv('EXPO_PUBLIC_PRIVACY_URL', 'https://aoiapp.com/privacy');
+    vi.stubEnv('EXPO_PUBLIC_TERMS_URL', 'https://aoiapp.com/terms');
+    try {
+      await renderPaywall();
+      fireEvent.click(screen.getByText('Privacy policy'));
+      fireEvent.click(screen.getByText('Terms of service'));
+      fireEvent.click(screen.getByText('Manage subscriptions'));
+      expect(openUrlSpy.mock.calls).toEqual([
+        ['https://aoiapp.com/privacy'],
+        ['https://aoiapp.com/terms'],
+        ['https://apps.apple.com/account/subscriptions'],
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reports a failed link and permits retry', async () => {
+    openUrlSpy.mockRejectedValueOnce(new Error('unavailable'));
+    await renderPaywall();
+    await act(async () => fireEvent.click(screen.getByText('Manage subscriptions')));
+    expect(screen.getByText('Could not open this link. Please try again.')).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByText('Manage subscriptions')));
+    expect(openUrlSpy).toHaveBeenCalledTimes(2);
   });
 });

@@ -16,12 +16,29 @@
 
 import { Dimensions, Platform } from 'react-native';
 
-const MAX_DEPTH = 40;
-const MAX_NODES = 800;
+/**
+ * Only clamps the outline's indentation. The walk itself has no depth ceiling:
+ * a real screen nests deeper than any fixed guess, and a ceiling there is what
+ * silently emptied the accessibility inventory.
+ */
+const MAX_INDENT = 60;
+/**
+ * Bounds the walk, not the answer. A real screen mounts ~14k fibers, and the
+ * interactive elements sit below a long chain of provider and host wrappers, so
+ * a small cap here spent the whole budget on wrappers that carry no
+ * accessibility props and never reached the tree's actual content.
+ */
+const MAX_NODES = 20000;
 const MAX_A11Y_ELEMENTS = 150;
+/**
+ * How much of the tree the outline prints. Separate from `MAX_NODES` on
+ * purpose: the walk has to travel the whole tree to reach the interactive
+ * elements, but nobody reads a fourteen-thousand-line outline.
+ */
+const MAX_OUTLINE_NODES = 1200;
 const MAX_TEXT = 80;
 
-type Fiber = {
+export type Fiber = {
   type?: unknown;
   elementType?: unknown;
   memoizedProps?: unknown;
@@ -29,9 +46,9 @@ type Fiber = {
   sibling?: Fiber | null;
 };
 
-type FiberRoot = { current?: Fiber | null };
+export type FiberRoot = { current?: Fiber | null };
 
-type DevToolsHook = {
+export type DevToolsHook = {
   renderers?: Map<number, unknown>;
   getFiberRoots?: (id: number) => Set<FiberRoot>;
 };
@@ -58,7 +75,7 @@ type OutlineNode = {
   parent: number | null;
 };
 
-function devToolsHook(): DevToolsHook | undefined {
+export function devToolsHook(): DevToolsHook | undefined {
   return (globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: DevToolsHook })
     .__REACT_DEVTOOLS_GLOBAL_HOOK__;
 }
@@ -153,31 +170,43 @@ function describeProps(props: unknown): string {
   return parts.length ? `{${parts.join(', ')}}` : '';
 }
 
-function walk(
-  start: Fiber | null | undefined,
-  depth: number,
-  parent: number | null,
-  nodes: OutlineNode[]
-): void {
-  let fiber = start;
-  while (fiber && nodes.length < MAX_NODES) {
+/**
+ * Pre-order walk, iteratively so depth cannot overflow the stack and needs no
+ * ceiling. A real screen nests deeper than any fixed guess, and a ceiling here
+ * is what silently emptied the accessibility inventory: the budget went to the
+ * wrapper chain and never reached the interactive elements below it.
+ */
+function walk(start: Fiber | null | undefined, depth: number, parent: number | null, nodes: OutlineNode[]): void {
+  const stack: { fiber: Fiber; depth: number; parent: number | null }[] = [];
+  if (start) {
+    stack.push({ depth, fiber: start, parent });
+  }
+  while (stack.length && nodes.length < MAX_NODES) {
+    const frame = stack.pop();
+    if (!frame) {
+      continue;
+    }
+    const { fiber } = frame;
     const name = componentName(fiber.type ?? fiber.elementType);
     const rawProps = fiber.memoizedProps;
     const text = typeof rawProps === 'string' ? rawProps : null;
     const props = describeProps(rawProps);
     const a11y = extractA11y(rawProps);
 
-    let childParent = parent;
+    let childParent = frame.parent;
     if (name || text || props) {
-      const index = nodes.length;
-      nodes.push({ depth, name, text, props, a11y, parent });
-      childParent = index;
+      childParent = nodes.length;
+      nodes.push({ a11y, depth: frame.depth, name, parent: frame.parent, props, text });
     }
 
-    if (fiber.child && depth < MAX_DEPTH) {
-      walk(fiber.child, depth + 1, childParent, nodes);
+    // Sibling pushed first so the child is popped next: pre-order, the order
+    // React renders in.
+    if (fiber.sibling) {
+      stack.push({ depth: frame.depth, fiber: fiber.sibling, parent: frame.parent });
     }
-    fiber = fiber.sibling;
+    if (fiber.child) {
+      stack.push({ depth: frame.depth + 1, fiber: fiber.child, parent: childParent });
+    }
   }
 }
 
@@ -251,9 +280,9 @@ export function captureScreenOutline(): string {
     }
 
     const { width, height } = Dimensions.get('window');
-    const truncated = nodes.length >= MAX_NODES;
-    const tree = nodes.map((node) => {
-      const indent = '  '.repeat(Math.min(node.depth, MAX_DEPTH));
+    const printed = nodes.slice(0, MAX_OUTLINE_NODES);
+    const tree = printed.map((node) => {
+      const indent = '  '.repeat(Math.min(node.depth, MAX_INDENT));
       const label = node.name ?? (node.text ? `"${truncate(node.text)}"` : '?');
       const text = node.text && node.name ? ` "${truncate(node.text)}"` : '';
       const props = node.props ? ` ${node.props}` : '';
@@ -271,7 +300,7 @@ export function captureScreenOutline(): string {
       `- platform: ${Platform.OS}`,
       `- window: ${Math.round(width)}x${Math.round(height)}`,
       `- captured: ${new Date().toISOString()}`,
-      `- nodes: ${nodes.length}${truncated ? ` (truncated at ${MAX_NODES})` : ''}`,
+      `- nodes: ${nodes.length}${nodes.length > MAX_OUTLINE_NODES ? ` (tree below prints the first ${MAX_OUTLINE_NODES})` : ''}`,
       '',
       '## Component tree',
       '',

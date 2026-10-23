@@ -1,17 +1,20 @@
 import { FrostedBackdrop } from '@/components/ui/frosted-backdrop';
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused, useRouter } from "expo-router";
+import { AnimatePresence, MotiView } from "moti";
 import {
 	memo,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
 import {
 	AppState,
-	Modal,
+	ActivityIndicator,
+	FlatList,
 	Pressable,
 	ScrollView,
 	StyleSheet,
@@ -19,7 +22,9 @@ import {
 	useWindowDimensions,
 	type NativeScrollEvent,
 	type NativeSyntheticEvent,
+	type LayoutChangeEvent,
 } from "react-native";
+import { Easing, useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -48,28 +53,23 @@ import {
 } from "@/features/calendar/month-cell-layout";
 import {
 	MemorySky,
-	headerSkyHeightForWindow,
 	fabBottomOffset,
 } from "@/components/home/memory-sky";
 import { useMoments } from "@/features/moments/moments-context";
 import type { Moment } from "@/features/moments/types";
 import { ThemedText } from "@/components/themed-text";
-import { MotiView } from "moti";
-import { useReducedMotion } from "react-native-reanimated";
 import { DayTimeline } from "@/components/calendar/day-timeline";
+import { YearPager } from "@/components/calendar/year-pager";
 import { PlansAgenda } from "@/components/calendar/plans-agenda";
 import { PlansSomeday } from "@/components/calendar/plans-someday";
 import { GlassSurface } from "@/components/ui/glass-surface";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { ScreenHeader } from "@/components/ui/screen-header";
-import { AccentWash, Elevation, Radii, Spacing, Springs, shadow, withAlpha } from "@/constants/theme";
+import { AccentWash, Elevation, Radii, Spacing, shadow, withAlpha } from "@/constants/theme";
 import { getDaysTogether } from "@/features/time-together/time-together";
 import { useSpace } from "@/features/space/space-context";
 import { useNowMinutes } from "@/hooks/use-now-minutes";
 import { useThemeColor } from "@/hooks/use-theme-color";
 import { haptics } from "@/features/haptics/haptics";
-import { relationshipCopy } from "@/features/relationship/relationship-age";
-import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
 
 function buildMonthWeeks(days: Date[]) {
 	const weeks: Date[][] = [];
@@ -379,13 +379,28 @@ const MonthGrid = memo(function MonthGrid({
 	);
 });
 
-/** "Wednesday \u2013 Sep 16, 2026", the way a day header reads. */
-function formatDayHeading(date: Date): string {
-	const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
-	const rest = date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+/**
+ * "Wed \u2013 Sep 16", the way a day header reads. The heading shares its row
+ * with Today and add, so it stays short enough to hold one line on a phone;
+ * the year appears only when the day is not in the current one, where it is
+ * the one fact the row cannot imply.
+ */
+const dayDateFormatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' });
+const dayDateWithYearFormatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+function formatDayHeading(date: Date, now: Date): string {
+	const weekday = formatWeekdayShort(date);
+	const rest =
+		date.getFullYear() === now.getFullYear()
+			? dayDateFormatter.format(date)
+			: dayDateWithYearFormatter.format(date);
 	return `${weekday} \u2013 ${rest}`;
 }
 
+
+// Snappy start, long soft landing: the iOS sheet curve (Vaul,
+// cubic-bezier(0.32, 0.72, 0, 1)). The drill explicitly mimics the Apple
+// Calendar zoom, so it takes Apple's easing, not a built-in.
+const DRILL_EASING = Easing.bezier(0.32, 0.72, 0, 1);
 
 export default function PlansScreen() {
 	const router = useRouter();
@@ -404,8 +419,10 @@ export default function PlansScreen() {
 
 	const {
 		selectedDate,
+		setSelectedDate,
 		visibleMonth,
 		eventsForDay,
+		monthReadState,
 		setVisibleMonth,
 		refresh: refreshCalendar,
 		isLoading: calendarLoading,
@@ -415,16 +432,17 @@ export default function PlansScreen() {
 	// The month grid is the landing: the first question this screen answers is
 	// "when are we free", and a day is a step into one of its cells.
 	const [viewMode, setViewMode] = useState<'month' | 'agenda' | 'someday'>('month');
+	// The year replaces the month view in place: the pill toggles it, a
+	// month tap returns. No route change, no lost scroll position.
+	const [yearOpen, setYearOpen] = useState(false);
+	const [scrollPosition, setScrollPosition] = useState<{ context: Date; month: Date } | null>(null);
+	const [visibleYear, setVisibleYear] = useState(visibleMonth.getFullYear());
 	// The context's visible month is the month on screen: one source of truth
 	// for the header, the loaded window and the pager's anchor. A month set from
 	// outside this screen (the year view) is therefore the month it shows.
 	const currentMonth = visibleMonth;
-	const hasPlansThisMonth = useMemo(() => {
-		const monthKey = toDayKey(currentMonth).slice(0, 7);
-		return Object.entries(eventsForDay).some(([day, events]) =>
-			day.startsWith(monthKey) && events.length > 0,
-		);
-	}, [currentMonth, eventsForDay]);
+	const scrollMonth = scrollPosition && isSameMonth(scrollPosition.context, currentMonth)
+		? scrollPosition.month : null;
 	// The window's anchor only moves when the visible month escapes it: a
 	// year jump, or a swipe reaching its edge. Rebuilding around every
 	// settled month paints the wrong month for a frame — the native offset
@@ -443,6 +461,21 @@ export default function PlansScreen() {
 	const { moments, loadGoals } = useMoments();
 	const { space } = useSpace();
 	const [goals, setGoals] = useState<Moment[] | null>(null);
+	const [goalsError, setGoalsError] = useState(false);
+	const reloadGoals = useCallback(() => {
+		return loadGoals().then(
+			(loaded) => {
+				setGoals(loaded);
+				setGoalsError(false);
+			},
+			() => {
+				setGoalsError(true);
+			},
+		);
+	}, [loadGoals]);
+	const handleRetryGoals = useCallback(() => {
+		void reloadGoals();
+	}, [reloadGoals]);
 	const textColor = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
 	const border = useThemeColor({}, "border");
@@ -468,34 +501,51 @@ export default function PlansScreen() {
 		[accent, partnerAccent],
 	);
 
-	const monthTitle = useMemo(
-		() => formatMonthTitle(currentMonth),
-		[currentMonth],
-	);
-
-	// The sheet owns the day, not a mode: tapping a grid cell lifts the day
-	// over the month, and dismissing it leaves the month exactly where it
-	// was. The context's selected day is only the fallback the composer and
-	// the grid highlight use when no sheet is open.
-	const [sheetDate, setSheetDate] = useState<Date | null>(null);
+	// The day is a drill, not a mode: tapping a grid cell swaps the month
+	// body for the day in place, and going back returns to the untouched
+	// month. The context's selected day is only the fallback the composer
+	// and the grid highlight use when no day is open.
+	const [focusedDay, setFocusedDay] = useState<Date | null>(null);
+	const activeDayWindow = useRef(0);
+	const [dayWindowVersion, setDayWindowVersion] = useState(0);
+	// Counts month<->day swaps so the zoom wrapper remounts (and replays)
+	// exactly on user drills: opening, going back, jumping to today. Day
+	// pager swipes never touch it, so paging stays animation-free.
+	const [drillSeq, setDrillSeq] = useState(0);
+	// Which day's goals are expanded inline in the sheet (by day key, so a
+	// swipe away and back restores the same open section). Collapsing is the
+	// way back — the sheet never ejects to Agenda anymore.
+	const [goalsExpandedKey, setGoalsExpandedKey] = useState<string | null>(null);
 	// The pager window's anchor: it moves only when a swipe nears the edge
 	// (or the sheet opens), never on every settle, which is what keeps
 	// swipes from flashing the wrong day.
 	const [dayAnchor, setDayAnchor] = useState<Date | null>(null);
-	const composerDate = sheetDate ?? selectedDate;
+	const composerDate = focusedDay ?? selectedDate;
+	// The pill names the month the reader is in: the drilled day's month
+	// while a day is open, the grid's month otherwise.
+	const pillDate = focusedDay ?? scrollMonth ?? currentMonth;
+	const pillMonthTitle = windowWidth < 360
+		? pillDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+		: formatMonthTitle(pillDate);
+	/** The pill toggles the year; opening it leaves a drilled day behind. */
+	const handlePillPress = useCallback(() => {
+		if (!yearOpen) {
+			activeDayWindow.current += 1;
+			setFocusedDay(null);
+			const month = scrollMonth ?? currentMonth;
+			setVisibleYear(month.getFullYear());
+			setVisibleMonth(month);
+		}
+		setYearOpen((open) => !open);
+	}, [yearOpen, scrollMonth, currentMonth, setVisibleMonth]);
 	const weekdayLabels = useMemo(
 		() =>
 			buildMonthGrid(currentMonth)
 				.slice(0, 7)
-				.map((day) => formatWeekdayShort(day).toUpperCase().slice(0, 1)),
+				.map((day) => formatWeekdayShort(day).toUpperCase().slice(0, 2)),
 		[currentMonth],
 	);
 	const [now, setNow] = useState(() => new Date());
-	const relationshipAge = useRelationshipAge(space?.relationshipStartDate);
-	const adaptiveCopy = useMemo(
-		() => relationshipCopy(relationshipAge.tone),
-		[relationshipAge.tone],
-	);
 	// The sheet pager spans the anchor's window, so the ticker runs whenever
 	// today is one of its pages and idles otherwise, including whenever no
 	// sheet is open.
@@ -543,25 +593,31 @@ export default function PlansScreen() {
 		return map;
 	}, [space?.relationshipStartDate, currentMonth]);
 	// Future goals live here, not in Story: one bounded type-filtered read
-	// on mount (plus refresh on focus), independent of Story pagination.
+	// per screen focus (mount included), plus refresh on app foreground,
+	// independent of Story pagination. Agenda reads this same state, so
+	// switching modes never refetches.
 	useEffect(() => {
+		if (!isFocused) {
+			return;
+		}
 		let cancelled = false;
 		void loadGoals().then(
 			(loaded) => {
 				if (!cancelled) {
 					setGoals(loaded);
+					setGoalsError(false);
 				}
 			},
 			() => {
 				if (!cancelled) {
-					setGoals([]);
+					setGoalsError(true);
 				}
 			},
 		);
 		return () => {
 			cancelled = true;
 		};
-	}, [loadGoals]);
+	}, [isFocused, loadGoals]);
 	useEffect(() => {
 		if (!goals) {
 			return;
@@ -586,6 +642,15 @@ export default function PlansScreen() {
 		(date: Date) => {
 			const dayKey = toDayKey(date);
 			return (goals ?? []).some(
+				(goal) => goal.targetAt && toDayKey(new Date(goal.targetAt)) === dayKey,
+			);
+		},
+		[goals],
+	);
+	const goalsForDay = useCallback(
+		(date: Date) => {
+			const dayKey = toDayKey(date);
+			return (goals ?? []).filter(
 				(goal) => goal.targetAt && toDayKey(new Date(goal.targetAt)) === dayKey,
 			);
 		},
@@ -634,30 +699,103 @@ export default function PlansScreen() {
 		return marks;
 	}, [eventsForDay, goals, anniversaryMarkersByDay]);
 
-	// A grid cell lifts its day over the month: the month underneath never
-	// moves, so dismissing the sheet returns to exactly where it was.
+	/**
+	 * A month is empty only when the provider has read it successfully and
+	 * every other read that could fill it has succeeded. The pager keeps
+	 * seven pages mounted while the provider answers the visible month plus
+	 * one neighbour, so most pages are deliberately unqueried: those must
+	 * stay silent rather than borrow the meaning of a quiet month. Goals are
+	 * a separate bounded read, so an unresolved or failed goal read is not
+	 * evidence of emptiness either. Goals and the monthiversary mark are real
+	 * content: a month carrying only those is not called empty.
+	 */
+	const monthIsEmpty = useCallback(
+		(month: Date) => {
+			if (monthReadState(month) !== 'loaded') {
+				return false;
+			}
+			if (goals === null || goalsError) {
+				return false;
+			}
+			if (getAnniversaryMarkers(space?.relationshipStartDate, month).length > 0) {
+				return false;
+			}
+			const monthIndex = month.getFullYear() * 12 + month.getMonth();
+			const indexOf = (date: Date) => date.getFullYear() * 12 + date.getMonth();
+			for (const [dayKey, events] of Object.entries(eventsForDay)) {
+				if (events.length === 0) {
+					continue;
+				}
+				const [year, monthNumber] = dayKey.split('-').map(Number);
+				if (year * 12 + (monthNumber - 1) === monthIndex) {
+					return false;
+				}
+			}
+			for (const goal of goals) {
+				if (!goal.targetAt) {
+					continue;
+				}
+				const target = new Date(goal.targetAt);
+				if (!Number.isNaN(target.getTime()) && indexOf(target) === monthIndex) {
+					return false;
+				}
+			}
+			return true;
+		},
+		[
+			eventsForDay,
+			goals,
+			goalsError,
+			monthReadState,
+			space?.relationshipStartDate,
+		],
+	);
+
+	/** Which day the month's empty-state composer opens on. */
+	const monthEntryDate = useCallback(
+		(month: Date) => {
+			if (isSameMonth(now, month)) {
+				return now;
+			}
+			if (isSameMonth(selectedDate, month)) {
+				return selectedDate;
+			}
+			return startOfMonth(month);
+		},
+		[now, selectedDate],
+	);
+
+	// A grid cell opens its day in place, where the month was: no sheet,
+	// no second navigation model. Going back returns to exactly the month
+	// that was there, which never unmounts underneath.
 	const handleSelectDate = useCallback(
 		(date: Date) => {
 			// The release after a long-press also reports a tap: swallow it,
-			// or the same gesture pushes the composer and lifts the sheet at
-			// once, which wedges the UI.
+			// or the same gesture pushes the composer and opens the day at
+			// once.
 			if (!takeTap(longPressLog.current, toDayKey(date), Date.now())) {
 				return;
 			}
-			if (!sheetDate || !isSameDay(date, sheetDate)) {
+			if (!focusedDay || !isSameDay(date, focusedDay)) {
 				haptics.select();
+				setDrillSeq((seq) => seq + 1);
 			}
-			setSheetDate(date);
+			activeDayWindow.current += 1;
+			setDayWindowVersion(activeDayWindow.current);
+			setFocusedDay(date);
 			// Opening centres the window on the day, so the swipe has room
 			// either way from the first gesture.
 			setDayAnchor(date);
 		},
-		[sheetDate],
+		[focusedDay],
 	);
-	const handleCloseSheet = useCallback(() => {
-		setSheetDate(null);
+	/** Back to the month, from whatever day is showing. */
+	const handleCloseDay = useCallback(() => {
+		activeDayWindow.current += 1;
+		setFocusedDay(null);
+		setDrillSeq((seq) => seq + 1);
 	}, []);
-	/** Back to today, from whatever day the sheet is showing. */
+	/** Back to today, from whatever day is showing. */
 	const handleGoToday = useCallback(() => {
 		handleSelectDate(new Date());
 	}, [handleSelectDate]);
@@ -673,6 +811,19 @@ export default function PlansScreen() {
 		});
 	}, [router, composerDate]);
 
+	// The composer is a route above this screen, so entries push and leave
+	// the day exactly as it was: going back from the composer returns to it.
+	/** A quiet entry point on empty days: the composer seeds to the page's day at nine. */
+	const handlePlanSomething = useCallback(
+		(date: Date) => {
+			router.push({
+				pathname: "/(app)/calendar/new-event",
+				params: { date: toDayKey(date) },
+			});
+		},
+		[router],
+	);
+
 	/** Adds to the page's day at the tapped hour. */
 	const handleCreateAtHour = useCallback(
 		(date: Date, hour: number) => {
@@ -684,6 +835,21 @@ export default function PlansScreen() {
 		[router],
 	);
 
+	const handleOpenYearMonth = useCallback(
+		(month: Date) => {
+			const start = startOfMonth(month);
+			setVisibleMonth(start);
+			setSelectedDate(start);
+			setMonthAnchor(start);
+			setYearOpen(false);
+			activeDayWindow.current += 1;
+			setScrollPosition(null);
+			// The year replaces the month context, so a drilled day does not
+			// survive the trip: coming back lands on the month, not the day.
+			setFocusedDay(null);
+		},
+		[setSelectedDate, setVisibleMonth],
+	);
 	const handleCreateOnDate = useCallback(
 		(date: Date) => {
 			noteLongPress(longPressLog.current, toDayKey(date), Date.now());
@@ -712,7 +878,18 @@ export default function PlansScreen() {
 	// screen gutters (24 each side) minus the card padding (12 each side).
 	// Pager pages exactly this width so swiping stays aligned.
 	const PAGE_WIDTH = windowWidth;
-	const pagerRef = useRef<ScrollView | null>(null);
+	const pagerRef = useRef<FlatList<Date> | null>(null);
+	const monthScrollPage = useRef(PAGER_WINDOW_RADIUS);
+	const previousMonthAnchor = useRef(monthAnchor);
+	const monthPageHeightRef = useRef(0);
+	const handleMonthLayout = useCallback((event: LayoutChangeEvent) => {
+		setListHeight(Math.round(event.nativeEvent.layout.height));
+	}, []);
+	const landMonthScroller = useCallback(() => {
+		if (monthPageHeightRef.current > 0) {
+			pagerRef.current?.scrollToOffset({ animated: false, offset: monthScrollPage.current * monthPageHeightRef.current });
+		}
+	}, []);
 	// Where a settle stopped inside the page it landed on, held for the
 	// re-centre that follows. The pager is a free scroll, so a page boundary is
 	// not where the finger stopped; the offset is the reader's, not ours.
@@ -748,19 +925,30 @@ export default function PlansScreen() {
 		setMonthAnchor(startOfMonth(visibleMonth));
 	}
 
-	// An anchor change puts the list back on its centre page. This runs on
-	// the anchor changing, never on a scroll or an ordinary swipe, so it
-	// cannot loop. The fraction the settle carried is kept, so re-centring
-	// slides the window under the reader instead of snapping a mid-month
-	// offset back to the top of the month.
-	useEffect(() => {
-		const fraction = recenterFraction.current;
+	// Only an anchor move recentres the window. A viewport resize keeps
+	// the current fractional page, never the original centre month.
+	useLayoutEffect(() => {
+		const anchorChanged = previousMonthAnchor.current !== monthAnchor;
+		const page = anchorChanged
+			? PAGER_WINDOW_RADIUS + recenterFraction.current
+			: monthScrollPage.current;
 		recenterFraction.current = 0;
-		pagerRef.current?.scrollTo({
-			animated: false,
-			y: MONTH_PAGE_HEIGHT * (PAGER_WINDOW_RADIUS + fraction),
-		});
-	}, [MONTH_PAGE_HEIGHT, monthAnchor]);
+		previousMonthAnchor.current = monthAnchor;
+		monthScrollPage.current = page;
+		monthPageHeightRef.current = MONTH_PAGE_HEIGHT;
+		landMonthScroller();
+	}, [MONTH_PAGE_HEIGHT, monthAnchor, landMonthScroller]);
+
+	const handleMonthScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+		if (MONTH_PAGE_HEIGHT <= 0) return;
+		monthScrollPage.current = event.nativeEvent.contentOffset.y / MONTH_PAGE_HEIGHT;
+		const index = Math.max(0, Math.min(pagerMonths.length - 1,
+			Math.round(event.nativeEvent.contentOffset.y / MONTH_PAGE_HEIGHT)));
+		const month = pagerMonths[index];
+		setScrollPosition((previous) => previous
+			&& isSameMonth(previous.context, currentMonth) && isSameMonth(previous.month, month)
+			? previous : { context: currentMonth, month });
+	}, [MONTH_PAGE_HEIGHT, pagerMonths, currentMonth]);
 
 	/**
 	 * The month list has no end. The delivered window is bounded, so a settled
@@ -775,6 +963,7 @@ export default function PlansScreen() {
 				return;
 			}
 			const page = event.nativeEvent.contentOffset.y / MONTH_PAGE_HEIGHT;
+			monthScrollPage.current = page;
 			const index = Math.round(page);
 			const month = pagerMonths[Math.max(0, Math.min(pagerMonths.length - 1, index))];
 			if (month && !isSameMonth(month, currentMonth)) {
@@ -803,8 +992,9 @@ export default function PlansScreen() {
 	// Long-presses that opened the composer, keyed by day, so the release tap
 	// that follows them can be told apart from a real tap.
 	const longPressLog = useRef<Record<string, number>>({});
-	const dayPagerRef = useRef<ScrollView | null>(null);
+	const dayPagerRef = useRef<FlatList<Date> | null>(null);
 	const dayRecenterFraction = useRef(0);
+	const dayPagerPosition = useRef<{ anchor: number; page: number } | null>(null);
 	const DAY_WINDOW_RADIUS = 3;
 	const DAY_WINDOW_SIZE = DAY_WINDOW_RADIUS * 2 + 1;
 	const [dayListHeight, setDayListHeight] = useState(0);
@@ -831,39 +1021,54 @@ export default function PlansScreen() {
 		}
 		const fraction = dayRecenterFraction.current;
 		dayRecenterFraction.current = 0;
-		dayPagerRef.current?.scrollTo({
+		const previous = dayPagerPosition.current;
+		const page = previous?.anchor === dayAnchor.getTime()
+			? previous.page
+			: DAY_WINDOW_RADIUS + fraction;
+		dayPagerPosition.current = { anchor: dayAnchor.getTime(), page };
+		dayPagerRef.current?.scrollToOffset({
 			animated: false,
-			x: PAGE_WIDTH * (DAY_WINDOW_RADIUS + fraction),
+			offset: PAGE_WIDTH * page,
 		});
 	}, [DAY_PAGE_HEIGHT, PAGE_WIDTH, dayAnchor]);
 
 	/**
 	 * The day list has no end. The delivered window is bounded, so the
-	 * settled page becomes the sheet's day on every swipe, while the window
+	 * settled page becomes the focused day on every swipe, while the window
 	 * itself only recentres at its edges: rebuilding anywhere else would
 	 * flash the wrong day before the correction scroll lands.
 	 */
 	const handleDayPagerSettled = useCallback(
 		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
-			if (DAY_PAGE_HEIGHT <= 0 || !dayAnchor) {
+			if (!dayAnchor || activeDayWindow.current !== dayWindowVersion || DAY_PAGE_HEIGHT <= 0) {
 				return;
 			}
 			const page = event.nativeEvent.contentOffset.x / PAGE_WIDTH;
 			const index = Math.max(0, Math.min(DAY_WINDOW_SIZE - 1, Math.round(page)));
+			dayPagerPosition.current = { anchor: dayAnchor.getTime(), page };
 			const date = addDays(dayAnchor, index - DAY_WINDOW_RADIUS);
-			if (!sheetDate || !isSameDay(date, sheetDate)) {
+			if (!focusedDay || !isSameDay(date, focusedDay)) {
 				haptics.select();
-				setSheetDate(date);
+				setFocusedDay(date);
+			}
+			// The screen's month follows the day across boundaries, so the
+			// pill, the loaded window and the grid underneath all agree on
+			// where the reader is. Offscreen the month pager recentres
+			// silently; coming back lands on this month, not a stale one.
+			if (!isSameMonth(date, visibleMonth)) {
+				setVisibleMonth(startOfMonth(date));
 			}
 			if (index === 0 || index === DAY_WINDOW_SIZE - 1) {
 				// The rebuilt window shifts by exactly (radius - index)
 				// pages, so carrying the fraction leaves the stopped day
 				// visually still.
 				dayRecenterFraction.current = page - index;
+				activeDayWindow.current += 1;
+				setDayWindowVersion(activeDayWindow.current);
 				setDayAnchor(date);
 			}
 		},
-		[DAY_PAGE_HEIGHT, DAY_WINDOW_RADIUS, DAY_WINDOW_SIZE, PAGE_WIDTH, dayAnchor, sheetDate],
+		[DAY_PAGE_HEIGHT, DAY_WINDOW_RADIUS, DAY_WINDOW_SIZE, PAGE_WIDTH, dayAnchor, dayWindowVersion, focusedDay, visibleMonth, setVisibleMonth],
 	);
 
 	// The pill carries the month now, so the header no longer reads the
@@ -881,21 +1086,55 @@ export default function PlansScreen() {
 		],
 		[background],
 	);
-	// A sky band, not a sliver: the band is as tall as the sky draws, and the
-	// calendar chrome sits along its lower edge with the sky visible above it.
 	const headerBlockStyle = useMemo(
 		() => [
 			styles.headerBlock,
 			{
-				minHeight: headerSkyHeightForWindow(windowHeight) + Spacing[8],
-				paddingTop: insets.top + Spacing[8] + Math.max(56, 26 * (fontScale ?? 1)) + Spacing[12],
+				paddingTop: insets.top,
 			},
 		],
-		[insets.top, windowHeight, fontScale],
+		[insets.top],
 	);
 
+	const headingDate = focusedDay ?? selectedDate;
 	const dayBody = (
-		<>
+		<View style={styles.dayPagerBox} testID="day-view">
+			{/* Navigation stays outside both scrollers so momentum cannot consume Back. */}
+			<View style={[styles.dayHeading, { borderBottomColor: border }]}>
+				<Pressable
+					accessibilityHint="Returns to the month grid"
+					accessibilityLabel="Back to the month view"
+					accessibilityRole="button"
+					onPress={handleCloseDay}
+					style={({ pressed }) => [styles.dayBack, { backgroundColor: withAlpha(accent, AccentWash) }, pressed ? styles.pressed : undefined]}
+				>
+					<Ionicons accessible={false} color={textColor} name="chevron-back" size={22} />
+				</Pressable>
+				<ThemedText numberOfLines={2} type="title" style={styles.dayHeadingText}>
+					{formatDayHeading(headingDate, now)}
+				</ThemedText>
+				{!isSameDay(headingDate, now) ? (
+					<Pressable
+						accessibilityHint="Shows today's plans"
+						accessibilityLabel="Back to today"
+						accessibilityRole="button"
+						onPress={handleGoToday}
+						style={({ pressed }) => [styles.dayHeadingAction, styles.todayTap, pressed ? styles.pressed : undefined]}
+					>
+						<ThemedText type="caption" style={{ color: accentInk }}>Today</ThemedText>
+					</Pressable>
+				) : null}
+				{(eventsForDay[toDayKey(headingDate)]?.length ?? 0) > 0 ? (
+					<Pressable
+						accessibilityLabel={`Add a plan on ${formatDayHeading(headingDate, now)}`}
+						accessibilityRole="button"
+						onPress={() => handlePlanSomething(headingDate)}
+						style={({ pressed }) => [styles.dayBack, pressed ? styles.pressed : undefined]}
+					>
+						<Ionicons accessible={false} color={accentInk} name="add" size={24} />
+					</Pressable>
+				) : null}
+			</View>
 			{/* The pager box measures the space the day actually gets, so every
 			    page is exactly a screenful: a page taller or shorter than the
 			    step is what makes a pager land between days. Each page mounts
@@ -910,10 +1149,17 @@ export default function PlansScreen() {
 				style={styles.dayPagerBox}
 			>
 			{DAY_PAGE_HEIGHT > 0 ? (
-			<ScrollView
+			<FlatList
 				ref={dayPagerRef}
 				testID="day-pager"
-				contentOffset={{ x: PAGE_WIDTH * DAY_WINDOW_RADIUS, y: 0 }}
+				data={pagerDays}
+				keyExtractor={toDayKey}
+				getItemLayout={(_, index) => ({ index, length: PAGE_WIDTH, offset: PAGE_WIDTH * index })}
+				initialScrollIndex={DAY_WINDOW_RADIUS}
+				initialNumToRender={1}
+				maxToRenderPerBatch={2}
+				updateCellsBatchingPeriod={16}
+				windowSize={3}
 				directionalLockEnabled
 				horizontal
 				nestedScrollEnabled
@@ -921,19 +1167,29 @@ export default function PlansScreen() {
 				pagingEnabled
 				showsHorizontalScrollIndicator={false}
 				style={[styles.dayPager, { height: DAY_PAGE_HEIGHT }]}
-			>
-				{pagerDays.map((pageDate, pageIndex) => {
+				renderItem={({ item: pageDate, index: pageIndex }) => {
 					const pageKey = toDayKey(pageDate);
 					const pageEvents = eventsForDay[pageKey] ?? [];
 					const pageIsToday = isSameDay(pageDate, now);
 					const pageHasGoals = dayHasGoals(pageDate);
+					const pageGoals = goalsForDay(pageDate);
+					const goalsExpanded = goalsExpandedKey === pageKey;
+					// Expose exactly the focused day: the window centers on the
+					// anchor but settles anywhere, so a hardcoded centre index
+					// reads a hidden neighbour to assistive tech while the
+					// sighted day sits elsewhere. focusedDay is always set
+					// while the day view is open; the centre index is only
+					// the fallback.
+					const pageIsExposed = focusedDay
+						? isSameDay(pageDate, focusedDay)
+						: pageIndex === DAY_WINDOW_RADIUS;
 					return (
 						<View
-							accessibilityElementsHidden={pageIndex !== 1}
-							accessibilityLabel={`Day page ${formatDayHeading(pageDate)}`}
-							aria-hidden={pageIndex !== 1}
+							accessibilityElementsHidden={!pageIsExposed}
+							accessibilityLabel={`Day page ${formatDayHeading(pageDate, now)}`}
+							aria-hidden={!pageIsExposed}
 							importantForAccessibility={
-								pageIndex === 1 ? 'auto' : 'no-hide-descendants'
+								pageIsExposed ? 'auto' : 'no-hide-descendants'
 							}
 							key={pageKey}
 							style={{
@@ -941,79 +1197,94 @@ export default function PlansScreen() {
 								height: DAY_PAGE_HEIGHT,
 							}}
 						>
-							<View style={[styles.dayHeading, { borderBottomColor: border }]}>
-								{/* The date is the one thing that says which day this is, so
-								    it gets the row: no week-number stamp taking width off it,
-								    and two lines allowed so a longer date wraps instead of
-								    truncating at 320pt or at a larger text size. */}
-								<ThemedText numberOfLines={2} type="subheading" style={styles.dayHeadingText}>
-									{formatDayHeading(pageDate)}
-								</ThemedText>
-							{/* A swipe-happy thumb gets back to today without paging the
-							    strip by hand. The spacer keeps the row height steady when
-							    today is already on screen. */}
-							{pageIsToday ? (
-								<View style={styles.dayHeadingAction} />
-							) : (
-								<Pressable
-									accessibilityHint="Shows today's plans"
-									accessibilityLabel="Back to today"
-									accessibilityRole="button"
-									onPress={handleGoToday}
-									style={({ pressed }) => [
-										styles.dayHeadingAction,
-										styles.todayTap,
-										pressed ? styles.pressed : undefined,
-									]}
-								>
-									<ThemedText type="caption" style={{ color: accentInk }}>
-										Today
-									</ThemedText>
-								</Pressable>
-							)}
-						</View>
 						{/* A free day and a day that hasn't loaded must not look the
 						    same: say which one this is. Under an error the notice
 						    above already spoke, so this stays quiet. */}
-						{!calendarError &&
-						pageEvents.length === 0 ? (
+						{!calendarError && pageEvents.length === 0 && calendarLoading ? (
 							<ThemedText
 								accessibilityLiveRegion="polite"
 								type="caption"
 								style={[styles.dayStatus, { color: muted }]}
 							>
-								{calendarLoading
-									? 'Loading plans…'
-									: pageHasGoals
-										? 'No confirmed plans for this day.'
-									: pageIsToday
-										? `No plans for today. ${adaptiveCopy.planEmpty}`
-										: 'No plans for this day.'}
+								Loading plans…
 							</ThemedText>
 						) : null}
 						{pageHasGoals ? (
-							<Pressable
-								accessibilityHint="Shows goals as a list"
-								accessibilityLabel="View goals"
-								accessibilityRole="button"
-								onPress={() => {
-									setSheetDate(null);
-									setViewMode('agenda');
-								}}
-								style={({ pressed }) => [
-									styles.daySuggestions,
-									{ borderColor: border },
-									pressed ? styles.pressed : undefined,
-								]}
-							>
-								<ThemedText type="caption" style={{ color: accentInk }}>
-									View goals
+							<>
+								<Pressable
+									accessibilityHint={goalsExpanded ? 'Hides this day\u2019s goals' : 'Shows this day\u2019s goals here, without leaving the sheet'}
+									accessibilityLabel={goalsExpanded ? `Hide goals for ${formatDayHeading(pageDate, now)}` : `Show goals for ${formatDayHeading(pageDate, now)}`}
+									accessibilityRole="button"
+									accessibilityState={{ expanded: goalsExpanded }}
+									onPress={() => {
+										setGoalsExpandedKey((current) => (current === pageKey ? null : pageKey));
+									}}
+									style={({ pressed }) => [
+										styles.daySuggestions,
+										{ borderColor: border },
+										pressed ? styles.pressed : undefined,
+									]}
+								>
+									<ThemedText type="caption" style={{ color: accentInk }}>
+										Goals for this day · {pageGoals.length}
+									</ThemedText>
+								</Pressable>
+								{goalsExpanded ? (
+									<View style={styles.goalsList}>
+										{pageGoals.map((goal) => (
+											<ThemedText key={goal.id} type="body" style={{ color: textColor }}>
+												{goal.title}
+											</ThemedText>
+										))}
+									</View>
+								) : null}
+							</>
+						) : null}
+						{/* The empty day says so once, in one short line beside its
+						    entry point: the status and the button share a row
+						    instead of stacking two "empty" statements. The hour
+						    rows are tappable but say nothing, so the row ends in
+						    the quiet entry point that seeds the composer. */}
+						{!calendarError && pageEvents.length === 0 && !calendarLoading ? (
+							<View style={styles.dayEmptyRow}>
+								<View style={styles.dayEmptyStatus}>
+								<ThemedText
+									accessibilityLiveRegion="polite"
+									type="supporting"
+									style={{ color: textColor }}
+								>
+									{pageHasGoals
+										? 'No confirmed plans for this day.'
+										: pageIsToday
+											? 'No plans for today.'
+											: 'No plans for this day.'}
 								</ThemedText>
-							</Pressable>
+								<ThemedText type="caption" style={{ color: muted }}>
+									Tap a time to add a plan
+								</ThemedText>
+								</View>
+								<Pressable
+									accessibilityHint="Opens the event composer for this day"
+									accessibilityLabel={`Plan something on ${formatDayHeading(pageDate, now)}`}
+									accessibilityRole="button"
+									onPress={() => handlePlanSomething(pageDate)}
+									style={({ pressed }) => [
+										styles.dayEmptyCta,
+										{ backgroundColor: withAlpha(accent, AccentWash) },
+										pressed ? styles.pressed : undefined,
+									]}
+								>
+									<ThemedText type="caption" style={{ color: accentInk }}>
+										Plan something
+									</ThemedText>
+								</Pressable>
+							</View>
 						) : null}
 						<DayTimeline
 							events={pageEvents}
 							nowMinutes={pageIsToday ? nowMinutes : undefined}
+							dayLabel={formatDayHeading(pageDate, now)}
+							bottomClearance={fabBottom + Spacing[56]}
 							onCreateAtHour={(hour) => handleCreateAtHour(pageDate, hour)}
 							onOpenEvent={handleOpenEvent}
 							ownColor={accent}
@@ -1021,19 +1292,14 @@ export default function PlansScreen() {
 						/>
 						</View>
 					);
-				})}
-			</ScrollView>
+				}}
+			/>
 			) : null}
 			</View>
-		</>
+		</View>
 	);
 	const monthBody = (
 		<>
-			{!calendarError && (calendarLoading || !hasPlansThisMonth) ? (
-				<ThemedText accessibilityLiveRegion="polite" type="caption" style={[styles.monthStatus, { color: muted }]}>
-					{calendarLoading ? 'Loading plans…' : 'No confirmed plans this month.'}
-				</ThemedText>
-			) : null}
 			{/* The weekday row belongs to the grid, not to the padded header, so its
 			    columns line up with the date columns instead of being inset. */}
 			<View style={[styles.weekdayRow, { borderBottomColor: border }]}>
@@ -1048,22 +1314,36 @@ export default function PlansScreen() {
 			{/* The pager box measures the space the grid actually gets, so the page
 			    height accounts for the weekday row without arithmetic. */}
 			<View
-				onLayout={(event) => setListHeight(Math.round(event.nativeEvent.layout.height))}
+				onLayout={handleMonthLayout}
 				style={styles.pagerBox}
+				testID="month-viewport"
 			>
 			{MONTH_PAGE_HEIGHT > 0 ? (
-			<ScrollView
+			<FlatList
 				ref={pagerRef}
 				testID="month-pager"
+				data={pagerMonths}
+				keyExtractor={toDayKey}
+				getItemLayout={(_, index) => ({ index, length: MONTH_PAGE_HEIGHT, offset: MONTH_PAGE_HEIGHT * index })}
+				initialScrollIndex={PAGER_WINDOW_RADIUS}
+				initialNumToRender={1}
+				maxToRenderPerBatch={2}
+				updateCellsBatchingPeriod={16}
+				windowSize={3}
+				accessibilityState={{ busy: calendarLoading }}
 				contentContainerStyle={{
 					paddingBottom: fabBottom + Spacing[8],
 				}}
-				contentOffset={{ x: 0, y: MONTH_PAGE_HEIGHT * PAGER_WINDOW_RADIUS }}
+				onLayout={landMonthScroller}
+				onScroll={handleMonthScroll}
+				scrollEventThrottle={32}
+				onScrollEndDrag={(event) => {
+					if (!event.nativeEvent.velocity?.y) handlePagerSettled(event);
+				}}
 				onMomentumScrollEnd={handlePagerSettled}
 				showsVerticalScrollIndicator={false}
 				style={[styles.pager, { height: MONTH_PAGE_HEIGHT }]}
-			>
-				{pagerMonths.map((month) => (
+				renderItem={({ item: month }) => (
 					<View
 						accessibilityLabel={`Month page ${formatMonthTitle(month)}`}
 						key={toDayKey(month)}
@@ -1077,6 +1357,39 @@ export default function PlansScreen() {
 						<ThemedText type="subheading" style={styles.monthHeading}>
 							{formatMonthTitle(month)}
 						</ThemedText>
+						{/* A month with nothing in it says so, and offers the way in.
+						    Empty is a successful read, so it is shown only once the
+						    calendar and goal reads have settled; loading and failure
+						    stay distinct above. Monthiversary marks and goals count
+						    as content, so this never contradicts the grid. */}
+						{monthIsEmpty(month) ? (
+							<View style={styles.monthEmptyRow}>
+								<ThemedText
+									accessibilityLiveRegion={
+										isSameMonth(month, currentMonth) ? 'polite' : undefined
+									}
+									type="supporting"
+									style={[styles.monthEmptyText, { color: textColor }]}
+								>
+									No plans in {formatMonthTitle(month)}.
+								</ThemedText>
+								<Pressable
+									accessibilityHint="Opens the event composer for this month"
+									accessibilityLabel={`Plan something in ${formatMonthTitle(month)}`}
+									accessibilityRole="button"
+									onPress={() => handlePlanSomething(monthEntryDate(month))}
+									style={({ pressed }) => [
+										styles.dayEmptyCta,
+										{ backgroundColor: withAlpha(accent, AccentWash) },
+										pressed ? styles.pressed : undefined,
+									]}
+								>
+									<ThemedText type="caption" style={{ color: accentInk }}>
+										Plan something
+									</ThemedText>
+								</Pressable>
+							</View>
+						) : null}
 						<MonthGrid
 							cellWidth={monthColumnWidth}
 							colors={gridColors}
@@ -1088,11 +1401,11 @@ export default function PlansScreen() {
 							now={now}
 							onCreateOnDate={handleCreateOnDate}
 							onSelectDate={handleSelectDate}
-							selectedDate={sheetDate ?? selectedDate}
+							selectedDate={focusedDay ?? selectedDate}
 						/>
 					</View>
-				))}
-			</ScrollView>
+				)}
+			/>
 			) : null}
 			</View>
 		</>
@@ -1106,7 +1419,12 @@ export default function PlansScreen() {
 			style={styles.agendaScroll}
 			testID="agenda-scroll"
 		>
-			<PlansAgenda now={now} />
+			<PlansAgenda
+				goals={goals}
+				goalsError={goalsError}
+				now={now}
+				onRetryGoals={handleRetryGoals}
+			/>
 		</ScrollView>
 	);
 	// The someday list owns its scroll too, with the same FAB clearance: the
@@ -1123,47 +1441,59 @@ export default function PlansScreen() {
 			<PlansSomeday />
 		</ScrollView>
 	);
-	return (
-		<View style={rootStyle}>
-      <FrostedBackdrop />
-			<View style={headerBlockStyle}>
-				<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
-				<View style={[styles.pageHeader, { top: insets.top + Spacing[8] }]}>
-					<ScreenHeader title="Plans" />
+	const monthChrome = (
+	<>
+		<View style={headerBlockStyle}>
+			<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
+			<View style={styles.pillRow}>
+				{/* Month first, then the view control against the right edge,
+				    where a thumb reaches for it. Drilled in, the control
+				    stands down: Back is the way out. */}
+				<GlassSurface style={styles.pill}>
+					<Pressable
+						accessibilityHint={yearOpen ? "Returns to the month view" : "Shows every month of the year"}
+						accessibilityLabel={yearOpen ? "Back to the month view" : "Open the year view"}
+						accessibilityRole="button"
+						accessibilityState={{ expanded: yearOpen, busy: calendarLoading && !yearOpen }}
+						onPress={handlePillPress}
+						style={styles.pillTap}
+					>
+						<ThemedText type="bodyEmphasis">
+							{yearOpen ? String(visibleYear) : pillMonthTitle}
+						</ThemedText>
+						<View accessible={false} style={styles.monthButtonStatus}>
+							{calendarLoading && !yearOpen ? (
+								<ActivityIndicator accessible={false} color={accentInk} size="small" />
+							) : (
+								<Ionicons color={textColor} name={yearOpen ? "chevron-up" : "chevron-down"} size={16} />
+							)}
+						</View>
+					</Pressable>
+				</GlassSurface>
+				{focusedDay !== null ? null : (
+				<View style={styles.viewSwitch}>
+				{/* One control, three ways to see the same plans. It replaces
+				    the old two-state Calendar/Agenda toggle: a mode is chosen
+				    here, never toggled from inside another mode. */}
+				<SegmentedControl
+					accessibilityLabel="Plans view"
+					onChange={setViewMode}
+					options={[
+						{ value: 'month', label: 'Month', icon: 'calendar-outline' },
+						{ value: 'agenda', label: 'Agenda', icon: 'list-outline' },
+						{ value: 'someday', label: 'Someday', icon: 'moon-outline' },
+					]}
+					size="compact"
+					value={viewMode}
+				/>
 				</View>
-				<View style={styles.pillRow}>
-					{/* Month first, then the view control against the right edge,
-					    where a thumb reaches for it. */}
-					<GlassSurface style={styles.pill}>
-						<Pressable
-							accessibilityHint="Shows every month of the year"
-							accessibilityLabel="Open the year view"
-							accessibilityRole="button"
-							onPress={() => router.push('/(app)/calendar/year')}
-							style={styles.pillTap}
-						>
-							<ThemedText type="bodyEmphasis">{monthTitle}</ThemedText>
-							<Ionicons color={textColor} name="chevron-down" size={16} />
-						</Pressable>
-					</GlassSurface>
-					<View style={styles.viewSwitch}>
-					{/* One control, three ways to see the same plans. It replaces
-					    the old two-state Calendar/Agenda toggle: a mode is chosen
-					    here, never toggled from inside another mode. */}
-					<SegmentedControl
-						accessibilityLabel="Plans view"
-						onChange={setViewMode}
-						options={[
-							{ value: 'month', label: 'Month', icon: 'calendar-outline' },
-							{ value: 'agenda', label: 'Agenda', icon: 'list-outline' },
-							{ value: 'someday', label: 'Someday', icon: 'moon-outline' },
-						]}
-						size="compact"
-						value={viewMode}
-					/>
-					</View>
-				</View>
+				)}
 			</View>
+		</View>
+	</>
+	);
+	const drillStage = (
+	<>
 			{/* An empty grid says "nothing planned"; a failed read must not
 			    borrow that meaning, so it says so and offers the retry. */}
 			{calendarError ? (
@@ -1191,77 +1521,98 @@ export default function PlansScreen() {
 				</View>
 			) : null}
 
-			{/* One stage for both modes, each layer absolutely placed, so the
+			{/* One stage for every view, each layer absolutely placed, so the
 			    closing one can animate out while the opening one animates in
-			    without the two fighting over the same space. The day is not a
-			    layer: it floats over both in the sheet below. */}
+			    without the two fighting over the same space. A drilled day
+			    takes the month's place in the same layer: no sheet, no second
+			    navigation model. */}
 			<View style={styles.modeStage}>
 			{/* One layer, settling into place. A mode change or a new day mounts
 			    it fresh, so the offset plays on arrival and nothing had to be
 			    kept alive to animate a leaving screen: the small drop is the
 			    whole move, and it is over before it can be watched. */}
-			<MotiView
-				animate={{ translateY: 0 }}
-				from={{ translateY: reduceMotion ? 0 : 8 }}
-				// Keyed by the mode, so the swap mounts a fresh layer and the
-				// offset above actually plays. Without it React reuses the same
-				// element and the arrival is invisible.
+			{/* Keyed by the mode so each view mounts fresh with its own state —
+			    and with no entrance offset: the mode is already there, it does
+			    not need to arrive. */}
+			<View
 				key={viewMode}
 				style={styles.modeLayer}
 				testID={`${viewMode}-surface`}
-				transition={
-					reduceMotion
-						? { duration: 0, type: "timing" }
-						: { ...Springs.rest, type: "spring" }
-				}
 			>
-				{viewMode === 'agenda'
+				{yearOpen ? (
+					<YearPager
+						initialYear={currentMonth.getFullYear()}
+						now={now}
+						onOpen={handleOpenYearMonth}
+						onVisibleYearChange={setVisibleYear}
+						selectedDate={selectedDate}
+						width={windowWidth}
+						bottomClearance={fabBottom + Spacing[8]}
+					/>
+				) : viewMode === 'agenda'
 					? agendaBody
 					: viewMode === 'someday'
 						? somedayBody
 						: monthBody}
-			</MotiView>
 			</View>
-			{/* A grid cell lifts its day over the month in the platform sheet:
-			    the month underneath never unmounts, so dismissing returns to
-			    exactly where it was. The sheet's own slide is the whole move:
-			    no mode swap, no entrance choreography to flicker. */}
-			{sheetDate !== null ? (
-				<Modal
-					animationType="slide"
-					onDismiss={handleCloseSheet}
-					onRequestClose={handleCloseSheet}
-					presentationStyle="pageSheet"
-					visible
+			</View>
+	</>
+	);
+	// The drill is a curtain over a standing month: the day rises from the
+	// bottom edge on open and sinks back through it on close, progressively
+	// (un)covering the grid the way a sheet would. The month never moves,
+	// never remounts, never replays anything — transform-only, fully gated
+	// on reduced motion.
+	const dayDrillOpen = focusedDay !== null;
+	const dayCurtain =
+		!dayDrillOpen ? null : reduceMotion || drillSeq === 0 ? (
+			<View
+				key={`day:${drillSeq}`}
+				style={[styles.screenSwap, { backgroundColor: background }]}
+				testID="screen-swap"
+			>
+				<View style={{ height: insets.top }} />
+				{dayBody}
+			</View>
+		) : (
+			<AnimatePresence>
+				<MotiView
+					key={`day:${drillSeq}`}
+					testID="screen-swap"
+					from={{ translateY: windowHeight }}
+					animate={{ translateY: 0 }}
+					exit={{ translateY: windowHeight }}
+					transition={{ type: 'timing', duration: 300, easing: DRILL_EASING }}
+					exitTransition={{ type: 'timing', duration: 220, easing: DRILL_EASING }}
+					style={[styles.screenSwap, { backgroundColor: background }]}
 				>
-					<View
-						accessibilityViewIsModal
-						style={[styles.sheet, { backgroundColor: background }]}
-						testID="day-sheet"
-					>
-						<View style={styles.sheetBar}>
-							<Pressable
-								accessibilityHint="Closes the day view and returns to the month"
-								accessibilityLabel="Close"
-								accessibilityRole="button"
-								onPress={handleCloseSheet}
-								style={({ pressed }) => [
-									styles.sheetClose,
-									pressed ? styles.pressed : undefined,
-								]}
-							>
-								<Ionicons color={textColor} name="close" size={22} />
-							</Pressable>
-						</View>
-						{dayBody}
-					</View>
-				</Modal>
-			) : null}
+					<View style={{ height: insets.top }} />
+					{dayBody}
+				</MotiView>
+			</AnimatePresence>
+		);
+	return (
+		<View style={rootStyle}>
+      <FrostedBackdrop />
+			{/* The month stands while the curtain travels: covered, not gone,
+			    so it keeps its scroll position and costs no remount. Covered
+			    means hidden from assistive tech too — the curtain speaks for
+			    the screen while it is up. */}
+			<View
+				accessibilityElementsHidden={dayDrillOpen}
+				aria-hidden={dayDrillOpen}
+				importantForAccessibility={dayDrillOpen ? 'no-hide-descendants' : 'auto'}
+				style={styles.screenBase}
+			>
+				{monthChrome}
+				{drillStage}
+			</View>
+			{dayCurtain}
 			{/* Creation sits where a thumb lands, the same FAB the Memories tab
 			    uses: tinted glass over a shaped container, since the material
 			    itself cannot be shaped from here. Someday has its own quick-add
 			    in the list, so the event FAB stands down while it is showing. */}
-			{!somedayOpen ? (
+			{!somedayOpen && !dayDrillOpen && !yearOpen ? (
 			<Pressable
 				accessibilityHint="Creates an event on the selected day"
 				accessibilityLabel="Add an event"
@@ -1324,10 +1675,12 @@ const styles = StyleSheet.create({
 	pillRow: {
 		alignItems: 'center',
 		flexDirection: 'row',
+		flexWrap: 'wrap',
 		justifyContent: 'space-between',
 		// The header block already carries the page gutter; adding another
 		// inset here put this row's chrome 16pt inside the other tabs'.
-		paddingVertical: Spacing[8],
+		minHeight: 56,
+		paddingVertical: Spacing[4],
 	},
 	viewSwitch: {
 		alignItems: 'stretch',
@@ -1336,7 +1689,7 @@ const styles = StyleSheet.create({
 		flex: 1,
 		marginLeft: Spacing[12],
 		maxWidth: 160,
-		minWidth: 0,
+		minWidth: 148,
 	},
 	pillTap: {
 		alignItems: 'center',
@@ -1363,6 +1716,18 @@ const styles = StyleSheet.create({
 	dayPagerBox: {
 		flex: 1,
 	},
+	screenBase: {
+		flex: 1,
+	},
+	// Absolute so the curtain travels over the standing month instead of
+	// stacking above it: the reveal never pushes layout.
+	screenSwap: {
+		bottom: 0,
+		left: 0,
+		position: 'absolute',
+		right: 0,
+		top: 0,
+	},
 	dayPager: {},
 	agendaScroll: {
 		flex: 1,
@@ -1372,11 +1737,13 @@ const styles = StyleSheet.create({
 		borderBottomWidth: StyleSheet.hairlineWidth,
 		flexDirection: 'row',
 		gap: Spacing[8],
-		minHeight: 40,
+		minHeight: 56,
 		paddingHorizontal: Spacing[16],
+		paddingVertical: Spacing[8],
 	},
 	dayHeadingText: {
 		flex: 1,
+		fontWeight: '500',
 	},
 	dayHeadingAction: {
 		alignItems: 'flex-end',
@@ -1400,6 +1767,37 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		marginHorizontal: Spacing[16],
 		marginTop: Spacing[8],
+		// The timeline's first hairline starts immediately below: without
+		// clearance the pill sits directly on the 7 AM rule.
+		marginBottom: Spacing[12],
+		minHeight: 44,
+		paddingHorizontal: Spacing[12],
+	},
+	goalsList: {
+		gap: Spacing[8],
+		paddingHorizontal: Spacing[16],
+		paddingTop: Spacing[8],
+	},
+	dayEmptyRow: {
+		alignItems: 'center',
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: Spacing[12],
+		// The timeline's first hairline starts immediately below: the row
+		// carries the clearance the old button's bottom margin gave.
+		marginBottom: Spacing[12],
+		paddingHorizontal: Spacing[16],
+		paddingTop: Spacing[8],
+	},
+	dayEmptyStatus: {
+		flex: 1,
+		minWidth: 140,
+		gap: Spacing[4],
+	},
+	dayEmptyCta: {
+		alignItems: 'center',
+		borderRadius: Radii.pill,
+		justifyContent: 'center',
 		minHeight: 44,
 		paddingHorizontal: Spacing[12],
 	},
@@ -1423,15 +1821,10 @@ const styles = StyleSheet.create({
 	root: {
 		flex: 1,
 	},
-	pageHeader: {
-		position: "absolute",
-		left: Spacing[24],
-		right: Spacing[24],
-	},
 	headerBlock: {
 		justifyContent: "flex-end",
 		overflow: "hidden",
-		paddingHorizontal: Spacing[24],
+		paddingHorizontal: Spacing[16],
 		position: "relative",
 	},
 	calendarCard: {
@@ -1445,9 +1838,22 @@ const styles = StyleSheet.create({
 		paddingHorizontal: Spacing[16],
 		paddingTop: Spacing[12],
 	},
-	monthStatus: {
-		paddingHorizontal: Spacing[24],
+	monthEmptyRow: {
+		alignItems: 'center',
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: Spacing[8],
 		paddingBottom: Spacing[8],
+		paddingHorizontal: Spacing[16],
+	},
+	monthEmptyText: {
+		flexShrink: 1,
+	},
+	monthButtonStatus: {
+		width: 20,
+		height: 20,
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	weekdayRow: {
 		borderBottomWidth: StyleSheet.hairlineWidth,
@@ -1495,17 +1901,8 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		paddingHorizontal: 4,
 	},
-	sheet: {
-		flex: 1,
-	},
-	sheetBar: {
-		alignItems: 'center',
-		flexDirection: 'row',
-		justifyContent: 'flex-end',
-		minHeight: 44,
-		paddingHorizontal: Spacing[8],
-	},
-	sheetClose: {
+	dayBack: {
+		borderRadius: Radii.pill,
 		alignItems: 'center',
 		justifyContent: 'center',
 		minHeight: 44,

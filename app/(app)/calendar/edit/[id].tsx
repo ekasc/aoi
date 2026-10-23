@@ -1,17 +1,21 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedKeyboard,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { ThemedText } from '@/components/themed-text';
+import { ActionSheet } from '@/components/ui/action-sheet';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
 import { Spacing } from '@/constants/theme';
@@ -24,6 +28,7 @@ import {
   formatTimeRange,
   startOfDay,
 } from '@/features/calendar/calendar-date-utils';
+import { usePreventLeave } from '@/hooks/use-prevent-leave';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 /** Quiet reminder choices: minutes before the event starts. */
@@ -63,7 +68,6 @@ function ensureEndAfterStart(startDate: Date, currentEndDate: Date) {
 export default function EditCalendarEventScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const isIos = process.env.EXPO_OS === 'ios';
   const { id } = useLocalSearchParams<{ id?: string }>();
   const eventId = Array.isArray(id) ? id[0] : id;
   const { getEventById, updateEvent, deleteEvent } = useCalendar();
@@ -93,7 +97,9 @@ export default function EditCalendarEventScreen() {
   const [reminderTouched, setReminderTouched] = useState(false);
   const [error, setError] = useState('');
   const [isWorking, setIsWorking] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // All-day state already carries the stored convention: startsAt is the
   // first day's midnight and endsAt is the midnight after the last day.
@@ -108,6 +114,11 @@ export default function EditCalendarEventScreen() {
     [allDay, endsAt]
   );
   const isRangeInvalid = effectiveEnd.getTime() <= effectiveStart.getTime();
+
+  // A swipe, Cancel or header back while the write is running would drop the
+  // sheet and then let the completion pop the screen underneath it.
+  const blockLeave = useCallback(() => {}, []);
+  usePreventLeave(isWorking, blockLeave);
 
   const handleToggleAllDay = useCallback(() => {
     if (allDay) {
@@ -148,7 +159,13 @@ export default function EditCalendarEventScreen() {
       try {
         const foundEvent = await getEventById(eventId);
 
-        if (!isActive || !foundEvent) {
+        if (!isActive) {
+          return;
+        }
+        if (!foundEvent) {
+          // A deleted or not-yet-synced plan used to leave this screen on
+          // "Loading event…" for good, with only Close.
+          setLoadError('Unable to load this event. Please try again.');
           return;
         }
 
@@ -178,7 +195,12 @@ export default function EditCalendarEventScreen() {
     return () => {
       isActive = false;
     };
-  }, [eventId, getEventById]);
+  }, [eventId, getEventById, loadAttempt]);
+
+  const handleRetryLoad = useCallback(() => {
+    setLoadError('');
+    setLoadAttempt((attempt) => attempt + 1);
+  }, []);
 
   const customInputStyle = useMemo(
     () => [
@@ -209,6 +231,17 @@ export default function EditCalendarEventScreen() {
     () => [styles.footer, { paddingBottom: insets.bottom + Spacing[12] }],
     [insets.bottom]
   );
+  // Keyboard avoidance tracks the reported keyboard height directly, like
+  // the composer: KeyboardAvoidingView derives its offset from layout
+  // measurements that go stale during the sheet's detent animation, which
+  // collapses the scroll content to nothing (the "empty sheet"). The
+  // animated height stays correct; Android resizes its window instead, so
+  // the padding applies iOS-only.
+  const isIos = process.env.EXPO_OS === 'ios';
+  const keyboard = useAnimatedKeyboard();
+  const keyboardStyle = useAnimatedStyle(() => ({
+    paddingBottom: isIos ? keyboard.height.value : 0,
+  }));
 
   const handleSave = useCallback(async () => {
     if (!eventId || !event || !isOwner) {
@@ -252,8 +285,8 @@ export default function EditCalendarEventScreen() {
       });
 
       router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save event');
+    } catch {
+      setError('Could not save this plan. Please try again.');
     } finally {
       setIsWorking(false);
     }
@@ -287,8 +320,8 @@ export default function EditCalendarEventScreen() {
     try {
       await deleteEvent(eventId);
       router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete event');
+    } catch {
+      setError('Could not delete this plan. Please try again.');
     } finally {
       setIsWorking(false);
     }
@@ -309,8 +342,9 @@ export default function EditCalendarEventScreen() {
                     {loadError}
                   </ThemedText>
                   <ThemedText type="supporting" style={{ color: muted }}>
-                    Check your connection and try again.
+                    Check your connection, or try again.
                   </ThemedText>
+                  <Button label="Try again" variant="secondary" onPress={handleRetryLoad} />
                 </>
               ) : (
                 <ThemedText type="body">Loading event…</ThemedText>
@@ -360,13 +394,12 @@ export default function EditCalendarEventScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Edit event' }} />
-      <KeyboardAvoidingView
-        behavior={isIos ? 'padding' : undefined}
-        style={[styles.root, { backgroundColor: background }]}
+      <Animated.View
+        style={[styles.root, { backgroundColor: background }, keyboardStyle]}
       >
         <ScrollView
           contentContainerStyle={contentContainerStyle}
-          contentInsetAdjustmentBehavior="never"
+          contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -407,7 +440,7 @@ export default function EditCalendarEventScreen() {
             <ThemedText type="meta">When</ThemedText>
             <View style={styles.choiceRow}>
               <Pressable
-                accessibilityLabel="Toggle all day"
+                accessibilityLabel="All day"
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: allDay }}
                 onPress={handleToggleAllDay}
@@ -419,12 +452,13 @@ export default function EditCalendarEventScreen() {
                   },
                 ]}
               >
-                <ThemedText type="caption" style={{ color: allDay ? onAccent : text }}>
+                <ThemedText type="caption" style={{ color: allDay ? onAccent : text, fontWeight: allDay ? '600' : '400' }}>
                   All day
                 </ThemedText>
               </Pressable>
               <Pressable
                 accessibilityLabel="Mark as time together"
+                accessibilityHint="Marks this plan as something you're doing together"
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: together }}
                 onPress={handleToggleTogether}
@@ -458,6 +492,9 @@ export default function EditCalendarEventScreen() {
                 </ThemedText>
               </Pressable>
             </View>
+            <ThemedText type="supporting" style={{ color: muted }}>
+              Together plans show a shared mark in Plans and say so in reminders.
+            </ThemedText>
             {repeatsWeekly ? (
               <ThemedText type="supporting" selectable style={{ color: muted }}>
                 Weekly, and this one instance stays its own event, whatever
@@ -468,6 +505,7 @@ export default function EditCalendarEventScreen() {
             <ThemedText type="meta">Start</ThemedText>
             <View style={[styles.rowGroup, { borderColor: border }]}>
               <NativeDateTimeField
+                textColor={text}
                 accessibilityLabel="Choose start date"
                 label={allDay ? 'Start day' : 'Start date'}
                 mode="date"
@@ -501,6 +539,7 @@ export default function EditCalendarEventScreen() {
                 <>
                   <View style={[styles.rowDivider, { backgroundColor: border }]} />
                   <NativeDateTimeField
+                    textColor={text}
                     accessibilityLabel="Choose start time"
                     label="Start time"
                     mode="time"
@@ -529,6 +568,7 @@ export default function EditCalendarEventScreen() {
             <ThemedText type="meta">End</ThemedText>
             <View style={[styles.rowGroup, { borderColor: border }]}>
               <NativeDateTimeField
+                textColor={text}
                 accessibilityLabel="Choose end date"
                 label={allDay ? 'End day' : 'End date'}
                 mode="date"
@@ -548,6 +588,7 @@ export default function EditCalendarEventScreen() {
                 <>
                   <View style={[styles.rowDivider, { backgroundColor: border }]} />
                   <NativeDateTimeField
+                    textColor={text}
                     accessibilityLabel="Choose end time"
                     label="End time"
                     mode="time"
@@ -567,11 +608,6 @@ export default function EditCalendarEventScreen() {
               </ThemedText>
             ) : null}
 
-            {isRangeInvalid ? (
-              <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
-                End time must be after start time.
-              </ThemedText>
-            ) : null}
           </View>
 
           <View style={styles.section}>
@@ -659,16 +695,35 @@ export default function EditCalendarEventScreen() {
             />
           </View>
 
-          {error ? (
+          {error || isRangeInvalid ? (
             <ThemedText accessibilityRole="alert" type="supporting" style={{ color: danger }}>
-              {error}
+              {error || 'End time must be after start time.'}
             </ThemedText>
           ) : null}
         </ScrollView>
+        <ActionSheet
+          actions={[
+            {
+              label: isWorking ? 'Deleting…' : 'Delete event',
+              onPress: () => {
+                void handleDelete();
+              },
+              variant: 'destructive' as const,
+            },
+            { label: 'Cancel', onPress: () => setConfirmingDelete(false) },
+          ]}
+          busy={isWorking}
+          description="This plan will be deleted for both of you. This cannot be undone."
+          onClose={() => {
+            if (!isWorking) setConfirmingDelete(false);
+          }}
+          title={event?.title?.trim() ? `Delete "${event.title.trim()}"?` : 'Delete this event?'}
+          visible={confirmingDelete}
+        />
         <View style={[footerStyle, { borderColor: border, backgroundColor: background }]}>
           <View style={styles.actionRow}>
             <Button
-              disabled={isWorking || isRangeInvalid || title.trim().length === 0}
+              disabled={isWorking || isRangeInvalid}
               label={isWorking ? 'Saving…' : 'Save changes'}
               onPress={handleSave}
             />
@@ -676,12 +731,12 @@ export default function EditCalendarEventScreen() {
               disabled={isWorking}
               label="Delete event"
               variant="destructive"
-              onPress={handleDelete}
+              onPress={() => setConfirmingDelete(true)}
             />
             <Button label="Cancel" variant="secondary" onPress={() => router.back()} />
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </>
   );
 }

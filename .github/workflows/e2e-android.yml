@@ -1,0 +1,127 @@
+name: E2E (Android + Maestro)
+
+# Automated mobile E2E for the encrypted album (flows A–E).
+#
+# What runs: an Expo dev-client debug APK on TWO Android emulators (Alice +
+# Bob), Metro serving the E2E bundle (EXPO_PUBLIC_E2E_MODE=true), the
+# isolated E2E backend on the host (per-run D1 file + per-run secret, uploads
+# terminating locally — no cloud bucket needed), and Maestro driving
+# e2e/maestro/album-*.yaml through scripts/run-e2e.mjs.
+#
+# Secrets: none required. The backend mints its own per-run secret; the R2
+# conditional-PUT proof runs separately in the integration suite (which
+# SKIPs without AOI_TEST_R2_*).
+#
+# Triggers: manually, or on pushes to the album encryption branch. First
+# green run calibrates deep-link format and timing; see TESTING.md.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/shared-album-encryption]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-e2e:
+    name: Album E2E (Android emulator + Maestro)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Maestro
+        run: |
+          curl -Ls https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Build E2E test app (debug APK)
+        run: |
+          npx expo prebuild --platform android --non-interactive
+          pushd android
+          ./gradlew assembleDebug --no-daemon
+          popd
+          ls android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Start isolated E2E backend
+        run: |
+          export AOI_E2E_RUN_ID="ci-$GITHUB_RUN_ID"
+          export AOI_E2E_PUBLIC_BASE_URL="http://10.0.2.2:8787"
+          nohup node scripts/e2e-backend.mjs --port 8787 --run-id "$AOI_E2E_RUN_ID" > "$RUNNER_TEMP/e2e-backend.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/e2e-backend.pid"
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8787/healthz && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8787/healthz
+
+      - name: Run album E2E on two emulators
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          # Second AVD is booted inside the script (serial emulator-5556).
+          script: |
+            adb start-server
+            echo "no" | avdmanager create avd -n e2e_bob -k "system-images;android-34;google_apis;x86_64" --device "pixel_6" --force
+            $ANDROID_HOME/emulator/emulator -avd e2e_bob -no-window -no-audio -no-snapshot -wipe-data > "$RUNNER_TEMP/emulator-bob.log" 2>&1 &
+            adb wait-for-device
+            for i in $(seq 1 60); do
+              [ "$(adb devices | grep -c 'device$')" -ge 2 ] && break
+              sleep 5
+            done
+            adb devices
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            adb reverse tcp:8081 tcp:8081
+            export EXPO_PUBLIC_E2E_MODE=true
+            export EXPO_PUBLIC_E2E_API_URL="http://10.0.2.2:8787"
+            export EXPO_PUBLIC_AUTH_STUB_MODE=false
+            nohup npx expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
+            for i in $(seq 1 60); do
+              curl -sf http://127.0.0.1:8081/status | grep -q packager-status:running && break
+              sleep 5
+            done
+            node scripts/run-e2e.mjs --backend-url http://127.0.0.1:8787 \
+              --e2e-secret "$(python3 -c "import json;print(json.load(open('.expo/aoi-e2e/ci-$GITHUB_RUN_ID/manifest.json'))['secret'])")" \
+              --metro-url http://127.0.0.1:8081
+
+      - name: Upload E2E artifacts (logs, matrix, backend log)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: album-e2e-artifacts
+          path: |
+            .expo/aoi-e2e/artifacts/
+            ${{ runner.temp }}/e2e-backend.log
+            ${{ runner.temp }}/metro.log
+            ${{ runner.temp }}/emulator-bob.log
+          if-no-files-found: warn
+
+      - name: Clean up test data
+        if: always()
+        run: |
+          kill "$(cat "$RUNNER_TEMP/e2e-backend.pid")" 2>/dev/null || true
+          rm -rf ".expo/aoi-e2e/ci-$GITHUB_RUN_ID"
+          echo "per-run backend data removed"

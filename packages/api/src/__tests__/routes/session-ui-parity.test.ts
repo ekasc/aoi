@@ -123,7 +123,7 @@ describe('Worker UI parity', () => {
     const { request, insertMedia, d1 } = setup();
     insertMedia();
     expect((await request(RESPONSE_PATH, A, 'POST', { kind: 'photo', mediaId: MEDIA })).status).toBe(201);
-    expect((await request(`/v1/moments/${MOMENT}`, A, 'DELETE')).status).toBe(200);
+    expect((await request(`/v1/moments/${MOMENT}`, A, 'DELETE', { expectedUpdatedAt: new Date(NOW).toISOString() })).status).toBe(200);
     expect(await d1.prepare('select id from moment_responses').first()).toBeNull();
     expect((await d1.prepare('select deleted_at from media_objects where id = ?').bind(MEDIA).first<{ deleted_at: number }>())?.deleted_at).not.toBeNull();
   });
@@ -137,7 +137,7 @@ describe('Worker UI parity', () => {
     for (const id of [MOMENT, other]) {
       expect((await request(`/v1/moments/${id}/responses`, A, 'POST', { kind: 'photo', mediaId: MEDIA })).status).toBe(201);
     }
-    expect((await request(`/v1/moments/${MOMENT}`, A, 'DELETE')).status).toBe(200);
+    expect((await request(`/v1/moments/${MOMENT}`, A, 'DELETE', { expectedUpdatedAt: new Date(NOW).toISOString() })).status).toBe(200);
     expect((await d1.prepare('select deleted_at from media_objects where id = ?').bind(MEDIA).first<{ deleted_at: number | null }>())?.deleted_at).toBeNull();
     expect((await (await request(`/v1/moments/${other}/responses`)).json()).responses).toHaveLength(1);
   });

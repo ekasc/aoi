@@ -80,6 +80,14 @@ export function Button({
 	const surface2 = half ? half.surface2 : themedSurface2;
 	const reduceMotion = useReducedMotion();
 
+	// A disabled primary must not keep the full-strength fill dimmed: a
+	// translucent accent still reads as that accent, loud at any opacity.
+	// The fill itself fades to a whisper of the primary over whatever it
+	// stands on, so the button reads as "not now" rather than "blue, but
+	// ignore me". The label takes the theme's disabled ink, which keeps the
+	// whole control muted in one gesture.
+	const disabledFill = withAlpha(primary, 0.16);
+
 	const variantStyles = useMemo<Record<ButtonVariant, VariantStyles>>(
 		() => ({
 			primary: {
@@ -130,6 +138,9 @@ export function Button({
 
 	const currentVariant = variantStyles[variant];
 	const isDisabled = Boolean(disabled);
+	// Primary is the one variant whose fill carries the accent, so it needs
+	// its own muted fill rather than a dim of the loud one.
+	const isDisabledPrimary = isDisabled && variant === "primary";
 
 	return (
 		<Pressable
@@ -144,12 +155,19 @@ export function Button({
 				styles.base,
 				size === "sm" ? styles.sm : styles.md,
 				currentVariant.container,
+				isDisabledPrimary
+					// Muted wash of the accent, at full opacity — dimming it on
+					// top would wash the wash out to nothing.
+					? { backgroundColor: disabledFill, borderColor: "transparent" }
+					: undefined,
 				pressed && !isDisabled && currentVariant.pressedContainer
 					? currentVariant.pressedContainer
 					: undefined,
 				pressed && !isDisabled ? Pressed.at : undefined,
 				pressed && !isDisabled && !reduceMotion ? Pressed.scaled : undefined,
-				isDisabled ? styles.disabled : undefined,
+				// The muted primary fill already reads as inactive; the global
+				// dim is for every other variant's disabled state.
+				isDisabled && !isDisabledPrimary ? styles.disabled : undefined,
 			]}
 			{...rest}
 		>
@@ -182,7 +200,11 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 	},
 	label: {
-		fontFamily: FontFamilies.display,
+		// Body, not display: buttons must never inherit a future display
+		// face (see typography P9A). All three keys resolve to the same
+		// system sans today, so this changes nothing visually; it pins
+		// the contract for when a display face is procured.
+		fontFamily: FontFamilies.body,
 	},
 	labelMd: {
 		fontSize: 18,
@@ -206,3 +228,18 @@ const styles = StyleSheet.create({
 		opacity: 0.55,
 	},
 });
+
+/**
+ * Fades a #RRGGBB token toward whatever the button stands on. Every theme
+ * token is a six-digit hex colour; anything else falls back to the opaque
+ * colour rather than guessing.
+ */
+function withAlpha(hex: string, alpha: number): string {
+	if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+		return hex;
+	}
+	const a = Math.round(Math.min(Math.max(alpha, 0), 1) * 255)
+		.toString(16)
+		.padStart(2, "0");
+	return `${hex}${a}`;
+}

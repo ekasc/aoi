@@ -1,5 +1,5 @@
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -42,6 +42,19 @@ export default function EditItemScreen() {
   const [reloadTick, setReloadTick] = useState(0);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const mountedRef = useRef(false);
+  const focusRef = useRef<symbol | null>(null);
+  const removingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    focusRef.current = Symbol();
+    return () => { focusRef.current = null; };
+  }, []));
 
   useEffect(() => {
     if (!collectionId || !itemId) {
@@ -75,22 +88,27 @@ export default function EditItemScreen() {
       if (!itemId) {
         return;
       }
+      const focus = focusRef.current;
       await updateItem(itemId, values);
-      router.back();
+      if (mountedRef.current && focus !== null && focusRef.current === focus) router.back();
     },
     [itemId, router, updateItem]
   );
 
   const handleRemove = useCallback(async () => {
-    if (!collectionId || !itemId) {
+    if (!collectionId || !itemId || removingRef.current || !mountedRef.current) {
       return;
     }
+    removingRef.current = true;
+    const focus = focusRef.current;
     setActionError(null);
     try {
       await deleteItem(collectionId, itemId);
-      router.back();
+      if (mountedRef.current && focus !== null && focusRef.current === focus) router.back();
     } catch {
-      setActionError("Couldn't remove this thing. Please try again.");
+      if (mountedRef.current) setActionError("Couldn't remove this item. Please try again.");
+    } finally {
+      removingRef.current = false;
     }
   }, [collectionId, deleteItem, itemId, router]);
 
@@ -113,7 +131,7 @@ export default function EditItemScreen() {
     return (
       <View style={styles.centered}>
         <ThemedText accessibilityRole="alert" type="body" style={{ color: muted }}>
-          This thing could not be loaded right now.
+          This item could not be loaded right now.
         </ThemedText>
         <ExpoButton
           label="Try again"

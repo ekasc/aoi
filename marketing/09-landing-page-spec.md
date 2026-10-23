@@ -380,7 +380,7 @@ A: iOS 15+, Android 10+, and web. Syncs across all devices.
 │    ───────    ───────    ─────    ───────                   │
 │    Features   About      Privacy  Twitter                   │
 │    Pricing    Blog       Terms    Instagram                 │
-│    FAQ        Careers    Cookies  hello@aoi.app             │
+│    FAQ        Careers    Cookies  hello@aoiapp.com             │
 │                                                             │
 │    © 2025 Aoi. All rights reserved.                         │
 │                                                             │
@@ -395,7 +395,7 @@ A: iOS 15+, Android 10+, and web. Syncs across all devices.
   - Product: Features, Pricing, FAQ
   - Company: About, Blog, Careers
   - Legal: Privacy, Terms, Cookies
-  - Connect: Twitter, Instagram, hello@aoi.app
+  - Connect: Twitter, Instagram, hello@aoiapp.com
 - **Copyright:** "© 2025 Aoi. All rights reserved."
 - **Sign-off:** "Made with 💙 for couples everywhere"
 
@@ -422,7 +422,7 @@ A: iOS 15+, Android 10+, and web. Syncs across all devices.
 - **Meta Description:** Aoi is a private scrapbook for couples. Save memories, plan dates, and stay connected. No feeds, no noise—just you two. Pay once, $9.99.
 - **Keywords:** couple app, relationship app, private couples app, shared calendar, memory keeper
 - **OG Image:** 1200x630, hero image with text overlay
-- **Canonical URL:** https://aoi.app/
+- **Canonical URL:** https://aoiapp.com/
 
 ### Analytics (Privacy-Compliant)
 - Page views (anonymous)

@@ -13,7 +13,12 @@ import {
   COLLECTION_STATUSES,
   type Collection,
   type CollectionItem,
+  type CollectionPreview,
 } from '@/features/collections/types';
+import {
+  EMPTY_COLLECTION_PREVIEW,
+  previewFromItems,
+} from '@/features/collections/collection-preview';
 import type {
   CollectionsRepository,
   CreateCollectionItemRequest,
@@ -141,10 +146,16 @@ function nextPosition(rows: { position: number }[]): number {
  * hand-edited blob can never show a number the items disagree with.
  */
 function withItemCounts(state: StoredState): Collection[] {
+  // One pass over the items, not one scan per shelf: at a hundred shelves and
+  // twenty thousand things the per-shelf filter made this quadratic.
+  const counts = new Map<string, number>();
+  for (const item of state.items) {
+    counts.set(item.collectionId, (counts.get(item.collectionId) ?? 0) + 1);
+  }
   return state.collections
     .map((collection) => ({
       ...collection,
-      itemCount: state.items.filter((item) => item.collectionId === collection.id).length,
+      itemCount: counts.get(collection.id) ?? 0,
     }))
     .sort(byPosition);
 }
@@ -375,6 +386,39 @@ export function createLocalCollectionsRepository(spaceId: string): CollectionsRe
       return state.items
         .filter((item) => item.collectionId === collectionId)
         .sort(byPosition);
+    },
+
+    /**
+     * Every requested preview from one read of the store.
+     *
+     * The Ours screen shows a preview of every shelf, and it used to ask for
+     * them one list at a time. Each of those calls read and parsed the whole
+     * blob, so a hundred shelves cost a hundred parses of the same document.
+     */
+    async listPreviews(collectionIds) {
+      const state = await readState(key);
+      const wanted = new Set(collectionIds);
+      const byCollection = new Map<string, CollectionItem[]>();
+      for (const item of state.items) {
+        if (!wanted.has(item.collectionId)) {
+          continue;
+        }
+        const bucket = byCollection.get(item.collectionId);
+        if (bucket) {
+          bucket.push(item);
+        } else {
+          byCollection.set(item.collectionId, [item]);
+        }
+      }
+
+      const previews: Record<string, CollectionPreview> = {};
+      for (const collectionId of collectionIds) {
+        const items = byCollection.get(collectionId);
+        previews[collectionId] = items
+          ? previewFromItems([...items].sort(byPosition))
+          : EMPTY_COLLECTION_PREVIEW;
+      }
+      return previews;
     },
 
     async createItem(collectionId, input: CreateCollectionItemRequest) {

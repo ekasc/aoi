@@ -215,6 +215,39 @@ function quotaError() {
 }
 
 describe('Story capture identity (opaque per-draft ids)', () => {
+  it('keeps the original edit snapshot and selected photos after refresh and conflict', async () => {
+    const { MomentForm } = await import('@/components/moments/moment-form');
+    const original = {
+      id: 'edit-1', type: 'note' as const, title: 'Original title', body: 'Original body',
+      occurredAt: '2026-03-15T10:00:00.000Z', createdAt: '2026-03-15T10:00:00.000Z',
+      updatedAt: '2026-03-15T10:00:00.000Z', authorId: 'you', authorRole: 'you' as const,
+      authorName: 'You', audioUri: 'https://cdn.test/original-audio',
+      attachments: [{ mediaId: 'old-photo', kind: 'image' as const, url: 'https://cdn.test/old-photo' }],
+    };
+    const message = 'This memory changed on another device. Reopen it before trying again.';
+    const onSubmit = vi.fn().mockRejectedValue(new Error(message));
+    const onCancel = vi.fn();
+    const props = { heroSubtitle: 'Sub', onSubmit, onCancel, submitLabel: 'Save', submittingLabel: 'Saving…' };
+    const { rerender } = render(<MomentForm {...props} initialMoment={original} />);
+    fireEvent.change(screen.getByLabelText('Moment note'), { target: { value: 'My unsaved words' } });
+    launchImageLibraryAsyncMock.mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///selected.jpg', mimeType: 'image/jpeg' }] });
+    await act(async () => { fireEvent.click(screen.getByText('Choose photos')); });
+    rerender(<MomentForm {...props} initialMoment={{ ...original, title: 'Remote title', body: 'Remote body', updatedAt: '2026-03-16T10:00:00.000Z', audioUri: 'https://cdn.test/remote-audio', attachments: [] }} />);
+    await act(async () => { fireEvent.click(screen.getByText('Save')); });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toEqual(expect.objectContaining({
+      expectedUpdatedAt: original.updatedAt, title: original.title, body: 'My unsaved words',
+      audioUri: original.audioUri,
+      attachments: [{ mediaId: 'old-photo', kind: 'image' }, { mediaId: 'media-1', kind: 'image' }],
+    }));
+    expect((screen.getByLabelText('Moment note') as HTMLInputElement).value).toBe('My unsaved words');
+    expect(screen.getByText(message).getAttribute('accessibilityrole')).toBe('alert');
+    expect(screen.getByLabelText('Remove photo 2')).toBeTruthy();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(backSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
+  });
+
   it('offers no goal creation — future goals are Plans-owned', async () => {
     const { MomentForm } = await import('@/components/moments/moment-form');
     render(

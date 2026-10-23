@@ -197,11 +197,10 @@ export function backgroundAtAlpha(color: string, alpha: number): string {
   return color;
 }
 
-/** What the Us sky is holding its breath for: a letter come due, or a
- *  question waiting on both of you. Null means a quiet sky. Us-only
- *  (`immersive`, which Us sets on its own); working-screen strips
- *  without `immersive` never glow. */
-export type SkyGlowKind = 'letter' | 'question';
+/** What the Us sky is holding its breath for: a question waiting on both of
+ *  you. Null means a quiet sky. Us-only (`immersive`, which Us sets on its
+ *  own); working-screen strips without `immersive` never glow. */
+export type SkyGlowKind = 'question';
 
 /** Time-of-day aura phase for the Us sky, derived from `now`. */
 export type DayPhase = 'dawn' | 'day' | 'dusk' | 'night';
@@ -235,9 +234,9 @@ export function tintSkyMidForPhase(skyMid: string, phase: DayPhase): string {
 }
 
 /**
- * Us sky mood: the whole gradient runs a few degrees warmer when a letter
- * is waiting, cooler when a question is. No shapes, no pulse — just light.
- * Pure so it stays testable; applied only to the Us (`immersive`) stops.
+ * Us sky mood: the whole gradient runs cooler when a question is waiting.
+ * No shapes, no pulse — just light. Pure so it stays testable; applied only
+ * to the Us (`immersive`) stops.
  */
 export function moodSkyStops(
   skyTop: string,
@@ -246,9 +245,6 @@ export function moodSkyStops(
   glow: SkyGlowKind | null,
 ): [string, string] {
   const mid = tintSkyMidForPhase(skyMid, phase);
-  if (glow === 'letter') {
-    return [mixHex(skyTop, '#8A4B3C', 0.16), mixHex(mid, '#A9765B', 0.16)];
-  }
   if (glow === 'question') {
     return [mixHex(skyTop, '#3A3F66', 0.16), mixHex(mid, '#6E6E9E', 0.16)];
   }
@@ -1224,7 +1220,7 @@ export function beachMomentKeep(ids: string[], max: number = BEACH_BAND_CREATURE
 /**
  * Where the sand shelf begins, as a fraction of the drawn strip, for the
  * plain strip and the full sky. Immersive (the Us photo field) is
- * water-dominant: the lagoon fills most of the frame and the sand is a shelf
+ * water-dominant: the water fills most of the frame and the sand is a shelf
  * at the bottom, so the field is water you look into, not a flat sand wall.
  */
 export const BEACH_SAND_TOP = 0.52;
@@ -1741,19 +1737,17 @@ export function MemorySky({
   const sandTop = isDark ? SEA_SAND_DARK_TOP : SEA_SAND_LIGHT_TOP;
   const sandDeep = isDark ? SEA_SAND_DARK_DEEP : SEA_SAND_LIGHT_DEEP;
   // Per-theme dusk: the same ramp family as After Hours (dark top, lighter
-  // mid melting into the live background), keyed by the selected preset so
-  // Sunset Shore glows ember, Sea Glass runs teal, Deep Ocean goes pine
-  // night, and Editorial Paper settles to espresso ink. Lagoon is the
-  // exception: a daytime beach (bright cyan water over sunlit sand), where
-  // memories walk as footprints along a shoreline trail instead of shining
-  // as stars (see isBeach below). After Hours keeps
+  // mid melting into the live background), keyed by the selected preset.
+  // Beach is the exception: a daytime beach (bright cyan water over sunlit
+  // sand), where memories walk as footprints along a shoreline trail instead
+  // of shining as stars (see isBeach below). After Hours keeps
   // the canonical LIGHT_/DARK_SKY_* stops via the palette table.
   const activeThemeId = themeId ?? selectedThemeId;
   const stops = skyStopsForTheme(activeThemeId, isDark ? 'dark' : 'light');
   const skyTop = stops.top;
   const skyMid = stops.mid;
-  // Beach mode: the Lagoon theme renders sea life instead of the star field.
-  // Everything else (After Hours included) keeps the stars untouched.
+  // Beach mode: the Beach theme renders sea life instead of the star field.
+  // After Hours keeps the stars untouched.
   const isBeach = isBeachTheme(activeThemeId);
   // Living-sky aura (Us full sky only): the dusk stops breathe with the
   // time of day — dawn gold, dusk ember, night deepened, day canonical —

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Alert, Linking } from 'react-native';
+import { useEffect } from 'react';
 
 import NewItemScreen from '@/app/(app)/collection/[id]/item/new';
 import EditItemScreen from '@/app/(app)/collection/[id]/item/[itemId]';
@@ -30,6 +31,7 @@ vi.mock('@/features/collections/collections-context', () => ({
 }));
 
 vi.mock('expo-router', () => ({
+  useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
   useRouter: () => ({ push: mocks.push, back: mocks.back }),
   useLocalSearchParams: () => ({ ...params }),
   Stack: { Screen: () => null },
@@ -130,7 +132,7 @@ describe('Add a thing', () => {
     fireEvent.click(screen.getByLabelText('Add'));
 
     expect(
-      await screen.findByText("Couldn't save this thing. Your draft is still here.")
+      await screen.findByText("Couldn't save this item. Your draft is still here.")
     ).toBeTruthy();
     expect((screen.getByLabelText('Item title') as HTMLInputElement).value).toBe(
       'Perfect Days'

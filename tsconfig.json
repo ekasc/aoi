@@ -18,6 +18,7 @@
     "node_modules",
     "app-example",
     "tests",
-    "marketing-site"
+    "films",
+    "packages/api"
   ]
 }

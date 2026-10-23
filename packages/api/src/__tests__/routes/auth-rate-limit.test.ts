@@ -3,7 +3,7 @@ import { Effect, Layer } from 'effect';
 
 import { createApp } from '../../create-app';
 import { makeTestHarness, type ShimD1 } from '../../effects/test-harness';
-import { RateLimiter, type RateLimiterService } from '../../services/rate-limit';
+import { RateLimiter, makeRateLimiterService, type RateLimiterService } from '../../services/rate-limit';
 import { authRateLimitKey } from '../../routes/session-auth';
 
 /**
@@ -47,6 +47,17 @@ function makeAppWithAuthLimiter(limiter: RateLimiterService) {
 }
 
 describe('auth-tier rate limiting (regression: sign-in was unwired)', () => {
+  it('refuses sign-in when the production limiter binding is unavailable', async () => {
+    const { app } = makeAppWithAuthLimiter(makeRateLimiterService(() => undefined));
+    const response = await app.request('/v1/auth/apple', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'apple', platform: 'ios', idToken: 'x', nonce: 'n' }),
+    });
+    expect(response.status).toBe(429);
+    expect((await response.json()).error.code).toBe('TOO_MANY_REQUESTS');
+  });
+
   it('a denied auth-tier request → 429 canonical envelope', async () => {
     const { harness, app } = makeAppWithAuthLimiter(denyingLimiter('203.0.113.9'));
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');

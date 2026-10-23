@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   listItems: vi.fn(),
   deleteCollection: vi.fn(),
+  createItem: vi.fn(),
+  updateItem: vi.fn(),
 }));
 
 const state = vi.hoisted(() => ({
@@ -24,6 +26,8 @@ vi.mock('@/features/collections/collections-context', () => ({
     isLoading: state.isLoading,
     listItems: mocks.listItems,
     deleteCollection: mocks.deleteCollection,
+    createItem: mocks.createItem,
+    updateItem: mocks.updateItem,
   }),
 }));
 
@@ -99,6 +103,14 @@ beforeEach(() => {
   state.isLoading = false;
   mocks.listItems.mockResolvedValue([makeItem()]);
   mocks.deleteCollection.mockResolvedValue(undefined);
+  let createdCount = 0;
+  mocks.createItem.mockImplementation(async (collectionId, input) => {
+    createdCount += 1;
+    return makeItem({ id: `created-${createdCount}`, collectionId, ...input });
+  });
+  mocks.updateItem.mockImplementation(async (itemId, input) =>
+    makeItem({ id: itemId, ...input })
+  );
 });
 
 describe('List page', () => {
@@ -159,8 +171,96 @@ describe('List page', () => {
     mocks.listItems.mockResolvedValue([]);
     await renderScreen();
 
-    fireEvent.click(screen.getByLabelText('Add a thing'));
+    fireEvent.click(screen.getByLabelText('Add an item'));
     expect(mocks.push).toHaveBeenCalledWith('/(app)/collection/shelf-1/item/new');
+  });
+
+  it('advances a thing’s status in place instead of opening its page', async () => {
+    mocks.listItems.mockResolvedValue([makeItem({ id: 'a', title: 'Dune', status: 'want' })]);
+    await renderScreen();
+
+    fireEvent.click(screen.getByLabelText('Mark Dune as Doing'));
+
+    // The same write the thing's own page uses, and no navigation.
+    await waitFor(() => expect(mocks.updateItem).toHaveBeenCalledWith('a', { status: 'doing' }));
+    expect(mocks.push).not.toHaveBeenCalled();
+    // The tile flips at once and offers the next step.
+    expect(await screen.findByLabelText('Mark Dune as Done')).toBeTruthy();
+    expect(screen.getByLabelText('Dune, Doing')).toBeTruthy();
+  });
+
+  it('rolls a status change back and says so when the write fails', async () => {
+    mocks.listItems.mockResolvedValue([makeItem({ id: 'a', title: 'Dune', status: 'want' })]);
+    mocks.updateItem.mockRejectedValueOnce(new Error('offline'));
+    await renderScreen();
+
+    fireEvent.click(screen.getByLabelText('Mark Dune as Doing'));
+
+    expect(
+      await screen.findByText('Couldn\'t save “Dune”. Please try again.')
+    ).toBeTruthy();
+    expect(screen.getByLabelText('Mark Dune as Doing')).toBeTruthy();
+    expect(screen.getByLabelText('Dune, Want')).toBeTruthy();
+  });
+
+  it('adds a bare title from the quick add without leaving the list', async () => {
+    mocks.listItems.mockResolvedValue([]);
+    await renderScreen();
+
+    const field = await screen.findByLabelText('Quick add an item');
+    fireEvent.change(field, { target: { value: 'Dune' } });
+    fireEvent.click(screen.getByLabelText('Quick add'));
+
+    // Title only; the rest keeps its defaults for curation later.
+    await waitFor(() =>
+      expect(mocks.createItem).toHaveBeenCalledWith('shelf-1', { title: 'Dune' })
+    );
+    // The field clears for the next title and the list gains the entry.
+    expect((screen.getByLabelText('Quick add an item') as HTMLInputElement).value).toBe('');
+    expect(screen.getByLabelText('Dune')).toBeTruthy();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('lands a quick add in view even while the catalogue is filtered', async () => {
+    mocks.listItems.mockResolvedValue([
+      makeItem({ id: 'a', title: 'Wanted', status: 'want' }),
+      makeItem({ id: 'b', title: 'Doing it', status: 'doing' }),
+    ]);
+    await renderScreen();
+
+    fireEvent.change(screen.getByLabelText('Filter and sort'), { target: { value: 'filter:doing' } });
+    expect(screen.queryByLabelText('Wanted, Want')).toBeNull();
+
+    fireEvent.change(await screen.findByLabelText('Quick add an item'), {
+      target: { value: 'New film' },
+    });
+    fireEvent.click(screen.getByLabelText('Quick add'));
+
+    // The new thing has no status, so the filter resets rather than
+    // swallowing it.
+    await waitFor(() => expect(mocks.createItem).toHaveBeenCalled());
+    expect(await screen.findByLabelText('New film')).toBeTruthy();
+    expect(screen.getByLabelText('Wanted, Want')).toBeTruthy();
+  });
+
+  it('ignores an empty quick add and keeps the draft when the write fails', async () => {
+    mocks.listItems.mockResolvedValue([]);
+    await renderScreen();
+
+    fireEvent.click(await screen.findByLabelText('Quick add'));
+    expect(mocks.createItem).not.toHaveBeenCalled();
+
+    mocks.createItem.mockRejectedValueOnce(new Error('offline'));
+    fireEvent.change(screen.getByLabelText('Quick add an item'), {
+      target: { value: 'Dune' },
+    });
+    fireEvent.click(screen.getByLabelText('Quick add'));
+
+    expect(
+      await screen.findByText("Couldn't save this item. Your draft is still here.")
+    ).toBeTruthy();
+    expect((screen.getByLabelText('Quick add an item') as HTMLInputElement).value).toBe('Dune');
+    expect(mocks.push).not.toHaveBeenCalled();
   });
 
   it('puts the list’s own name in the header and reaches its editor', async () => {
@@ -171,7 +271,7 @@ describe('List page', () => {
       | undefined;
     expect(options?.title).toBe('Films to watch');
 
-    // Scope to the header's own container: "Add a thing" is also the foot
+    // Scope to the header's own container: "Add an item" is also the foot
     // row's label, because it is the same action.
     const header = render(<>{options?.headerRight?.()}</>);
     const inHeader = within(header.container);
@@ -193,40 +293,20 @@ describe('List page', () => {
     render(<CollectionDetailScreen />);
 
     expect(
-      await screen.findByText('These things could not be loaded right now.')
+      await screen.findByText('These items could not be loaded right now.')
     ).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Try again'));
 
     await waitFor(() =>
-      expect(screen.queryByText('These things could not be loaded right now.')).toBeNull()
+      expect(screen.queryByText('These items could not be loaded right now.')).toBeNull()
     );
   });
 
-  it('removes the list after a confirmation, for both partners', async () => {
+  it('keeps no resident remove on the browsing surface; removal lives on the edit screen', async () => {
     await renderScreen();
 
-    fireEvent.click(screen.getByText('Remove list'));
-    expect(
-      await screen.findByText(/This removes the list and everything in it for both of you/)
-    ).toBeTruthy();
-    expect(mocks.deleteCollection).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByLabelText('Confirm remove Films to watch'));
-    await waitFor(() => expect(mocks.deleteCollection).toHaveBeenCalledWith('shelf-1'));
-    await waitFor(() => expect(mocks.back).toHaveBeenCalled());
-  });
-
-  it('keeps the list when its removal fails, so it can be retried', async () => {
-    mocks.deleteCollection.mockRejectedValueOnce(new Error('offline'));
-    await renderScreen();
-
-    fireEvent.click(screen.getByText('Remove list'));
-    fireEvent.click(screen.getByLabelText('Confirm remove Films to watch'));
-
-    expect(
-      await screen.findByText("Couldn't remove this list. Please try again.")
-    ).toBeTruthy();
-    expect(mocks.back).not.toHaveBeenCalled();
+    // The newborn-empty-state foot must never sit next to destruction.
+    expect(screen.queryByText('Remove list')).toBeNull();
   });
 
   it('honestly reports a list that is no longer there', () => {

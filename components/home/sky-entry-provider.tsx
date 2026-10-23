@@ -32,7 +32,7 @@ export function useSkyEntry() {
 }
 
 // Carries the outgoing form and foreground crossfade clocks, never the sky.
-export function SkyEntryProvider({ children }: { children: ReactNode }) {
+export function SkyEntryProvider({ children, userId }: { children: ReactNode; userId?: string | null }) {
   const reduceMotion = useReducedMotion();
   const [entry, setEntry] = useState<EntryState>(null);
   const entering = useRef(false);
@@ -128,6 +128,23 @@ export function SkyEntryProvider({ children }: { children: ReactNode }) {
     cancelAnimation(arrival);
     if (revealFrame.current !== null) cancelAnimationFrame(revealFrame.current);
   }, [arrival, progress]);
+
+  // A new account must never inherit the previous one's sky: drop any entry
+  // in flight when the user changes. This used to be a `key` on the provider,
+  // which remounted the entire navigation stack on every login and logout and
+  // replayed the boot sequence underneath the transition.
+  const lastUserId = useRef(userId);
+  useEffect(() => {
+    if (lastUserId.current === userId) return;
+    lastUserId.current = userId;
+    cancelAnimation(progress);
+    cancelAnimation(arrival);
+    if (revealFrame.current !== null) cancelAnimationFrame(revealFrame.current);
+    entering.current = false;
+    revealing.current = false;
+    landed.current = false;
+    setEntry(null);
+  }, [userId, arrival, progress]);
 
   return (
     <SkyEntryContext.Provider value={{ entry, progress, arrival, prepare, reveal, enter }}>

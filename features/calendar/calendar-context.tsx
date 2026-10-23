@@ -3,7 +3,9 @@ import {
 	useCallback,
 	useContext,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
+	useRef,
 	useState,
 	type PropsWithChildren,
 } from "react";
@@ -24,6 +26,7 @@ import { useEventReminders } from "@/features/calendar/use-event-reminders";
 import type {
 	CalendarContextValue,
 	CalendarEvent,
+	CalendarMonthReadState,
 	CalendarMonthSummary,
 	CreateCalendarEventInput,
 	UpdateCalendarEventInput,
@@ -45,6 +48,45 @@ const getEventById = _useRemote ? _remoteCalendarImpl.getEventById : _calendarIm
 
 /** Horizon for the countdown lane + agenda view. */
 const UPCOMING_WINDOW_DAYS = 30;
+
+/** The month as a comparable number, so windows and pages compare cheaply. */
+function monthIndex(date: Date): number {
+	return date.getFullYear() * 12 + date.getMonth();
+}
+
+function monthKey(date: Date): string {
+	return `${date.getFullYear()}-${date.getMonth()}`;
+}
+
+/**
+ * The delivered window: the visible month plus one neighbour each side, so
+ * the pager's adjacent pages are already answered. The identity travels with
+ * the answer, which is what lets a caller tell a loaded month from an
+ * unqueried one.
+ */
+function monthWindowBounds(monthDate: Date) {
+	const { monthStart, nextMonthStart } = monthBounds(monthDate);
+	const rangeStart = addMonths(monthStart, -1);
+	const rangeEnd = addMonths(nextMonthStart, 1);
+	return {
+		startIso: rangeStart.toISOString(),
+		endIso: rangeEnd.toISOString(),
+		firstMonthIndex: monthIndex(rangeStart),
+		lastMonthIndex: monthIndex(rangeEnd) - 1,
+	};
+}
+
+/**
+ * The settled answer for one window. `monthKey` names the visible month it
+ * was read for: while the visible month differs, its replacement is in
+ * flight and no page inside it may be called empty.
+ */
+type MonthRead = {
+	monthKey: string;
+	firstMonthIndex: number;
+	lastMonthIndex: number;
+	status: 'ready' | 'error';
+};
 
 // Keep aliases used throughout this file
 const deleteCalendarEvent: typeof deleteEvent = deleteEvent;
@@ -83,25 +125,95 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 	const [visibleMonth, setVisibleMonthState] = useState(() =>
 		startOfMonth(new Date()),
 	);
-	const [isLoading, setIsLoading] = useState(true);
+	const [monthRead, setMonthRead] = useState<MonthRead | null>(null);
+	const [monthReadInFlight, setMonthReadInFlight] = useState<string | null>(
+		null,
+	);
 	const [isInitialized, setIsInitialized] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Monotonic identity for month-window reads. Every read — a visible month
+	// change, a refresh, a post-mutation reload — takes the next number, and
+	// only the latest may write. An older answer that lands later is not news.
+	const monthRequestSeq = useRef(0);
+	// What the tree has actually committed as the visible month. A delayed
+	// reload — a save that lands, a retained refresh callback — must ask for
+	// the month on screen, not the one its closure was born with.
+	const visibleMonthRef = useRef(visibleMonth);
+	// A completion that arrives after the tree is gone has nothing to publish.
+	const isMountedRef = useRef(true);
 	const { rescheduleEventReminders, cancelEventReminders } =
 		useEventReminders();
 
-	const loadMonth = useCallback(async (monthDate: Date) => {
-		const { monthStart, nextMonthStart } = monthBounds(monthDate);
-		// Load the visible month plus one neighbor on each side so the swipe
-		// pager always has every page's event chips ready — no pop-in as the
-		// user slides between months.
-		const rangeStart = addMonths(monthStart, -1);
-		const rangeEnd = addMonths(nextMonthStart, 1);
-		const monthEvents = await listEventsInMonth(
-			rangeStart.toISOString(),
-			rangeEnd.toISOString(),
-		);
-		setEvents(monthEvents);
+	// Layout-synced, so the ref is current before any passive effect or async
+	// continuation for that commit can run.
+	useLayoutEffect(() => {
+		visibleMonthRef.current = visibleMonth;
+	}, [visibleMonth]);
+
+	useLayoutEffect(() => {
+		isMountedRef.current = true;
+		return () => {
+			isMountedRef.current = false;
+		};
 	}, []);
+
+	const readMonthWindow = useCallback(async (monthDate: Date) => {
+		const requestId = ++monthRequestSeq.current;
+		const requestedMonth = monthKey(monthDate);
+		const { startIso, endIso, firstMonthIndex, lastMonthIndex } =
+			monthWindowBounds(monthDate);
+		// Pending is published before the wait, so even a refresh of the month
+		// already on screen cannot pass its old answer off as current.
+		setMonthReadInFlight(requestedMonth);
+		try {
+			const monthEvents = await listEventsInMonth(startIso, endIso);
+			if (requestId !== monthRequestSeq.current || !isMountedRef.current) {
+				return;
+			}
+			setEvents(monthEvents);
+			setMonthRead({
+				monthKey: requestedMonth,
+				firstMonthIndex,
+				lastMonthIndex,
+				status: 'ready',
+			});
+			setMonthReadInFlight(null);
+			// A read that succeeded is proof the failure is gone.
+			setError(null);
+		} catch (err) {
+			// A superseded read's failure is not the current window's failure.
+			if (requestId !== monthRequestSeq.current) {
+				return;
+			}
+			// Nothing is left to publish on an unmounted tree, but the caller
+			// still learns the read failed.
+			if (!isMountedRef.current) {
+				throw err;
+			}
+			setMonthRead({
+				monthKey: requestedMonth,
+				firstMonthIndex,
+				lastMonthIndex,
+				status: 'error',
+			});
+			setMonthReadInFlight(null);
+			setError(
+				err instanceof Error ? err.message : "Failed to load calendar events",
+			);
+			throw err;
+		}
+	}, []);
+
+	// Derived, not toggled in an effect: the moment the visible month changes,
+	// the data belongs to the previous window, so the screen is loading until
+	// the read for the new one lands. There is no render where old events can
+	// pass for the new month.
+	const visibleMonthKey = monthKey(visibleMonth);
+	const isLoading =
+		!isInitialized ||
+		monthRead === null ||
+		monthRead.monthKey !== visibleMonthKey ||
+		monthReadInFlight === visibleMonthKey;
 
 	const loadUpcoming = useCallback(async () => {
 		const windowStart = startOfDay(new Date());
@@ -150,31 +262,15 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			return;
 		}
 
-		let isActive = true;
-
+		// The request identity is the guard: a superseded completion is
+		// dropped by readMonthWindow, and its failure is left to the read
+		// that owns the window now.
 		async function hydrateMonth() {
-			setIsLoading(true);
-			try {
-				await loadMonth(visibleMonth);
-				if (isActive) {
-					setIsLoading(false);
-				}
-			} catch (err) {
-				if (isActive) {
-					setIsLoading(false);
-					setError(
-						err instanceof Error ? err.message : "Failed to load calendar events",
-					);
-				}
-			}
+			await readMonthWindow(visibleMonth);
 		}
 
-		void hydrateMonth();
-
-		return () => {
-			isActive = false;
-		};
-	}, [isInitialized, loadMonth, visibleMonth]);
+		void hydrateMonth().catch(() => {});
+	}, [isInitialized, readMonthWindow, visibleMonth]);
 
 	// Load the upcoming window once for the countdown lane + agenda view.
 	useEffect(() => {
@@ -182,6 +278,8 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			return;
 		}
 
+		// Hydrates upcoming events from the external repository after initialization.
+		// eslint-disable-next-line react-hooks/set-state-in-effect
 		void loadUpcoming().catch(() => {
 			// The upcoming lanes are a quiet enhancement — never block on them.
 		});
@@ -207,8 +305,10 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 	}, []);
 
 	const reloadCurrentMonth = useCallback(async () => {
-		await loadMonth(visibleMonth);
-	}, [loadMonth, visibleMonth]);
+		// Deliberately the committed month, not this closure's: a save that
+		// lands after the reader moved on must answer the month they are on.
+		await readMonthWindow(visibleMonthRef.current);
+	}, [readMonthWindow]);
 
 	const reloadAfterMutation = useCallback(async () => {
 		await Promise.all([reloadCurrentMonth(), loadUpcoming()]);
@@ -266,6 +366,35 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 		}
 		return map;
 	}, [events]);
+
+	const monthReadState = useCallback(
+		(month: Date): CalendarMonthReadState => {
+			const target = monthIndex(month);
+			const visibleIndex = monthIndex(visibleMonth);
+			const inWindow = (index: number) =>
+				index >= visibleIndex - 1 && index <= visibleIndex + 1;
+			// A read in flight for the month on screen owns its window: even if
+			// an earlier answer is still in state, it is about to be replaced.
+			if (inWindow(target) && monthReadInFlight === visibleMonthKey) {
+				return 'loading';
+			}
+			if (monthRead && monthRead.monthKey === visibleMonthKey) {
+				if (
+					monthRead.status === 'ready' &&
+					target >= monthRead.firstMonthIndex &&
+					target <= monthRead.lastMonthIndex
+				) {
+					return 'loaded';
+				}
+				return 'unread';
+			}
+			// The window a read will cover is known before its answer lands:
+			// its pages are pending, never empty. Anything outside it has not
+			// been asked for at all.
+			return inWindow(target) ? 'loading' : 'unread';
+		},
+		[monthRead, monthReadInFlight, visibleMonth, visibleMonthKey],
+	);
 
 	const monthSummary = useMemo<CalendarMonthSummary>(() => {
 		return events.reduce<CalendarMonthSummary>((summary, event) => {
@@ -334,6 +463,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			deleteEvent,
 			refresh,
 			eventsForDay,
+			monthReadState,
 			getEventById,
 			eventsInRange,
 		}),
@@ -346,6 +476,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 			eventsInRange,
 			getEventById,
 			isLoading,
+			monthReadState,
 			monthSummary,
 			refresh,
 			selectedDate,

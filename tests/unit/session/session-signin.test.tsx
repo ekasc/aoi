@@ -101,4 +101,47 @@ describe('sign-in token plumbing (api-client)', () => {
 
     view.unmount();
   });
+
+  it('keeps the signed-out screen mounted while sign-in is in flight', async () => {
+    // The regression: status flipped to 'loading' the moment the native
+    // sheet opened, and every route guard renders null while loading — so
+    // the landing unmounted behind the sheet and the boot sequence replayed
+    // on resolution. Status must not move until the attempt resolves.
+    let resolveSignIn!: (value: { user: typeof USER; tokens: typeof SIGN_IN_TOKENS }) => void;
+    oauthClientMock.signInWithOAuthProvider.mockImplementationOnce(
+      () =>
+        new Promise<{ user: typeof USER; tokens: typeof SIGN_IN_TOKENS }>((resolve) => {
+          resolveSignIn = resolve;
+        }),
+    );
+    const authApi = createAuthApiMock();
+    setAuthApi(authApi);
+
+    const view = render(
+      <SessionProvider>
+        <SignInProbe />
+      </SessionProvider>
+    );
+
+    await waitFor(() =>
+      expect(view.getByTestId('sign-in').textContent).toBe('signed_out')
+    );
+
+    await act(async () => {
+      view.getByTestId('sign-in').click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.getByTestId('sign-in').textContent).toBe('signed_out');
+
+    await act(async () => {
+      resolveSignIn({ user: USER, tokens: SIGN_IN_TOKENS });
+    });
+    await waitFor(() =>
+      expect(view.getByTestId('sign-in').textContent).toBe('signed_in')
+    );
+
+    view.unmount();
+  });
 });

@@ -11,19 +11,30 @@ export type LegalLinks = {
   supportUrl: string | null;
 };
 
-function readUrl(value: string | undefined): string | null {
+function readUrl(value: string | undefined, allowEmail = false): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
-  if (/^(https:\/\/|mailto:)/i.test(trimmed)) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'https:' && url.hostname && !url.username && !url.password) return trimmed;
+    if (allowEmail && url.protocol === 'mailto:' && url.pathname.includes('@')) return trimmed;
+  } catch {
+    return null;
+  }
   return null;
 }
 
 export function getLegalLinks(
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>
+  env: Record<string, string | undefined> = {
+    // Expo only inlines direct property access in the shipped bundle.
+    EXPO_PUBLIC_PRIVACY_URL: process.env.EXPO_PUBLIC_PRIVACY_URL,
+    EXPO_PUBLIC_TERMS_URL: process.env.EXPO_PUBLIC_TERMS_URL,
+    EXPO_PUBLIC_SUPPORT_URL: process.env.EXPO_PUBLIC_SUPPORT_URL,
+  }
 ): LegalLinks {
   return {
     privacyUrl: readUrl(env.EXPO_PUBLIC_PRIVACY_URL),
     termsUrl: readUrl(env.EXPO_PUBLIC_TERMS_URL),
-    supportUrl: readUrl(env.EXPO_PUBLIC_SUPPORT_URL),
+    supportUrl: readUrl(env.EXPO_PUBLIC_SUPPORT_URL, true),
   };
 }

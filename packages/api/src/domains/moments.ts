@@ -2,12 +2,15 @@ import { Effect } from 'effect';
 
 import type {
   CreateMomentRequest,
+  DeleteMomentRequest,
   MarkMomentsReadRequest,
   Moment,
   MomentAttachment,
   MomentAttachmentInput,
   MomentListResponse,
   MomentType,
+  ReconcileMomentsRequest,
+  ReconcileMomentsResponse,
   TimelineResponse,
   UpdateMomentRequest,
 } from '@aoi/shared';
@@ -22,10 +25,12 @@ import { enqueueJob, type JobQueueService } from '../services/job-queue';
 import { getActiveSpaceId } from './spaces';
 import {
   BadRequestError,
+  ConflictError,
   ForbiddenError,
   InternalError,
   NotFoundError,
   badRequest,
+  conflict,
   forbidden,
   notFound,
 } from './errors';
@@ -41,10 +46,10 @@ import {
  * - create with a `clientId` is idempotent via the partial unique
  *   `uq_moments_space_client_id` (space_id, client_id) WHERE deleted_at IS
  *   NULL — a duplicate is a replay of the first result, never a second row;
- * - update/delete are guarded `UPDATE … WHERE deleted_at IS NULL` in one D1
- *   batch with the activity insert (the insert only fires when the guard
- *   matched — `(SELECT changes()) > 0`), so a double-delete is a 404 that
- *   never produces a second tombstone row;
+ * - update/delete compare the observed updated_at in an atomic batch. Only
+ *   the winning CAS inserts activity, and that unique id guards every
+ *   dependent write. A stale write is 409 with no side effects; an initial
+ *   read of an already-deleted moment remains 404;
  * - attribution is computed per request (viewer-relative `isOwn`,
  *   `authorRole`), never read from the stored snapshot columns;
  * - partner notification is enqueued (one queue), never sent inline.
@@ -124,10 +129,11 @@ export /**
  *   semantics, and the R2 bytes stay referenced for the retryable media
  *   purge — an R2 failure never loses the DB row.
  */
-const releaseMediaIfUnreferenced = (db: DbService, mediaId: string, at: number) =>
+const releaseMediaIfUnreferenced = (db: DbService, mediaId: string, at: number, activityId: string) =>
   db.d1.prepare(
     `update media_objects set deleted_at = ?
      where id = ? and deleted_at is null
+        and exists (select 1 from space_activity where id = ?)
        and not exists (select 1 from moments where media_id = ? and deleted_at is null)
        and not exists (select 1 from moment_attachments ma
                        join moments m on m.id = ma.moment_id
@@ -135,7 +141,7 @@ const releaseMediaIfUnreferenced = (db: DbService, mediaId: string, at: number) 
        and not exists (select 1 from moment_responses r
                        join moments m on m.id = r.moment_id
                        where r.media_id = ? and m.deleted_at is null)`
-  ).bind(at, mediaId, mediaId, mediaId, mediaId);
+  ).bind(at, mediaId, activityId, mediaId, mediaId, mediaId);
 
 const requireLiveSpaceMedia = (
   db: DbService,
@@ -351,6 +357,36 @@ export const MOMENT_LIST_DEFAULT_LIMIT = 20;
 export const MOMENT_LIST_MAX_LIMIT = 100;
 /** Chapter ranges (monthly ≈ 31d, anniversary ≈ 366d) stay bounded. */
 export const CHAPTER_RANGE_MAX_MS = 400 * 24 * 60 * 60 * 1000;
+
+/** Refresh loaded ids without relying on their previous pagination positions. */
+export const reconcileMomentsProgram = (
+  userId: string,
+  request: ReconcileMomentsRequest
+): Effect.Effect<ReconcileMomentsResponse, InternalError, DbService> =>
+  Effect.gen(function* () {
+    const spaceId = yield* getActiveSpaceId(userId);
+    if (!spaceId) return { moments: [] };
+
+    const db = yield* Db;
+    const placeholders = request.ids.map(() => '?').join(',');
+    const rows = yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `${MOMENT_SELECT}
+             where m.space_id = ? and m.deleted_at is null
+               and m.id in (${placeholders})`
+          )
+          .bind(spaceId, ...request.ids)
+          .all<MomentRow>(),
+      catch: () => new InternalError({}),
+    });
+    const results = rows.results ?? [];
+    const attachmentsByMoment = yield* fetchAttachmentsMap(db, results);
+    return {
+      moments: results.map((row) => momentToApi(row, userId, attachmentsByMoment.get(row.id) ?? [])),
+    };
+  });
 
 /**
  * List moments, newest first, keyset-paginated by `(occurred_at, id)` with a
@@ -727,9 +763,8 @@ export const createMomentProgram = (
   });
 
 /**
- * Guarded update: own-only, active membership required, `deleted_at IS NULL`
- * re-checked inside the SAME batch as the activity insert (which only fires
- * when the update matched — `(SELECT changes()) > 0`). Atomic and idempotent.
+ * Guarded update: own-only, active membership required, observed updated_at
+ * and deleted_at re-checked in the same batch as activity and attachments.
  *
  * Attachments are an explicit optional replacement: omitted = attachments
  * untouched (legacy single-media fields update independently as before,
@@ -742,7 +777,7 @@ export const updateMomentProgram = (
   userId: string,
   momentId: string,
   input: UpdateMomentRequest
-): Effect.Effect<Moment, BadRequestError | ForbiddenError | NotFoundError | InternalError, DbService | JobQueueService | LoggerService | ClockService | IdService> =>
+): Effect.Effect<Moment, BadRequestError | ConflictError | ForbiddenError | NotFoundError | InternalError, DbService | JobQueueService | LoggerService | ClockService | IdService> =>
   Effect.gen(function* () {
     const db = yield* Db;
 
@@ -750,11 +785,11 @@ export const updateMomentProgram = (
       try: () =>
         db.d1
           .prepare(
-            `select id, space_id, created_by_user_id, media_id from moments
+            `select id, space_id, created_by_user_id, media_id, updated_at from moments
              where id = ? and deleted_at is null limit 1`
           )
           .bind(momentId)
-          .first<{ id: string; space_id: string; created_by_user_id: string; media_id: string | null }>(),
+          .first<{ id: string; space_id: string; created_by_user_id: string; media_id: string | null; updated_at: number }>(),
       catch: () => new InternalError({}),
     });
     if (!existing) {
@@ -779,6 +814,10 @@ export const updateMomentProgram = (
       return yield* Effect.fail(forbidden('You are not an active member of this space'));
     }
 
+    if (Date.parse(input.expectedUpdatedAt) !== existing.updated_at) {
+      return yield* Effect.fail(conflict('This memory changed on another device. Reopen it before trying again.'));
+    }
+
     const attachments = input.attachments ?? undefined;
     yield* requireValidAttachments(db, existing.space_id, userId, attachments);
     const replacingAttachments = attachments !== undefined;
@@ -796,7 +835,8 @@ export const updateMomentProgram = (
 
     // Field whitelist → SET clause (never interpolate request keys).
     const sets: string[] = ['updated_at = ?'];
-    const params: unknown[] = [yield* nowMs];
+    const at = Math.max(yield* nowMs, existing.updated_at + 1);
+    const params: unknown[] = [at];
     if (input.type !== undefined) { sets.push('type = ?'); params.push(input.type); }
     if (input.title !== undefined) { sets.push('title = ?'); params.push(input.title); }
     if (input.body !== undefined) { sets.push('body = ?'); params.push(input.body); }
@@ -813,7 +853,6 @@ export const updateMomentProgram = (
       if (input.mediaId !== undefined) { sets.push('media_id = ?'); params.push(input.mediaId); }
     }
 
-    const at = yield* nowMs;
     const activityId = yield* newId;
     const newMediaIds = replacingAttachments ? new Set((attachments ?? []).map((item) => item.mediaId)) : null;
     const legacyChanged =
@@ -834,8 +873,8 @@ export const updateMomentProgram = (
     }
     const results = yield* batch([
       db.d1
-        .prepare(`update moments set ${sets.join(', ')} where id = ? and deleted_at is null`)
-        .bind(...params, momentId),
+        .prepare(`update moments set ${sets.join(', ')} where id = ? and deleted_at is null and updated_at = ?`)
+        .bind(...params, momentId, existing.updated_at),
       db.d1
         .prepare(
           `insert into space_activity (id, space_id, actor_user_id, kind, subject_id, occurred_at)
@@ -843,28 +882,26 @@ export const updateMomentProgram = (
            where (select changes()) > 0`
         )
         .bind(activityId, existing.space_id, userId, momentId, at),
-      // Attachment replacement follows the activity guard so `(select
-      // changes())` still observes the moments update, not the attachment
-      // writes. Same atomic batch: delete + re-insert + releases observe
-      // post-write state with the tombstone guard.
+      // The unique activity id proves this batch won CAS, even after later
+      // statements overwrite changes(). Every dependent write needs it.
       ...(replacingAttachments
         ? [
-            db.d1.prepare(`delete from moment_attachments where moment_id = ?`).bind(momentId),
+            db.d1.prepare(`delete from moment_attachments where moment_id = ? and exists (select 1 from space_activity where id = ?)`).bind(momentId, activityId),
             ...((attachments ?? []).map((item, position) =>
               db.d1
                 .prepare(
                   `insert into moment_attachments (moment_id, media_id, position, kind)
-                   values (?, ?, ?, ?)`
+                    select ?, ?, ?, ? where exists (select 1 from space_activity where id = ?)`
                 )
-                .bind(momentId, item.mediaId, position, item.kind)
+                .bind(momentId, item.mediaId, position, item.kind, activityId)
             )),
           ]
         : []),
-      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at)),
+      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at, activityId)),
     ]);
 
     if ((results[0]?.meta?.changes ?? 0) === 0) {
-      return yield* Effect.fail(notFound('Moment not found'));
+      return yield* Effect.fail(conflict('This memory changed on another device. Reopen it before trying again.'));
     }
 
     const row = yield* Effect.tryPromise({
@@ -887,13 +924,14 @@ export const updateMomentProgram = (
   });
 
 /**
- * Soft delete (tombstone): own-only, guarded `deleted_at` flip + activity row
- * in one batch. A second delete sees the guard fail → 404, no new tombstone.
+ * Soft delete: own-only, version-guarded tombstone and activity in one batch.
+ * A mid-flight conflict is 409; an initial read of a tombstone remains 404.
  */
 export const deleteMomentProgram = (
   userId: string,
-  momentId: string
-): Effect.Effect<{ ok: true }, ForbiddenError | NotFoundError | InternalError, DbService | JobQueueService | LoggerService | ClockService | IdService> =>
+  momentId: string,
+  input: DeleteMomentRequest
+): Effect.Effect<{ ok: true }, ConflictError | ForbiddenError | NotFoundError | InternalError, DbService | JobQueueService | LoggerService | ClockService | IdService> =>
   Effect.gen(function* () {
     const db = yield* Db;
 
@@ -901,11 +939,11 @@ export const deleteMomentProgram = (
       try: () =>
         db.d1
           .prepare(
-            `select id, space_id, created_by_user_id, media_id from moments
+            `select id, space_id, created_by_user_id, media_id, updated_at from moments
              where id = ? and deleted_at is null limit 1`
           )
           .bind(momentId)
-          .first<{ id: string; space_id: string; created_by_user_id: string; media_id: string | null }>(),
+          .first<{ id: string; space_id: string; created_by_user_id: string; media_id: string | null; updated_at: number }>(),
       catch: () => new InternalError({}),
     });
     if (!existing) {
@@ -930,7 +968,11 @@ export const deleteMomentProgram = (
       return yield* Effect.fail(forbidden('You are not an active member of this space'));
     }
 
-    const at = yield* nowMs;
+    if (Date.parse(input.expectedUpdatedAt) !== existing.updated_at) {
+      return yield* Effect.fail(conflict('This memory changed on another device. Reopen it before trying again.'));
+    }
+
+    const at = Math.max(yield* nowMs, existing.updated_at + 1);
     const activityId = yield* newId;
     const attached = yield* Effect.tryPromise({
       try: () =>
@@ -946,8 +988,8 @@ export const deleteMomentProgram = (
     for (const row of attached.results ?? []) toRelease.add(row.media_id);
     const results = yield* batch([
       db.d1
-        .prepare(`update moments set deleted_at = ?, updated_at = ? where id = ? and deleted_at is null`)
-        .bind(at, at, momentId),
+        .prepare(`update moments set deleted_at = ?, updated_at = ? where id = ? and deleted_at is null and updated_at = ?`)
+        .bind(at, at, momentId, existing.updated_at),
       db.d1
         .prepare(
           `insert into space_activity (id, space_id, actor_user_id, kind, subject_id, occurred_at)
@@ -960,12 +1002,12 @@ export const deleteMomentProgram = (
       // reference wins the race instead of losing its media. Both the
       // legacy `media_id` and every attachment row are releasable; the
       // `not exists` checks cover both reference paths in post-write state.
-      db.d1.prepare('delete from moment_responses where moment_id = ? and exists (select 1 from moments where id = ? and deleted_at is not null)').bind(momentId, momentId),
-      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at)),
+      db.d1.prepare('delete from moment_responses where moment_id = ? and exists (select 1 from space_activity where id = ?)').bind(momentId, activityId),
+      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at, activityId)),
     ]);
 
     if ((results[0]?.meta?.changes ?? 0) === 0) {
-      return yield* Effect.fail(notFound('Moment not found'));
+      return yield* Effect.fail(conflict('This memory changed on another device. Reopen it before trying again.'));
     }
 
     yield* enqueueJob({ type: 'push.deliver', kind: 'moment_deleted', spaceId: existing.space_id, fromUserId: userId });

@@ -121,6 +121,9 @@ export default function PartnerPortraitScreen() {
       <ThemedText type="caption" style={{ color: muted }}>
         A portrait in small things — the details you notice.
       </ThemedText>
+      <ThemedText type="caption" style={{ color: muted }}>
+        Only you can read this. It is never shared with {partnerName}.
+      </ThemedText>
     </View>
   );
 
@@ -129,7 +132,7 @@ export default function PartnerPortraitScreen() {
       behavior={isIos ? 'padding' : undefined}
       style={[styles.root, { backgroundColor: background }]}
     >
-      <Stack.Screen options={{ title: `About ${partnerName}` }} />
+      <Stack.Screen options={{ title: `Your notes on ${partnerName}` }} />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -305,7 +308,7 @@ const styles = StyleSheet.create({
     borderRadius: Radii.pill,
     borderWidth: StyleSheet.hairlineWidth,
     justifyContent: 'center',
-    minHeight: 36,
+    minHeight: 44,
     paddingHorizontal: Spacing[12],
   },
   state: {

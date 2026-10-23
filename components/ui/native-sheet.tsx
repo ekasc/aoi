@@ -1,5 +1,5 @@
 import { BottomSheetModal, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -31,25 +31,39 @@ export function NativeSheet({
 }: NativeSheetProps) {
   const surface = useThemeColor({}, 'surface');
   const ref = useRef<BottomSheetMethods>(null);
-  // Tracks whether the sheet is currently presented so a native-initiated
-  // dismissal (drag / backdrop) does not also get a programmatic close(),
-  // which re-triggered the dismissal animation and flickered.
-  const presentedRef = useRef(false);
+  const phase = useRef<'hidden' | 'presented' | 'closing'>('hidden');
+  const visibleRef = useRef(visible);
+  // Bumped when a dismissal finishes with a reopen already requested, so the
+  // visibility effect can present after the closed state has been committed.
+  const [reopenTicket, setReopenTicket] = useState(0);
+  useLayoutEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
 
   const handleNativeClose = useCallback(() => {
-    presentedRef.current = false;
+    if (phase.current === 'hidden') return;
+    if (phase.current === 'closing' && visibleRef.current) {
+      // A reopen was requested while the dismissal was in flight. Presenting
+      // here would reach the platform before it has committed the closed state,
+      // and its present() lands on nothing while it still reports itself open.
+      // Go hidden now and let the effect below present on the next commit.
+      phase.current = 'hidden';
+      setReopenTicket((ticket) => ticket + 1);
+      return;
+    }
+    phase.current = 'hidden';
     onClose();
   }, [onClose]);
 
   useEffect(() => {
-    if (visible) {
-      presentedRef.current = true;
+    if (visible && phase.current === 'hidden') {
+      phase.current = 'presented';
       ref.current?.present();
-    } else if (presentedRef.current) {
-      presentedRef.current = false;
+    } else if (!visible && phase.current === 'presented') {
+      phase.current = 'closing';
       ref.current?.close();
     }
-  }, [visible]);
+  }, [visible, reopenTicket]);
 
   return (
     <BottomSheetModal

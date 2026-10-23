@@ -13,6 +13,12 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   View: ({ children }: { children?: unknown }) => createElement('div', {}, children),
   ScrollView: ({ children }: { children?: unknown }) => createElement('div', {}, children),
+  TextInput: ({ value, onChangeText, accessibilityLabel }: { value?: string; onChangeText?: (value: string) => void; accessibilityLabel?: string }) =>
+    createElement('input', {
+      'aria-label': accessibilityLabel,
+      value: value ?? '',
+      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+    }),
 }));
 
 vi.mock('@/components/themed-text', () => ({
@@ -57,10 +63,31 @@ describe('the recovery phrase screen', () => {
     render(<RecoveryPhraseRoute />);
     await waitFor(() => expect(screen.getByText('Write these 24 words down')).toBeTruthy());
 
-    // Opening the screen is not confirmation.
-    expect(screen.queryByText('Saved.')).toBeNull();
+    // Opening the screen is not confirmation, and neither is the first tap:
+    // it only opens the two-word paper check.
+    expect(screen.queryByText(/Kept on paper/)).toBeNull();
     fireEvent.click(screen.getByText('I have written them down'));
-    await waitFor(() => expect(screen.getByText('Saved.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Check two words from your paper')).toBeTruthy());
+    expect(screen.queryByText(/Kept on paper/)).toBeNull();
+
+    // A wrong transcription is rejected with guidance, not confirmation.
+    for (const box of screen.getAllByRole('textbox')) {
+      fireEvent.change(box, { target: { value: 'nope' } });
+    }
+    fireEvent.click(screen.getByText('Confirm my paper copy'));
+    await waitFor(() => expect(screen.getByText(/does not match/)).toBeTruthy());
+    expect(screen.queryByText(/Kept on paper/)).toBeNull();
+
+    // The true words from the rendered list confirm.
+    for (const box of screen.getAllByRole('textbox')) {
+      const label = box.getAttribute('aria-label') ?? '';
+      const position = Number(/Word (\d+) from your paper copy/.exec(label)?.[1] ?? 0);
+      const listed = screen.getByLabelText(new RegExp(`^Word ${position} of 24: `));
+      const word = (listed.textContent ?? '').replace(/^\d+\. /, '');
+      fireEvent.change(box, { target: { value: word } });
+    }
+    fireEvent.click(screen.getByText('Confirm my paper copy'));
+    await waitFor(() => expect(screen.getByText(/Kept on paper/)).toBeTruthy());
   });
 
   it('says plainly when this device holds no phrase', async () => {

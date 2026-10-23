@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const updateEventSpy = vi.fn(async () => {});
 const backSpy = vi.fn();
@@ -56,7 +56,7 @@ const storedEvent = {
   isOwn: true,
 };
 
-const getEventById = vi.fn(async () => ({ ...storedEvent }));
+const getEventById = vi.fn(async (): Promise<typeof storedEvent | null> => ({ ...storedEvent }));
 
 beforeEach(() => {
   updateEventSpy.mockClear();
@@ -65,6 +65,52 @@ beforeEach(() => {
 });
 
 describe('EditCalendarEventScreen preservation', () => {
+  it('says a plan could not be loaded and offers a retry, instead of loading forever', async () => {
+    getEventById.mockResolvedValueOnce(null);
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    // A deleted or not-yet-synced plan used to sit on "Loading event…" with
+    // only Close, so the screen never told the reader anything.
+    await waitFor(() =>
+      expect(screen.getByText('Unable to load this event. Please try again.')).toBeTruthy(),
+    );
+    expect(screen.queryByText('Loading event…')).toBeNull();
+
+    fireEvent.click(screen.getByText('Try again'));
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    expect(getEventById).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks dismissal while a save is in flight', async () => {
+    let finish: () => void = () => {};
+    updateEventSpy.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }) as never,
+    );
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    fireEvent.click(screen.getByText('Save changes'));
+
+    // The guard covers the header back and the sheet's swipe, not only the
+    // buttons, so a in-flight write cannot be dropped mid-flight.
+    await waitFor(() =>
+      expect((globalThis as { __preventLeave?: { prevent: boolean } }).__preventLeave?.prevent).toBe(true),
+    );
+    await act(async () => finish());
+    await waitFor(() =>
+      expect((globalThis as { __preventLeave?: { prevent: boolean } }).__preventLeave?.prevent).toBe(false),
+    );
+  });
+
+
   it('keeps untouched reminder arrays instead of resetting them', async () => {
     const { default: EditCalendarEventScreen } = await import(
       '@/app/(app)/calendar/edit/[id]'
@@ -162,5 +208,58 @@ describe('EditCalendarEventScreen preservation', () => {
 
     await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
     expect(updateEventSpy.mock.calls[0][0].recurrence).toBe('weekly');
+  });
+
+  it('saves where the event happens, trimmed', async () => {
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Event location'), {
+      target: { value: '  Crystal Pavilion  ' },
+    });
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
+    expect(updateEventSpy.mock.calls[0][0].location).toBe('Crystal Pavilion');
+  });
+
+  it('clears the location to null when the field is emptied', async () => {
+    getEventById.mockResolvedValueOnce({ ...storedEvent, location: 'Old place' });
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    expect(screen.getByLabelText('Event location')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Event location'), {
+      target: { value: '   ' },
+    });
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
+    expect(updateEventSpy.mock.calls[0][0].location).toBeNull();
+  });
+
+  it('names the all-day control for what it is and explains an empty title', async () => {
+    const { default: EditCalendarEventScreen } = await import(
+      '@/app/(app)/calendar/edit/[id]'
+    );
+    render(<EditCalendarEventScreen />);
+
+    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
+    expect(screen.getByLabelText('All day')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Event title'), {
+      target: { value: '   ' },
+    });
+    fireEvent.click(screen.getByText('Save changes'));
+
+    await waitFor(() =>
+      expect(screen.getByText('Event title is required.')).toBeTruthy()
+    );
+    expect(updateEventSpy).not.toHaveBeenCalled();
   });
 });

@@ -63,8 +63,8 @@ export function ChapterCover({ chapter, width }: ChapterCoverProps) {
         <View style={styles.fallback}>
           <ThemedText type="display" style={styles.numeral}>
             {chapter.kind === 'monthly'
-              ? chapter.monthKey?.split('-')[1]
-              : String(chapter.anniversaryYear)}
+              ? (chapter.monthKey?.split('-')[1] ?? '')
+              : (chapter.anniversaryYear ?? '')}
           </ThemedText>
           <View style={[styles.rule, { backgroundColor: accentInk }]} />
           <ThemedText type="title" numberOfLines={2} style={styles.fallbackTitle}>

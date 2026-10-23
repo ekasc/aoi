@@ -40,6 +40,11 @@ const STORED_SESSION = JSON.stringify({
 
 const deleteAccountSpy = vi.fn();
 
+// What the calling screen's catch would receive. Reaching the caller at all is
+// the contract: it is how the screen knows to keep the user in place and show
+// the failure instead of silently dropping it.
+let lastDeleteError: unknown = null;
+
 function createAuthApiMock(): AuthApi {
   return {
     signInWithAppleIdToken: vi.fn(async () => ({ user: USER, tokens: { accessToken: '' } })),
@@ -53,9 +58,17 @@ function createAuthApiMock(): AuthApi {
 function DeleteProbe() {
   const { status, deleteAccount } = useSession();
   // Production callers (settings/space) await + catch; mirror that so a
-  // server failure never escapes as an unhandled rejection.
+  // server failure never escapes as an unhandled rejection, and record what
+  // the caller would have rendered.
   return (
-    <button data-testid="delete" onClick={() => void deleteAccount().catch(() => {})}>
+    <button
+      data-testid="delete"
+      onClick={() =>
+        void deleteAccount().catch((error: unknown) => {
+          lastDeleteError = error;
+        })
+      }
+    >
       {status}
     </button>
   );
@@ -71,6 +84,7 @@ function renderSession() {
 
 beforeEach(() => {
   setApiTokens(null);
+  lastDeleteError = null;
   deleteAccountSpy.mockReset();
   deleteAccountSpy.mockResolvedValue(undefined);
   secureStoreMock.getItemAsync.mockReset();
@@ -103,7 +117,7 @@ describe('deleteAccount lifecycle', () => {
     view.unmount();
   });
 
-  it('still signs out locally when the server delete fails', async () => {
+  it('keeps the session when the server delete fails, so the screen can show it', async () => {
     const authApi = createAuthApiMock();
     setAuthApi(authApi);
     deleteAccountSpy.mockRejectedValueOnce(new Error('network down'));
@@ -118,9 +132,15 @@ describe('deleteAccount lifecycle', () => {
       fireEvent.click(view.getByTestId('delete'));
     });
 
-    // Never trap the user in a half-deleted local session.
-    expect(secureStoreMock.deleteItemAsync).toHaveBeenCalledWith('aoi.session.v1');
-    expect(view.getByTestId('delete').textContent).toBe('signed_out');
+    // The account still exists, so this device stays signed in: tearing the
+    // session down on rejection ejected the user before the account screen
+    // could render the error, and left a live account behind a signed-out
+    // phone. Sign out is a separate, always-available row.
+    expect(view.getByTestId('delete').textContent).toBe('signed_in');
+    expect(secureStoreMock.deleteItemAsync).not.toHaveBeenCalled();
+    // The failure reaches the caller — the screen's catch is what turns it
+    // into "Failed to delete account. Please try again." with a retry.
+    expect(lastDeleteError).toBeInstanceOf(Error);
     view.unmount();
   });
 });

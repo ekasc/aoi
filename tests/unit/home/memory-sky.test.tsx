@@ -764,19 +764,20 @@ describe('MemorySky living aura (Us immersive sky)', () => {
     }
   });
 
-  it('warms the whole gradient for a letter, cools it for a question', () => {
+  it('cools the whole gradient when a question is waiting', () => {
     const [top, mid] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', null);
     expect([top, mid]).toEqual([LIGHT_SKY_TOP, LIGHT_SKY_MID]);
-    for (const glow of ['letter', 'question'] as const) {
-      const [warmTop, warmMid] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', glow);
-      expect(warmTop).toMatch(/^#[0-9a-f]{6}$/);
-      expect(warmMid).toMatch(/^#[0-9a-f]{6}$/);
-      expect(warmTop).not.toBe(LIGHT_SKY_TOP);
-      expect(warmMid).not.toBe(LIGHT_SKY_MID);
-    }
-    const [letterTop] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', 'letter');
-    const [questionTop] = moodSkyStops(LIGHT_SKY_TOP, LIGHT_SKY_MID, 'day', 'question');
-    expect(letterTop).not.toBe(questionTop);
+
+    const [questionTop, questionMid] = moodSkyStops(
+      LIGHT_SKY_TOP,
+      LIGHT_SKY_MID,
+      'day',
+      'question'
+    );
+    expect(questionTop).toMatch(/^#[0-9a-f]{6}$/);
+    expect(questionMid).toMatch(/^#[0-9a-f]{6}$/);
+    expect(questionTop).not.toBe(LIGHT_SKY_TOP);
+    expect(questionMid).not.toBe(LIGHT_SKY_MID);
   });
 
   it('paints the same star field whatever the sky is holding', () => {

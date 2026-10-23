@@ -1,5 +1,5 @@
-import { useAudioPlayer, type AudioPlayer } from 'expo-audio';
-import { useCallback, useEffect, useState } from 'react';
+import { useAudioPlayer, useAudioPlayerStatus, type AudioPlayer } from 'expo-audio';
+import { useCallback } from 'react';
 
 import { resolveStagedUri } from '@/features/composer/staged-uri';
 
@@ -45,13 +45,11 @@ export function formatPlaybackSeconds(value: number): string {
  */
 export function useVoicePlayback(uri: string): VoicePlayback {
   const player = useAudioPlayer(resolveStagedUri(uri));
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => setTick((value) => value + 1), 400);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Progress comes from the player's own status events, not a timer. The old
+  // 400 ms interval ran for every mounted player whether or not it was playing,
+  // which re-rendered idle rows several times a second and, on a long feed,
+  // kept the whole screen committing while nothing was happening.
+  const status = useAudioPlayerStatus(player);
 
   const toggle = useCallback(() => {
     if (player.playing) {
@@ -59,7 +57,6 @@ export function useVoicePlayback(uri: string): VoicePlayback {
     } else {
       player.play();
     }
-    setTick((value) => value + 1);
   }, [player]);
 
   const setPlaying = useCallback(
@@ -72,7 +69,6 @@ export function useVoicePlayback(uri: string): VoicePlayback {
       } else {
         player.pause();
       }
-      setTick((value) => value + 1);
     },
     [player],
   );
@@ -89,9 +85,9 @@ export function useVoicePlayback(uri: string): VoicePlayback {
     [player],
   );
 
-  const isPlaying = player.playing;
-  const duration = player.duration ?? 0;
-  const currentTime = player.currentTime ?? 0;
+  const isPlaying = status.playing;
+  const duration = status.duration || player.duration || 0;
+  const currentTime = status.currentTime ?? player.currentTime ?? 0;
 
   return {
     player,

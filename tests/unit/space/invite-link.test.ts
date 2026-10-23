@@ -14,7 +14,7 @@ describe('invite links', () => {
     // phone that will not run one, which is the person most likely to be
     // receiving an invite in the first place.
     expect(inviteAppLink('hqa bd7')).toBe('aoi://join?code=HQABD7');
-    expect(inviteWebLink('hqa bd7')).toBe('https://aoi.app/join?code=HQABD7');
+    expect(inviteWebLink('hqa bd7')).toBe('https://aoiapp.com/join?code=HQABD7');
   });
 
   it('says the code in the message, so a link that fails to open is not a dead end', () => {
@@ -42,7 +42,7 @@ describe('invite links', () => {
     // A code that kept its spaces, and a lower-cased one.
     expect(inviteCodeFromLink('aoi://join?code=hq%20abd7')).toBe('HQABD7');
     // A redirect that flattened the query into the path.
-    expect(inviteCodeFromLink('https://aoi.app/join/HQABD7')).toBe('HQABD7');
+    expect(inviteCodeFromLink('https://aoiapp.com/join/HQABD7')).toBe('HQABD7');
   });
 
   it('ignores links that are not ours, and links with no code in them', () => {

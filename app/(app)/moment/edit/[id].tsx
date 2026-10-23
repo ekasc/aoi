@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -14,6 +14,7 @@ import { Spacing } from "@/constants/theme";
 import { useMoments } from "@/features/moments/moments-context";
 import { useMoment } from "@/features/moments/use-moment";
 import { isOwnMoment } from "@/features/moments/ownership";
+import type { Moment } from "@/features/moments/types";
 import { useThemeColor } from "@/hooks/use-theme-color";
 
 export default function EditMomentScreen() {
@@ -23,7 +24,12 @@ export default function EditMomentScreen() {
 	const momentId = Array.isArray(id) ? id[0] : id;
 	const atHint = Array.isArray(at) ? at[0] : at;
 	const { isLoading: contextLoading } = useMoments();
-	const { moment, isLoading: momentLoading } = useMoment(momentId, atHint ?? null);
+	const { moment: currentMoment, isLoading: momentLoading } = useMoment(momentId, atHint ?? null);
+	const [openedMoment, setOpenedMoment] = useState<Moment | null>(currentMoment);
+	if (currentMoment && openedMoment?.id !== currentMoment.id) {
+		setOpenedMoment(currentMoment);
+	}
+	const moment = openedMoment?.id === momentId ? openedMoment : currentMoment;
 	const { updateMoment } = useMoments();
 	const background = useThemeColor({}, "background");
 	const muted = useThemeColor({}, "muted");
@@ -39,15 +45,23 @@ export default function EditMomentScreen() {
 			if (!moment) {
 				return;
 			}
+			if (!values.expectedUpdatedAt) {
+				throw new Error('Reopen this memory before trying again.');
+			}
 
 			await updateMoment(moment.id, {
+				expectedUpdatedAt: values.expectedUpdatedAt,
 				type: values.type,
 				title: values.title,
 				body: values.body,
+				occurredAt: values.occurredAt,
 				targetAt: values.targetAt,
 				mediaPreview: values.mediaPreview,
 				audioUri: values.audioUri,
 				mediaId: values.mediaId,
+				// The form supplies the ordered set only when the photo grid
+				// changed; otherwise the stored set is left alone.
+				attachments: values.attachments,
 			});
 			router.back();
 		},
@@ -126,11 +140,12 @@ export default function EditMomentScreen() {
 		<>
 			<Stack.Screen options={{ title: "Edit moment" }} />
 			<MomentForm
+				key={moment.id}
 				heroSubtitle="The memory stays; the words can change."
 				initialMoment={moment}
 				onCancel={handleCancel}
 				onSubmit={handleSubmit}
-				submitLabel="Save changes"
+				submitLabel="Keep changes"
 				submittingLabel="Saving…"
 			/>
 		</>

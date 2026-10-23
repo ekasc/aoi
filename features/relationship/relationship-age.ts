@@ -58,8 +58,6 @@ export type RelationshipCopy = {
   memoryBody: string;
   memoryButton: string;
   planEmpty: string;
-  letterIntro: string;
-  letterPlaceholder: string;
   reflectionIntro: string;
 };
 
@@ -87,8 +85,6 @@ export function relationshipCopy(tone: RelationshipTone): RelationshipCopy {
       memoryBody: 'A photo, a few lines, or a short recording can hold onto what you are discovering together.',
       memoryButton: 'Keep something from today',
       planEmpty: 'Make room for something new to try together.',
-      letterIntro: 'Write something they can discover about you on a future day.',
-      letterPlaceholder: "Write it as if they'll read it on that day…",
       reflectionIntro: 'One question this week, answer whenever you like. A small way to learn each other.',
     };
   }
@@ -98,8 +94,6 @@ export function relationshipCopy(tone: RelationshipTone): RelationshipCopy {
       memoryBody: 'Bring in a favorite memory or keep something from today. Your story can start wherever you are.',
       memoryButton: 'Keep something from today',
       planEmpty: 'Make room to appreciate each other or revisit something you love.',
-      letterIntro: 'Write something they will be glad to find on a future day.',
-      letterPlaceholder: "Write what you want to remember about this season together…",
       reflectionIntro: 'One question this week, answer whenever you like. A small way to notice each other.',
     };
   }
@@ -108,8 +102,6 @@ export function relationshipCopy(tone: RelationshipTone): RelationshipCopy {
     memoryBody: 'A photo, a few lines, or a short recording, kept just for the two of you.',
     memoryButton: 'Keep your first memory',
     planEmpty: 'Make room for something you would like to do together.',
-    letterIntro: 'Write it now; they’ll open it on the day you choose.',
-    letterPlaceholder: "Write it as if they'll read it on that day…",
     reflectionIntro: 'One question this week, answer whenever you like.',
   };
 }

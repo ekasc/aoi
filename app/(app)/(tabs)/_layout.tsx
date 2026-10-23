@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { StyleSheet, View } from 'react-native';
 
 import { FontFamilies } from '@/constants/typography';
 import { useAoiTheme } from '@/features/theme/theme-context';
@@ -14,12 +15,15 @@ export default function TabsLayout() {
   const { entry } = useSkyEntry();
 
   return (
-    <NativeTabs
+    <View style={styles.root}>
+      <NativeTabs
       hidden={entry !== null && entry.kind !== 'fading'}
       tintColor={colors.accent}
-      // iOS 26 liquid-glass behavior: the bar minimizes as you scroll down
-      // and comes back when you scroll up, keeping focus on content.
-      minimizeBehavior="onScrollDown"
+      // Pinned. iOS 26 can minimize the bar on scroll, but every minimize
+      // and expand resizes the content area (and the safe-area insets every
+      // tab pads against), so scrolling — and switching tabs mid-scroll —
+      // visibly jumps the content. Stability wins over the extra room.
+      minimizeBehavior="never"
       labelStyle={{
         fontFamily: FontFamilies.body,
         fontSize: 12,
@@ -46,16 +50,16 @@ export default function TabsLayout() {
       <NativeTabs.Trigger name="together" contentStyle={{ backgroundColor: colors.background }}>
         <NativeTabs.Trigger.Label>Us</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'envelope', selected: 'envelope.fill' }}
+          sf={{ default: 'sparkles', selected: 'sparkles' }}
           src={{
             default: (
               <NativeTabs.Trigger.VectorIcon
                 family={Ionicons}
-                name="mail-outline"
+                name="sparkles-outline"
               />
             ),
             selected: (
-              <NativeTabs.Trigger.VectorIcon family={Ionicons} name="mail" />
+              <NativeTabs.Trigger.VectorIcon family={Ionicons} name="sparkles" />
             ),
           }}
         />
@@ -109,5 +113,10 @@ export default function TabsLayout() {
         porting it to RN first, not un-deleting this.
       */}
     </NativeTabs>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

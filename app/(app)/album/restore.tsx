@@ -28,6 +28,8 @@ export default function RestoreRoute() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const text = useThemeColor({}, 'text');
+  const muted = useThemeColor({}, 'muted');
+  const danger = useThemeColor({}, 'danger');
   const border = useThemeColor({}, 'border');
   const surface2 = useThemeColor({}, 'surface2');
 
@@ -72,7 +74,7 @@ export default function RestoreRoute() {
           numberOfLines={4}
           onChangeText={setValue}
           placeholder="word one word two …"
-          placeholderTextColor={text}
+          placeholderTextColor={muted}
           style={[styles.input, { borderColor: border, backgroundColor: surface2, color: text }]}
           value={value}
         />
@@ -80,7 +82,7 @@ export default function RestoreRoute() {
           {`${wordCount} of ${RECOVERY_WORDS} words`}
         </ThemedText>
         {error ? (
-          <ThemedText type="body" accessibilityRole="alert" style={styles.error}>
+          <ThemedText type="body" accessibilityRole="alert" style={[styles.error, { color: danger }]}>
             {error}
           </ThemedText>
         ) : null}
@@ -99,7 +101,7 @@ const styles = StyleSheet.create({
   page: { flex: 1 },
   content: { gap: Spacing[12], padding: Spacing[24] },
   muted: { opacity: 0.7 },
-  error: { color: '#b3261e' },
+  error: {},
   input: {
     borderRadius: Spacing[8],
     borderWidth: StyleSheet.hairlineWidth,

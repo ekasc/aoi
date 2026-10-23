@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { CoverPicker } from '@/components/media/cover-picker';
@@ -79,15 +79,17 @@ export function ItemForm({
   const [score, setScore] = useState<number | null>(initial.score ?? null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savingRef = useRef(false);
 
   const danger = useThemeColor({}, 'danger');
   const canSubmit = title.trim().length > 0 && !isSaving;
 
   const handleSubmit = async () => {
-    if (!canSubmit) {
+    if (!canSubmit || savingRef.current) {
       return;
     }
 
+    savingRef.current = true;
     setError(null);
     setIsSaving(true);
 
@@ -102,8 +104,9 @@ export function ItemForm({
       });
     } catch {
       // Keep the draft: a failed write must not cost the reader their words.
-      setError("Couldn't save this thing. Your draft is still here.");
+      setError("Couldn't save this item. Your draft is still here.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };

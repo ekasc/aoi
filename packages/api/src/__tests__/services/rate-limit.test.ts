@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { describe, expect, it } from 'vitest';
 
 import type { RateLimitBinding } from '../../env';
-import { RateLimiter, enforce, makeRateLimiterService } from '../../services/rate-limit';
+import { RateLimiter, consume, enforce, makeRateLimiterService } from '../../services/rate-limit';
 import { TooManyRequestsError } from '../../domains/errors';
 
 async function runEnforce(limiter: ReturnType<typeof makeRateLimiterService>): Promise<unknown> {
@@ -12,11 +12,11 @@ async function runEnforce(limiter: ReturnType<typeof makeRateLimiterService>): P
 }
 
 describe('rate limiter dev fallback', () => {
-  it('is permissive (never blocks) and reports reset counters', async () => {
-    const limiter = makeRateLimiterService(() => undefined);
+  it('permits a missing local binding only when explicitly requested', async () => {
+    const limiter = makeRateLimiterService(() => undefined, { allowMissingBinding: true });
     const first = await limiter.consume('GENERAL', 'user-1');
     expect(first.success).toBe(true);
-    expect(first.reset).toBeTypeOf('number');
+    expect(first.reset).toBeNull();
     const second = await limiter.consume('GENERAL', 'user-1');
     expect(second.success).toBe(true);
   });
@@ -47,12 +47,12 @@ describe('rate limiter binding wrapper', () => {
     expect(await limiter.consume('GENERAL', 'blocked')).toEqual({ success: false, reset: 60, remaining: 0 });
   });
 
-  it('fails open when the binding throws (enforcement must never break a request)', async () => {
+  it('denies when the binding provider throws', async () => {
     const limiter = makeRateLimiterService(() => {
       throw new Error('binding unavailable');
     });
     const decision = await limiter.consume('GENERAL', 'x');
-    expect(decision.success).toBe(true);
+    expect(decision.success).toBe(false);
   });
 
   it('enforce maps denial to TooManyRequestsError', async () => {
@@ -71,5 +71,26 @@ describe('rate limiter binding wrapper', () => {
     const limiter = makeRateLimiterService(() => binding);
     const result = await runEnforce(limiter);
     expect(result).toEqual({ success: true, reset: 60, remaining: 50 });
+  });
+});
+
+
+describe('rate limiter failure boundaries', () => {
+  it('denies missing bindings by default', async () => {
+    const limiter = makeRateLimiterService(() => undefined);
+    expect(await runEnforce(limiter)).toBeInstanceOf(TooManyRequestsError);
+  });
+
+  it('denies a rejected binding even when local missing bindings are permitted', async () => {
+    const limiter = makeRateLimiterService(() => ({ limit: async () => { throw new Error('unavailable'); } }), { allowMissingBinding: true });
+    expect(await runEnforce(limiter)).toBeInstanceOf(TooManyRequestsError);
+  });
+
+  it('denies unexpected service failures instead of bypassing enforcement', async () => {
+    const decision = await Effect.runPromise(Effect.provideService(
+      consume('AUTH', 'ip'), RateLimiter,
+      { consume: async () => { throw new Error('service failed'); } }
+    ));
+    expect(decision.success).toBe(false);
   });
 });

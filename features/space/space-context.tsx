@@ -3,10 +3,13 @@ import {
 	useCallback,
 	useContext,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
+	useRef,
 	useState,
 	type PropsWithChildren,
 } from "react";
+import { AppState } from "react-native";
 
 import { useSession } from "@/features/session/session-context";
 import { getSpaceRepository } from "@/features/space/space-repository";
@@ -31,11 +34,17 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 	const [status, setStatus] = useState<SpaceStatus>("loading");
 	const [space, setSpace] = useState<RelationshipSpace | null>(null);
 	const [isHydrated, setIsHydrated] = useState(false);
+	const activeUser = useRef(sessionStatus === 'signed_in' ? user?.id : undefined);
+	useLayoutEffect(() => {
+		activeUser.current = sessionStatus === 'signed_in' ? user?.id : undefined;
+		return () => { activeUser.current = undefined; };
+	}, [sessionStatus, user?.id]);
 
 	useEffect(() => {
 		let isActive = true;
 
 		if (sessionStatus === "loading") {
+			// eslint-disable-next-line react-hooks/set-state-in-effect -- Clear session-dependent data before a different account hydrates.
 			setStatus("loading");
 			setSpace(null);
 			setIsHydrated(false);
@@ -163,15 +172,24 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 			return;
 		}
 
-		try {
-			const nextSpace = await repository.getSpaceForUser(user.id);
-			setSpace(nextSpace);
-			setStatus(nextSpace ? "ready" : "none");
-		} catch {
-			// Keep what we have. A failed re-read must not empty a space the
-			// reader is standing in.
-		}
+		// Failed reads leave the current space intact and reach the calling UI.
+		const nextSpace = await repository.getSpaceForUser(user.id);
+		if (activeUser.current !== user.id) return;
+		setSpace(nextSpace);
+		setStatus(nextSpace ? "ready" : "none");
 	}, [repository, user]);
+
+	useEffect(() => {
+		if (sessionStatus !== 'signed_in' || !user) return;
+		let previous = AppState.currentState;
+		const subscription = AppState.addEventListener('change', (next) => {
+			if (next === 'active' && previous !== 'active') {
+				void refreshSpace().catch(() => undefined);
+			}
+			previous = next;
+		});
+		return () => subscription.remove();
+	}, [refreshSpace, sessionStatus, user]);
 
 	const value = useMemo<SpaceContextValue>(
 		() => ({

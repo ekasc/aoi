@@ -14,6 +14,7 @@ import {
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
 import { useSpace } from '@/features/space/space-context';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 /**
  * Devices asking to join, and the one place approval happens.
@@ -32,6 +33,7 @@ type View_ =
 
 export default function DevicesRoute() {
   const router = useRouter();
+  const danger = useThemeColor({}, 'danger');
   const { space } = useSpace();
   const spaceId = space?.id;
   const [state, setState] = useState<View_>({ kind: 'loading' });
@@ -108,7 +110,7 @@ export default function DevicesRoute() {
 
         {state.kind === 'unavailable' ? (
           <>
-            <ThemedText type="body" accessibilityRole="alert" style={styles.error}>
+            <ThemedText type="body" accessibilityRole="alert" style={[styles.error, { color: danger }]}>
               {state.message}
             </ThemedText>
             <Button label="Try again" disabled={busy} onPress={() => void load()} />
@@ -139,6 +141,10 @@ export default function DevicesRoute() {
             ) : (
               <>
                 <ThemedText type="subheading">Waiting to join</ThemedText>
+                <ThemedText type="body" style={styles.muted}>
+                  Only approve a request you have compared aloud — the
+                  characters identify the phone, not the person.
+                </ThemedText>
                 {state.claims.map((candidate) => (
                   <Button
                     key={candidate.deviceId}
@@ -169,7 +175,7 @@ export default function DevicesRoute() {
                   </ThemedText>
                 </View>
                 {error ? (
-                  <ThemedText type="body" accessibilityRole="alert" style={styles.error}>
+                  <ThemedText type="body" accessibilityRole="alert" style={[styles.error, { color: danger }]}>
                     {error}
                   </ThemedText>
                 ) : null}
@@ -201,6 +207,6 @@ const styles = StyleSheet.create({
   page: { flex: 1 },
   content: { gap: Spacing[12], padding: Spacing[24] },
   muted: { opacity: 0.7 },
-  error: { color: '#b3261e' },
+  error: {},
   fingerprint: { paddingVertical: Spacing[16] },
 });

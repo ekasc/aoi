@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 
 import type { Collection } from '@/features/collections/types';
 
 const mocks = vi.hoisted(() => ({
   back: vi.fn(),
   push: vi.fn(),
+  dismissTo: vi.fn(),
   updateCollection: vi.fn(),
+  deleteCollection: vi.fn(),
 }));
 
 const state = vi.hoisted(() => ({
@@ -19,11 +22,13 @@ vi.mock('@/features/collections/collections-context', () => ({
     collections: state.collections,
     isLoading: state.isLoading,
     updateCollection: mocks.updateCollection,
+    deleteCollection: mocks.deleteCollection,
   }),
 }));
 
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: mocks.push, back: mocks.back }),
+  useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
+  useRouter: () => ({ push: mocks.push, back: mocks.back, dismissTo: mocks.dismissTo }),
   useLocalSearchParams: () => ({ id: 'shelf-1' }),
   Stack: { Screen: () => null },
 }));
@@ -53,6 +58,7 @@ beforeEach(() => {
   state.collections = [makeCollection()];
   state.isLoading = false;
   mocks.updateCollection.mockResolvedValue(makeCollection());
+  mocks.deleteCollection.mockResolvedValue(undefined);
 });
 
 describe('Edit list', () => {
@@ -100,5 +106,34 @@ describe('Edit list', () => {
     render(<EditListScreen />);
 
     expect(screen.getByText('List not found')).toBeTruthy();
+  });
+});
+
+describe('Edit list removal', () => {
+  it('removes the list after a confirmation, then leaves to the shelves', async () => {
+    render(<EditListScreen />);
+
+    fireEvent.click(screen.getByText('Remove list'));
+    expect(
+      await screen.findByText(/This removes the list and everything in it for both of you/)
+    ).toBeTruthy();
+    expect(mocks.deleteCollection).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('Confirm remove Films to watch'));
+    await waitFor(() => expect(mocks.deleteCollection).toHaveBeenCalledWith('shelf-1'));
+    await waitFor(() => expect(mocks.dismissTo).toHaveBeenCalledWith('/(app)/(tabs)/ours'));
+  });
+
+  it('keeps the list when its removal fails, so it can be retried', async () => {
+    mocks.deleteCollection.mockRejectedValueOnce(new Error('offline'));
+    render(<EditListScreen />);
+
+    fireEvent.click(screen.getByText('Remove list'));
+    fireEvent.click(screen.getByLabelText('Confirm remove Films to watch'));
+
+    expect(
+      await screen.findByText("Couldn't remove this list. Please try again.")
+    ).toBeTruthy();
+    expect(mocks.dismissTo).not.toHaveBeenCalled();
   });
 });

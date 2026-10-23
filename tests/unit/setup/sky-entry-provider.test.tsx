@@ -144,4 +144,23 @@ describe('Memories sky entry', () => {
     expect(timing).not.toHaveBeenCalled();
     expect(haptics.soft).not.toHaveBeenCalled();
   });
+
+  it('drops an in-flight entry when the account changes, without remounting', () => {
+    // The regression: the provider carried a `key` of the user id, so every
+    // login and logout remounted the entire navigation stack underneath the
+    // transition. The entry must reset in place instead.
+    function KeyedHarness({ userId }: { userId: string | null }) {
+      return createElement(SkyEntryProvider, { userId }, createElement(Harness));
+    }
+    const view = render(createElement(KeyedHarness, { userId: 'user-1' }));
+    fireEvent.click(screen.getByText('Prepare'));
+    expect(screen.getByTestId('phase').textContent).toBe('arriving');
+    view.rerender(createElement(KeyedHarness, { userId: 'user-2' }));
+    expect(screen.getByTestId('phase').textContent).toBe('home');
+    // Same account again: nothing to drop, the entry stays where it is.
+    fireEvent.click(screen.getByText('Prepare'));
+    expect(screen.getByTestId('phase').textContent).toBe('arriving');
+    view.rerender(createElement(KeyedHarness, { userId: 'user-2' }));
+    expect(screen.getByTestId('phase').textContent).toBe('arriving');
+  });
 });

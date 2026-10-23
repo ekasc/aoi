@@ -271,26 +271,13 @@ describe('Ours tab waiting state', () => {
     fireEvent.click(screen.getByLabelText('New list'));
     expect(pushSpy).toHaveBeenCalledWith('/(app)/collection/new');
   });
-  it('expired waiting state offers regeneration, never a dead code', async () => {
-    mockSpace = waitingSpace({ inviteCode: '', inviteExpiresAt: null });
-    await renderOurs();
-
-    expect(screen.getByText(/no longer active/)).toBeTruthy();
-    expect(screen.queryByText('Share invite')).toBeNull();
-    await act(async () => {
-      fireEvent.click(screen.getByText('New invite code'));
-    });
-    expect(regenerateInviteSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('shares the invite through the system sheet', async () => {
+  it('carries no invite chrome — the floating tag owns it', async () => {
     mockSpace = waitingSpace();
-    await renderOurs();
+    const { container } = await renderOurs();
 
-    fireEvent.click(screen.getByText('Share invite'));
-    expect(shareSpy).toHaveBeenCalledTimes(1);
-    expect(shareSpy).toHaveBeenCalledWith({ message: expect.stringContaining('aoi://join?code=ABC123') });
-    expect(shareSpy).toHaveBeenCalledWith({ message: expect.stringContaining('A B C 1 2 3') });
+    expect(screen.queryByText('Invite pending')).toBeNull();
+    expect(screen.queryByText('Invite expired')).toBeNull();
+    expect(container.textContent).not.toMatch(/Waiting for your partner/);
   });
 
   it('loading and failed reads are distinct from the empty shelves state', async () => {
@@ -318,9 +305,10 @@ describe('Account relationship', () => {
     expect(screen.getByText('Not added yet')).toBeTruthy();
     expect(screen.getByText('Not set')).toBeTruthy();
     expect(screen.getByText('Edit relationship')).toBeTruthy();
-    // The invite is surfaced on Ours while waiting, not repeated here.
+    // The invite lives on Ours while waiting, not repeated here.
     expect(screen.queryByText('Share invite')).toBeNull();
     expect(screen.queryByText('New invite code')).toBeNull();
+    expect(screen.queryByText('Invite pending')).toBeNull();
     expect(screen.queryByText('ABC123')).toBeNull();
   });
 
@@ -341,7 +329,7 @@ describe('Account Plus usage', () => {
     mockSpace = waitingSpace();
     await renderAccount();
 
-    expect(screen.getByText(/Free Space, 250 MiB media, 1 future letter/)).toBeTruthy();
+    expect(screen.getByText(/Free Space, 250 MiB of media\./)).toBeTruthy();
   });
 
   it('shows active Plus usage from server state', async () => {

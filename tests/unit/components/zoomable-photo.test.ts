@@ -341,17 +341,12 @@ describe('gesture and transition contracts (source)', () => {
     expect(photo).not.toMatch(/const \w+ = \([^)]*\) => \{\n\s*'worklet'/);
   });
 
-  it('closes on a spring that carries the release velocity, not on a timer', () => {
-    // The dismiss springs the progress home and closes when it settles; the
-    // velocity is the hand's, so there is no stall before it moves.
-    expect(photo).toMatch(/withSpring\(\s*1,[\s\S]{0,240}runOnJS\(onDismiss\)/);
-    expect(photo).toContain('velocity: progressVelocityFor(');
+  it('closes on animation completion, not on a parallel timer', () => {
+    expect(photo).toMatch(/withTiming\(\s*1,[\s\S]{0,300}runOnJS\(onDismiss\)/);
     expect(photo).not.toMatch(/setTimeout\([\s\S]{0,80}onDismiss/);
   });
 
   it('presents from real geometry, and never leaves a modal that eats touches', () => {
-    // The Modal must not fade on its own, or the zoom and the fade fight.
-    expect(viewer).toContain('animationType="none"');
     // The overlay waits for the viewer's layout AND the clip box's layout, so
     // the zoom starts against geometry React has committed.
     // A video or voice page has no clip box to wait for, so the gate only
@@ -395,8 +390,7 @@ describe('gesture and transition contracts (source)', () => {
     for (const name of ['shellStyle', 'cropStyle', 'zoomStyle']) {
       expect(photo).toContain(`${name} = useAnimatedStyle(`);
     }
-    expect(photo).toMatch(/cropStyle = useAnimatedStyle\(\(\) => \(\{/);
-    expect(photo).toContain('scale: 1 + ((geometry?.coverScale ?? 1) - 1) * morph.t.get()');
+    // The combined image scale is exercised by zoomable-photo-interactions.
     // The gesture surface stays the whole window, not the shrinking box.
     expect(photo).toMatch(/<View style=\{styles\.surface\}>/);
     expect(photo).toMatch(/centerLayer/);

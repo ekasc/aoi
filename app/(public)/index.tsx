@@ -1,7 +1,7 @@
 import { useIsFocused, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useMemo } from 'react';
-import { Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ProviderAuthActions } from '@/components/auth/provider-auth-actions';
@@ -71,57 +71,49 @@ export default function LandingScreen() {
     <View style={[styles.root, { backgroundColor: theme.background }]}>
       <StatusBar style="light" />
       <MidnightBackdrop focused={focused} />
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
+      <View
+        style={[
+          styles.content,
           {
             paddingTop: insets.top + Spacing[24],
             paddingBottom: insets.bottom + Spacing[24],
           },
         ]}
-        contentInsetAdjustmentBehavior="never"
-        showsVerticalScrollIndicator={false}
-        style={styles.scroll}
       >
-        <View style={styles.content}>
-          <ImmersiveHero
-            theme={theme}
-            cta={
-              <ProviderAuthActions
-                showHelper={false}
-                appearance={{
-                  colorScheme: 'dark',
-                  helperColor: theme.subtle,
-                  googleBorderColor: theme.border,
-                  errorColor: LANDING_ERROR,
-                }}
-                onSuccess={() => router.replace('/')}
-              />
-            }
-            legal={
-              <ThemedText type="caption" style={{ color: theme.subtle }}>
-                {'By continuing, you agree to our '}
-                {legalLink('Privacy Policy', legal.privacyUrl)}
-                {' and '}
-                {legalLink('Terms of Service', legal.termsUrl)}
-                {'.'}
-              </ThemedText>
-            }
-          />
-        </View>
-      </ScrollView>
+        <ImmersiveHero
+          theme={theme}
+          cta={
+            <ProviderAuthActions
+              showHelper={false}
+              appearance={{
+                colorScheme: 'dark',
+                helperColor: theme.subtle,
+                googleBorderColor: theme.border,
+                errorColor: LANDING_ERROR,
+              }}
+              onSuccess={() => router.replace('/')}
+            />
+          }
+          legal={
+            <ThemedText type="caption" style={{ color: theme.subtle }}>
+              {'By continuing, you agree to our '}
+              {legalLink('Privacy Policy', legal.privacyUrl)}
+              {' and '}
+              {legalLink('Terms of Service', legal.termsUrl)}
+              {'.'}
+            </ThemedText>
+          }
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scroll: { flex: 1 },
-  scrollContent: { flexGrow: 1 },
   content: {
     alignSelf: 'center',
     flex: 1,
-    flexGrow: 1,
     maxWidth: MEASURE_MAX_WIDTH,
     paddingHorizontal: Spacing[24],
     width: '100%',

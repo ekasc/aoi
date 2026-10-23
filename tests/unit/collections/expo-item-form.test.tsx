@@ -66,7 +66,7 @@ describe('Expo UI item form event contract', () => {
     form(submit);
     fireEvent.change(screen.getByLabelText('Edit title'), { target: { value: 'My draft' } });
     fireEvent.click(screen.getByLabelText('Save'));
-    await screen.findByText("Couldn't save this thing. Your draft is still here.");
+    await screen.findByText("Couldn't save this item. Your draft is still here.");
     expect((screen.getByLabelText('Edit title') as HTMLInputElement).value).toBe('My draft');
     fireEvent.click(screen.getByLabelText('Save'));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));

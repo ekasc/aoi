@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
@@ -6,12 +6,15 @@ import {
   bucketSummaryQuerySchema,
   bucketSummaryResponseSchema,
   createMomentRequestSchema,
+  deleteMomentRequestSchema,
   listMomentsQuerySchema,
   markMomentsReadRequestSchema,
   markMomentsReadResponseSchema,
   momentIdParamSchema,
   momentSchema,
   momentListResponseSchema,
+  reconcileMomentsRequestSchema,
+  reconcileMomentsResponseSchema,
   spaceActivityResponseSchema,
   timelineQuerySchema,
   timelineResponseSchema,
@@ -28,6 +31,7 @@ import {
   listMomentsProgram,
   listTimelineProgram,
   markMomentsReadProgram,
+  reconcileMomentsProgram,
   updateMomentProgram,
 } from '../domains/moments';
 import { listActivityProgram } from '../domains/activity';
@@ -46,6 +50,14 @@ export function momentsRouter(run: RunProgram): Hono {
   const router = new Hono();
   const requireAuth = makeAuthMiddleware(run);
   const rateLimitGeneral = makeRateLimitMiddleware(run, 'GENERAL');
+  const requireJsonBody: MiddlewareHandler = async (c, next) => {
+    try {
+      await c.req.json();
+    } catch {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON body' } }, 400);
+    }
+    await next();
+  };
 
   // ── List moments (keyset pagination) ─────────────────────────────────
   router.get(
@@ -56,6 +68,17 @@ export function momentsRouter(run: RunProgram): Hono {
     async (c) => {
       const result = await run(listMomentsProgram(c.var.userId, c.req.valid('query')));
       return c.json(momentListResponseSchema.parse(result));
+    }
+  );
+
+  router.post(
+    '/v1/spaces/current/moments/reconcile',
+    requireAuth,
+    rateLimitGeneral,
+    zValidator('json', reconcileMomentsRequestSchema),
+    async (c) => {
+      const result = await run(reconcileMomentsProgram(c.var.userId, c.req.valid('json')));
+      return c.json(reconcileMomentsResponseSchema.parse(result));
     }
   );
 
@@ -117,6 +140,7 @@ export function momentsRouter(run: RunProgram): Hono {
     requireAuth,
     rateLimitGeneral,
     zValidator('param', momentIdParamSchema),
+    requireJsonBody,
     zValidator('json', updateMomentRequestSchema),
     async (c) => {
       const { id } = c.req.valid('param');
@@ -131,9 +155,11 @@ export function momentsRouter(run: RunProgram): Hono {
     requireAuth,
     rateLimitGeneral,
     zValidator('param', momentIdParamSchema),
+    requireJsonBody,
+    zValidator('json', deleteMomentRequestSchema),
     async (c) => {
       const { id } = c.req.valid('param');
-      const result = await run(deleteMomentProgram(c.var.userId, id));
+      const result = await run(deleteMomentProgram(c.var.userId, id, c.req.valid('json')));
       return c.json(result);
     }
   );

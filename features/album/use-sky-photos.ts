@@ -14,7 +14,6 @@ import {
   ProtocolUploadInterrupted,
   establishProtocolArchive,
   readProtocolArchive,
-  removeProtocolPhoto,
   uploadProtocolPhoto,
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
@@ -324,41 +323,33 @@ export function useSkyPhotos() {
     }
   }, [scopeKey, stored.scopeKey, stored.status, stored.revision, revision]);
 
-  const removePhoto = useCallback(async (id: string) => {
+  // Only this phone's cached copy leaves. The shared record — and therefore
+  // the partner's copy and the photo in their sky — is untouched, which is
+  // what the "Local photo copies" screen promises. Deleting from the shared
+  // album is a different act and is not offered from here.
+  const removeLocalCopy = useCallback(async (id: string) => {
     const bundle = bundleRef.current;
     if (!bundle || bundle.scopeKey !== scopeKey || operationRef.current === scopeKey) return;
     operationRef.current = scopeKey;
     setOperation({ scopeKey, kind: 'removing' });
     setActionError(null);
     try {
-      const protocolRevision = bundle.protocolRevisions.get(id);
-      if (bundle.protocol && protocolRevision !== undefined) {
-        await removeProtocolPhoto(bundle.protocol, { mediaId: id, manifestRevision: protocolRevision });
-      } else if (bundle.session) {
-        await bundle.session.client.remove(id);
-      } else {
-        throw new Error('The shared album is not ready');
-      }
       await bundle.store.removeCached(id);
-      if (currentScope.current === scopeKey) setStored((previous) => ({ ...previous, photos: previous.photos.filter((photo) => photo.id !== id) }));
-    } catch {
       if (currentScope.current === scopeKey) {
-        setActionError({ scopeKey, message: REMOVE_ERROR });
-        try {
-          const { photos } = await loadBundlePhotos(bundle, shownRef.current);
-          if (currentScope.current === scopeKey) {
-            shownRef.current = new Map(photos.map((photo) => [photo.id, photo]));
-            setStored({ scopeKey, photos, status: 'ready', error: null, revision });
-          }
-        } catch {
-          if (currentScope.current === scopeKey) setStored((previous) => ({ ...previous, status: 'failed', error: READ_ERROR }));
-        }
+        setStored((previous) => ({
+          ...previous,
+          photos: previous.photos.map((photo) =>
+            photo.id === id ? { ...photo, uri: null } : photo,
+          ),
+        }));
       }
+    } catch {
+      if (currentScope.current === scopeKey) setActionError({ scopeKey, message: REMOVE_ERROR });
     } finally {
       if (operationRef.current === scopeKey) operationRef.current = null;
       setOperation((current) => current?.scopeKey === scopeKey ? null : current);
     }
-  }, [scopeKey, revision]);
+  }, [scopeKey]);
 
   const sameScope = stored.scopeKey === scopeKey && scopeKey !== null;
   return {
@@ -371,6 +362,6 @@ export function useSkyPhotos() {
     scopeKey,
     reload,
     choosePhotos,
-    removePhoto,
+    removeLocalCopy,
   };
 }

@@ -1,45 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { useCollections } from '@/features/collections/collections-context';
-import type {
-  Collection,
-  CollectionItem,
-  CollectionStatus,
-} from '@/features/collections/types';
-
-/** What a list looks like from the outside: its first covers and its make-up. */
-export type ListPreview = {
-  /** Up to three covers, in list order; null where a thing has no photo. */
-  covers: (string | null)[];
-  /** The same three things' titles, for the placeholder initials. */
-  titles: string[];
-  counts: Record<CollectionStatus, number>;
-  total: number;
-};
-
-const EMPTY_PREVIEW: ListPreview = {
-  covers: [],
-  titles: [],
-  counts: { want: 0, doing: 0, done: 0 },
-  total: 0,
-};
+import { EMPTY_COLLECTION_PREVIEW } from '@/features/collections/collection-preview';
+import type { Collection, CollectionPreview } from '@/features/collections/types';
 
 /**
  * A preview of every list, for the Ours screen.
  *
  * Ours has to show what is inside each list without opening it, which the list
- * count alone cannot do. Reads each list once, keyed by the id set so a reorder
- * does not refetch.
+ * count alone cannot do. The whole set is asked for in one call: reading the
+ * store once per list made this screen cost one full parse of the collections
+ * document for every shelf on it.
  *
- * Known cost: this is one read per list. Fine for a handful of lists on a local
- * store; if a pair keeps many, the server should return the preview with the
- * list itself rather than N round trips.
+ * Keyed by the id set so a reorder, which does not change any id, still serves
+ * the previews already held.
  */
-export function useListPreviews(collections: Collection[]): Record<string, ListPreview> {
-  const { listItems } = useCollections();
-  const ids = useMemo(() => collections.map((collection) => collection.id), [collections]);
+export function useListPreviews(
+  collections: Collection[]
+): Record<string, CollectionPreview> {
+  const { listPreviews } = useCollections();
+  const ids = useMemo(
+    () => collections.map((collection) => collection.id),
+    [collections]
+  );
   const key = ids.join('|');
-  const [byId, setById] = useState<Record<string, CollectionItem[]>>({});
+  const [byId, setById] = useState<Record<string, CollectionPreview>>({});
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,11 +34,9 @@ export function useListPreviews(collections: Collection[]): Record<string, ListP
     let cancelled = false;
     void (async () => {
       try {
-        const entries = await Promise.all(
-          ids.map(async (id) => [id, await listItems(id)] as const)
-        );
+        const next = await listPreviews(ids);
         if (!cancelled) {
-          setById(Object.fromEntries(entries));
+          setById(next);
         }
       } catch {
         if (!cancelled) {
@@ -68,36 +51,19 @@ export function useListPreviews(collections: Collection[]): Record<string, ListP
     return () => {
       cancelled = true;
     };
-  }, [ids, key, listItems]);
+  }, [ids, key, listPreviews]);
 
   return useMemo(() => {
-    const out: Record<string, ListPreview> = {};
+    const out: Record<string, CollectionPreview> = {};
     collections.forEach((collection) => {
-      const items = byId[collection.id];
-      if (!items) {
-        out[collection.id] = EMPTY_PREVIEW;
-        return;
-      }
-      const counts: Record<CollectionStatus, number> = { want: 0, doing: 0, done: 0 };
-      items.forEach((item) => {
-        if (item.status) {
-          counts[item.status] += 1;
-        }
-      });
-      const head = items.slice(0, 3);
-      out[collection.id] = {
-        covers: head.map((item) => item.coverUrl ?? null),
-        titles: head.map((item) => item.title),
-        counts,
-        total: items.length,
-      };
+      out[collection.id] = byId[collection.id] ?? EMPTY_COLLECTION_PREVIEW;
     });
     return out;
   }, [collections, byId]);
 }
 
 /** The one-line summary under a list's name, e.g. "12 things · 6 done". */
-export function listSummary(preview: ListPreview | undefined): string {
+export function listSummary(preview: CollectionPreview | undefined): string {
   if (!preview || preview.total === 0) {
     return 'Nothing in it yet';
   }

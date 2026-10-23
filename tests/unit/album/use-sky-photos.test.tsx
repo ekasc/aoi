@@ -288,14 +288,18 @@ describe('shared sky photos', () => {
     expect(result.current.photos).toEqual([]);
   });
 
-  it('removes the shared copy and its cached bytes', async () => {
+  it("removes only this phone's copy and leaves the shared photo in place", async () => {
     state.list.mockResolvedValueOnce([{ id: 'shared-photo' }]);
     state.storeList.mockResolvedValueOnce([photo]);
     const { result } = renderHook(useSkyPhotos);
     await waitFor(() => expect(result.current.photos.length).toBe(1));
-    await act(async () => result.current.removePhoto(photo.id));
-    expect(state.remove).toHaveBeenCalledWith(photo.id);
+    await act(async () => result.current.removeLocalCopy(photo.id));
+
+    // The record stays: your partner still has the photo in their sky, and
+    // the screen that offers this promised only this phone lost it.
+    expect(state.remove).not.toHaveBeenCalled();
     expect(state.storeRemove).toHaveBeenCalledWith(photo.id);
-    expect(result.current.photos).toEqual([]);
+    expect(result.current.photos).toHaveLength(1);
+    expect(result.current.photos[0].uri).toBeNull();
   });
 });

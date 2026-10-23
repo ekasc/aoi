@@ -92,6 +92,9 @@ function orphanRoutes(): string[] {
  *  - `partner` / `question`: the about and reflection surfaces were retired
  *    from the UI on purpose and nothing links to them. Delete the files to
  *    clear these two.
+ *  - `calendar/year`: the year grid now opens in place on Plans, so nothing
+ *    pushes this route. It stays as a deep link and renders the same pager,
+ *    so it is one wrapper rather than a second implementation.
  *
  * Everything else here is a real orphan and should be wired or deleted.
  */
@@ -101,6 +104,7 @@ const DEEP_LINK_ONLY = [
   'app/(app)/album/check-photo.tsx',
   'app/(app)/partner.tsx',
   'app/(app)/question.tsx',
+  'app/(app)/calendar/year.tsx',
 ];
 
 const EXPECTED_ORPHANS = [...DEEP_LINK_ONLY].sort();

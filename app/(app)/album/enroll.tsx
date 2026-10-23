@@ -16,6 +16,7 @@ import type { SpaceTrustAnchor } from '@aoi/shared';
 import { createLocalKeyStore } from '@/features/album/local-key-store';
 import { getOrCreateDeviceId } from '@/features/album/device-id';
 import { useSpace } from '@/features/space/space-context';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 /**
  * Joining a Space from this device.
@@ -34,6 +35,7 @@ type Step =
 
 export default function EnrolDeviceRoute() {
   const router = useRouter();
+  const danger = useThemeColor({}, 'danger');
   const { space } = useSpace();
   const spaceId = space?.id;
   const [step, setStep] = useState<Step>({ kind: 'checking' });
@@ -209,7 +211,7 @@ export default function EnrolDeviceRoute() {
               </View>
             ) : null}
             {error ? (
-              <ThemedText type="body" accessibilityRole="alert" style={styles.error}>
+              <ThemedText type="body" accessibilityRole="alert" style={[styles.error, { color: danger }]}>
                 {error}
               </ThemedText>
             ) : null}
@@ -221,7 +223,7 @@ export default function EnrolDeviceRoute() {
         {step.kind === 'failed' ? (
           <>
             <ThemedText type="subheading">Not joined</ThemedText>
-            <ThemedText type="body" accessibilityRole="alert" style={styles.error}>
+            <ThemedText type="body" accessibilityRole="alert" style={[styles.error, { color: danger }]}>
               {step.message}
             </ThemedText>
             <Button label="Try again" disabled={busy} onPress={() => void load(false)} />
@@ -237,6 +239,6 @@ const styles = StyleSheet.create({
   page: { flex: 1 },
   content: { gap: Spacing[16], padding: Spacing[24] },
   muted: { opacity: 0.7 },
-  error: { color: '#b3261e' },
+  error: {},
   fingerprint: { paddingVertical: Spacing[16] },
 });

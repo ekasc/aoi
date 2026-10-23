@@ -436,12 +436,15 @@ export function cancelSelection(): DebugSelection {
   return selection;
 }
 
+import { automation } from '@/features/dev/device-automation';
+
 // Expose the agent surface to `pnpm run dev:eval`. Cast because the global is
 // intentionally untyped app-wide.
 if (__DEV__) {
   const debugGlobal = globalThis as { __aoiDebug?: unknown };
   if (!debugGlobal.__aoiDebug) {
     debugGlobal.__aoiDebug = {
+      ...automation,
       screenshot,
       requestScreenshot,
       select: requestSelection,

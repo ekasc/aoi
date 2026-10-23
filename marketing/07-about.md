@@ -197,13 +197,13 @@ A statement that couples deserve better. That privacy matters. That intentionali
 ## Contact
 
 **Questions about our story?**  
-hello@aoi.app
+hello@aoiapp.com
 
 **Want to work with us?**  
-careers@aoi.app
+careers@aoiapp.com
 
 **Press inquiries?**  
-press@aoi.app
+press@aoiapp.com
 
 **Just want to say hi?**  
 We love hearing from users. Drop us a line anytime.
@@ -235,7 +235,7 @@ A: We have no plans to sell. If that ever changed, we'd ensure user data protect
 A: You'd have 90 days to export your data. We promise not to disappear overnight.
 
 **Q: Are you hiring?**
-A: Sometimes. Check careers@aoi.app for openings.
+A: Sometimes. Check careers@aoiapp.com for openings.
 
 **Q: Can I invest?**
 A: We're bootstrapped and not seeking investment. We prefer independence over growth-at-all-costs.

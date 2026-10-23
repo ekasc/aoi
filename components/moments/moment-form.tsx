@@ -1,8 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,18 +21,22 @@ import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { MediaPicker } from '@/components/media/media-picker';
 import { VoiceRecorder } from '@/components/media/voice-recorder';
 import { UploadProgress } from '@/components/media/upload-progress';
+import { DraftMediaGrid } from '@/components/moments/draft-media-grid';
 import { ThemedText } from '@/components/themed-text';
 import { Reveal } from '@/components/ui/reveal';
 import { Button } from '@/components/ui/button';
 import { Surface } from '@/components/ui/surface';
-import { Motion, Spacing } from '@/constants/theme';
+import { Motion, Radii, Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { haptics } from '@/features/haptics/haptics';
+import type { StagedAsset } from '@/features/composer/types';
 import { newDraftClientId } from '@/features/moments/draft-identity';
+import { MOMENT_LOCALE } from '@/features/moments/labels';
 import { isQuotaExceededError, useMediaUpload } from '@/features/media/use-media-upload';
 import { useSubscription } from '@/features/subscription/subscription-context';
-import type { Moment, MomentType } from '@/features/moments/types';
+import type { Moment, MomentAttachmentInput, MomentType } from '@/features/moments/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { MOMENT_ATTACHMENT_MAX } from '@aoi/shared';
 
 type MomentTypeOption = {
   value: MomentType;
@@ -47,7 +56,90 @@ const MOMENT_TYPES: MomentTypeOption[] = [
 
 const TYPE_ICON_SIZE = 22;
 
+type EditPhoto = {
+  /** Stable key: the server media id when known, else the uri. */
+  key: string;
+  uri: string;
+  mimeType: string;
+  /** Null for legacy preview-only media and freshly picked photos. */
+  mediaId: string | null;
+  /** True for photos picked in this session — uploaded on save. */
+  isNew: boolean;
+};
+
+/**
+ * Edit-mode photo set, newest composition first-class: ordered attachment
+ * images win, the legacy single preview fills in for old moments.
+ */
+function initialEditPhotos(moment?: Moment): EditPhoto[] {
+  if (!moment) {
+    return [];
+  }
+  const images = (moment.attachments ?? []).filter(
+    (attachment) => attachment.kind === 'image',
+  );
+  if (images.length > 0) {
+    return images.map((attachment, index) => ({
+      key: attachment.mediaId ?? `${attachment.url}#${index}`,
+      uri: attachment.url,
+      mimeType: 'image/jpeg',
+      mediaId: attachment.mediaId ?? null,
+      isNew: false,
+    }));
+  }
+  if (moment.mediaPreview) {
+    return [
+      {
+        key: moment.mediaId ?? moment.mediaPreview,
+        uri: moment.mediaPreview,
+        mimeType: 'image/jpeg',
+        mediaId: moment.mediaId ?? null,
+        isNew: false,
+      },
+    ];
+  }
+  return [];
+}
+
+function isTodayLocal(iso: string): boolean {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
+function formatShortDate(date: Date): string {
+  const now = new Date();
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString(MOMENT_LOCALE, {
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+  return date.toLocaleDateString(MOMENT_LOCALE, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** Keep the clock time, replace the calendar day — same rule as capture. */
+function withLocalYMD(baseIso: string, picked: Date): string {
+  const base = new Date(baseIso);
+  const time = Number.isNaN(base.getTime()) ? new Date() : base;
+  const next = new Date(time);
+  next.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
+  return next.toISOString();
+}
+
 export type MomentFormValues = {
+  expectedUpdatedAt?: string;
   type: MomentType;
   title: string;
   body: string;
@@ -57,6 +149,13 @@ export type MomentFormValues = {
   audioUri: string | null;
   /** Stable media object id (create + edit); null when no media. */
   mediaId: string | null;
+  /**
+   * Ordered photo replacement (edit mode only, `{ mediaId, kind }` — never
+   * device URIs). Omitted = the stored photo set is untouched; supplied
+   * (even `[]` to clear) = atomically replace it, exactly like the update
+   * path treats it.
+   */
+  attachments?: MomentAttachmentInput[];
   /**
    * Opaque per-draft idempotency key (create mode only). One id per draft
    * instance, stable across retries and edits, so a double-tap on Save
@@ -80,19 +179,21 @@ export type MomentFormProps = {
 };
 
 /**
- * The shared capture/edit form. Edit mode (behind `moment/edit/[id]`)
- * prefills from `initialMoment` and preserves occurredAt/audioUri untouched.
+ * The shared capture/edit form. Edit mode (behind `moment/edit/[id]`) reads
+ * like the capture it revises — one serif body, the photo grid, an editable
+ * date chip, the stored type locked — and preserves audioUri untouched.
  */
 export function MomentForm({
   heroSubtitle,
   submitLabel,
   submittingLabel,
-  initialMoment,
+  initialMoment: initialMomentProp,
   defaultType,
   hideTypePicker,
   onSubmit,
   onCancel,
 }: MomentFormProps) {
+  const [initialMoment] = useState(initialMomentProp);
   const insets = useSafeAreaInsets();
   const isIos = process.env.EXPO_OS === 'ios';
   const { uploadImage, state: uploadState, progress: uploadProgress, error: uploadError, reset: resetUpload } = useMediaUpload();
@@ -110,9 +211,22 @@ export function MomentForm({
 
   const initialMediaPreview = initialMoment?.mediaPreview ?? null;
 
+  // Revisiting, not re-capturing: the stored type, title, and photo set are
+  // the starting point, and the type is never re-asked.
+  const isEdit = Boolean(initialMoment);
   const [type, setType] = useState<MomentType>(initialMoment?.type ?? defaultType ?? 'note');
   const [title, setTitle] = useState(initialMoment?.title ?? '');
   const [body, setBody] = useState(initialMoment?.body ?? '');
+  const [occurredAt, setOccurredAt] = useState(
+    () => initialMoment?.occurredAt ?? new Date().toISOString(),
+  );
+  const [initialPhotoKeys] = useState<string[]>(
+    () => initialEditPhotos(initialMoment).map((photo) => photo.key),
+  );
+  const [photos, setPhotos] = useState<EditPhoto[]>(() => initialEditPhotos(initialMoment));
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [pickerDenied, setPickerDenied] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [hasTargetDate, setHasTargetDate] = useState(Boolean(initialMoment?.targetAt));
   const [targetAt, setTargetAt] = useState(() => {
     if (initialMoment?.targetAt) {
@@ -142,18 +256,29 @@ export function MomentForm({
   // Same-tick double-tap guard: useState flips don't apply within the tick,
   // so a rapid second Save would otherwise issue a duplicate request.
   const savingRef = useRef(false);
+  // Photo picking runs through the same guard: the sheet is async, and a
+  // second tap while it is open must not stack another one.
+  const pickerBusyRef = useRef(false);
+  const photoKeyRef = useRef(0);
+  const isAndroid = process.env.EXPO_OS === 'android';
 
-  // Traces are zero-decision captures — editing keeps their type locked.
-  // Callers (e.g. Plans goal capture) can lock any fixed type the same way.
-  const showTypePicker =
-    !hideTypePicker && (!initialMoment || initialMoment.type !== 'trace');
+  // The type is decided once, at capture. Editing never re-asks — the
+  // stored type flows to the update call unchanged. Callers (e.g. Plans
+  // goal capture) can lock any fixed type the same way.
+  const showTypePicker = !isEdit && !hideTypePicker;
 
   const trimmedTitle = title.trim();
   const trimmedBody = body.trim();
   const isMedia = type === 'media';
   const isGoal = type === 'goal';
-  const hasMedia = isMedia && !!mediaUri;
-  const hasText = trimmedTitle.length > 0 || trimmedBody.length > 0;
+  // Capture gates its single slot on the media type; revisiting keeps
+  // whatever the memory already carries, whatever its type.
+  const hasMedia = isEdit ? photos.length > 0 : isMedia && !!mediaUri;
+  // The title box is a capture affordance. In edit mode the single body
+  // carries the words and the stored title flows through untouched.
+  const hasText = isEdit
+    ? trimmedBody.length > 0
+    : trimmedTitle.length > 0 || trimmedBody.length > 0;
   /**
    * Audio counts. It did not, which meant a voice memory could be opened but
    * not saved: clear the title and body on one and there was nothing left to
@@ -178,15 +303,38 @@ export function MomentForm({
   );
 
   const occurredCaption = useMemo(() => {
-    if (initialMoment) {
-      return `Captured · ${new Date(initialMoment.occurredAt).toLocaleDateString('en-US')}`;
-    }
     return `Today · ${new Date().toLocaleDateString('en-US')}`;
-  }, [initialMoment]);
+  }, []);
+
+  const occurredDate = useMemo(() => {
+    const parsed = new Date(occurredAt);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }, [occurredAt]);
+  const dateLabel = isTodayLocal(occurredAt) ? 'Today' : formatShortDate(occurredDate);
+
+  // Grid tiles render through the same contract as capture.
+  const editImageAssets: StagedAsset[] = useMemo(
+    () =>
+      photos.map((photo) => ({
+        stagedId: photo.key,
+        kind: 'image' as const,
+        mimeType: photo.mimeType,
+        localUri: photo.uri,
+      })),
+    [photos],
+  );
+  const photosDirty =
+    photos.length !== initialPhotoKeys.length ||
+    photos.some((photo, index) => photo.key !== initialPhotoKeys[index]);
+  const remainingPhotos = MOMENT_ATTACHMENT_MAX - photos.length;
 
   const handleSave = useCallback(async () => {
     if (!canSubmit) {
-      setError('Add a title, note, or media before saving.');
+      setError(
+        isEdit
+          ? 'Add a note, photo, or voice note before saving.'
+          : 'Add a title, note, or media before saving.',
+      );
       return;
     }
     if (savingRef.current) {
@@ -200,8 +348,60 @@ export function MomentForm({
     try {
       let mediaPreview: string | null = null;
       let mediaId: string | null = null;
+      let attachments: MomentAttachmentInput[] | undefined;
 
-      if (mediaUri) {
+      if (isEdit) {
+        if (photos.length > 0) {
+          const resolved: { mediaId: string | null; url: string }[] = [];
+          for (const photo of photos) {
+            if (photo.mediaId) {
+              resolved.push({ mediaId: photo.mediaId, url: photo.uri });
+              continue;
+            }
+            if (!photo.isNew) {
+              // Legacy preview-only media carries through untouched, never
+              // re-uploaded — same as the single-slot path below.
+              resolved.push({ mediaId: null, url: photo.uri });
+              continue;
+            }
+            try {
+              const uploaded = await uploadImage({ uri: photo.uri, mimeType: photo.mimeType });
+              // Stable URL + stable media id; the presigned URL never leaves
+              // the upload flow.
+              resolved.push({ mediaId: uploaded.mediaId, url: uploaded.url });
+            } catch (err) {
+              if (isQuotaExceededError(err)) {
+                // Draft fully preserved; explain the actual limit and offer Plus.
+                void refreshServerPlus();
+                setQuotaBlocked(true);
+              } else {
+                setError('Failed to upload media. Please try again.');
+              }
+              setIsSaving(false);
+              savingRef.current = false;
+              return;
+            }
+          }
+          const first = resolved[0];
+          mediaPreview = first ? first.url : null;
+          mediaId = first ? first.mediaId : null;
+          // The ordered set needs a server id per photo. Without one (stub
+          // uploads, legacy previews) the legacy first-photo fields carry
+          // the edit and the stored set is left alone.
+          const withIds = resolved.filter(
+            (entry): entry is { mediaId: string; url: string } => entry.mediaId !== null,
+          );
+          if (photosDirty && resolved.length > 0 && withIds.length === resolved.length) {
+            attachments = withIds.map((entry) => ({
+              mediaId: entry.mediaId,
+              kind: 'image' as const,
+            }));
+          }
+        } else if (photosDirty) {
+          // Every photo removed: clear the stored set, not just the preview.
+          attachments = [];
+        }
+      } else if (mediaUri) {
         if (initialMediaPreview && mediaUri === initialMediaPreview) {
           // Unchanged remote media — no re-upload needed.
           mediaPreview = initialMediaPreview;
@@ -229,14 +429,16 @@ export function MomentForm({
       }
 
       await onSubmit({
+        expectedUpdatedAt: initialMoment?.updatedAt ?? initialMoment?.createdAt,
         type,
-        title: trimmedTitle,
+        title: isEdit ? (initialMoment?.title ?? '') : trimmedTitle,
         body: trimmedBody,
-        occurredAt: initialMoment?.occurredAt ?? new Date().toISOString(),
+        occurredAt,
         targetAt: isGoal && hasTargetDate ? targetAt.toISOString() : null,
         mediaPreview,
         mediaId,
         audioUri,
+        ...(attachments !== undefined ? { attachments } : {}),
         clientId: draftClientId,
       });
     } catch (err) {
@@ -252,9 +454,13 @@ export function MomentForm({
     hasTargetDate,
     initialMediaPreview,
     initialMoment,
+    isEdit,
     isGoal,
     mediaUri,
+    occurredAt,
     onSubmit,
+    photos,
+    photosDirty,
     refreshServerPlus,
     selectedMimeType,
     targetAt,
@@ -287,6 +493,136 @@ export function MomentForm({
     }
     setError('');
   }, [resetUpload]);
+
+  const handleOpenSettings = useCallback(() => {
+    void Linking.openSettings().catch(() => {});
+  }, []);
+
+  const appendPickedPhotos = useCallback(
+    (assets: { uri: string; mimeType?: string | null }[]) => {
+      setPhotos((current) => {
+        const room = MOMENT_ATTACHMENT_MAX - current.length;
+        const fresh = assets.slice(0, Math.max(room, 0)).map((asset) => {
+          photoKeyRef.current += 1;
+          return {
+            key: `local_${Date.now()}_${photoKeyRef.current}_${asset.uri}`,
+            uri: asset.uri,
+            mimeType: asset.mimeType ?? 'image/jpeg',
+            mediaId: null,
+            isNew: true,
+          };
+        });
+        return [...current, ...fresh];
+      });
+      setError('');
+      setQuotaBlocked(false);
+    },
+    [],
+  );
+
+  const handlePickLibrary = useCallback(async () => {
+    if (pickerBusyRef.current || isSaving) {
+      return;
+    }
+    const remaining = MOMENT_ATTACHMENT_MAX - photos.length;
+    setError('');
+    setPickerDenied(false);
+    setQuotaBlocked(false);
+    if (remaining <= 0) {
+      setError(`Keep it to ${MOMENT_ATTACHMENT_MAX} photos.`);
+      return;
+    }
+    try {
+      pickerBusyRef.current = true;
+      setPickerBusy(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        allowsEditing: false,
+        quality: 0.8,
+        exif: false,
+      });
+      if (result.canceled) {
+        return;
+      }
+      appendPickedPhotos(result.assets);
+    } catch {
+      setError('Could not add those photos. Please try again.');
+    } finally {
+      pickerBusyRef.current = false;
+      setPickerBusy(false);
+    }
+  }, [appendPickedPhotos, isSaving, photos.length]);
+
+  const handleTakePhoto = useCallback(async () => {
+    if (pickerBusyRef.current || isSaving) {
+      return;
+    }
+    const remaining = MOMENT_ATTACHMENT_MAX - photos.length;
+    setError('');
+    setPickerDenied(false);
+    setQuotaBlocked(false);
+    if (remaining <= 0) {
+      setError(`Keep it to ${MOMENT_ATTACHMENT_MAX} photos.`);
+      return;
+    }
+    try {
+      pickerBusyRef.current = true;
+      setPickerBusy(true);
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setPickerDenied(true);
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.8,
+        exif: false,
+      });
+      if (result.canceled) {
+        return;
+      }
+      const asset = result.assets[0];
+      if (!asset) {
+        return;
+      }
+      appendPickedPhotos([asset]);
+    } catch {
+      setError('Could not add that photo. Please try again.');
+    } finally {
+      pickerBusyRef.current = false;
+      setPickerBusy(false);
+    }
+  }, [appendPickedPhotos, isSaving, photos.length]);
+
+  const handleRemovePhoto = useCallback((stagedId: string) => {
+    setPhotos((current) => current.filter((photo) => photo.key !== stagedId));
+    setError('');
+  }, []);
+
+  const handlePickDate = useCallback((picked: Date) => {
+    setOccurredAt((current) => withLocalYMD(current, picked));
+    setError('');
+  }, []);
+
+  const handleDatePickerChange = useCallback((event: DateTimePickerEvent, selected?: Date) => {
+    if (isAndroid) {
+      setDatePickerVisible(false);
+    }
+    if (event.type === 'dismissed' || !selected) {
+      return;
+    }
+    handlePickDate(selected);
+  }, [handlePickDate, isAndroid]);
+
+  const handleToggleDatePicker = useCallback(() => {
+    setDatePickerVisible((current) => !current);
+  }, []);
+
+  const handleCloseDatePicker = useCallback(() => {
+    setDatePickerVisible(false);
+  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -375,7 +711,58 @@ export function MomentForm({
           exiting={Reveal.out()}
           style={styles.contentWrap}
         >
-          {isMedia ? (
+          {isEdit ? (
+            <>
+              <TextInput
+                accessibilityLabel="Moment note"
+                autoCapitalize="sentences"
+                editable={!isSaving}
+                multiline
+                onChangeText={setBody}
+                placeholder="The details you'll want later"
+                placeholderTextColor={muted}
+                style={[styles.editBodyInput, { color: text }]}
+                textAlignVertical="top"
+                value={body}
+              />
+
+              {photos.length > 0 ? (
+                <DraftMediaGrid assets={editImageAssets} onRemove={handleRemovePhoto} />
+              ) : null}
+
+              <View style={styles.photoSection}>
+                <ThemedText type="meta" style={{ color: muted }}>
+                  {photos.length > 0 ? 'Photos' : 'Add photos'}
+                </ThemedText>
+                <View style={styles.photoActions}>
+                  <Button
+                    disabled={isSaving || pickerBusy || remainingPhotos <= 0}
+                    label="Choose photos"
+                    onPress={() => void handlePickLibrary()}
+                    size="sm"
+                    variant="secondary"
+                  />
+                  <Button
+                    disabled={isSaving || pickerBusy || remainingPhotos <= 0}
+                    label="Take a photo"
+                    onPress={() => void handleTakePhoto()}
+                    size="sm"
+                    variant="secondary"
+                  />
+                </View>
+                {pickerDenied ? (
+                  <View style={styles.inlineError}>
+                    <ThemedText type="caption" style={{ color: muted }}>
+                      Camera access is needed to attach photos.
+                    </ThemedText>
+                    <Button label="Open Settings" size="sm" variant="secondary" onPress={handleOpenSettings} />
+                  </View>
+                ) : null}
+              </View>
+            </>
+          ) : null}
+
+          {!isEdit && isMedia ? (
             <>
               <MediaPicker
                 disabled={isSaving}
@@ -414,41 +801,45 @@ export function MomentForm({
           </View>
 
           <Surface style={styles.contentSection}>
-            <TextInput
-              accessibilityLabel="Moment title"
-              autoCapitalize="sentences"
-              onChangeText={setTitle}
-              placeholder="What was it?"
-              placeholderTextColor={muted}
-              style={[
-                styles.titleInput,
-                {
-                  backgroundColor: surface2,
-                  borderColor: border,
-                  color: text,
-                },
-              ]}
-              value={title}
-            />
+            {!isEdit ? (
+              <>
+                <TextInput
+                  accessibilityLabel="Moment title"
+                  autoCapitalize="sentences"
+                  onChangeText={setTitle}
+                  placeholder={isGoal ? "What are you hoping for?" : "What was it?"}
+                  placeholderTextColor={muted}
+                  style={[
+                    styles.titleInput,
+                    {
+                      backgroundColor: surface2,
+                      borderColor: border,
+                      color: text,
+                    },
+                  ]}
+                  value={title}
+                />
 
-            <TextInput
-              accessibilityLabel="Moment note"
-              autoCapitalize="sentences"
-              multiline
-              onChangeText={setBody}
-              placeholder="The details you'll want later"
-              placeholderTextColor={muted}
-              style={[
-                styles.noteInput,
-                {
-                  backgroundColor: surface2,
-                  borderColor: border,
-                  color: text,
-                },
-              ]}
-              textAlignVertical="top"
-              value={body}
-            />
+                <TextInput
+                  accessibilityLabel="Moment note"
+                  autoCapitalize="sentences"
+                  multiline
+                  onChangeText={setBody}
+                  placeholder={isGoal ? "What will make it good?" : "The details you'll want later"}
+                  placeholderTextColor={muted}
+                  style={[
+                    styles.noteInput,
+                    {
+                      backgroundColor: surface2,
+                      borderColor: border,
+                      color: text,
+                    },
+                  ]}
+                  textAlignVertical="top"
+                  value={body}
+                />
+              </>
+            ) : null}
 
             {isGoal ? (
               <View style={styles.goalSection}>
@@ -498,15 +889,70 @@ export function MomentForm({
                     label="Target date"
                     mode="date"
                     onChange={setTargetAt}
+                    textColor={text}
                     value={targetAt}
                   />
                 ) : null}
               </View>
             ) : null}
 
-            <ThemedText type="caption" style={{ color: muted }}>
-              {occurredCaption}
-            </ThemedText>
+            {!isEdit ? (
+              <ThemedText type="caption" style={{ color: muted }}>
+                {isGoal
+                  ? hasTargetDate
+                    ? `Aiming for ${formatShortDate(targetAt)}`
+                    : 'No target date — lives in Someday'
+                  : occurredCaption}
+              </ThemedText>
+            ) : null}
+
+            {isEdit ? (
+              <>
+                <Pressable
+                  accessibilityLabel="Choose memory date"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: isSaving }}
+                  disabled={isSaving}
+                  onPress={handleToggleDatePicker}
+                  style={[styles.dateChip, { borderColor: border }]}
+                >
+                  <Ionicons color={muted} name="calendar-outline" size={16} />
+                  <ThemedText type="caption" numberOfLines={1} style={styles.dateLabel}>
+                    {dateLabel}
+                  </ThemedText>
+                </Pressable>
+
+                {datePickerVisible ? (
+                  isIos ? (
+                    <Animated.View
+                      entering={Reveal.in()}
+                      exiting={Reveal.out()}
+                      style={[styles.datePickerCard, { borderColor: border, backgroundColor: surface2 }]}
+                    >
+                      <DateTimePicker
+                        display="spinner"
+                        mode="date"
+                        onChange={handleDatePickerChange}
+                        value={occurredDate}
+                      />
+                      <Button
+                        label="Done"
+                        onPress={handleCloseDatePicker}
+                        size="sm"
+                        variant="secondary"
+                      />
+                    </Animated.View>
+                  ) : (
+                    <DateTimePicker
+                      display="default"
+                      mode="date"
+                      onChange={handleDatePickerChange}
+                      value={occurredDate}
+                    />
+                  )
+                ) : null}
+              </>
+            ) : null}
 
             {error ? (
               <ThemedText
@@ -636,6 +1082,45 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: Spacing[12],
     paddingVertical: Spacing[12],
+  },
+  // Revisiting reads like capture: the words sit on the surface in the
+  // serif, content first — no field box around them.
+  editBodyInput: {
+    ...Typography.inputDisplay,
+    minHeight: 44,
+    paddingVertical: Spacing[8],
+    textAlignVertical: 'top',
+  },
+  photoSection: {
+    gap: Spacing[8],
+  },
+  photoActions: {
+    flexDirection: 'row',
+    gap: Spacing[8],
+  },
+  inlineError: {
+    gap: Spacing[8],
+  },
+  dateChip: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing[4],
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radii.pill,
+    paddingHorizontal: Spacing[12],
+  },
+  dateLabel: {
+    flexShrink: 1,
+  },
+  datePickerCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 20,
+    paddingHorizontal: Spacing[8],
+    paddingVertical: Spacing[8],
+    gap: Spacing[8],
   },
   voiceSection: {
     gap: Spacing[8],

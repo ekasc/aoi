@@ -141,9 +141,25 @@ export class ShimD1 implements D1Database {
   }
 }
 
-export function createTestD1(baselineSql?: string): ShimD1 {
-  const d1 = new ShimD1();
-  d1.apply(baselineSql ?? loadBaselineSql());
+export function createTestD1(baselineSql?: string, filename = ':memory:'): ShimD1 {
+  const d1 = new ShimD1(filename);
+  // A file-backed D1 outlives one harness (restart tests reboot against the
+  // same file). Migrations apply once: probe for a baseline table rather than
+  // file size — opening a fresh file with WAL already writes pages to it.
+  let migrated = false;
+  if (filename !== ':memory:') {
+    try {
+      const row = d1.rawDb
+        .prepare("select name from sqlite_master where type = 'table' and name = 'users'")
+        .get() as { name?: string } | undefined;
+      migrated = !!row?.name;
+    } catch {
+      migrated = false;
+    }
+  }
+  if (!migrated) {
+    d1.apply(baselineSql ?? loadBaselineSql());
+  }
   return d1;
 }
 
@@ -347,8 +363,24 @@ export class ShimR2 implements R2Bucket {
  * clock, deterministic ids, capture logger, permissive rate limiter, capture
  * DLQ + queue, in-memory R2, no-op queue handlers.
  */
-export function makeTestHarness(options?: { baselineSql?: string; initialMs?: number }): TestHarness {
-  const d1 = createTestD1(options?.baselineSql);
+export function makeTestHarness(options?: {
+  baselineSql?: string;
+  initialMs?: number;
+  /**
+   * SQLite file for the D1 shim. Default `:memory:`. Pass a temp-file path
+   * when a test must survive a harness rebuild — i.e. a simulated server
+   * restart (see tests/integration/).
+   */
+  filename?: string;
+  /** Extra config values merged over the test defaults (e.g. AOI_E2E_MODE). */
+  config?: Record<string, string | undefined>;
+  /**
+   * Override the media store (the E2E server points presigned uploads at
+   * itself so no cloud bucket is needed). Default: the harness R2 shim.
+   */
+  mediaStore?: import('../services/media-store').MediaStoreService;
+}): TestHarness {
+  const d1 = createTestD1(options?.baselineSql, options?.filename);
   const clock = makeTestClock(options?.initialMs ?? Date.parse('2026-01-15T00:00:00.000Z'));
   const ids = makeTestId(1);
   const logger = makeCaptureLogger();
@@ -361,13 +393,14 @@ export function makeTestHarness(options?: { baselineSql?: string; initialMs?: nu
     sendBatch: async () => {},
   };
   const r2 = new ShimR2();
-  const rateLimiter = makeRateLimiterService(() => undefined);
+  const rateLimiter = makeRateLimiterService(() => undefined, { allowMissingBinding: true });
   const configValues: Record<string, string | undefined> = {
     ...TEST_AUTH_CONFIG,
     CORS_ORIGIN: '*',
     LOG_LEVEL: 'debug',
+    ...options?.config,
   };
-  const mediaStore = makeMediaStoreService(r2, { get: (key) => configValues[key] }, 'aoi-media');
+  const mediaStore = options?.mediaStore ?? makeMediaStoreService(r2, { get: (key) => configValues[key] }, 'aoi-media');
 
   const layer = Layer.mergeAll(
     clock.layer,

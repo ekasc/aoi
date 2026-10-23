@@ -138,4 +138,21 @@ describe('NewCalendarEventScreen seed date parsing', () => {
     expect(startsAt.getDate()).toBe(15);
     expect(startsAt.getHours()).toBe(17);
   });
+
+  it('names the seeded day under When so placement never needs decoding', async () => {
+    routeParams.date = '2026-01-15';
+    const { default: Screen } = await import('@/app/(app)/calendar/new-event');
+    render(<Screen />);
+
+    expect(screen.getByText('On Thursday, January 15')).toBeTruthy();
+  });
+
+  it('explains an empty title instead of a dead Save', async () => {
+    const { default: Screen } = await import('@/app/(app)/calendar/new-event');
+    render(<Screen />);
+
+    await act(async () => fireEvent.click(screen.getByText('Save event')));
+    expect(screen.getByText('Give the event a name.')).toBeTruthy();
+    expect(addEventSpy).not.toHaveBeenCalled();
+  });
 });

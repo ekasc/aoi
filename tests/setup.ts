@@ -243,6 +243,11 @@ vi.mock('expo-audio', () => ({
     currentTime: 0,
     duration: 0,
   }),
+  // Progress is read from the player's status events, not the player itself.
+  useAudioPlayerStatus: () => ({ playing: false, currentTime: 0, duration: 0 }),
+  // The waveform draws from raw PCM frames; idle there is silence, so a test
+  // that mounts a player without driving audio gets no columns.
+  useAudioSampleListener: () => {},
   useAudioRecorder: () => ({
     prepareToRecordAsync: async () => {},
     record: () => {},
@@ -320,6 +325,46 @@ vi.mock('expo-clipboard', () => ({
     ((globalThis as unknown as Record<string, unknown>).__aoiClipboard as string) ??
     '',
 }));
+
+// expo-secure-store and expo-sharing are native modules. Under happy-dom their
+// JS entry pulls in expo-modules-core, which reads `globalThis.expo` and throws
+// before a line of app code runs. Both are stubbed here so any screen that
+// reaches them transitively renders; files that assert on storage or a share
+// still mock them locally and win. The store is a real in-memory map, so the
+// delete-then-read and write-then-read paths behave.
+vi.mock('expo-secure-store', () => {
+  const memory = new Map<string, string>();
+  return {
+    getItemAsync: async (key: string) => (memory.has(key) ? memory.get(key)! : null),
+    setItemAsync: async (key: string, value: string) => {
+      memory.set(key, value);
+    },
+    deleteItemAsync: async (key: string) => {
+      memory.delete(key);
+    },
+    isAvailableAsync: async () => true,
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked-this-device-only',
+  };
+});
+
+vi.mock('expo-sharing', () => ({
+  isAvailableAsync: async () => true,
+  shareAsync: async () => {},
+}));
+
+// react-native-view-shot resolves to its untranspiled `src/index.tsx` under
+// vitest, so any screen that renders a keepsake share sheet dies at import
+// time. The capture itself is native and unobservable here; the stand-in
+// renders its children and returns a fixed file URI.
+vi.mock('react-native-view-shot', () => {
+  const React = require('react');
+  const ViewShot = ({ children, style }: any) =>
+    React.createElement('div', { 'data-testid': 'view-shot', style }, children);
+  return {
+    default: ViewShot,
+    captureRef: async () => 'file:///mock-keepsake.png',
+  };
+});
 
 // Safe-area is a native module whose sources cannot be transformed under
 // vitest, so any test that renders a screen importing it dies at import time.

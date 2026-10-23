@@ -11,6 +11,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemeSelector } from "@/components/theme/theme-selector";
+import { WelcomeSheet } from "@/components/info/welcome-sheet";
+import { PartnerInvitation } from "@/components/space/partner-invitation";
 import { ThemedText } from "@/components/themed-text";
 import { ActionSheet } from "@/components/ui/action-sheet";
 import { Button } from "@/components/ui/button";
@@ -18,29 +20,13 @@ import { Divider } from "@/components/ui/divider";
 import { Spacing } from "@/constants/theme";
 import { exportRawArchive } from "@/features/export/raw-export";
 import { getLegalLinks } from "@/features/legal/legal-links";
+import { formatRelationshipDate } from "@/features/relationship/relationship-date";
 import { useSession } from "@/features/session/session-context";
 import { useSpace } from "@/features/space/space-context";
 import { formatBytes } from "@/features/subscription/format";
 import { useSubscription } from "@/features/subscription/subscription-context";
 import { haptics } from "@/features/haptics/haptics";
 import { useThemeColor } from "@/hooks/use-theme-color";
-
-function formatRelationshipDate(value: string | null | undefined) {
-	if (!value) {
-		return null;
-	}
-	const date = new Date(value);
-
-	if (Number.isNaN(date.getTime())) {
-		return null;
-	}
-
-	return date.toLocaleDateString("en-US", {
-		month: "long",
-		day: "numeric",
-		year: "numeric",
-	});
-}
 
 function InfoRow({
 	label,
@@ -152,6 +138,8 @@ export default function AccountScreen() {
 
 	const [signOutError, setSignOutError] = useState("");
 	const [deleteError, setDeleteError] = useState("");
+	const [linkError, setLinkError] = useState("");
+	const [showGuide, setShowGuide] = useState(false);
 	const [leaveError, setLeaveError] = useState("");
 	const [confirming, setConfirming] = useState<"delete" | "leave" | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
@@ -182,13 +170,18 @@ export default function AccountScreen() {
 		router.push("/(app)/profile/edit-relationship");
 	}, [router]);
 
+
+
 	const handlePlus = useCallback(() => {
 		router.push("/(app)/paywall");
 	}, [router]);
 
+	const [isSigningOut, setIsSigningOut] = useState(false);
 	const handleSignOut = useCallback(async () => {
+		if (isSigningOut) return;
 		haptics.tap();
 		setSignOutError("");
+		setIsSigningOut(true);
 		try {
 			// signOut() quietly lets go of this device's push registration first
 			// (single choke point — every sign-out path unregisters the token).
@@ -196,8 +189,10 @@ export default function AccountScreen() {
 			router.replace("/(public)");
 		} catch {
 			setSignOutError("Failed to sign out. Please try again.");
+		} finally {
+			setIsSigningOut(false);
 		}
-	}, [router, signOut]);
+	}, [isSigningOut, router, signOut]);
 
 	// Both destructive paths confirm in the app's own sheet rather than a
 	// system alert: the copy is long, the sheet is themeable and announced as
@@ -293,10 +288,11 @@ export default function AccountScreen() {
 		return rows;
 	}, [legal]);
 	const openLegalLink = useCallback(async (url: string) => {
+		setLinkError("");
 		try {
 			await Linking.openURL(url);
 		} catch {
-			// Link failure is quiet tender-error policy: the row stays for retry.
+			setLinkError("Could not open this link. Please try again.");
 		}
 	}, []);
 
@@ -311,9 +307,27 @@ export default function AccountScreen() {
 			showsVerticalScrollIndicator={false}
 		>
 			<View style={styles.section}>
+				<ThemedText type="title">{user?.displayName?.trim() || 'You'}</ThemedText>
+				<ThemedText type="caption" style={{ color: muted }}>
+					{[user?.email, space?.name].filter(Boolean).join(' · ')}
+				</ThemedText>
+			</View>
+
+			<Divider />
+
+			<View style={styles.section}>
 				<SectionHeading title="Appearance" muted={muted} />
 				<ThemeSelector showDescriptions={false} />
 			</View>
+
+			<View style={styles.section}>
+				<SectionHeading title="Getting started" muted={muted} />
+				<Button label="How to use Aoi" variant="secondary" onPress={() => setShowGuide(true)} />
+			</View>
+			<WelcomeSheet visible={showGuide} onClose={() => setShowGuide(false)} onStart={() => {
+				setShowGuide(false);
+				router.navigate('/(app)/(tabs)/(memories)');
+			}} />
 
 			<Divider />
 
@@ -346,6 +360,9 @@ export default function AccountScreen() {
 					onPress={handleEditRelationship}
 					muted={muted}
 				/>
+				{/* One stable place for pairing: membership when connected, the
+				    invitation when not. Never a floating reminder on every tab. */}
+				<PartnerInvitation />
 			</View>
 
 			<Divider />
@@ -353,8 +370,8 @@ export default function AccountScreen() {
 			<View style={styles.section}>
 				<SectionHeading title="Your data" muted={muted} />
 				<ThemedText type="body">
-					Download everything you can see right now, notes, photos, letters,
-					plans, as one archive file. Free for everyone, before or without
+					Download everything you can see right now, notes, photos, plans, as
+					one archive file. Free for everyone, before or without
 					deleting anything.
 				</ThemedText>
 				<Button
@@ -364,7 +381,7 @@ export default function AccountScreen() {
 					disabled={isExporting}
 				/>
 				{exportMessage ? (
-					<ThemedText accessibilityRole="alert" type="caption">
+					<ThemedText accessibilityRole="alert" type="caption" selectable>
 						{exportMessage}
 					</ThemedText>
 				) : null}
@@ -402,6 +419,7 @@ export default function AccountScreen() {
 				</View>
 			</View>
 
+
 			<Divider />
 
 			<View style={styles.section}>
@@ -410,14 +428,14 @@ export default function AccountScreen() {
 					{serverPlus?.isPlus
 						? `Plus is active on your shared Space, ${formatBytes(serverPlus.mediaUsedBytes)} of ${formatBytes(serverPlus.mediaLimitBytes)} media used.`
 						: serverPlus
-							? `Free Space, ${formatBytes(serverPlus.mediaLimitBytes)} media, ${serverPlus.futureLetterLimit ?? 1} future letter at a time.`
+							? `Free Space, ${formatBytes(serverPlus.mediaLimitBytes)} of media.`
 							: plusStatus === "loading"
 								? "Checking your plan…"
 								: plusStatus === "unavailable"
 									? "Purchasing is currently unavailable."
 									: isPlus
 										? "You have Plus on this account."
-										: "Plus brings more room, more future letters, and PDF keepsakes to your shared Space."}
+										: "Plus brings more room and PDF keepsakes to your shared Space."}
 				</ThemedText>
 				<Button
 					label={isPlus ? "View Plus" : "Unlock Plus"}
@@ -430,7 +448,14 @@ export default function AccountScreen() {
 
 			<View style={styles.section}>
 				<SectionHeading title="Session" muted={muted} />
-				<Button label="Sign out" variant="secondary" onPress={handleSignOut} />
+				<Button
+					accessibilityLiveRegion="polite"
+					accessibilityState={{ busy: isSigningOut }}
+					disabled={isSigningOut}
+					label={isSigningOut ? "Signing out…" : "Sign out"}
+					variant="secondary"
+					onPress={handleSignOut}
+				/>
 				{signOutError ? (
 					<ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
 						{signOutError}
@@ -442,11 +467,15 @@ export default function AccountScreen() {
 				</ThemedText>
 			</View>
 
+			<Divider />
+
+
 			{legalRows.length > 0 ? (
 				<>
 					<Divider />
 					<View style={styles.section}>
 						<SectionHeading title="Support & legal" muted={muted} />
+						{linkError ? <ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>{linkError}</ThemedText> : null}
 						{legalRows.map((row) => (
 							<Button
 								key={row.label}
@@ -513,7 +542,7 @@ export default function AccountScreen() {
 					},
 					{ label: "Cancel", onPress: handleCloseConfirm },
 				]}
-				description="This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, letters, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
+				description="Export your data first — it stays free, before or without deleting anything. Deleting your account does not cancel your Apple or Google subscription. Cancel it in your store account settings first. This permanently deletes your account and signs out every device. We erase your email, photo, login connections, preferences, location, and sessions. Your shared memories (notes, photos, plans) stay with your partner. If you are the last member, the space closes. Backup copies age out automatically. This cannot be undone."
 				onClose={handleCloseConfirm}
 				title="Delete your account?"
 				visible={confirming === "delete"}

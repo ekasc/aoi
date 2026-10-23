@@ -1,0 +1,31 @@
+# Flow A: Creation (device: Alice).
+#
+# Alice signs into an isolated test account, opens the encrypted album for
+# the first time (first open mints the anchor + her record + the recovery
+# envelope through the real establish state machine), views and confirms
+# the recovery phrase, restarts, and reopens successfully.
+#
+# Space-row creation UI is NOT re-exercised here: the isolated backend seeds
+# the shared Space, and creation UI is covered by create-space-story.yaml.
+# Env (set by scripts/run-e2e.mjs): E2E_ACCOUNT_BUTTON, E2E_ACCOUNT_EMAIL.
+appId: com.ekasc.aoi
+---
+- launchApp:
+    clearState: true
+- assertVisible: "E2E test console"
+- tapOn: "${E2E_ACCOUNT_BUTTON}"
+- assertVisible: "Signed in as ${E2E_ACCOUNT_EMAIL}"
+- tapOn: "Continue to the app"
+# First album open: establish creates the encrypted archive.
+- openLink: "aoi://album/devices"
+- assertVisible: "No requests"
+# Recovery phrase is viewable and confirmable.
+- openLink: "aoi://album/recovery-phrase"
+- assertVisible: "Write these 24 words down"
+- tapOn: "I have written them down"
+# Restart: relaunch keeping app data, session and archive must survive.
+- launchApp
+- openLink: "aoi://album/devices"
+- assertVisible: "No requests"
+- openLink: "aoi://album/recovery-phrase"
+- assertVisible: "Write these 24 words down"

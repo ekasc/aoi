@@ -4,7 +4,7 @@ import { MenuView, type MenuAction } from "@expo/ui/community/menu";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Profiler, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Animated, {
 	FadeIn,
 	LayoutAnimationConfig,
@@ -40,7 +40,8 @@ import {
 } from "@/components/moments/gallery-tile";
 import { MomentCard } from "@/components/moments/moment-card";
 import { FirstPageDedication } from '@/components/moments/first-page-dedication';
-import { PhotoViewer, type ViewerPhoto } from "@/components/moments/photo-viewer";
+import { PartnerInvitation } from '@/components/space/partner-invitation';
+import { PhotoViewer, type PhotoViewerHandle, type ViewerPhoto } from "@/components/moments/photo-viewer";
 import type { PhotoOrigin } from "@/components/moments/zoomable-photo";
 import { PendingMemoryRow } from "@/components/moments/pending-memory-row";
 import { ThemedText } from "@/components/themed-text";
@@ -91,6 +92,20 @@ import {
 	relationshipCopy,
 } from "@/features/relationship/relationship-age";
 import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
+import {
+	bump,
+	bumpBackground,
+	recordCommit,
+	recordSpan,
+	recorderNow,
+} from "@/features/dev/measurement-recorder";
+
+/**
+ * Mounted window for the Story feed, in viewport heights, matching the
+ * library default. Kept explicit so the mounted-window experiment moves one
+ * number and nothing else.
+ */
+const FEED_WINDOW_SIZE = 21;
 
 /** Round FAB over the feed, clear of the docked system tab bar. */
 const FAB_SIZE = 56;
@@ -118,6 +133,14 @@ const TOP_ARM_DISTANCE = 200;
 
 /** How long the "Kept in your story" confirmation stays up. */
 const KEPT_NOTICE_DURATION_MS = 5000;
+
+/**
+ * Failsafe for the invisible-until-placed gate. If the landing machinery
+ * never fires (a surface that reports no scroll or layout the way native
+ * lists do), a blank wall is worse than an unplaced list: release both
+ * gates once content is decided.
+ */
+const REVEAL_FAILSAFE_MS = 4000;
 
 /** How long after the reader stops scrolling the add button returns. */
 const FAB_RESTORE_MS = 450;
@@ -254,6 +277,7 @@ export default function MemoriesScreen() {
 	const [actionMoment, setActionMoment] = useState<Moment | null>(null);
 	const [confirmMoment, setConfirmMoment] = useState<Moment | null>(null);
 	const [isRemoving, setIsRemoving] = useState(false);
+	const removingRef = useRef(false);
 	const [removeError, setRemoveError] = useState("");
 	const [keptNotice, setKeptNotice] = useState(false);
 	const [view, setView] = useState<MemoriesView>(() =>
@@ -267,6 +291,7 @@ export default function MemoriesScreen() {
 		/** Window frame of the tile that opened this session (morph origin). */
 		origin?: PhotoOrigin;
 	} | null>(null);
+	const viewerRef = useRef<PhotoViewerHandle>(null);
 
 	// Pinned overlay header: a single fixed row — the title on the left, the
 	// Feed/Gallery switcher on the right. The feed scrolls underneath it; the
@@ -358,7 +383,19 @@ export default function MemoriesScreen() {
 	const markReady = useCallback((presented: MemoriesView) => {
 		setReadyView((ready) => (ready[presented] ? ready : { ...ready, [presented]: true }));
 	}, []);
+	useEffect(() => {
+		if (placed || feed.isLoading || feed.error || seenCursor === undefined) {
+			return;
+		}
+		const timer = setTimeout(() => {
+			markReady('feed');
+			markReady('gallery');
+			setPlaced(true);
+		}, REVEAL_FAILSAFE_MS);
+		return () => clearTimeout(timer);
+	}, [placed, feed.isLoading, feed.error, seenCursor, markReady]);
 	const handleScrollBeginDrag = useCallback(() => {
+		viewerRef.current?.interruptReturn();
 		// A real drag: the reader owns the position from here.
 		readerScrolledRef.current = true;
 	}, []);
@@ -369,6 +406,8 @@ export default function MemoriesScreen() {
 	// margin while every other element sat at 24. A floating control that is
 	// only on screen when nothing is moving cannot need the reservation.
 	const fabVisible = useSharedValue(1);
+	const [fabInteractive, setFabInteractive] = useState(true);
+	const fabHidden = useRef(false);
 	const fabRestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const settleFab = useCallback(() => {
 		if (fabRestTimer.current) {
@@ -376,6 +415,8 @@ export default function MemoriesScreen() {
 		}
 		fabRestTimer.current = setTimeout(() => {
 			fabRestTimer.current = null;
+			fabHidden.current = false;
+			setFabInteractive(true);
 			fabVisible.set(withTiming(1, { duration: Motion.fast }));
 		}, FAB_RESTORE_MS);
 	}, [fabVisible]);
@@ -392,7 +433,11 @@ export default function MemoriesScreen() {
 			clearTimeout(fabRestTimer.current);
 			fabRestTimer.current = null;
 		}
-		fabVisible.set(withTiming(0, { duration: Motion.fast }));
+		if (!fabHidden.current) {
+			fabHidden.current = true;
+			setFabInteractive(false);
+			fabVisible.set(withTiming(0, { duration: Motion.fast }));
+		}
 	}, [fabVisible]);
 	const fabStyle = useAnimatedStyle(() => ({
 		opacity: fabVisible.value,
@@ -431,7 +476,12 @@ export default function MemoriesScreen() {
 			}
 			if (y <= 1 && topArmRef.current && feed.hasMore && !feed.isPaging) {
 				topArmRef.current = false;
-				feed.loadMore();
+				// Diagnostic switch. The stress runner isolates a scroll leg from
+				// paging so the two phases can be attributed separately; unset in
+				// normal use, so behaviour is unchanged.
+				if (!(globalThis as { __aoiSuppressAutoPaging?: boolean }).__aoiSuppressAutoPaging) {
+					feed.loadMore();
+				}
 			}
 		},
 		[feed, frost, hideFab, settleFab],
@@ -439,6 +489,28 @@ export default function MemoriesScreen() {
 	// A scroll from deep in a list proves that list has landed: reveal it
 	// and place it. Each list reports for itself, so one list's scroll can
 	// never ready, place, or move the other.
+	// Commit attribution for the feed list. `actualDuration` is render work for
+	// this subtree; `commitTime` is a timestamp and is deliberately not treated
+	// as a duration.
+	const handleFeedCommit = useCallback(
+		(
+			_id: string,
+			phase: "mount" | "update" | "nested-update",
+			actualDuration: number,
+			_baseDuration: number,
+			commitTime: number,
+		) => {
+			// Every commit is retained: aggregating them by interaction is the
+			// point, and a commit below a threshold is still a commit.
+			bumpBackground("commits");
+			bumpBackground(phase === "mount" ? "commitsMount" : "commitsUpdate");
+			recordCommit("react.feed", actualDuration, phase, {
+				commitTime: Math.round(commitTime),
+			});
+		},
+		[],
+	);
+
 	const handleFeedScroll = useCallback(
 		(event: NativeSyntheticEvent<NativeScrollEvent>) => {
 			const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -503,16 +575,25 @@ export default function MemoriesScreen() {
 	// Oldest-first: the oldest memory sits at the top, so months read
 	// oldest-first and each month's memories run oldest-first inside it —
 	// the story reads top to bottom, newest at the bottom.
-	const sections = useMemo(() => groupFeedChronological(shownMoments), [shownMoments]);
-	const gallerySections = useMemo(
-		() => buildGallerySections(shownMoments),
-		[shownMoments],
-	);
+	const sections = useMemo(() => {
+		const startedAt = recorderNow();
+		const derived = groupFeedChronological(shownMoments);
+		recordSpan("derive.feedGrouping", startedAt, { rows: derived.length });
+		return derived;
+	}, [shownMoments]);
+	const gallerySections = useMemo(() => {
+		const startedAt = recorderNow();
+		const derived = buildGallerySections(shownMoments);
+		recordSpan("derive.gallerySections", startedAt, { sections: derived.length });
+		return derived;
+	}, [shownMoments]);
 
-	const galleryRows = useMemo(
-		() => buildGalleryRows(gallerySections),
-		[gallerySections],
-	);
+	const galleryRows = useMemo(() => {
+		const startedAt = recorderNow();
+		const derived = buildGalleryRows(gallerySections);
+		recordSpan("derive.galleryRows", startedAt, { rows: derived.length });
+		return derived;
+	}, [gallerySections]);
 
 	// The album the full-screen viewer pages through: every tile the wall
 	// shows, in the order the wall shows them, whatever kind each one is. The
@@ -821,6 +902,7 @@ export default function MemoriesScreen() {
 	const handleCloseViewer = useCallback(() => {
 		setViewerPhoto(null);
 	}, []);
+
 
 	// Feed photos open the whole set fullscreen: tap a print and the viewer
 	// starts on that page, swiping across the rest of the memory's photos.
@@ -1156,25 +1238,27 @@ export default function MemoriesScreen() {
 	}, [isRemoving]);
 
 	const handleConfirmDelete = useCallback(async () => {
-		if (!confirmMoment || isRemoving) {
+		if (!confirmMoment || removingRef.current) {
 			return;
 		}
+		removingRef.current = true;
 		setIsRemoving(true);
 		setRemoveError("");
 		try {
-			await removeMoment(confirmMoment.id);
+			await removeMoment(confirmMoment.id, confirmMoment.updatedAt ?? confirmMoment.createdAt);
 			setConfirmMoment(null);
-		} catch {
-			setRemoveError("Couldn't remove this moment right now. Try again?");
+		} catch (error) {
+			setRemoveError(error instanceof Error ? error.message : "Couldn't delete this moment right now. Try again?");
 		} finally {
+			removingRef.current = false;
 			setIsRemoving(false);
 		}
-	}, [confirmMoment, isRemoving, removeMoment]);
+	}, [confirmMoment, removeMoment]);
 
 	const confirmSheetActions = useMemo(
 		() => [
 			{
-				label: isRemoving ? "Removing…" : "Remove",
+				label: isRemoving ? "Deleting…" : "Delete",
 				onPress: () => {
 					void handleConfirmDelete();
 				},
@@ -1249,6 +1333,7 @@ export default function MemoriesScreen() {
 							Photos, videos and voice notes you keep together
 							collect here.
 						</ThemedText>
+						<Button label="Add a photo, video or voice memory" onPress={handleOpenEditor} />
 					</>
 				) : firstPage.kind === 'dedication' ? (
 					// The words arrive last, on their own window of the master
@@ -1257,7 +1342,8 @@ export default function MemoriesScreen() {
 					// room being entered or a screen being swapped.
 					<Animated.View style={wordsStyle} testID="arrival-words">
 						<FirstPageDedication partnerName={firstPage.partnerName} waiting={firstPage.waiting}
-							sinceLabel={daysTogetherLabel} onCompose={handleLeaveSomething} onSkip={handleSkipFirstPage} />
+							sinceLabel={daysTogetherLabel} onCompose={handleLeaveSomething} onSkip={handleSkipFirstPage}
+							invitation={<PartnerInvitation variant="inline" />} />
 					</Animated.View>
 				) : (
 					<>
@@ -1480,13 +1566,11 @@ export default function MemoriesScreen() {
 									{
 										value: "feed",
 										label: "Feed",
-										icon: "newspaper-outline",
 										accessibilityHint: "Show memories oldest first",
 									},
 									{
 										value: "gallery",
 										label: "Gallery",
-										icon: "grid-outline",
 										accessibilityHint: "Show memory photos in a grid",
 									},
 								]}
@@ -1597,6 +1681,7 @@ export default function MemoriesScreen() {
 					]}
 					testID="feed-layer"
 				>
+				<Profiler id="feed" onRender={handleFeedCommit}>
 				<FlatList
 					alwaysBounceVertical={false}
 					bounces={false}
@@ -1608,6 +1693,10 @@ export default function MemoriesScreen() {
 					// Older history prepends above: hold the visible row so
 					// paging never shifts what the reader is looking at.
 					maintainVisibleContentPosition={displayRows.length > 0 ? { minIndexForVisible: 0 } : undefined}
+					// Pinned to the library default so the mounted-window
+					// experiment has one explicit place to move. Flip this to 7
+					// or 11 and change nothing else.
+					windowSize={FEED_WINDOW_SIZE}
 					data={displayRows}
 					onContentSizeChange={handleFeedContentSizeChange}
 					onLayout={handleFeedLayout}
@@ -1625,15 +1714,20 @@ export default function MemoriesScreen() {
 					showsVerticalScrollIndicator={false}
 					style={styles.list}
 				/>
+				</Profiler>
 				</View>
 			</View>
 			{!showingDedication ? <Animated.View
-				pointerEvents="box-none"
+				pointerEvents={fabInteractive ? "box-none" : "none"}
+				accessibilityElementsHidden={!fabInteractive}
+				importantForAccessibility={fabInteractive ? "auto" : "no-hide-descendants"}
 				style={[styles.fabAnchor, { bottom: fabBottom }, fabStyle]}
 			>
 			<Pressable
 				accessibilityLabel="Add memory"
 				accessibilityRole="button"
+				accessibilityState={{ disabled: !fabInteractive }}
+				disabled={!fabInteractive}
 				onPress={handleOpenEditor}
 				style={({ pressed }) => [
 					styles.fab,
@@ -1673,16 +1767,16 @@ export default function MemoriesScreen() {
 
 			<ActionSheet
 				actions={confirmSheetActions}
-				description={
-					removeError ||
-					"This moment will be removed from your shared timeline"
-				}
+				busy={isRemoving}
+				description="This moment will be deleted from your shared timeline"
+				error={removeError ?? undefined}
 				onClose={handleCloseConfirmSheet}
-				title="Remove this moment?"
+				title="Delete this moment?"
 				visible={confirmMoment !== null}
 			/>
 
 			<PhotoViewer
+				ref={viewerRef}
 				photos={viewerPhoto?.photos ?? []}
 				initialIndex={viewerPhoto?.index ?? 0}
 				origin={viewerPhoto?.origin}
@@ -1747,10 +1841,11 @@ const styles = StyleSheet.create({
 		paddingHorizontal: Spacing[24],
 		paddingBottom: Spacing[12],
 	},
-	// The Feed/Gallery switcher rides the title row: flexible so it squeezes
-	// on narrow phones, capped so it never crowds the title on wide ones.
+	// The Feed/Gallery switcher rides the title row with visible text
+	// labels (icon-only glyphs hid the Gallery): fixed width sized for both
+	// words, capped so it never crowds the title on wide phones.
 	viewSwitch: {
-		width: 108,
+		width: 152,
 	},
 	keptLayer: {
 		position: "absolute",

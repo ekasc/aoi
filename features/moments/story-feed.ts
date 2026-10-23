@@ -12,11 +12,6 @@ import type { Moment } from '@/features/moments/types';
 /** Memory kinds that never render in the Story feed (Plans owns goals). */
 const EXCLUDED_FEED_TYPES: ReadonlySet<string> = new Set(['goal']);
 
-function occurredMs(value: string): number {
-  const ms = new Date(value).getTime();
-  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
-}
-
 /** Local-calendar month key (YYYY-MM) for a memory's actual occurredAt. */
 export function feedMonthKey(occurredAt: string): string | null {
   const date = new Date(occurredAt);
@@ -56,25 +51,16 @@ export type FeedMonthSection = {
 export function sortFeedOldestFirst(moments: Moment[]): Moment[] {
   return moments
     .filter((moment) => !EXCLUDED_FEED_TYPES.has(moment.type))
-    .sort(compareFeedAsc);
-}
-
-/** Oldest-first order, undated last, id as the tiebreak. */
-function compareFeedAsc(left: Moment, right: Moment): number {
-  const leftMs = occurredMs(left.occurredAt);
-  const rightMs = occurredMs(right.occurredAt);
-  const leftUndated = !Number.isFinite(leftMs);
-  const rightUndated = !Number.isFinite(rightMs);
-  if (leftUndated !== rightUndated) {
-    return leftUndated ? 1 : -1;
-  }
-  if (leftMs !== rightMs) {
-    return leftMs < rightMs ? -1 : 1;
-  }
-  if (left.id === right.id) {
-    return 0;
-  }
-  return left.id < right.id ? -1 : 1;
+    .map((moment) => {
+      const time = Date.parse(moment.occurredAt);
+      return { moment, time: Number.isFinite(time) ? time : Number.POSITIVE_INFINITY };
+    })
+    .sort((left, right) => {
+      if (left.time !== right.time) return left.time < right.time ? -1 : 1;
+      if (left.moment.id === right.moment.id) return 0;
+      return left.moment.id < right.moment.id ? -1 : 1;
+    })
+    .map(({ moment }) => moment);
 }
 
 /**
@@ -151,7 +137,7 @@ export function visiblePendingRecords(
 /** Archive filter for the Memories tab. */
 export type FeedTypeFilter = 'all' | 'photos' | 'notes' | 'voice';
 
-/** The kinds the archive is expected to hold; letters land next. */
+/** The kinds the archive is expected to hold. */
 export type FeedArchiveType = 'photos' | 'notes' | 'voice' | 'other';
 
 /** Which archive bucket a memory belongs to. */
@@ -198,4 +184,3 @@ export function filterFeedMoments(
       matchesFeedQuery(moment, options.query)
   );
 }
-

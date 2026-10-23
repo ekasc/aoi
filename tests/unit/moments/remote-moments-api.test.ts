@@ -87,6 +87,7 @@ describe('remote-moments-api', () => {
       if (url === `${baseUrl}/v1/moments/moment-9`) {
         const sent = JSON.parse(String(init?.body));
         expect(sent.mediaId).toBe('media-2');
+        expect(sent.expectedUpdatedAt).toBe('2026-03-15T10:00:00.000Z');
         expect(sent.mediaPreview).toBe('/v1/media/media-2/object?variant=display');
         return jsonResponse({
           id: 'moment-9',
@@ -112,11 +113,26 @@ describe('remote-moments-api', () => {
 
     const { updateMoment } = await import('@/features/moments/remote-moments-api');
     const moment = await updateMoment('moment-9', {
+      expectedUpdatedAt: '2026-03-15T10:00:00.000Z',
       mediaPreview: '/v1/media/media-2/object?variant=display',
       audioUri: null,
       mediaId: 'media-2',
     });
     expect(moment.mediaId).toBe('media-2');
+  });
+
+  it('sends the captured version in the delete body and does not retry conflicts', async () => {
+    const message = 'This memory changed on another device. Reopen it before trying again.';
+    const fetchMock = vi.fn(async () => jsonResponse({ error: { code: 'CONFLICT', message } }, 409));
+    stubFetch(fetchMock);
+    const { deleteMoment } = await import('@/features/moments/remote-moments-api');
+    const version = '2026-03-15T10:00:00.000Z';
+    await expect(deleteMoment('moment-9', version)).rejects.toThrow(message);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${baseUrl}/v1/moments/moment-9`);
+    expect(init.method).toBe('DELETE');
+    expect(JSON.parse(init.body)).toEqual({ expectedUpdatedAt: version });
   });
 
   it('fetches the moments feed and passes the cursor through', async () => {

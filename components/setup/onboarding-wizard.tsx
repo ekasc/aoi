@@ -1,9 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { Redirect } from 'expo-router';
@@ -19,6 +21,7 @@ import { Reveal } from '@/components/ui/reveal';
 import { PaperTextInput } from '@/components/ui/text-input';
 import { NativeDateTimeField } from '@/components/forms/native-date-time-field';
 import { PARTNER_NAME_MAX, PARTNER_NAME_MESSAGES } from '@/features/space/partner-name';
+import { findInviteCode, normalizeInviteCode } from '@/features/space/invite-code';
 import { useSkyEntry } from '@/components/home/sky-entry-provider';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,6 +32,11 @@ import { haptics } from '@/features/haptics/haptics';
 // Setup collects identity on paper. Memories owns the invitation and its sky.
 
 const PAGE_GUTTER = Spacing[24];
+/** The invite code's shape: six cells at their natural width, and the gaps. */
+const OTP_CELL = 46;
+const OTP_GAP = Spacing[8];
+const OTP_ROW_WIDTH = OTP_CELL * 6 + OTP_GAP * 5;
+
 /** Front matter is numbered in lowercase roman: the fork, then the space. */
 const FOLIO: Record<string, string> = {
   welcome: 'i',
@@ -42,11 +50,29 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  scroll: {
+  /**
+   * The viewport the sheet is read inside.
+   *
+   * The sheet used to be a fixed column, which is correct only while the page
+   * fits: on a 320x568 screen, or with the keyboard up, or at a large text
+   * size, the form was taller than the column and its lower half — the date
+   * row, Continue, Back — was painted outside it and could not be reached.
+   * Scrolling the whole sheet keeps every step's actions and the sign-out line
+   * on the page at any height.
+   */
+  fill: {
     flex: 1,
+  },
+  scrollContent: {
+    // Grows to the viewport when the page is short, so the welcome step still
+    // centres its doors, and to its own content when it is tall.
+    flexGrow: 1,
   },
   sheet: {
     alignSelf: 'center',
+    // A grow, not `flex: 1`: a zero basis let the sheet be shorter than its own
+    // rows, which is what let the form overlap the footer instead of pushing it
+    // down. With basis auto it can never be smaller than what it holds.
     flexGrow: 1,
     maxWidth: 560,
     width: '100%',
@@ -84,7 +110,7 @@ const styles = StyleSheet.create({
    * what made the head jump downward at the very moment it should have risen.
    */
   page: {
-    flex: 1,
+    flexGrow: 1,
   },
   /**
    * The page's body: the consequence, directly under the head.
@@ -94,7 +120,7 @@ const styles = StyleSheet.create({
    * belongs at the foot of the page rather than spread through the middle.
    */
   body: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: PAGE_GUTTER,
     paddingTop: Spacing[8],
   },
@@ -184,18 +210,56 @@ const styles = StyleSheet.create({
   form: {
     gap: Spacing[16],
   },
-  pasteRow: {
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    // A link still has to be a touch target.
-    minHeight: 44,
+  /**
+   * The invite code, as its shape.
+   *
+   * The caption names the field; the box row is the field, centred on the
+   * page because a six-cell shape reads as an object, not a form control.
+   * The real TextInput is painted onto the row itself so a paste or a
+   * keystroke never has to aim at a small target.
+   */
+  otpGroup: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: Spacing[8],
   },
-  /** Reserved, so the failure line never pushes the buttons down. */
-  pasteLine: {
-    minHeight: 19,
+  otpRow: {
+    flexDirection: 'row',
+    gap: OTP_GAP,
+    maxWidth: OTP_ROW_WIDTH,
+    width: '100%',
+  },
+  otpBox: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: Radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    // Six fixed cells do not fit a 320pt screen inside the page gutter, which
+    // pushed the row past the margin. They keep their natural size and give
+    // width back proportionally when the row is narrower, so the shape stays a
+    // row on every screen.
+    flexShrink: 1,
+    height: 56,
+    justifyContent: 'center',
+    width: OTP_CELL,
+  },
+  /**
+   * Invisible but real: it carries the keyboard, the autofill and the paste,
+   * and it has to keep a tappable footprint inside the row it is painted on.
+   */
+  otpField: {
+    height: 1,
+    opacity: 0.01,
+    position: 'absolute',
+    width: 1,
   },
   signOut: {
     paddingTop: Spacing[24],
+  },
+  signOutRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
 });
 
@@ -365,6 +429,12 @@ function DoorBlock({
         {/* The fork's own error belongs to the doors, not to the consequence
             below, which is not on screen yet. */}
         <ErrorLine color={palette.muted} message={flow.error} />
+        {/* The topology question, asked once and quietly: a joiner who
+            creates splits the couple across two spaces, the costliest
+            mis-tap in the product. */}
+        <ThemedText type="caption" style={{ color: palette.muted }}>
+          One space per couple — if they already started one, take the joining door.
+        </ThemedText>
       </View>
     );
   }
@@ -470,6 +540,7 @@ function IdentityStep({
           label="Since"
           mode="date"
           onChange={flow.setStartDate}
+          textColor={palette.ink}
           value={flow.startDate}
           variant="row"
         />
@@ -481,7 +552,7 @@ function IdentityStep({
             disabled={flow.isSubmitting}
             label={flow.isSubmitting ? 'Creating…' : 'Continue'}
             onPress={() => void flow.submitCreate()}
-            tone="paper"
+            tone="sky"
           />
           <Button
             disabled={flow.isSubmitting}
@@ -568,59 +639,10 @@ function JoinStep({
   flow: ReturnType<typeof useOnboardingFlow>;
   palette: StepPalette;
 }) {
-  const [pasteFailed, setPasteFailed] = useState(false);
-
   return (
     <>
       <Animated.View entering={Reveal.up()} style={styles.form}>
-        <PaperTextInput
-          label="Invite code"
-          value={flow.inviteCode}
-          onChangeText={(value) => {
-            setPasteFailed(false);
-            flow.setInviteCode(value);
-          }}
-          placeholder="6-character code"
-          autoCapitalize="characters"
-          autoCorrect={false}
-          keyboardType="default"
-          textContentType="oneTimeCode"
-          returnKeyType="done"
-          maxLength={6}
-          tone="paper"
-        />
-        {/* The code arrived in a message, so it is already in the pasteboard.
-            Reading it unprompted would be both a privacy smell and, on iOS 16,
-            a system prompt nobody asked for. */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Paste the code from your clipboard"
-          accessibilityHint="Fills the invite code field if the clipboard holds a code"
-          onPress={() => {
-            void flow.pasteCode().then((ok) => setPasteFailed(!ok));
-          }}
-          style={styles.pasteRow}
-        >
-          {({ pressed }) => (
-            <ThemedText
-              style={{ color: palette.focusRing, opacity: pressed ? 0.7 : 1 }}
-              type="link"
-            >
-              Paste the code you were sent
-            </ThemedText>
-          )}
-        </Pressable>
-        <View style={styles.pasteLine}>
-          {pasteFailed ? (
-            <ThemedText
-              accessibilityLiveRegion="polite"
-              style={{ color: palette.muted }}
-              type="caption"
-            >
-              Nothing that looks like an invite code in your clipboard
-            </ThemedText>
-          ) : null}
-        </View>
+        <InviteCodeBoxes flow={flow} palette={palette} />
         <Button
           label={flow.isSubmitting ? 'Joining…' : 'Join space'}
           onPress={() => void flow.submitJoin()}
@@ -641,6 +663,101 @@ function JoinStep({
   );
 }
 
+/**
+ * The invite code, typed into six boxes.
+ *
+ * Six characters are a shape, not a sentence, so the field shows the shape:
+ * one box per character, the next empty cell carrying the focus. The real
+ * TextInput sits behind the boxes — invisible but hearing every keystroke —
+ * which is what keeps the system keyboard, the autofill (`oneTimeCode`) and
+ * a paste working: a paste of the whole message lands as one change and
+ * fills the boxes left to right for free. Boxes are paint; the field does
+ * the work.
+ */
+function InviteCodeBoxes({
+  flow,
+  palette,
+}: {
+  flow: ReturnType<typeof useOnboardingFlow>;
+  palette: StepPalette;
+}) {
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<TextInput | null>(null);
+  // Boxes display the normalized code; the flow keeps whatever arrives and
+  // judges it on its own terms.
+  const code = normalizeInviteCode(flow.inviteCode);
+  // The cursor sits in the next empty box while the field has the keyboard.
+  const activeIndex = focused ? Math.min(code.length, 5) : -1;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Invite code"
+      accessibilityHint="Opens the keyboard to type or paste the 6-character code"
+      onPress={() => inputRef.current?.focus()}
+      style={styles.otpGroup}
+    >
+      <ThemedText
+        accessibilityLiveRegion="polite"
+        style={{ color: palette.muted }}
+        type="caption"
+      >
+        Invite code
+      </ThemedText>
+      <TextInput
+        ref={inputRef}
+        accessibilityLabel="Invite code, 6 characters"
+        autoCapitalize="characters"
+        autoCorrect={false}
+        keyboardType="default"
+        maxLength={6}
+        onBlur={() => setFocused(false)}
+        onChangeText={(value) => {
+          const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (cleaned.length < 6) {
+            flow.setInviteCode(cleaned);
+            return;
+          }
+          // A paste of more typing than a code — the invite message itself is
+          // the usual cargo — is read the way the flow reads the clipboard:
+          // the code is a word inside the sentence, so pick it out.
+          const fromMessage =
+            value.length > 6 ? findInviteCode(value) : null;
+          flow.setInviteCode(fromMessage ?? cleaned.slice(0, 6));
+        }}
+        onFocus={() => setFocused(true)}
+        // Invisible but pressable, so the keyboard still arrives: it is the
+        // one real field, and the boxes are its reflection.
+        style={styles.otpField}
+        returnKeyType="done"
+        textContentType="oneTimeCode"
+        value={code}
+      />
+      <View pointerEvents="none" style={styles.otpRow}>
+        {Array.from({ length: 6 }, (_, index) => {
+          const char = code[index] ?? '';
+          const active = index === activeIndex;
+          return (
+            <View
+              // Six fixed cells: the keys stabilise as long as the code does.
+              key={index}
+              accessible={false}
+              style={[
+                styles.otpBox,
+                { borderColor: char || active ? palette.focusRing : palette.border },
+              ]}
+            >
+              <ThemedText style={{ color: palette.ink }} type="title">
+                {char}
+              </ThemedText>
+            </View>
+          );
+        })}
+      </View>
+    </Pressable>
+  );
+}
+
 /** The way out of a space you did not mean to be in. Quiet, and last. */
 function SignOut({
   flow,
@@ -649,18 +766,26 @@ function SignOut({
   flow: ReturnType<typeof useOnboardingFlow>;
   palette: StepPalette;
 }) {
+  // A real press target, not an `onPress` on a Text nested inside another
+  // Text. A nested run only claims its own glyphs, so the touchable area was
+  // the width of the word and pressed only when it landed exactly on it.
   return (
-    <ThemedText style={[styles.signOut, { color: palette.muted }]} type="caption">
-      Wrong space?{' '}
-      <ThemedText
-        accessibilityRole="link"
-        onPress={() => void flow.signOut()}
-        style={{ color: palette.focusRing }}
-        type="link"
-      >
-        Sign out
+    <View style={[styles.signOut, styles.signOutRow]}>
+      <ThemedText style={{ color: palette.muted }} type="caption">
+        Wrong space?{' '}
       </ThemedText>
-    </ThemedText>
+      <Pressable
+        accessibilityHint="Signs out and returns to the landing screen"
+        accessibilityLabel="Sign out"
+        accessibilityRole="link"
+        hitSlop={8}
+        onPress={() => void flow.signOut()}
+      >
+        <ThemedText style={{ color: palette.focusRing }} type="link">
+          Sign out
+        </ThemedText>
+      </Pressable>
+    </View>
   );
 }
 
@@ -734,6 +859,7 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
   const palette = useStepPalette();
   const dark = isDarkBackground(colors.background);
   const reduceMotion = useReducedMotion();
+  const isIos = process.env.EXPO_OS === 'ios';
   // Measured, not assumed: how far the head has to travel to sit in the middle
   // of the page depends on how tall the head is and how much room the page has.
   const [restShift, setRestShift] = useState(0);
@@ -780,79 +906,97 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
       style={[styles.root, { backgroundColor: colors.background }]}>
       {!inert ? <StatusBar style={dark ? 'light' : 'dark'} /> : null}
 
-      <ScrollView
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={[
-          styles.sheet,
-          {
-            paddingBottom: insets.bottom + Spacing[24],
-            paddingTop: insets.top + Spacing[16],
-          },
-        ]}
-        style={styles.scroll}
+      {/* The keyboard lifts the sheet rather than covering the field, and the
+          scroll keeps whatever the lift leaves room for reachable. Both halves
+          are needed: avoidance alone still leaves a form taller than a short
+          screen. */}
+      <KeyboardAvoidingView
+        behavior={isIos ? 'padding' : undefined}
+        style={styles.fill}
       >
-        <View style={styles.head}>
-          <ThemedText style={{ color: palette.muted }} type="meta">
-            aoi
-          </ThemedText>
-          <ThemedText style={{ color: palette.muted }} type="meta">
-            {FOLIO[visibleFlow.step]}
-          </ThemedText>
-        </View>
-
-        <View
-          onLayout={(event) => measurePage(event.nativeEvent.layout.height)}
-          style={styles.page}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={styles.fill}
         >
-        <View
-          onLayout={(event) => measureHead(event.nativeEvent.layout.height)}
-          style={[styles.titleBlock, headStyle]}
-        >
-          {/* The first half of the sentence never unmounts and never
-              re-animates. Only what the step adds moves, so choosing a door
-              reads as the sentence continuing rather than as a new sheet
-              arriving with the same words on it. */}
-          {/* A step down from the doors' ink: the lead-in is the sentence's
-              opening, and the doors are what the page is actually asking. */}
-          <ThemedText style={{ color: palette.secondary }} type="title">
-            We&rsquo;ll begin by
-          </ThemedText>
-          <DoorBlock flow={visibleFlow} palette={palette} />
-        </View>
+          <View
+            style={[
+              styles.sheet,
+              {
+                paddingBottom: insets.bottom + Spacing[24],
+                paddingTop: insets.top + Spacing[16],
+              },
+            ]}
+          >
+            <View style={styles.head}>
+              <ThemedText style={{ color: palette.muted }} type="meta">
+                aoi
+              </ThemedText>
+              <ThemedText style={{ color: palette.muted }} type="meta">
+                {FOLIO[visibleFlow.step]}
+              </ThemedText>
+            </View>
 
-        {/* Inert while the head is at rest: transparent is not the same as
-            absent, and a laid-out body over the doors swallows the taps that
-            choose one. */}
-        <View
-          pointerEvents={atTop ? 'auto' : 'none'}
-          style={[
-            styles.body,
-            { justifyContent: 'flex-start' },
-            bodyStyle,
-          ]}
-        >
-          {/*
-            Only the consequence arrives.
+            <View
+              onLayout={(event) => measurePage(event.nativeEvent.layout.height)}
+              style={styles.page}
+            >
+              <View
+                onLayout={(event) => measureHead(event.nativeEvent.layout.height)}
+                style={[styles.titleBlock, headStyle]}
+              >
+                {/* The first half of the sentence never unmounts and never
+                    re-animates. Only what the step adds moves, so choosing a
+                    door reads as the sentence continuing rather than as a new
+                    sheet arriving with the same words on it. */}
+                {/* A step down from the doors' ink: the lead-in is the
+                    sentence's opening, and the doors are what the page is
+                    actually asking. */}
+                <ThemedText style={{ color: palette.secondary }} type="title">
+                  We&rsquo;ll begin by
+                </ThemedText>
+                <DoorBlock flow={visibleFlow} palette={palette} />
+              </View>
 
-            This used to be keyed on the step, so every transition remounted
-            the whole body: the door slid up the screen while saying the same
-            words in the same place, which is what made the changes read as
-            turbulence. A door that has not changed must not move. The parts
-            that are genuinely new carry their own entrance below.
-          */}
-          <Animated.View key={visibleFlow.step} style={styles.stepBody}>
-            {visibleFlow.step === 'identity' ? (
-              <IdentityStep flow={visibleFlow} palette={palette} />
-            ) : null}
-            {visibleFlow.step === 'join' ? <JoinStep flow={visibleFlow} palette={palette} /> : null}
-          </Animated.View>
-        </View>
-        </View>
+              {/* Inert while the head is at rest: transparent is not the same as
+                  absent, and a laid-out body over the doors swallows the taps
+                  that choose one. */}
+              <View
+                pointerEvents={atTop ? 'auto' : 'none'}
+                style={[
+                  styles.body,
+                  { justifyContent: 'flex-start' },
+                  bodyStyle,
+                ]}
+              >
+                {/*
+                  Only the consequence arrives.
 
-        <View style={styles.footer}>
-          <SignOut flow={flow} palette={palette} />
-        </View>
-      </ScrollView>
+                  This used to be keyed on the step, so every transition
+                  remounted the whole body: the door slid up the screen while
+                  saying the same words in the same place, which is what made
+                  the changes read as turbulence. A door that has not changed
+                  must not move. The parts that are genuinely new carry their
+                  own entrance below.
+                */}
+                <Animated.View key={visibleFlow.step} style={styles.stepBody}>
+                  {visibleFlow.step === 'identity' ? (
+                    <IdentityStep flow={visibleFlow} palette={palette} />
+                  ) : null}
+                  {visibleFlow.step === 'join' ? (
+                    <JoinStep flow={visibleFlow} palette={palette} />
+                  ) : null}
+                </Animated.View>
+              </View>
+            </View>
+
+            <View style={styles.footer}>
+              <SignOut flow={flow} palette={palette} />
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

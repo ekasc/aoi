@@ -3,10 +3,11 @@ import { useRouter } from "expo-router";
 import { Stack } from "expo-router/stack";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { StyleSheet, View } from "react-native";
 
 import { LaunchSplash } from "@/components/launch-splash";
-import { notificationsModule } from "@/features/notifications/notifications-module";
+import { guardPushNotificationIOS, notificationsModule } from "@/features/notifications/notifications-module";
 import { DebugHarness } from "@/components/dev/debug-harness";
 import { ensureDevSeed } from "@/features/dev/dev-seed";
 import { installGlobalCrypto } from "@/features/crypto/global-crypto";
@@ -42,6 +43,13 @@ if (notifications) {
 // the first thing that touches it happens inside a `useState` initializer and
 // a throw there takes down the whole tree rather than one screen.
 installGlobalCrypto();
+
+// React Native's extracted PushNotificationIOS module fatals at load where
+// its native module is absent, and Metro's own importAll enumerates it — so
+// neutralize the getter before any screen runs. Where the genuine module
+// works the guard is a pass-through; where it throws, the first touch is
+// logged with a stack and a no-op stub is returned instead of a RedBox.
+guardPushNotificationIOS();
 
 // React Navigation's own theme provider (imported via expo-router since
 // SDK 56 forbids `@react-navigation/*` imports in app code), fed from Aoi's
@@ -91,6 +99,14 @@ type RootNavigationProps = {
 
 function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 	const router = useRouter();
+	// TODOREMOVE(splash-diagnosis): proving whether the post-login splash is
+	// a RootNavigation remount or something else. Remove after diagnosis.
+	useEffect(() => {
+		console.log('[splash-diag] RootNavigation mounted');
+		return () => {
+			console.log('[splash-diag] RootNavigation unmounted');
+		};
+	}, []);
 	const {
 		isHydrated: isSessionHydrated,
 		user,
@@ -103,6 +119,13 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 	const pendingInvite = useInviteLink();
 	const themeName = mode === "dark" ? "dark" : "light";
 	const [showLaunchSplash, setShowLaunchSplash] = useState(true);
+	const [launchLaidOut, setLaunchLaidOut] = useState(false);
+	const appReady = fontsLoaded && isHydrated && isSessionHydrated && isSpaceHydrated;
+	const finishLaunch = useCallback(() => setShowLaunchSplash(false), []);
+	const onLaunchLayout = useCallback(() => {
+		setLaunchLaidOut(true);
+		void SplashScreen.hideAsync().catch(() => {});
+	}, []);
 
 	const navigationTheme = useMemo(() => {
 		const baseTheme = mode === "dark" ? DarkTheme : DefaultTheme;
@@ -121,100 +144,80 @@ function RootNavigation({ fontsLoaded }: RootNavigationProps) {
 		};
 	}, [colors, mode]);
 
-	useEffect(() => {
-		if (!fontsLoaded || !isHydrated) {
-			return;
-		}
-
-		let isActive = true;
-		let splashTimer: ReturnType<typeof setTimeout> | null = null;
-
-		async function hideNativeSplash() {
-			await SplashScreen.hideAsync().catch(() => {});
-			splashTimer = setTimeout(() => {
-				if (isActive) {
-					setShowLaunchSplash(false);
-				}
-			}, 980);
-		}
-
-		void hideNativeSplash();
-
-		return () => {
-			isActive = false;
-			if (splashTimer) {
-				clearTimeout(splashTimer);
-			}
-		};
-	}, [fontsLoaded, isHydrated]);
-
 	// The link is only acted on once the app is actually up, and only for a
 	// signed-in reader: a link that arrives during sign-in is held by the hook
 	// and taken up here, when there is a space for it to belong to.
 	useEffect(() => {
-		if (!pendingInvite) {
+		if (!pendingInvite || !appReady) {
 			return;
 		}
 		router.replace({ pathname: '/(auth)/space-setup', params: { code: pendingInvite } });
-	}, [pendingInvite, router]);
+	}, [appReady, pendingInvite, router]);
 
-	if (
-		!fontsLoaded ||
-		!isHydrated ||
-		!isSessionHydrated ||
-		!isSpaceHydrated ||
-		showLaunchSplash
-	) {
-		return <LaunchSplash />;
-	}
+	// Keep the OS screen until the stored palette is known, avoiding a wrong-theme flash.
+	if (!fontsLoaded || !isHydrated) return null;
 
 	return (
 		<ThemeProvider value={navigationTheme}>
-			<DebugHarness>
-				<SkyEntryProvider key={user?.id ?? 'signed-out'}>
-				<Stack
-					screenOptions={{
-						contentStyle: { backgroundColor: colors.background },
-						headerStyle: { backgroundColor: colors.background },
-						headerTintColor: colors.text,
-						headerTitleStyle: Typography.navigationTitle,
-						headerTitleAlign: "center",
-						headerBackButtonDisplayMode: "minimal",
-						headerShadowVisible: false,
-					}}
-				>
-					<Stack.Screen
-						name="(public)"
-						options={{ headerShown: false }}
-					/>
-					<Stack.Screen name="(auth)" options={{ headerShown: false }} />
-					<Stack.Screen
-						name="(app)"
-						// Memories carries the outgoing form until its sky can be revealed.
-						options={{ animation: "none", headerShown: false }}
-					/>
-					<Stack.Screen
-						name="dev-story"
-						options={{ animation: "none", headerShown: false }}
-					/>
-					<Stack.Screen
-						name="dev-chapter"
-						options={{ headerShown: false }}
-					/>
-					<Stack.Screen
-						name="dev-composer"
-						options={{ headerShown: false }}
-					/>
-					<Stack.Screen
-						name="dev-setup"
-						options={{ headerShown: false }}
-					/>
-				</Stack>
-				</SkyEntryProvider>
-				<StatusBar
-					style={themeName === "dark" ? "light" : "dark"}
-				/>
-			</DebugHarness>
+			<View style={{ flex: 1, backgroundColor: colors.background }}>
+				{appReady ? (
+					<View
+						style={StyleSheet.absoluteFill}
+						accessibilityElementsHidden={showLaunchSplash}
+						importantForAccessibility={showLaunchSplash ? "no-hide-descendants" : "auto"}
+						aria-hidden={showLaunchSplash}
+					>
+						<DebugHarness>
+							<SkyEntryProvider userId={user?.id ?? null}>
+								<Stack
+									screenOptions={{
+										contentStyle: { backgroundColor: colors.background },
+										headerStyle: { backgroundColor: colors.background },
+										headerTintColor: colors.text,
+										headerTitleStyle: Typography.navigationTitle,
+										headerTitleAlign: "center",
+										headerBackButtonDisplayMode: "minimal",
+										headerShadowVisible: false,
+									}}
+								>
+									<Stack.Screen
+										name="(public)"
+										options={{ headerShown: false }}
+									/>
+									<Stack.Screen name="(auth)" options={{ headerShown: false }} />
+									<Stack.Screen
+										name="(app)"
+										// Memories carries the outgoing form until its sky can be revealed.
+										options={{ animation: "none", headerShown: false }}
+									/>
+									<Stack.Screen
+										name="dev-story"
+										options={{ animation: "none", headerShown: false }}
+									/>
+									<Stack.Screen
+										name="dev-chapter"
+										options={{ headerShown: false }}
+									/>
+									<Stack.Screen
+										name="dev-composer"
+										options={{ headerShown: false }}
+									/>
+									<Stack.Screen
+										name="dev-setup"
+										options={{ headerShown: false }}
+									/>
+								</Stack>
+							</SkyEntryProvider>
+							<StatusBar
+								style={themeName === "dark" ? "light" : "dark"}
+							/>
+						</DebugHarness>
+					</View>
+				) : null}
+				{showLaunchSplash ? (
+					<LaunchSplash ready={appReady && launchLaidOut} onHidden={finishLaunch} onLayout={onLaunchLayout} />
+				) : null}
+			</View>
 		</ThemeProvider>
 	);
 }

@@ -52,7 +52,13 @@ class RemoteAuthApi implements AuthApi {
     });
 
     if (!response.ok) {
-      throw new Error('Unable to fetch session.');
+      // Status travels: restore must tell "credentials dead" (401) apart
+      // from "server hiccup" (anything else) — see session-context.
+      const error = new Error('Unable to fetch session.') as Error & {
+        status?: number;
+      };
+      error.status = response.status;
+      throw error;
     }
 
     const payload = (await response.json()) as { user: AuthSessionPayload['user'] };

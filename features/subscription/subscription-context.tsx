@@ -9,7 +9,7 @@ import {
   type PropsWithChildren,
 } from 'react';
 import { AppState, Platform } from 'react-native';
-import Purchases, { PURCHASES_ERROR_CODE, type PurchasesPackage } from 'react-native-purchases';
+import type { PurchasesPackage } from 'react-native-purchases';
 
 import {
   PLUS_ENTITLEMENT_ID,
@@ -39,16 +39,46 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 let configuredKey: string | null = null;
 
+type PurchasesSdk = typeof import('react-native-purchases');
+
+let purchasesSdk: PurchasesSdk | null = null;
+let purchasesLoading: Promise<PurchasesSdk> | null = null;
+
+/**
+ * The store SDK is 1.3 MB of generated product metadata, and almost none of
+ * the app touches it: web never uses it at all, and a native session only
+ * needs it once the store is actually read. Loading it on first use keeps it
+ * out of the startup graph instead of charging every screen for the paywall.
+ */
+function loadPurchases(): Promise<PurchasesSdk> {
+  if (!purchasesSdk) {
+    purchasesLoading ??= import('react-native-purchases').then(
+      (module) => {
+        purchasesSdk = module;
+        return module;
+      },
+      (error: unknown) => {
+        // Do not cache a rejection: a later attempt should be able to retry.
+        purchasesLoading = null;
+        throw error;
+      },
+    );
+    return purchasesLoading;
+  }
+  return Promise.resolve(purchasesSdk);
+}
+
 function isStoreAvailable(): boolean {
   if (Platform.OS === 'web') return false;
   return getRevenueCatApiKey() !== null;
 }
 
-function ensureConfigured(): void {
+async function ensureConfigured(): Promise<void> {
   if (Platform.OS === 'web') return;
   const apiKey = getRevenueCatApiKey();
   if (!apiKey || configuredKey === apiKey) return;
   try {
+    const { default: Purchases } = await loadPurchases();
     Purchases.configure({ apiKey });
     configuredKey = apiKey;
   } catch {
@@ -182,7 +212,8 @@ export function SubscriptionProvider({
     }
 
     try {
-      ensureConfigured();
+      await ensureConfigured();
+      const { default: Purchases } = await loadPurchases();
       const info = await Purchases.getCustomerInfo();
       if (!scopeAlive(gen, userId, sid)) return;
       const plus = isPlusCustomer(info);
@@ -239,7 +270,8 @@ export function SubscriptionProvider({
       }
       (async () => {
         try {
-          ensureConfigured();
+          await ensureConfigured();
+          const { default: Purchases } = await loadPurchases();
           await Purchases.logOut();
         } catch {
           // Identity cleanup is best-effort; local state still clears.
@@ -259,7 +291,8 @@ export function SubscriptionProvider({
 
     (async () => {
       try {
-        ensureConfigured();
+        await ensureConfigured();
+        const { default: Purchases } = await loadPurchases();
         await Purchases.logIn(uid);
         if (!scopeAlive(gen, uid, spaceId)) return;
         const info = await Purchases.getCustomerInfo();
@@ -315,8 +348,11 @@ export function SubscriptionProvider({
     if (!isStoreAvailable()) {
       return { ok: false, error: 'Purchasing is unavailable right now.', reason: 'unavailable' };
     }
+    let cancelledCode: string | undefined;
     try {
-      ensureConfigured();
+      await ensureConfigured();
+      const { default: Purchases, PURCHASES_ERROR_CODE } = await loadPurchases();
+      cancelledCode = PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR;
       const offerings = await Purchases.getOfferings();
       const pkgs = offerings.current?.availablePackages ?? [];
       const pkg = pkgs.find((p) => p.identifier === planId);
@@ -342,7 +378,7 @@ export function SubscriptionProvider({
       return { ok: true };
     } catch (e) {
       const err = e as { code?: string; message?: string; userCancelled?: boolean };
-      if (err?.userCancelled || err?.code === PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) {
+      if (err?.userCancelled || err?.code === cancelledCode) {
         return { ok: false, error: 'Purchase canceled.', reason: 'cancelled' };
       }
       return { ok: false, error: err?.message ?? 'Purchase failed. Please try again.', reason: 'failed' };
@@ -355,8 +391,11 @@ export function SubscriptionProvider({
     if (!isStoreAvailable()) {
       return { ok: false, error: 'Purchasing is unavailable right now.', reason: 'unavailable' };
     }
+    let cancelledCode: string | undefined;
     try {
-      ensureConfigured();
+      await ensureConfigured();
+      const { default: Purchases, PURCHASES_ERROR_CODE } = await loadPurchases();
+      cancelledCode = PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR;
       const info = await Purchases.restorePurchases();
       if (!scopeAlive(gen, userId, sid)) {
         return { ok: false, error: 'Account changed. Please try again.', reason: 'failed' };
@@ -373,7 +412,7 @@ export function SubscriptionProvider({
       return { ok: true, isPlus };
     } catch (e) {
       const err = e as { code?: string; message?: string; userCancelled?: boolean };
-      if (err?.userCancelled || err?.code === PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) {
+      if (err?.userCancelled || err?.code === cancelledCode) {
         return { ok: false, error: 'Restore canceled.', reason: 'cancelled' };
       }
       return { ok: false, error: 'Could not restore purchases.', reason: 'failed' };

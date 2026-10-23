@@ -11,7 +11,7 @@
 ## Information Architecture
 
 ```
-aoi.app/
+aoiapp.com/
 ├── /                      # Landing Page (Home)
 ├── /features              # Features Overview
 │   └── /timeline          # Timeline Feature Detail
@@ -426,10 +426,10 @@ Final CTA
 **Content:**
 - Contact form
 - Email addresses:
-  - support@aoi.app
-  - hello@aoi.app
-  - privacy@aoi.app
-  - press@aoi.app
+  - support@aoiapp.com
+  - hello@aoiapp.com
+  - privacy@aoiapp.com
+  - press@aoiapp.com
 - Response time expectations
 - Social media links
 
@@ -478,7 +478,7 @@ Product          Company         Legal          Connect
 ─────────        ───────         ─────          ───────
 Features         About           Privacy        Twitter
 Pricing          Blog            Terms          Instagram
-How It Works     Careers         Cookies        hello@aoi.app
+How It Works     Careers         Cookies        hello@aoiapp.com
 Use Cases
 Support
 
@@ -515,19 +515,19 @@ We use only essential cookies. No tracking. [OK]
 <title>{page_title} | Aoi — Private Space for Couples</title>
 <meta name="description" content="{page_description}">
 <meta name="keywords" content="{relevant_keywords}">
-<link rel="canonical" href="https://aoi.app/{page_path}">
+<link rel="canonical" href="https://aoiapp.com/{page_path}">
 
 <!-- Open Graph -->
 <meta property="og:title" content="{page_title} | Aoi">
 <meta property="og:description" content="{page_description}">
-<meta property="og:image" content="https://aoi.app/og-image.jpg">
-<meta property="og:url" content="https://aoi.app/{page_path}">
+<meta property="og:image" content="https://aoiapp.com/og-image.jpg">
+<meta property="og:url" content="https://aoiapp.com/{page_path}">
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{page_title} | Aoi">
 <meta name="twitter:description" content="{page_description}">
-<meta name="twitter:image" content="https://aoi.app/og-image.jpg">
+<meta name="twitter:image" content="https://aoiapp.com/og-image.jpg">
 ```
 
 ### URL Structure
@@ -822,9 +822,9 @@ We use only essential cookies. No tracking. [OK]
 5. Deploy
 
 **Questions?**
-- Marketing: marketing@aoi.app
-- Technical: dev@aoi.app
-- Content: content@aoi.app
+- Marketing: marketing@aoiapp.com
+- Technical: dev@aoiapp.com
+- Content: content@aoiapp.com
 
 ---
 

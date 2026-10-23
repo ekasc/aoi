@@ -24,24 +24,26 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 import { relationshipCopy } from "@/features/relationship/relationship-age";
 import { useRelationshipAge } from "@/features/relationship/use-relationship-age";
 
-const REVEAL_ANIMATION = Reveal.in(Motion.slow);
+const SAVE_COUNTER_VISIBLE_FROM = 400;
 
 function AnswerCard({
   answer,
   label,
   labelColor,
+  index,
 }: {
   answer: string;
   label: string;
   labelColor: string;
+  index: number;
 }) {
   return (
-    <Animated.View entering={REVEAL_ANIMATION}>
+    <Animated.View entering={Reveal.up(Motion.slow).delay(Reveal.stagger(index))}>
       <Surface style={styles.answerCard}>
         <ThemedText type="meta" style={{ color: labelColor }}>
           {label}
         </ThemedText>
-        <ThemedText type="body" selectable>
+        <ThemedText selectable style={styles.answerBody}>
           {answer}
         </ThemedText>
       </Surface>
@@ -67,15 +69,18 @@ export default function QuestionScreen() {
 	const muted = useThemeColor({}, "muted");
 	const partnerAccentInk = useThemeColor({}, "partnerAccentInk");
 	const text = useThemeColor({}, "text");
-	const warning = useThemeColor({}, "warning");
+	const danger = useThemeColor({}, "danger");
 	const [draft, setDraft] = useState("");
 	const [isEditingRevealed, setIsEditingRevealed] = useState(false);
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const adoptedWeekRef = useRef<string | null>(null);
 
-	const partnerName = state?.partnerName ?? space?.partnerName ?? "them";
+	const partnerName = state?.partnerName ?? space?.partnerName ?? "your partner";
 	const hasSavedAnswer = state?.yourAnswer != null;
-	const showComposer = !state?.revealed || isEditingRevealed;
+	// The composer is only the writing surface: once your words are kept they
+	// rest as read-only text (waiting) or beside your partner's (revealed)
+	// until you choose to edit them again.
+	const showComposer = !hasSavedAnswer || isEditingRevealed;
 
 	// Adopt each fresh week exactly once: prefill the draft with the saved
 	// answer and settle the reveal/edit mode. Re-loading the same week (app
@@ -111,7 +116,7 @@ export default function QuestionScreen() {
 		}
 	}, [canSave, submitAnswer, trimmedDraft]);
 
-	const handleEditRevealed = useCallback(() => {
+	const handleEditAnswer = useCallback(() => {
 		setIsEditingRevealed(true);
 	}, []);
 
@@ -164,7 +169,7 @@ export default function QuestionScreen() {
 							</ThemedText>
 							{!hasSavedAnswer && !state.partnerAnswered ? (
 								<ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
-									No answers yet.
+									No answers yet. Skipped weeks simply pass — the next question arrives whenever you like.
 								</ThemedText>
 							) : null}
 						</View>
@@ -182,10 +187,24 @@ export default function QuestionScreen() {
 									textAlignVertical="top"
 									value={draft}
 								/>
-								{saveError ? (
+								{draft.length >= SAVE_COUNTER_VISIBLE_FROM ? (
 									<ThemedText type="caption" style={{ color: muted }}>
-										{saveError}
+										{WEEKLY_ANSWER_MAX_LENGTH - draft.length} characters left
 									</ThemedText>
+								) : null}
+								{saveError ? (
+									<View style={styles.errorStack}>
+										<ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+											{saveError}
+										</ThemedText>
+										<Button
+											disabled={!canSave}
+											label="Try again"
+											onPress={() => void handleSave()}
+											size="sm"
+											variant="secondary"
+										/>
+									</View>
 								) : null}
 								<View style={styles.controlStack}>
 									<Button
@@ -193,36 +212,50 @@ export default function QuestionScreen() {
 										label={hasSavedAnswer ? "Update my answer" : "Keep my answer"}
 										onPress={() => void handleSave()}
 									/>
-									{hasSavedAnswer && !state.revealed ? (
-										<View style={styles.lockedRow}>
-											<View style={[styles.lockedDot, { backgroundColor: warning }]} />
-											<ThemedText type="caption" style={{ color: warning }}>
-												Saved. It unlocks when {partnerName} has written too.
-											</ThemedText>
-										</View>
-									) : null}
 								</View>
 							</Surface>
-						) : (
+						) : state.revealed ? (
 							<View style={styles.revealGroup}>
+								<ThemedText accessibilityLiveRegion="polite" type="caption" style={{ color: muted }}>
+									Both answers are here.
+								</ThemedText>
 								<AnswerCard
 									answer={state.yourAnswer ?? ""}
 									label="You"
 									labelColor={accentInk}
+									index={0}
 								/>
 								<AnswerCard
 									answer={state.partnerAnswer ?? ""}
 									label={partnerName}
 									labelColor={partnerAccentInk}
+									index={1}
 								/>
 								<View style={styles.editWrap}>
 									<Button
 										label="Edit my answer"
-										onPress={handleEditRevealed}
+										onPress={handleEditAnswer}
 										variant="ghost"
 									/>
 								</View>
 							</View>
+						) : (
+							<Surface style={styles.composer}>
+								<ThemedText accessibilityLiveRegion="polite" type="body" style={{ color: text }}>
+									Saved. It unlocks when {partnerName} has written too.
+								</ThemedText>
+								<ThemedText type="meta" style={{ color: accentInk }}>
+									You
+								</ThemedText>
+								<ThemedText selectable style={styles.answerBody}>
+									{state.yourAnswer ?? ""}
+								</ThemedText>
+								<Button
+									label="Update my answer"
+									onPress={handleEditAnswer}
+									variant="secondary"
+								/>
+							</Surface>
 						)}
 					</>
 				) : (
@@ -267,23 +300,18 @@ const styles = StyleSheet.create({
 		borderRadius: Radii.lg,
 	},
 	input: {
-		...Typography.subheading,
+		...Typography.inputDisplay,
 		minHeight: 112,
 		textAlignVertical: "top",
 	},
 	controlStack: {
 		gap: Spacing[8],
 	},
-	lockedRow: {
-		flexDirection: "row",
-		alignItems: "center",
+	errorStack: {
 		gap: Spacing[8],
 	},
-	lockedDot: {
-		width: 8,
-		height: 8,
-		borderRadius: Radii.pill,
-		flexShrink: 0,
+	answerBody: {
+		...Typography.readBody,
 	},
 	answerCard: {
 		gap: Spacing[8],

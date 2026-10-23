@@ -150,13 +150,28 @@ async function signInWithGoogle(authApi: AuthApi): Promise<AuthSessionPayload> {
     });
   }
 
-  const { GoogleSignin } = await import('@react-native-google-signin/google-signin');
+  let GoogleSigninModule;
+  try {
+    // The import evaluates the module spec, which throws a raw Invariant
+    // Violation when the native module is missing from the binary (Expo Go
+    // never bundles it, and a dev build made before this dependency needs a
+    // rebuild). Bound the whole eager-eval step so the login screen shows a
+    // user-safe error instead of the app crashing.
+    GoogleSigninModule = await import('@react-native-google-signin/google-signin');
+    GoogleSigninModule.GoogleSignin.configure({
+      iosClientId: getGoogleIosClientId(),
+      webClientId: getGoogleClientId(),
+      scopes: ['email', 'profile'],
+    });
+  } catch (error) {
+    console.debug('[auth] Google sign-in module unavailable:', error);
+    throw new OAuthClientError(
+      'Google sign-in is not available in this app build. Install the latest development build.',
+      'unknown'
+    );
+  }
 
-  GoogleSignin.configure({
-    iosClientId: getGoogleIosClientId(),
-    webClientId: getGoogleClientId(),
-    scopes: ['email', 'profile'],
-  });
+  const { GoogleSignin } = GoogleSigninModule;
 
   let response;
   try {

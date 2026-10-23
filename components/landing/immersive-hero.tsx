@@ -31,11 +31,11 @@ type ImmersiveHeroProps = {
  * system the moment the system moved, and nothing noticed.
  */
 export function ImmersiveHero({ cta, legal, variant = 'welcome', theme }: ImmersiveHeroProps) {
-  const headline = variant === 'signin' ? 'Welcome\nback.' : 'The world\ncan wait.';
+  const headline = variant === 'signin' ? 'Your shared\nspace.' : 'The world\ncan wait.';
   const body =
     variant === 'signin'
-      ? 'Your moments, letters, and everything in between are waiting.'
-      : 'A private place for your moments, letters, and everything in between.';
+      ? 'Sign in to create a space or join your partner. If you already use Aoi, sign in with the same account.'
+      : 'A private place for you and your partner to save memories, make plans and keep things together.';
 
   return (
     <Animated.View entering={Reveal.in(Motion.slow)} style={styles.root}>

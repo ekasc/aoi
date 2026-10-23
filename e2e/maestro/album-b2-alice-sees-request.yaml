@@ -1,0 +1,17 @@
+# Flow B2: Enrollment — Alice approves (device: Alice).
+#
+# Alice sees Bob's pending claim, the runner verifies both displayed
+# fingerprints match (hierarchy dumps on both devices), then Alice approves.
+# Env: E2E_ACCOUNT_BUTTON, E2E_ACCOUNT_EMAIL, E2E_CLAIM_BUTTON
+# ("Device <first-8-of-device-id>", resolved by the runner from the backend
+# snapshot with controlled retries until Bob's claim appears).
+appId: com.ekasc.aoi
+---
+- launchApp
+- openLink: "aoi://album/devices"
+- tapOn: "Refresh"
+- assertVisible: "Waiting to join"
+- tapOn: "${E2E_CLAIM_BUTTON}"
+- assertVisible: "Read this code aloud with them. It must match exactly."
+# The runner pauses here (hierarchy fingerprints compared out-of-band),
+# then resumes this flow file at the approval step via album-b2-approve.yaml.

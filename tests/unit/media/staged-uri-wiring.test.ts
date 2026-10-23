@@ -65,7 +65,7 @@ describe('staged media display/upload boundaries resolve URIs', () => {
   });
 
   it('upload reads resolve the staged path before fetch', () => {
-    expect(UPLOAD_SOURCE).toContain('fetch(resolveStagedUri(input.uri))');
+    expect(UPLOAD_SOURCE).toMatch(/fetch\(resolveStagedUri\(input\.uri\)(?:,|\))/);
   });
 
   it('every boundary imports the shared resolver', () => {

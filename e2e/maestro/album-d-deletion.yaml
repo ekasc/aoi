@@ -1,0 +1,19 @@
+# Flow D: Deletion — Alice deletes, Bob sees it, restart keeps it deleted.
+#
+# Runs after Flow E (photo exists and is readable). Alice's delete publishes
+# a real signed tombstone; both archives must list 0 photos afterwards and
+# still list 0 after a restart (no resurrection).
+# Env: E2E_ACCOUNT_BUTTON, E2E_ACCOUNT_EMAIL.
+appId: com.ekasc.aoi
+---
+- launchApp
+- openLink: "aoi://dev-e2e"
+- tapOn: "Delete test photo (E2E)"
+- assertVisible: "Archive: deleted "
+- tapOn: "Read archive (E2E)"
+- assertVisible: "Archive: 0 photos"
+# Restart: the deleted photo must not reappear.
+- launchApp
+- openLink: "aoi://dev-e2e"
+- tapOn: "Read archive (E2E)"
+- assertVisible: "Archive: 0 photos"
