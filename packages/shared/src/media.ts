@@ -84,8 +84,8 @@ export type MediaObject = z.infer<typeof mediaObjectSchema>;
 
 /** POST /v1/media/upload-url — intent to upload. */
 export const mediaUploadIntentRequestSchema = z.object({
-  filename: z.string().min(1),
-  mimeType: z.string().min(1),
+  filename: z.string().min(1).max(255),
+  mimeType: z.string().min(1).max(127),
   sizeBytes: z.number().int().positive().max(MEDIA_MAX_BYTES),
   kind: mediaKindSchema,
 });

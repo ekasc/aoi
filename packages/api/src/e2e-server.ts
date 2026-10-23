@@ -29,7 +29,8 @@ import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 
-import { createApp } from './create-app';
+import { createApp, makeRun } from './create-app';
+import { e2eAuthRouter } from './routes/e2e-auth';
 import { makeTestHarness } from './effects/test-harness';
 import type { MediaStoreService } from './services/media-store';
 
@@ -167,6 +168,7 @@ function seed(): void {
 seed();
 
 const app = createApp(harness.layer);
+app.route('/', e2eAuthRouter(makeRun(harness.layer)));
 
 // Local byte transport for presigned uploads (see header). Verifies the
 // HMAC + expiry this server minted, then enforces the conditional create.

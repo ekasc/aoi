@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
+import { createMomentRequestSchema, updateMomentRequestSchema, createCalendarEventRequestSchema, updateCalendarEventRequestSchema, mediaUploadIntentRequestSchema } from '@aoi/shared';
 
 // ── Cursor / Date validation tests ──────────────────────────────────────
 
@@ -57,9 +58,9 @@ describe('date validation', () => {
 
 // ── Input size limit tests ──────────────────────────────────────────────
 
-const momentBodySchema = z.string().max(10000);
-const momentTitleSchema = z.string().max(500);
-const calendarTitleSchema = z.string().min(1).max(500);
+const momentBodySchema = createMomentRequestSchema.shape.body.unwrap();
+const momentTitleSchema = createMomentRequestSchema.shape.title.unwrap();
+const calendarTitleSchema = createCalendarEventRequestSchema.shape.title;
 
 describe('input size limits', () => {
   it('moment body accepts normal text', () => {
@@ -428,5 +429,27 @@ describe('calendar event validation', () => {
         label: { preset: 'Work' },
       })
     ).toThrow();
+  });
+});
+
+
+describe('shared write bounds', () => {
+  it('bounds memory updates as well as creates', () => {
+    expect(updateMomentRequestSchema.shape.body.safeParse('x'.repeat(10001)).success).toBe(false);
+    expect(updateMomentRequestSchema.shape.title.safeParse('x'.repeat(501)).success).toBe(false);
+  });
+
+  it('rejects excessive, fractional, negative, and out-of-range reminders on both write paths', () => {
+    for (const reminders of [Array(11).fill(5), [-1], [1.5], [525601]]) {
+      expect(createCalendarEventRequestSchema.shape.reminderMinutesBefore.safeParse(reminders).success).toBe(false);
+      expect(updateCalendarEventRequestSchema.shape.reminderMinutesBefore.safeParse(reminders).success).toBe(false);
+    }
+    expect(createCalendarEventRequestSchema.shape.reminderMinutesBefore.safeParse([0, 5, 1440]).success).toBe(true);
+  });
+
+  it('bounds uploaded filenames and calendar metadata', () => {
+    expect(mediaUploadIntentRequestSchema.shape.filename.safeParse('x'.repeat(256)).success).toBe(false);
+    expect(createCalendarEventRequestSchema.shape.actorName.safeParse('x'.repeat(129)).success).toBe(false);
+    expect(updateCalendarEventRequestSchema.shape.location.safeParse('x'.repeat(1001)).success).toBe(false);
   });
 });

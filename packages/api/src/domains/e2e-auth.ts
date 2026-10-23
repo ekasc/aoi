@@ -21,11 +21,8 @@ import {
  * This authenticates IDENTITY only: everything past this point — the album
  * protocol, enrollment, media sealing, recovery — runs its real code.
  *
- * Availability is the flag, not the route table: the handler refuses with 404
- * unless `AOI_E2E_MODE=true`, and with 401 unless the caller proves the
- * per-run `AOI_E2E_SECRET`. Production Workers never set either, so the
- * endpoint is unreachable there by construction. Only the isolated E2E
- * backend (scripts/e2e-backend.mjs) enables it.
+ * Only the isolated E2E server mounts this endpoint. The program also
+ * requires AOI_E2E_MODE=true and the per-run AOI_E2E_SECRET.
  */
 export const mintE2ESessionProgram = (
   email: string,

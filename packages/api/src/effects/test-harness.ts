@@ -393,7 +393,7 @@ export function makeTestHarness(options?: {
     sendBatch: async () => {},
   };
   const r2 = new ShimR2();
-  const rateLimiter = makeRateLimiterService(() => undefined);
+  const rateLimiter = makeRateLimiterService(() => undefined, { allowMissingBinding: true });
   const configValues: Record<string, string | undefined> = {
     ...TEST_AUTH_CONFIG,
     CORS_ORIGIN: '*',

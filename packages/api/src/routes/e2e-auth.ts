@@ -8,9 +8,8 @@ import { mintE2ESessionProgram } from '../domains/e2e-auth';
  * E2E-only auth bootstrap (see domains/e2e-auth.ts for the trust story).
  *
  * Public by necessity — the caller has no session yet — and gated by the
- * per-run secret inside the program. Always registered; the program 404s
- * unless the backend runs with AOI_E2E_MODE=true, so production answers
- * exactly as if the route did not exist.
+ * per-run secret inside the program. Registered only by the isolated E2E
+ * server; the production app never imports or mounts this router.
  */
 export function e2eAuthRouter(run: RunProgram): Hono {
   const router = new Hono();

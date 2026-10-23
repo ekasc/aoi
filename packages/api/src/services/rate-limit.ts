@@ -10,19 +10,13 @@ export interface RateLimitDecision {
   readonly remaining: number | null;
 }
 
-/**
- * RateLimiter — wraps the Worker Rate Limiting bindings. In production the
- * binding enforces; the dev/test fallback is deliberately permissive (never
- * blocks) and only emits `X-RateLimit-*` counters. Enforcement is a
- * platform concern, not an in-process Map.
- */
 export interface RateLimiterService {
   readonly consume: (name: RateLimitName, key: string) => Promise<RateLimitDecision>;
 }
 
 export class RateLimiter extends Context.Tag('aoi/RateLimiter')<RateLimiterService, RateLimiterService>() {}
 
-const BINDING_KEYS: Record<RateLimitName, keyof WorkerEnv> = {
+const BINDING_KEYS: Record<RateLimitName, 'RATE_LIMIT_AUTH' | 'RATE_LIMIT_GENERAL' | 'RATE_LIMIT_SQUEEZE' | 'RATE_LIMIT_LOCATION_REQUEST' | 'RATE_LIMIT_MEDIA'> = {
   AUTH: 'RATE_LIMIT_AUTH',
   GENERAL: 'RATE_LIMIT_GENERAL',
   SQUEEZE: 'RATE_LIMIT_SQUEEZE',
@@ -31,60 +25,33 @@ const BINDING_KEYS: Record<RateLimitName, keyof WorkerEnv> = {
 };
 
 export function makeRateLimiterService(
-  getBinding: (name: RateLimitName) => RateLimitBinding | undefined
+  getBinding: (name: RateLimitName) => RateLimitBinding | undefined,
+  options: { allowMissingBinding?: boolean } = {}
 ): RateLimiterService {
-  // Dev fallback counters (per-process, header-only, non-enforcing).
-  const fallbackCounters = new Map<string, { count: number; resetAt: number }>();
-
   return {
     async consume(name, key) {
-      // Fail-open: a throwing binding provider (or a binding that rejects)
-      // must never break a request — enforcement is best-effort.
-      let binding: RateLimitBinding | undefined;
       try {
-        binding = getBinding(name);
-      } catch {
-        binding = undefined;
-      }
-      const counterKey = `${name}:${key}`;
-
-      if (!binding) {
-        // Permissive dev/test fallback: never blocks, but reports counters
-        // so middleware still emits X-RateLimit-* headers.
-        const now = Date.now();
-        let entry = fallbackCounters.get(counterKey);
-        if (!entry || now > entry.resetAt) {
-          entry = { count: 0, resetAt: now + 60_000 };
-          fallbackCounters.set(counterKey, entry);
+        const binding = getBinding(name);
+        if (!binding) {
+          return { success: options.allowMissingBinding === true, reset: null, remaining: null };
         }
-        entry.count += 1;
-        return { success: true, reset: Math.ceil(entry.resetAt / 1000), remaining: null };
-      }
-
-      try {
         const result = await binding.limit({ key });
         return { success: result.success, reset: result.reset, remaining: result.remaining };
       } catch {
-        // Same fail-open policy as a missing binding.
-        const now = Date.now();
-        let entry = fallbackCounters.get(counterKey);
-        if (!entry || now > entry.resetAt) {
-          entry = { count: 0, resetAt: now + 60_000 };
-          fallbackCounters.set(counterKey, entry);
-        }
-        entry.count += 1;
-        return { success: true, reset: Math.ceil(entry.resetAt / 1000), remaining: null };
+        return { success: false, reset: null, remaining: null };
       }
     },
   };
 }
 
 export const makeRateLimiterLayer = (
-  env: Pick<WorkerEnv, 'RATE_LIMIT_AUTH' | 'RATE_LIMIT_GENERAL' | 'RATE_LIMIT_SQUEEZE' | 'RATE_LIMIT_LOCATION_REQUEST' | 'RATE_LIMIT_MEDIA'>
+  env: Pick<WorkerEnv, 'APP_ENV' | 'RATE_LIMIT_AUTH' | 'RATE_LIMIT_GENERAL' | 'RATE_LIMIT_SQUEEZE' | 'RATE_LIMIT_LOCATION_REQUEST' | 'RATE_LIMIT_MEDIA'>
 ): Layer.Layer<RateLimiterService> =>
   Layer.succeed(
     RateLimiter,
-    makeRateLimiterService((name) => env[BINDING_KEYS[name] as keyof typeof env] as RateLimitBinding | undefined)
+    makeRateLimiterService((name) => env[BINDING_KEYS[name]], {
+      allowMissingBinding: env.APP_ENV === 'development',
+    })
   );
 
 export const consume = (
@@ -94,11 +61,9 @@ export const consume = (
   Effect.flatMap(RateLimiter, (s) =>
     Effect.tryPromise({
       try: () => s.consume(name, key),
-      // Fail-open: a transient binding error must never break a request;
-      // enforcement resumes with the next call.
       catch: () => new Error('rate limiter unavailable'),
     }).pipe(
-      Effect.catchAll(() => Effect.succeed({ success: true, reset: null, remaining: null }))
+      Effect.catchAll(() => Effect.succeed({ success: false, reset: null, remaining: null }))
     )
   );
 
