@@ -155,6 +155,18 @@ export default function PaywallScreen() {
             : 'Plus is active on this account.'}
         </ThemedText>
         <Button label="Back" onPress={() => router.back()} />
+        <ThemedText type="caption" style={{ color: textMuted, textAlign: 'center' }}>
+          If you bought Plus, manage or cancel it in your store account.
+        </ThemedText>
+        {Platform.OS === 'ios' || Platform.OS === 'android' ? (
+          <Button
+            label="Manage subscriptions"
+            variant="ghost"
+            onPress={() => void openLink(Platform.OS === 'ios'
+              ? 'https://apps.apple.com/account/subscriptions'
+              : 'https://play.google.com/store/account/subscriptions')}
+          />
+        ) : null}
       </View>
     );
   }

@@ -8,11 +8,12 @@ import type { ViewerPhoto } from '@/components/moments/photo-viewer';
 const state = vi.hoisted(() => ({
   photos: [] as SkyPhoto[], status: 'ready', readError: null as string | null,
   operation: null as string | null, actionError: null as string | null, scopeKey: 'album-a', reload: vi.fn(), choosePhotos: vi.fn().mockResolvedValue(undefined),
-  sendSqueeze: vi.fn(), isSending: false, lastSentAt: null, push: vi.fn(), isPlus: true, startDate: '2026-03-10' as string | null,
+  sendSqueeze: vi.fn(), isSending: false, lastSentAt: null, push: vi.fn(), isPlus: true, startDate: '2026-03-10' as string | null, viewerId: 'user-1', createdBy: 'user-1',
 }));
 vi.mock('@/features/album/use-sky-photos', () => ({ useSkyPhotos: () => state }));
 vi.mock('@/features/squeeze/squeeze-context', () => ({ useSqueeze: () => state }));
-vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { relationshipStartDate: state.startDate } }) }));
+vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { relationshipStartDate: state.startDate, createdByUserId: state.createdBy } }) }));
+vi.mock('@/features/session/session-context', () => ({ useSession: () => ({ user: { id: state.viewerId } }) }));
 vi.mock('@/features/dev/preview', () => ({ usePreviewVariant: () => ({ active: false, variant: 'full' }), skyPreviewStart: () => ({ monthsBack: 0, entitlement: null }) }));
 vi.mock('@/features/haptics/haptics', () => ({ haptics: { select: vi.fn() } }));
 vi.mock('@/hooks/use-theme-color', () => ({ useThemeColor: () => '#444444' }));
@@ -34,7 +35,7 @@ const press = async (element: Element) => { await act(async () => { fireEvent.cl
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-15T20:00:00'));
-  Object.assign(state, { photos: [], status: 'ready', readError: null, operation: null, actionError: null, scopeKey: 'album-a', isPlus: true, isSending: false, startDate: '2026-03-10' });
+  Object.assign(state, { photos: [], status: 'ready', readError: null, operation: null, actionError: null, scopeKey: 'album-a', isPlus: true, isSending: false, startDate: '2026-03-10', viewerId: 'user-1', createdBy: 'user-1' });
   vi.clearAllMocks();
 });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -78,9 +79,9 @@ describe('Us photo sky', () => {
   it('distinguishes empty, loading, failed, and unavailable albums', async () => {
     const { rerender } = render(<UsScreen />);
     expect(screen.getByText('No photos yet.')).toBeTruthy();
-    expect(screen.getByText('Choose photos')).toBeTruthy();
+    expect(screen.getByText('Choose photos for your sky')).toBeTruthy();
     expect(screen.queryByLabelText('Revisit your sky')).toBeNull();
-    await press(screen.getByLabelText('Choose photos'));
+    await press(screen.getByLabelText('Choose photos for your sky'));
     expect(state.choosePhotos).toHaveBeenCalledOnce();
     expect(screen.queryByText('Local photo copies')).toBeNull();
     state.status = 'loading'; rerender(<UsScreen />);
@@ -92,7 +93,7 @@ describe('Us photo sky', () => {
     state.status = 'ready'; state.readError = null; state.photos = [{ ...photo('gone'), uri: null }]; rerender(<UsScreen />);
     expect(screen.getByText('Photos unavailable on this device.')).toBeTruthy();
     expect(screen.getByText('Choose the photos again to restore their local copies, or add new favorites.')).toBeTruthy();
-    expect(screen.getByLabelText('Choose photos')).toBeTruthy();
+    expect(screen.getByLabelText('Choose photos for your sky')).toBeTruthy();
   });
   it('keeps the empty panel mounted while the album loads so nothing shifts', async () => {
     // The regression: a one-line loading hint swapped for the full prompt
@@ -102,7 +103,7 @@ describe('Us photo sky', () => {
     state.status = 'loading';
     const { rerender } = render(<UsScreen />);
     expect(screen.getByText('Loading your sky…')).toBeTruthy();
-    expect(screen.getByText('Choose photos')).toBeTruthy();
+    expect(screen.getByText('Choose photos for your sky')).toBeTruthy();
     expect(screen.queryByText('Loading photos…')).toBeNull();
     state.status = 'ready'; rerender(<UsScreen />);
     expect(screen.getByText('No photos yet.')).toBeTruthy();
@@ -111,12 +112,12 @@ describe('Us photo sky', () => {
   it('shows import progress without another picker trigger or an unavailable-photo error', () => {
     state.operation = 'importing';
     const { rerender } = render(<UsScreen />);
-    expect(screen.getByText('Adding photos…')).toBeTruthy();
-    expect(screen.queryByText('Choose photos')).toBeNull();
-    expect(screen.getByLabelText('Choose photos').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Adding photos to your sky…')).toBeTruthy();
+    expect(screen.queryByText('Choose photos for your sky')).toBeNull();
+    expect(screen.getByLabelText('Choose photos for your sky').hasAttribute('disabled')).toBe(true);
     expect(screen.queryByText('Photos unavailable on this device.')).toBeNull();
     state.photos = [photo('existing')]; rerender(<UsScreen />);
-    expect(screen.getByText('Adding photos…')).toBeTruthy();
+    expect(screen.getByText('Adding photos to your sky…')).toBeTruthy();
     expect(screen.queryByText('Photos unavailable on this device.')).toBeNull();
     expect(state.choosePhotos).not.toHaveBeenCalled();
   });
@@ -124,8 +125,8 @@ describe('Us photo sky', () => {
     state.operation = 'importing';
     const { rerender } = render(<UsScreen />);
     state.operation = null; rerender(<UsScreen />);
-    expect(screen.queryByText('Adding photos…')).toBeNull();
-    await press(screen.getByLabelText('Choose photos'));
+    expect(screen.queryByText('Adding photos to your sky…')).toBeNull();
+    await press(screen.getByLabelText('Choose photos for your sky'));
     expect(state.choosePhotos).toHaveBeenCalledOnce();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -133,8 +134,8 @@ describe('Us photo sky', () => {
     state.actionError = 'Could not add these photos. Please try again.';
     render(<UsScreen />);
     expect(screen.getByText(state.actionError).getAttribute('accessibilityrole')).toBe('alert');
-    expect(screen.getByLabelText('Choose photos').getAttribute('accessibilityhint')).toContain('encrypted on this device');
-    await press(screen.getByLabelText('Choose photos'));
+    expect(screen.getByLabelText('Choose photos for your sky').getAttribute('accessibilityhint')).toContain('encrypted on this device');
+    await press(screen.getByLabelText('Choose photos for your sky'));
     expect(state.choosePhotos).toHaveBeenCalledOnce();
   });
   it('keeps historical stars and random picks within the selected date and returns to today', async () => {
@@ -208,17 +209,12 @@ describe('Us photo sky', () => {
     rerender(<UsScreen />);
     expect(screen.getByTestId('sky-interaction').getAttribute('data-focused')).toBe('true');
   });
-  it('offers optional gesture help and restores interaction when dismissed', async () => {
-    state.photos = [photo('one')];
+  it('keeps gesture guidance in the empty sky and manages photos from there', async () => {
+    state.photos = [];
     render(<UsScreen />);
-    await press(screen.getByLabelText('About your photo sky'));
     expect(screen.getByText('Tap the sky to open a photo. Pinch to zoom, then drag to explore.')).toBeTruthy();
-    expect(screen.getByTestId('sky-interaction').getAttribute('data-focused')).toBe('false');
     await press(screen.getByLabelText('Manage photos'));
     expect(state.push).toHaveBeenCalledWith('/(app)/album/local-photos');
-    await press(screen.getByLabelText('About your photo sky'));
-    expect(screen.queryByText('How to explore')).toBeNull();
-    expect(screen.getByTestId('sky-interaction').getAttribute('data-focused')).toBe('true');
   });
   it('returns to today before choosing photos so additions are not hidden in history', async () => {
     state.photos = [photo('one')];
@@ -228,7 +224,7 @@ describe('Us photo sky', () => {
     // The picker stands down while a panel is open, so it cannot cover the
     // panel's own controls; closing the panel brings it back.
     await press(screen.getByLabelText('Revisit your sky'));
-    await press(screen.getByLabelText('Choose photos'));
+    await press(screen.getByLabelText('Choose photos for your sky'));
     expect(state.choosePhotos).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText('Sky history')).toBeNull();
     expect(screen.queryByText('Aug 2026')).toBeNull();
@@ -244,16 +240,31 @@ describe('Us photo sky', () => {
     await press(screen.getByLabelText('Set our start date'));
     expect(state.push).toHaveBeenCalledWith('/(app)/profile/edit-relationship');
   });
+  it('does not offer the creator-only date editor to the partner', async () => {
+    state.photos = [photo('one')];
+    state.startDate = null;
+    state.viewerId = 'user-2';
+    render(<UsScreen />);
+    await press(screen.getByLabelText('Revisit your sky'));
+    expect(screen.getByText('Ask your partner to add your relationship start date to explore earlier skies.')).toBeTruthy();
+    expect(screen.queryByLabelText('Set our start date')).toBeNull();
+  });
+  it('sends a squeeze from the sky header', async () => {
+    state.photos = [photo('one')];
+    render(<UsScreen />);
+    await press(screen.getByLabelText('Send a squeeze'));
+    expect(state.sendSqueeze).toHaveBeenCalledOnce();
+  });
   it('keeps the populated sky free of extra labels and shortcuts', () => {
     state.photos = [photo('one')];
     render(<UsScreen />);
-    for (const label of ['✦', 'Squeeze', 'Ready', 'Bring out a photo', 'Photos on this device', 'Tap the sky for a photo of the two of you.']) {
+    for (const label of ['✦', 'Ready', 'Bring out a photo', 'Photos on this device', 'Tap the sky for a photo of the two of you.']) {
       expect(screen.queryByText(label)).toBeNull();
     }
     expect(screen.getByText('Us')).toBeTruthy();
-    expect(screen.getByLabelText('Choose photos').style.right).toBe('24px');
-    expect(screen.getByLabelText('Choose photos').style.width).toBe('56px');
-    expect(screen.getByLabelText('Choose photos').style.borderRadius).toBe('28px');
+    expect(screen.getByLabelText('Choose photos for your sky').style.right).toBe('24px');
+    expect(screen.getByLabelText('Choose photos for your sky').style.width).toBe('56px');
+    expect(screen.getByLabelText('Choose photos for your sky').style.borderRadius).toBe('28px');
     expect(screen.queryByText('Revisit your sky')).toBeNull();
     expect(screen.queryByText('Hide history')).toBeNull();
     expect(screen.queryByText(' · Plus')).toBeNull();

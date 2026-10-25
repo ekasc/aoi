@@ -190,6 +190,9 @@ describe('paywall (v1 benefit contract)', () => {
     expect(screen.getByText(/Plus is active on your shared Space/)).toBeTruthy();
     expect(screen.queryByLabelText('Monthly, €3.99')).toBeNull();
     expect(screen.queryByText('Continue, €3.99')).toBeNull();
+    expect(screen.getByText('Manage subscriptions')).toBeTruthy();
+    fireEvent.click(screen.getByText('Manage subscriptions'));
+    expect(openUrlSpy).toHaveBeenCalledWith('https://apps.apple.com/account/subscriptions');
   });
 
   it('provides a plan reload action after a successful empty offering read', async () => {

@@ -19,10 +19,13 @@ import { Pressed } from '@/components/ui/pressed';
 import { Elevation, Radii, Spacing, shadow, withAlpha } from '@/constants/theme';
 import { chooseSkyPhoto, type SkyPhoto } from '@/features/album/sky-photo-repository';
 import { useSkyPhotos } from '@/features/album/use-sky-photos';
+import { useRecoveryPhraseConfirmed } from '@/features/album/recovery-phrase-status';
 import { skyPreviewStart, usePreviewVariant } from '@/features/dev/preview';
 import { haptics } from '@/features/haptics/haptics';
 import type { SkyItem } from '@/features/home/day-sky';
 import { clampSkyHistoryIndex, formatRelationshipAge, skyHistoryMonths } from '@/features/home/sky-history';
+import { useSession } from '@/features/session/session-context';
+import { useSqueeze } from '@/features/squeeze/squeeze-context';
 import { useSpace } from '@/features/space/space-context';
 import { useSubscription } from '@/features/subscription/subscription-context';
 import { useAoiTheme } from '@/features/theme/theme-context';
@@ -42,15 +45,18 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
   // history/FAB row, mirroring that row's own bottom clearance.
   const controlsBottom = insets.bottom + Spacing[24] + SYSTEM_TAB_BAR_IOS_CLEARANCE + 44 + Spacing[16];
   const { space } = useSpace();
+  const { user } = useSession();
+  const phraseConfirmed = useRecoveryPhraseConfirmed(space?.id ?? null);
+  const { sendSqueeze, isSending: squeezeSending } = useSqueeze();
+  const canEditRelationship = space?.createdByUserId === user?.id;
   const { isPlus } = useSubscription();
   const preview = usePreviewVariant();
   const previewStart = skyPreviewStart(__DEV__ && preview.active ? preview.variant : 'full');
   const plusActive = previewStart.entitlement === null ? isPlus : previewStart.entitlement === 'plus';
   const [now, setNow] = useState(() => new Date());
   const [monthsBack, setMonthsBack] = useState<number | 'start'>(() => previewStart.monthsBack);
-  const [panel, setPanel] = useState<'history' | 'help' | null>(() => previewStart.monthsBack !== 0 ? 'history' : null);
+  const [panel, setPanel] = useState<'history' | null>(() => previewStart.monthsBack !== 0 ? 'history' : null);
   const historyOpen = panel === 'history' && plusActive;
-  const helpOpen = panel === 'help';
   const [opened, setOpened] = useState<{ scopeKey: string | null; photo: SkyPhoto } | null>(null);
   const lastPhoto = useRef<string | null>(null);
   const background = useThemeColor({}, 'background');
@@ -70,7 +76,11 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
   const skyItems = useMemo<SkyItem[]>(() => photos.map((photo) => ({ id: photo.id, occurredAt: photo.addedAt, authorRole: 'you' })), [photos]);
   const canDiscover = album.status === 'ready' && photos.length > 0 && album.operation === null;
   const busy = album.operation !== null;
-  const showEmptyPrompt = album.status === 'ready' && photos.length === 0 && !busy && !viewingPast && !helpOpen && !historyOpen;
+  const showPhrasePrompt =
+    album.protocolStatus === 'ready' &&
+    phraseConfirmed === false &&
+    !historyOpen;
+  const showEmptyPrompt = album.status === 'ready' && photos.length === 0 && !busy && !viewingPast && !historyOpen && !showPhrasePrompt;
   // First load owns the panel from the start: the album takes a moment to
   // establish (crypto session + protocol), and swapping a one-line loading
   // hint for the full prompt card when it lands visibly shoves the card
@@ -106,21 +116,40 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
 
   return (
     <View style={[styles.root, { backgroundColor: background }]}>
-      <PhotoSkyViewport key={`${album.scopeKey}:${viewingPast ? asOf.toISOString() : 'today'}`} focused={focused && !historyOpen && !helpOpen && !viewerVisible} moments={skyItems} now={asOf} canOpen={canDiscover} onOpenPhoto={pullPhoto}
+      <PhotoSkyViewport key={`${album.scopeKey}:${viewingPast ? asOf.toISOString() : 'today'}`} focused={focused && !historyOpen && !viewerVisible} moments={skyItems} now={asOf} canOpen={canDiscover} onOpenPhoto={pullPhoto}
         height={Math.max(320, height)} controlsBottom={controlsBottom} />
       <View pointerEvents="box-none" style={styles.overlay}>
         <View pointerEvents="box-none" style={[styles.topRow, { paddingTop: insets.top + Spacing[8] }]}>
           <ScreenHeader title="Us" tone="onDark" subtitle={viewingPast ? months[index].label : undefined} actions={
             <View style={styles.headerActions}>
               {viewingPast ? <Button label="Today" accessibilityLabel="Return to today" tone="sky" variant="muted" size="sm" onPress={returnToToday} /> : null}
-              <IconButton label="About your photo sky" variant="ghost" accessibilityState={{ expanded: helpOpen }} aria-expanded={helpOpen}
-                onPress={() => setPanel((current) => current === 'help' ? null : 'help')}>
-                <Ionicons name={helpOpen ? 'close' : 'information-circle-outline'} size={24} color={SKY_CONTROL_INK} accessible={false} aria-hidden />
+              <IconButton
+                label={squeezeSending ? 'Sending a squeeze' : 'Send a squeeze'}
+                variant="ghost"
+                disabled={squeezeSending}
+                accessibilityState={{ busy: squeezeSending, disabled: squeezeSending }}
+                onPress={() => void sendSqueeze()}
+              >
+                <Ionicons name="hand-left-outline" size={22} color={SKY_CONTROL_INK} accessible={false} aria-hidden />
               </IconButton>
             </View>
           } />
         </View>
         <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: insets.bottom + Spacing[24] + SYSTEM_TAB_BAR_IOS_CLEARANCE }]}>
+          {showPhrasePrompt ? (
+            <View style={styles.phrasePrompt}>
+              <ThemedText type="caption" style={styles.phrasePromptText}>
+                Save your 24-word recovery phrase. It is the only way back into this album if every phone is lost.
+              </ThemedText>
+              <Button
+                label="Show 24 words"
+                size="sm"
+                tone="sky"
+                variant="muted"
+                onPress={() => router.push('/(app)/album/recovery-phrase')}
+              />
+            </View>
+          ) : null}
           <View accessibilityLiveRegion="polite" style={styles.discovery}>
             {album.protocolStatus === 'unverified' || album.protocolStatus === 'waiting' ? (
               <>
@@ -138,38 +167,40 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
               </>
             ) : album.status === 'loading' ? null
               : album.readError ? <><ThemedText accessibilityRole="alert" type="caption" style={styles.hint}>{album.readError}</ThemedText><Button label="Try again" onPress={album.reload} tone="sky" variant="muted" /></>
-              : busy ? <ThemedText type="caption" style={styles.hint}>{album.operation === 'importing' ? 'Adding photos…' : 'Updating photos…'}</ThemedText>
-              : canDiscover || showEmptyPrompt || helpOpen ? null
+              : busy ? <ThemedText type="caption" style={styles.hint}>{album.operation === 'importing' ? 'Adding photos to your sky…' : 'Updating your sky…'}</ThemedText>
+              : canDiscover || showEmptyPrompt ? null
               : <ThemedText type="caption" style={styles.hint}>{viewingPast ? 'No photos at this date.' : album.photos.length === 0 ? 'No photos yet.' : 'Photos unavailable on this device.'}</ThemedText>}
             {album.actionError ? <ThemedText accessibilityRole="alert" type="caption" style={styles.hint}>{album.actionError}</ThemedText> : null}
           </View>
-          {showEmptyPrompt || helpOpen || historyOpen || showLoadingPanel ? <ScrollView style={[styles.panel, { backgroundColor: surface, maxHeight: height * 0.45 }]} contentContainerStyle={styles.panelContent}>
-            {helpOpen ? <>
-              <ThemedText type="subheading">How to explore</ThemedText>
-              <ThemedText>Tap the sky to open a photo. Pinch to zoom, then drag to explore.</ThemedText>
-              <ThemedText>Double-tap a star to get closer. Double-tap again to see the whole sky.</ThemedText>
-              <ThemedText type="caption">Photos chosen here stay in your sky. Add dated memories in Memories. Sky dates show when you added each photo.</ThemedText>
-              <ThemedText type="caption">Photos are encrypted on this device. They appear to your partner in your shared sky.</ThemedText>
-              <Button label="Manage photos" variant="secondary" onPress={() => router.push('/(app)/album/local-photos')} />
-            </> : historyOpen ? <>
+          {showEmptyPrompt || historyOpen || showLoadingPanel ? <ScrollView style={[styles.panel, { backgroundColor: surface, maxHeight: height * 0.45 }]} contentContainerStyle={styles.panelContent}>
+            {historyOpen ? <>
               <ThemedText type="subheading">Revisit your sky</ThemedText>
               <ThemedText type="caption">See the photos you had added by each date.</ThemedText>
               <SkyHistoryControl months={months} index={index} ageLabel={formatRelationshipAge(startDate, asOf)} isPlus={plusActive}
                 onChange={setSkyIndex} onLockedPress={openPaywall} />
+              <Button label="Manage photos" variant="secondary" onPress={() => router.push('/(app)/album/local-photos')} />
               {months.length === 0 ? <>
-                <ThemedText>Add your relationship start date to explore earlier skies.</ThemedText>
-                <Button label="Set our start date" variant="secondary" onPress={() => router.push('/(app)/profile/edit-relationship')} />
+                <ThemedText>
+                  {canEditRelationship
+                    ? 'Add your relationship start date to explore earlier skies.'
+                    : 'Ask your partner to add your relationship start date to explore earlier skies.'}
+                </ThemedText>
+                {canEditRelationship ? (
+                  <Button label="Set our start date" variant="secondary" onPress={() => router.push('/(app)/profile/edit-relationship')} />
+                ) : null}
               </> : null}
             </> : showLoadingPanel ? <>
               <ThemedText type="subheading">Loading your sky…</ThemedText>
               <ThemedText>Gathering your shared album. First visit takes a moment.</ThemedText>
               <ThemedText type="caption">Photos are encrypted on this device. They appear to your partner in your shared sky.</ThemedText>
-              <Button label="Choose photos" accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky." disabled onPress={choosePhotos} />
+              <Button label="Choose photos for your sky" accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky." disabled onPress={choosePhotos} />
             </> : <>
               <ThemedText type="subheading">{album.photos.length === 0 ? 'No photos yet.' : 'Photos unavailable on this device.'}</ThemedText>
               <ThemedText>{album.photos.length === 0 ? 'Choose photos for your shared sky. To save a dated memory, add it in Memories.' : 'Choose the photos again to restore their local copies, or add new favorites.'}</ThemedText>
               <ThemedText type="caption">Photos are encrypted on this device. They appear to your partner in your shared sky.</ThemedText>
-              <Button label="Choose photos" accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky." onPress={choosePhotos} />
+              <ThemedText type="caption">Tap the sky to open a photo. Pinch to zoom, then drag to explore.</ThemedText>
+              <Button label="Choose photos for your sky" accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky." onPress={choosePhotos} />
+              <Button label="Manage photos" variant="secondary" onPress={() => router.push('/(app)/album/local-photos')} />
             </>}
           </ScrollView> : null}
           {album.photos.length > 0 ? <View style={styles.bottomRow}>
@@ -182,7 +213,7 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
           </View> : null}
         </View>
       </View>
-      {!showEmptyPrompt && !showLoadingPanel && !helpOpen && !historyOpen ? <Pressable accessibilityRole="button" accessibilityLabel="Choose photos"
+      {!showEmptyPrompt && !showLoadingPanel && !historyOpen ? <Pressable accessibilityRole="button" accessibilityLabel="Choose photos for your sky"
         accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky."
         accessibilityState={{ disabled: busy || album.status !== 'ready', busy }} disabled={busy || album.status !== 'ready'}
         onPress={choosePhotos} style={({ pressed }) => [styles.fab, { bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'), boxShadow: shadow(Elevation.floating, shadowColor) }, pressed ? Pressed.onMedia : undefined, busy || album.status !== 'ready' ? styles.fabDisabled : undefined]}>
@@ -204,6 +235,8 @@ const styles = StyleSheet.create({
   bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: Spacing[24], gap: Spacing[16] },
   discovery: { alignItems: 'center', gap: Spacing[12] },
   hint: { color: SKY_CONTROL_INK, backgroundColor: SKY_CONTROL_FILL, borderRadius: Radii.card, paddingHorizontal: Spacing[12], paddingVertical: Spacing[8], textAlign: 'center' },
+  phrasePrompt: { backgroundColor: SKY_CONTROL_FILL, borderRadius: Radii.card, gap: Spacing[8], padding: Spacing[12] },
+  phrasePromptText: { color: SKY_CONTROL_INK },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing[8] },
   panel: { borderRadius: Radii.card },
   panelContent: { padding: Spacing[16], gap: Spacing[12] },

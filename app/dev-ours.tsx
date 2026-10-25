@@ -28,16 +28,30 @@ import { SubscriptionProvider } from '@/features/subscription/subscription-conte
  * edit-list&id=<collectionId>.
  */
 export default function DevOurs() {
-  const { screen: screenParam, previewScreen } = useLocalSearchParams<{ screen?: string; previewScreen?: string }>();
+  const { screen: screenParam, previewScreen, viewer } = useLocalSearchParams<{
+    screen?: string;
+    previewScreen?: string;
+    viewer?: string;
+  }>();
   const screen = previewScreen ?? screenParam;
+  const partnerViewer = viewer === 'partner';
+  const session = partnerViewer
+    ? {
+        ...PREVIEW_SESSION,
+        user: { ...PREVIEW_SESSION.user, id: 'preview-june', displayName: 'June', email: 'june@example.com' },
+      }
+    : PREVIEW_SESSION;
+  const space = partnerViewer && PREVIEW_SPACE.space
+    ? { ...PREVIEW_SPACE, space: { ...PREVIEW_SPACE.space, partnerName: 'Maya' } }
+    : PREVIEW_SPACE;
 
   if (!__DEV__) {
     return <Redirect href="/" />;
   }
 
   return (
-    <SessionContext.Provider value={PREVIEW_SESSION}>
-      <SpaceContext.Provider value={PREVIEW_SPACE}>
+    <SessionContext.Provider value={session}>
+      <SpaceContext.Provider value={space}>
         <SubscriptionProvider>
           <CollectionsProvider>
             <MomentsProvider>
