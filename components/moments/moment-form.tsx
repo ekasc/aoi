@@ -49,7 +49,7 @@ const MOMENT_TYPES: MomentTypeOption[] = [
   { value: 'note', label: 'Note', icon: 'create-outline', description: 'A quick thought' },
   { value: 'milestone', label: 'Milestone', icon: 'trophy-outline', description: 'Something important' },
   { value: 'date', label: 'Date', icon: 'calendar-outline', description: 'When we were together' },
-  { value: 'media', label: 'Media', icon: 'camera-outline', description: 'A photo or video' },
+  { value: 'media', label: 'Media', icon: 'camera-outline', description: 'A photo' },
   // No 'goal' option: future goals are Plans-owned (created/read there).
   // Editing an existing goal keeps its type via initial state below.
 ];

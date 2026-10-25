@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Radii, Spacing } from '@/constants/theme';
 import { useComposer } from '@/features/composer/composer-context';
+import { pendingStatusLabel } from '@/features/composer/pending-status';
 import type { PendingRecord } from '@/features/composer/types';
 import { formatMomentTime } from '@/features/moments/labels';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -37,11 +38,7 @@ export function PendingMemoryRow({ record, isSending }: PendingMemoryRowProps) {
   const audios = record.slots.filter((s) => s.kind === 'audio');
   const failed = record.status === 'failed';
   const quotaBlocked = failed && record.errorCode === 'LIMIT_EXCEEDED';
-  const statusLabel = isSending || record.status === 'sending'
-    ? 'Sending…'
-    : record.status === 'queued'
-      ? 'Waiting to send'
-      : (record.errorMessage ?? 'Could not send yet.');
+  const statusLabel = pendingStatusLabel(record.status, isSending, record.errorMessage);
 
   // A failed action used to be swallowed: the reader tapped Retry and the row
   // simply sat there. The rejection is shown where the status already lives.
@@ -102,9 +99,11 @@ export function PendingMemoryRow({ record, isSending }: PendingMemoryRowProps) {
       {audios.map((slot) => (
         <AudioPlayer key={slot.stagedId} uri={slot.localUri} />
       ))}
-      <ThemedText type="caption" style={{ color: muted }}>
-        {record.status === 'delivered' ? 'Kept in your story.' : 'Only visible to you until sent.'}
-      </ThemedText>
+      {record.status !== 'delivered' ? (
+        <ThemedText type="caption" style={{ color: muted }}>
+          Only visible to you until sent.
+        </ThemedText>
+      ) : null}
       {failed ? (
         <View style={styles.actions}>
           <Button label="Retry" size="sm" variant="secondary" onPress={handleRetry} />

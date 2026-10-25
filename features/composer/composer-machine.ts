@@ -6,7 +6,7 @@ import type {
   PendingRecord,
   PendingSlot,
 } from '@/features/composer/types';
-import { scopeEquals } from '@/features/composer/validate';
+import { COMPOSER_BODY_MAX, scopeEquals } from '@/features/composer/validate';
 
 /** User-safe error text. Never includes URIs, keys, or server internals. */
 export function userSafeMessage(error: unknown): string {
@@ -21,6 +21,7 @@ export function userSafeMessage(error: unknown): string {
   if (code === 'KEY_UNAVAILABLE') return 'Could not unlock saved drafts. Please try again.';
   if (code === 'CORRUPT') return 'Saved drafts look damaged. Discard the draft to start fresh.';
   if (code === 'DRAFT_EXISTS') return 'Finish or discard your current draft first.';
+  if (code === 'BODY_TOO_LONG') return `Keep this under ${COMPOSER_BODY_MAX.toLocaleString()} characters.`;
   return 'Could not keep this. Please try again.';
 }
 

@@ -28,7 +28,7 @@ export const TOUR_FEATURES: readonly TourFeature[] = [
     id: 'memories',
     icon: 'book-outline',
     title: 'Memories',
-    line: 'Save photos, notes, videos and voice memories together.',
+    line: 'Save photos, notes and voice memories together.',
   },
   {
     id: 'us',

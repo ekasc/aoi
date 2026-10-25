@@ -30,10 +30,12 @@ import { userSafeMessage, useComposer } from '@/features/composer/composer-conte
 import { MOMENT_LOCALE } from '@/features/moments/labels';
 import { haptics } from '@/features/haptics/haptics';
 import { useSubscription } from '@/features/subscription/subscription-context';
+import { formatBytes } from '@/features/subscription/format';
 import { useSpace } from '@/features/space/space-context';
 import { usePreventLeave } from '@/hooks/use-prevent-leave';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { MOMENT_ATTACHMENT_MAX } from '@aoi/shared';
+import { COMPOSER_BODY_MAX } from '@/features/composer/validate';
 
 export type ComposerIntent = 'note' | 'photos' | 'camera' | 'voice';
 
@@ -91,7 +93,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
     save,
     discardDraft,
   } = useComposer();
-  const { refreshServerPlus } = useSubscription();
+  const { refreshServerPlus, serverPlus } = useSubscription();
   const { space } = useSpace();
   const recipient = space?.partnerName?.trim() || 'you';
   const editorTitle = dedication ? `For ${recipient}` : 'New memory';
@@ -466,6 +468,7 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
           accessibilityLabel="Keep something"
           editable={!isSaving}
           multiline
+          maxLength={COMPOSER_BODY_MAX}
           onChangeText={handleBodyChange}
           placeholderTextColor={muted}
           placeholder={dedication ? 'This made me think of you.' : undefined}
@@ -537,6 +540,11 @@ export function InlineMemoryComposer({ intent, onIntentConsumed, presentationRea
         {showQuota ? (
           <View style={[styles.quota, { borderColor: border }]}>
             <ThemedText type="body">This Space is out of media room.</ThemedText>
+            <ThemedText type="caption" style={{ color: muted }}>
+              {serverPlus
+                ? `${formatBytes(serverPlus.mediaUsedBytes)} of ${formatBytes(serverPlus.mediaLimitBytes)} used. Delete a photo or video from Memories to free space.`
+                : 'Delete a photo or video from Memories to free space, or see Plus for more room.'}
+            </ThemedText>
             <ThemedText type="caption" style={{ color: muted }}>
               Aoi Plus raises your shared Space. Your draft stays right here.
             </ThemedText>

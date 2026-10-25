@@ -604,7 +604,7 @@ describe('Memories feed paging edge', () => {
       galleryList().onContentSizeChange?.(390, 4000);
     });
     expect(galleryOpacity()).toBe('0');
-    fireEvent.click(screen.getByText('Gallery'));
+    fireEvent.click(screen.getByText('Media'));
     expect(galleryOpacity()).toBe('0');
     scrollList(galleryList(), 3000);
     expect(galleryOpacity()).not.toBe('0');
@@ -634,13 +634,13 @@ describe('Memories feed paging edge', () => {
     expect(feedOpacity()).not.toBe('0');
     // The gallery layer also carries the hidden-while-inactive style, so it is
     // only judged once it is the presented tab.
-    fireEvent.click(screen.getByText('Gallery'));
+    fireEvent.click(screen.getByText('Media'));
     expect(galleryOpacity()).not.toBe('0');
   });
 
   it('gives the gallery, which shares the same archive, the same wiring', async () => {
     await renderMemories();
-    fireEvent.click(screen.getByText('Gallery'));
+    fireEvent.click(screen.getByText('Media'));
     const list = galleryList();
     expect(list.data.length).toBeGreaterThan(0);
     expect(list.onEndReached).toBeUndefined();
@@ -667,7 +667,7 @@ describe('Memories feed paging edge', () => {
 
     // Switching reveals the already-landed list: no mount, no jump to
     // newest, no flash — and no second landing afterwards either.
-    fireEvent.click(screen.getByText('Gallery'));
+    fireEvent.click(screen.getByText('Media'));
     fireEvent.click(screen.getByText('Feed'));
     expect(feedScrollToEnd).toHaveBeenCalledTimes(1);
     expect(galleryScrollToEnd).toHaveBeenCalledTimes(1);
@@ -793,7 +793,7 @@ describe('Memories feed paging edge', () => {
     // Arm the top edge on the Feed, then switch: the Gallery mounts at y = 0,
     // where a stale arm would spend itself on a page nobody asked for.
     scroll(320);
-    fireEvent.click(screen.getByText('Gallery'));
+    fireEvent.click(screen.getByText('Media'));
     scrollList(galleryList(), 0);
     expect(loadMoreMoments).not.toHaveBeenCalled();
     await act(async () => {});

@@ -472,7 +472,8 @@ export function ComposerProvider({
         if (!target) throw codedError('NO_SCOPE');
         const draft = stateRef.current.draft;
         if (!draft) throw codedError('STORE_UNAVAILABLE');
-        const next: ComposerDraft = { ...draft, body: body.slice(0, COMPOSER_BODY_MAX), updatedAt: nowFn() };
+        if (body.length > COMPOSER_BODY_MAX) throw codedError('BODY_TOO_LONG');
+        const next: ComposerDraft = { ...draft, body, updatedAt: nowFn() };
         setPartial({ draft: next, error: null });
         await persist(target, next, stateRef.current.pending);
       });

@@ -579,7 +579,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     await act(async () => {});
 
     // The switch's segments are icons; the tab's accessible name is the way in.
-    fireEvent.click(screen.getByLabelText('Gallery'));
+    fireEvent.click(screen.getByLabelText('Media'));
     // The second tile of that memory's grid row.
     fireEvent.click(screen.getByLabelText('Open photo 2 of 2 from March 2026'));
 
@@ -874,7 +874,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
     await act(async () => {});
-    fireEvent.click(within(screen.getByTestId('gallery-empty')).getByText('Add a photo, video or voice memory'));
+    fireEvent.click(within(screen.getByTestId('gallery-empty')).getByText('Add a photo or voice memory'));
     expect(pushSpy).toHaveBeenCalledWith('/(app)/moment/new');
   });
 
@@ -883,7 +883,7 @@ describe('Memories story feed (oldest-first archive)', () => {
     const { default: MemoriesScreen } = await import('@/app/(app)/(tabs)/(memories)/index');
     render(createElement(MemoriesScreen));
     await act(async () => {});
-    fireEvent.click(screen.getByLabelText('Gallery'));
+    fireEvent.click(screen.getByLabelText('Media'));
     const gallery = within(screen.getByTestId('gallery-layer'));
     expect(capturedLayerStyles.get('gallery-layer')?.opacity).not.toBe(0);
     expect(gallery.getByText('No media yet')).toBeTruthy();
@@ -1203,7 +1203,7 @@ describe('archive controls on the Memories screen', () => {
       makeMoment({ id: 'porch', type: 'note', occurredAt: '2026-03-15T09:00:00.000Z' }),
     ];
     await renderScreen();
-    fireEvent.click(screen.getByLabelText('Gallery'));
+    fireEvent.click(screen.getByLabelText('Media'));
     await act(async () => {});
     // The grid is month-grouped and tiles only real photos.
     expect(galleryLayer().getByText('March 2026')).toBeTruthy();
@@ -1257,7 +1257,7 @@ describe('archive native scroll view (inset ownership, no offset reset)', () => 
     await act(async () => {});
     expect(scrollToOffsetSpy).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText('Gallery'));
+    fireEvent.click(screen.getByLabelText('Media'));
     await act(async () => {});
     expect(scrollToOffsetSpy).not.toHaveBeenCalled();
 
@@ -1275,7 +1275,7 @@ describe('archive native scroll view (inset ownership, no offset reset)', () => 
     expect(flatListMountSpy).toHaveBeenCalledTimes(2);
     expect(flatListUnmountSpy).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText('Gallery'));
+    fireEvent.click(screen.getByLabelText('Media'));
     await act(async () => {});
     // A reveal, not a rebuild: no remount, no unmount, no landing jump.
     expect(flatListMountSpy).toHaveBeenCalledTimes(2);
@@ -1296,7 +1296,7 @@ describe('archive native scroll view (inset ownership, no offset reset)', () => 
     expect(capturedList.automaticallyAdjustKeyboardInsets).toBeFalsy();
     expect(capturedList.contentInsetAdjustmentBehavior).toBe('never');
 
-    fireEvent.click(screen.getByLabelText('Gallery'));
+    fireEvent.click(screen.getByLabelText('Media'));
     await act(async () => {});
     expect(capturedList.automaticallyAdjustKeyboardInsets).toBeFalsy();
     expect(capturedList.contentInsetAdjustmentBehavior).toBe('never');
