@@ -291,6 +291,7 @@ export const PREVIEW_SESSION: SessionContextValue = {
   signInWithProvider: async () => ({ ok: true }),
   restoreSession: async () => {},
   signOut: async () => {},
+  signOutEverywhere: async () => {},
   deleteAccount: async () => {},
 };
 

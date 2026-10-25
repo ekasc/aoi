@@ -71,6 +71,10 @@ export const mockAuthApi: AuthApi = {
     sessionStore.delete(accessToken);
   },
 
+  async revokeAllSessions(_accessToken) {
+    sessionStore.clear();
+  },
+
   async deleteAccount(accessToken) {
     sessionStore.delete(accessToken);
   },

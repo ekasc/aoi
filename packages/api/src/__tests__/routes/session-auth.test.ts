@@ -62,7 +62,7 @@ function makeApp() {
 }
 
 const TOKEN = 'session-token-abc123';
-const EXPIRY = Date.parse('2026-01-22T00:00:00.000Z');
+const EXPIRY = Date.parse('2027-01-15T00:00:00.000Z');
 
 describe('worker auth routes (Bearer contract)', () => {
   it('GET /v1/auth/session returns { authenticated, user, expiresAt } for a live token', async () => {
@@ -84,7 +84,7 @@ describe('worker auth routes (Bearer contract)', () => {
         displayName: 'Aoi',
         createdAt: '2026-01-15T00:00:00.000Z',
       },
-      expiresAt: '2026-01-22T00:00:00.000Z',
+      expiresAt: '2027-01-15T00:00:00.000Z',
     });
   });
 
@@ -111,11 +111,27 @@ describe('worker auth routes (Bearer contract)', () => {
     expect(body.error.code).toBe('UNAUTHORIZED');
   });
 
+  it('DELETE /v1/auth/sessions revokes every session for the caller', async () => {
+    const { harness, app } = makeApp();
+    insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
+    insertSession(harness.d1, 'sess-1', USER_A, TOKEN, EXPIRY);
+    insertSession(harness.d1, 'sess-2', USER_A, 'other-token', EXPIRY);
+
+    const res = await app.request('/v1/auth/sessions', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(await harness.d1.prepare('select count(*) as n from user_sessions where user_id = ?').bind(USER_A).first()).toEqual({ n: 0 });
+  });
+
   it('POST /v1/auth/refresh extends the session and returns the token contract', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     // Session expiring in 5 days (clock is 2026-01-15) — refresh must slide
-    // it to clock-now + TTL (2026-01-22).
+    // it to clock-now + the one-year TTL (2027-01-15).
     insertSession(harness.d1, 'sess-1', USER_A, TOKEN, Date.parse('2026-01-20T00:00:00.000Z'));
 
     const res = await app.request('/v1/auth/refresh', {
@@ -128,7 +144,7 @@ describe('worker auth routes (Bearer contract)', () => {
     const body = await res.json();
     expect(body.accessToken).toBe(TOKEN);
     expect(body.refreshToken).toBe(TOKEN);
-    expect(body.expiresInSec).toBe(7 * 24 * 60 * 60);
+    expect(body.expiresInSec).toBe(365 * 24 * 60 * 60);
 
     // The DB row was extended (sliding window): expiry = clock now + TTL.
     const row = await harness.d1

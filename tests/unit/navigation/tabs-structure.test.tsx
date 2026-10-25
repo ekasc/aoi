@@ -445,6 +445,7 @@ vi.mock('@/features/session/session-context', () => ({
   useSession: () => ({
     user: { id: 'user_you', displayName: 'You', email: 'you@example.com' },
     signOut: vi.fn(),
+    signOutEverywhere: vi.fn(),
   }),
 }));
 
@@ -452,6 +453,7 @@ vi.mock('@/features/space/space-context', () => ({
   useSpace: () => ({
     space: {
       id: 'space-1',
+      createdByUserId: 'user_you',
       name: 'Test space',
       partnerName: 'Alex',
       relationshipStartDate: '2024-01-01T00:00:00.000Z',
@@ -755,7 +757,7 @@ describe('P2A Memories ownership', () => {
     expect(screen.queryByLabelText('Memories, open archive menu')).toBeNull();
     // The Feed/Gallery switcher rides the title row, always reachable.
     expect(screen.getByLabelText('Feed')).toBeTruthy();
-    expect(screen.getByLabelText('Gallery')).toBeTruthy();
+    expect(screen.getByLabelText('Media')).toBeTruthy();
     // Search is gone from the archive; Space lives in the tab bar.
     expect(screen.queryByLabelText('Search memories')).toBeNull();
     expect(screen.queryByLabelText('Account and settings')).toBeNull();

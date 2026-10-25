@@ -43,6 +43,7 @@ export type GoogleIdTokenSignInRequest = {
   idToken: string;
   nonce?: string;
   displayName?: string;
+  platform?: OAuthPlatform;
 };
 
 /** Wire shape returned by the worker's sign-in adapters. */
@@ -68,5 +69,6 @@ export type AuthApi = {
   ) => Promise<AuthSessionPayload>;
   getSession: (accessToken: string) => Promise<AuthSessionUser>;
   logout: (accessToken: string, refreshToken?: string) => Promise<void>;
+  revokeAllSessions: (accessToken: string) => Promise<void>;
   deleteAccount: (accessToken: string) => Promise<void>;
 };

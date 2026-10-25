@@ -22,5 +22,6 @@ export type SessionContextValue = {
   signInWithProvider: (provider: AuthProvider) => Promise<SignInResult>;
   restoreSession: () => Promise<void>;
   signOut: () => Promise<void>;
+  signOutEverywhere: () => Promise<void>;
   deleteAccount: () => Promise<void>;
 };

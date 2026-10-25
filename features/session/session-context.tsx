@@ -11,7 +11,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { getAuthApi } from '@/features/auth/auth-api';
 import { isAuthStubMode } from '@/features/auth/auth-config';
-import { setApiTokens } from '@/features/api-client';
+import { setApiTokens, setUnauthorizedHandler } from '@/features/api-client';
 import { getLocalStressConfig } from '@/features/dev/local-stress-config';
 import {
   OAuthClientError,
@@ -179,6 +179,19 @@ export function SessionProvider({ children }: PropsWithChildren) {
     void restoreSession();
   }, [restoreSession]);
 
+  useEffect(() => {
+    // A failed refresh means the session cannot authenticate another request.
+    // End it locally without calling the API again (which would 401 in turn).
+    setUnauthorizedHandler(() => {
+      void clearStoredSession().catch(() => {});
+      setUser(null);
+      setTokens(null);
+      setApiTokens(null);
+      setStatus('signed_out');
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [clearStoredSession]);
+
   const signInWithProvider = useCallback(
     async (provider: 'apple' | 'google') => {
       // Stay on the current status while the native sheet is up: flipping to
@@ -188,13 +201,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
       try {
         const authSession = await signInWithOAuthProvider(provider, authApi);
 
+        // Persist before publishing the signed-in state. Route guards react to
+        // the status change immediately; if storage then failed, the app would
+        // navigate into the authenticated tree and fall back out of it.
+        await persistSession(authSession.user, authSession.tokens);
+
         setUser(authSession.user);
         setTokens(authSession.tokens);
         // Token plumbing: publish the fresh tokens to the api-client so
         // remote calls carry the Bearer header.
         setApiTokens(authSession.tokens);
         setStatus('signed_in');
-        await persistSession(authSession.user, authSession.tokens);
 
         return { ok: true };
       } catch (error) {
@@ -234,6 +251,26 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setStatus('signed_out');
   }, [authApi, clearStoredSession, tokens?.accessToken, tokens?.refreshToken]);
 
+  const signOutEverywhere = useCallback(async () => {
+    const accessToken = tokens?.accessToken;
+
+    // Drop this device's push registration first; the endpoint also clears
+    // every token for the account, but keeping sign-out idempotent here means
+    // a failed request cannot leave this device registered.
+    await unregisterPushToken().catch(() => {});
+
+    if (!accessToken) {
+      throw new Error('Not signed in.');
+    }
+    await authApi.revokeAllSessions(accessToken);
+
+    await clearStoredSession().catch(() => {});
+    setUser(null);
+    setTokens(null);
+    setApiTokens(null);
+    setStatus('signed_out');
+  }, [authApi, clearStoredSession, tokens?.accessToken]);
+
   const deleteAccountFn = useCallback(async () => {
     const accessToken = tokens?.accessToken;
 
@@ -266,6 +303,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       signInWithProvider,
       restoreSession,
       signOut,
+      signOutEverywhere,
       deleteAccount: deleteAccountFn,
     }),
     [
@@ -273,6 +311,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       restoreSession,
       signInWithProvider,
       signOut,
+      signOutEverywhere,
       deleteAccountFn,
       status,
       tokens,

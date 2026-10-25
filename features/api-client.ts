@@ -6,6 +6,16 @@ import { withRequestDeadline } from '@/features/request-deadline';
 
 let currentTokens: AuthSessionTokens | null = null;
 let tokenGeneration = 0;
+let unauthorizedHandler: (() => void) | null = null;
+
+/** Session teardown for a dead refresh token. Set by SessionProvider. */
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
+function notifyUnauthorized() {
+  unauthorizedHandler?.();
+}
 
 // One refresh POST per refresh token, ever concurrently: the server treats a
 // rotated-out refresh token presented twice as theft and revokes ALL of the
@@ -235,6 +245,7 @@ async function apiFetchJson<T>(
     if (errorBody?.error && 'details' in errorBody.error) {
       error.details = (errorBody.error as { details?: unknown }).details;
     }
+    if (error.status === 401) notifyUnauthorized();
     throw error;
   }
 

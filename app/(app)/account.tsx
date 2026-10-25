@@ -128,7 +128,7 @@ function NavRow({
 export default function AccountScreen() {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
-	const { signOut, deleteAccount, user } = useSession();
+	const { signOut, signOutEverywhere, deleteAccount, user } = useSession();
 	const { space, leaveSpace } = useSpace();
 	const { isPlus, status: plusStatus, serverPlus } = useSubscription();
 	const userId = user?.id;
@@ -141,7 +141,7 @@ export default function AccountScreen() {
 	const [linkError, setLinkError] = useState("");
 	const [showGuide, setShowGuide] = useState(false);
 	const [leaveError, setLeaveError] = useState("");
-	const [confirming, setConfirming] = useState<"delete" | "leave" | null>(null);
+	const [confirming, setConfirming] = useState<"delete" | "leave" | "sessions" | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [isLeaving, setIsLeaving] = useState(false);
 	const destructiveInFlight = useRef(false);
@@ -177,6 +177,8 @@ export default function AccountScreen() {
 	}, [router]);
 
 	const [isSigningOut, setIsSigningOut] = useState(false);
+	const [isSigningOutEverywhere, setIsSigningOutEverywhere] = useState(false);
+	const [signOutEverywhereError, setSignOutEverywhereError] = useState("");
 	const handleSignOut = useCallback(async () => {
 		if (isSigningOut) return;
 		haptics.tap();
@@ -202,6 +204,28 @@ export default function AccountScreen() {
 		setDeleteError("");
 		setConfirming("delete");
 	}, []);
+
+	const handleSignOutEverywhere = useCallback(() => {
+		haptics.warning();
+		setSignOutEverywhereError("");
+		setConfirming("sessions");
+	}, []);
+
+	const handleConfirmSignOutEverywhere = useCallback(async () => {
+		if (destructiveInFlight.current) return;
+		destructiveInFlight.current = true;
+		setSignOutEverywhereError("");
+		setIsSigningOutEverywhere(true);
+		try {
+			await signOutEverywhere();
+			router.replace("/(public)");
+		} catch {
+			setSignOutEverywhereError("Failed to sign out everywhere. Please try again.");
+		} finally {
+			setIsSigningOutEverywhere(false);
+			destructiveInFlight.current = false;
+		}
+	}, [router, signOutEverywhere]);
 
 	const handleLeaveSpace = useCallback(() => {
 		haptics.warning();
@@ -355,11 +379,13 @@ export default function AccountScreen() {
 						/>
 					)}
 				</View>
-				<NavRow
-					label="Edit relationship"
-					onPress={handleEditRelationship}
-					muted={muted}
-				/>
+				{space?.createdByUserId === user?.id ? (
+					<NavRow
+						label="Edit relationship"
+						onPress={handleEditRelationship}
+						muted={muted}
+					/>
+				) : null}
 				{/* One stable place for pairing: membership when connected, the
 				    invitation when not. Never a floating reminder on every tab. */}
 				<PartnerInvitation />
@@ -461,9 +487,23 @@ export default function AccountScreen() {
 						{signOutError}
 					</ThemedText>
 				) : null}
+				<Button
+					accessibilityLiveRegion="polite"
+					accessibilityState={{ busy: isSigningOutEverywhere }}
+					disabled={isSigningOutEverywhere}
+					label={isSigningOutEverywhere ? "Signing out everywhere…" : "Sign out everywhere"}
+					variant="secondary"
+					onPress={handleSignOutEverywhere}
+				/>
+				{signOutEverywhereError ? (
+					<ThemedText accessibilityRole="alert" type="caption" style={{ color: danger }}>
+						{signOutEverywhereError}
+					</ThemedText>
+				) : null}
 				<ThemedText type="caption" style={{ color: muted }}>
 					Signing out only ends this session, your space and history stay
-					exactly as they are.
+					exactly as they are. Sign out everywhere ends every session on
+					every device.
 				</ThemedText>
 			</View>
 
@@ -546,6 +586,23 @@ export default function AccountScreen() {
 				onClose={handleCloseConfirm}
 				title="Delete your account?"
 				visible={confirming === "delete"}
+			/>
+
+			<ActionSheet
+				busy={isSigningOutEverywhere}
+				error={signOutEverywhereError}
+				actions={[
+					{
+						label: isSigningOutEverywhere ? "Signing out everywhere…" : "Sign out everywhere",
+						onPress: () => void handleConfirmSignOutEverywhere(),
+						variant: "destructive",
+					},
+					{ label: "Cancel", onPress: handleCloseConfirm },
+				]}
+				description="This ends every session on every device. Your space and history stay exactly as they are; you will need to sign in again."
+				onClose={handleCloseConfirm}
+				title="Sign out everywhere?"
+				visible={confirming === "sessions"}
 			/>
 		</ScrollView>
 	);

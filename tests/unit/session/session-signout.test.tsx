@@ -51,16 +51,24 @@ function createAuthApiMock(): AuthApi {
     logout: vi.fn(async () => {
       callOrder.push('logout');
     }),
+    revokeAllSessions: vi.fn(async () => {
+      callOrder.push('revokeAllSessions');
+    }),
     deleteAccount: vi.fn(async () => {}),
   };
 }
 
 function SignOutProbe() {
-  const { status, signOut } = useSession();
+  const { status, signOut, signOutEverywhere } = useSession();
   return (
-    <button data-testid="sign-out" onClick={() => void signOut()}>
-      {status}
-    </button>
+    <>
+      <button data-testid="sign-out" onClick={() => void signOut()}>
+        {status}
+      </button>
+      <button data-testid="sign-out-everywhere" onClick={() => void signOutEverywhere()}>
+        everywhere
+      </button>
+    </>
   );
 }
 
@@ -134,6 +142,26 @@ describe('signOut push-token cleanup (single choke point)', () => {
     await expect(clickSignOut(view)).resolves.toBeUndefined();
 
     expect(authApi.logout).toHaveBeenCalledTimes(1);
+    expect(secureStoreMock.deleteItemAsync).toHaveBeenCalledWith('aoi.session.v1');
+    expect(view.getByTestId('sign-out').textContent).toBe('signed_out');
+    view.unmount();
+  });
+
+  it('revokes every session and clears local state on sign out everywhere', async () => {
+    const authApi = createAuthApiMock();
+    setAuthApi(authApi);
+    secureStoreMock.getItemAsync.mockResolvedValue(STORED_SESSION);
+
+    const view = renderSession();
+    await waitForSignedIn(view);
+
+    await act(async () => {
+      fireEvent.click(view.getByTestId('sign-out-everywhere'));
+    });
+
+    expect(pushApiMock.unregisterPushToken).toHaveBeenCalledTimes(1);
+    expect(authApi.revokeAllSessions).toHaveBeenCalledWith('access-token-123');
+    expect(callOrder).toEqual(['unregisterPushToken', 'revokeAllSessions']);
     expect(secureStoreMock.deleteItemAsync).toHaveBeenCalledWith('aoi.session.v1');
     expect(view.getByTestId('sign-out').textContent).toBe('signed_out');
     view.unmount();

@@ -7,6 +7,7 @@ import {
   getSessionProgram,
   refreshSessionProgram,
   resolveSessionByToken,
+  revokeAllSessionsProgram,
   signOutProgram,
 } from '../../domains/auth';
 
@@ -127,6 +128,23 @@ describe('getSessionProgram', () => {
   });
 });
 
+describe('revokeAllSessionsProgram', () => {
+  it('deletes every session for the user and leaves other users alone', async () => {
+    const ctx = makeCtx();
+    insertUser(ctx.d1, USER_ID, 'alice@example.com', 'Alice');
+    insertUser(ctx.d1, '00000000-0000-4000-8000-000000000002', 'bob@example.com', 'Bob');
+    insertSession(ctx.d1, 's1', USER_ID, TOKEN, EXPIRY_FUTURE);
+    insertSession(ctx.d1, 's2', USER_ID, 'other-token', EXPIRY_FUTURE);
+    insertSession(ctx.d1, 's3', '00000000-0000-4000-8000-000000000002', 'bob-token', EXPIRY_FUTURE);
+
+    const result = await run(ctx.provide(revokeAllSessionsProgram(USER_ID)));
+
+    expect(result).toEqual({ ok: true });
+    expect(ctx.d1.rawDb.prepare('select count(*) as n from user_sessions where user_id = ?').get(USER_ID)).toEqual({ n: 0 });
+    expect(ctx.d1.rawDb.prepare('select count(*) as n from user_sessions where user_id = ?').get('00000000-0000-4000-8000-000000000002')).toEqual({ n: 1 });
+  });
+});
+
 describe('refreshSessionProgram', () => {
   it('extends the expiry and returns the token contract', async () => {
     const ctx = makeCtx();
@@ -136,7 +154,7 @@ describe('refreshSessionProgram', () => {
     const result = await run(ctx.provide(refreshSessionProgram(TOKEN)));
     expect(result.accessToken).toBe(TOKEN);
     expect(result.refreshToken).toBe(TOKEN);
-    expect(result.expiresInSec).toBe(7 * 24 * 60 * 60);
+    expect(result.expiresInSec).toBe(365 * 24 * 60 * 60);
 
     const row = ctx.d1.rawDb
       .prepare('select expires_at from user_sessions where token = ?')

@@ -66,6 +66,8 @@ export const oauthGoogleIdTokenRequestSchema = z.object({
   idToken: z.string(),
   nonce: z.string().optional(),
   displayName: z.string().optional(),
+  // Coarse platform only: ios | android. Never a user agent or device id.
+  platform: oauthPlatformSchema.optional(),
 });
 
 export type OAuthGoogleIdTokenRequest = z.infer<

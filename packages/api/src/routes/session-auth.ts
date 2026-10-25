@@ -17,10 +17,12 @@ import {
   getSessionProgram,
   refreshSessionProgram,
   requireToken,
+  revokeAllSessionsProgram,
   signOutProgram,
 } from '../domains/auth';
 import { makeAuthMiddleware } from '../middleware/session';
 import { makeRateLimitMiddleware } from '../middleware/session-rate-limit';
+import { writeDataPoint } from '../services/observability';
 import { InternalError, UnauthorizedError, badRequest } from '../domains/errors';
 
 /**
@@ -70,6 +72,7 @@ const idTokenSignInProgram = (body: {
   token: string;
   nonce?: string;
   displayName?: string;
+  platform?: 'ios' | 'android';
 }) =>
   Effect.gen(function* () {
     const ba = yield* BetterAuth;
@@ -119,6 +122,15 @@ const idTokenSignInProgram = (body: {
       return yield* Effect.fail(new InternalError({}));
     }
 
+    // Coarse product analytics only: provider + platform, no user id, IP,
+    // user agent, content, or device identifier. Analytics Engine is
+    // best-effort; an absent binding is a no-op.
+    yield* writeDataPoint({
+      indexes: [`${body.provider}:${body.platform ?? 'unknown'}`],
+      blobs: [body.provider, body.platform ?? 'unknown'],
+      doubles: [1],
+    });
+
     return {
       accessToken: result.token,
       refreshToken: result.token,
@@ -149,6 +161,7 @@ export function authRouter(run: RunProgram): Hono {
           token: body.idToken,
           nonce: body.nonce,
           displayName: body.displayName,
+          platform: 'ios',
         })
       );
       return c.json(payload);
@@ -168,6 +181,7 @@ export function authRouter(run: RunProgram): Hono {
           token: body.idToken,
           nonce: body.nonce,
           displayName: body.displayName,
+          platform: body.platform,
         })
       );
       return c.json(payload);
@@ -202,6 +216,12 @@ export function authRouter(run: RunProgram): Hono {
     // token (from the header) is the credential actually revoked.
     await run(requireToken(token).pipe(Effect.flatMap(signOutProgram)));
     return c.json({ ok: true });
+  });
+
+  // ── Sign out everywhere ─────────────────────────────────────────────
+  router.delete('/v1/auth/sessions', requireAuth, async (c) => {
+    const result = await run(revokeAllSessionsProgram(c.var.userId));
+    return c.json(result);
   });
 
   // ── Delete account ───────────────────────────────────────────────────

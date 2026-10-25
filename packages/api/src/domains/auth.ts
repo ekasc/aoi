@@ -180,6 +180,31 @@ export const signOutProgram = (
   );
 
 /**
+ * Revoke every session for a user, and their push registrations with them.
+ *
+ * The current request is authenticated by one of those sessions, so the
+ * response is sent by a request whose credential is deleted in the same
+ * operation. That is deliberate: the client clears its local state only after
+ * the server confirms, and a retry after a network failure is harmless (the
+ * sessions are already gone).
+ */
+export const revokeAllSessionsProgram = (
+  userId: string
+): Effect.Effect<{ ok: true }, InternalError, DbService> =>
+  Effect.flatMap(Db, (s) =>
+    Effect.tryPromise({
+      try: async () => {
+        await s.d1.batch([
+          s.d1.prepare('delete from user_sessions where user_id = ?').bind(userId),
+          s.d1.prepare('delete from push_tokens where user_id = ?').bind(userId),
+        ]);
+        return { ok: true as const };
+      },
+      catch: () => new InternalError({}),
+    })
+  );
+
+/**
  * Account deletion — a truthful "permanently delete account".
  *
  * Boundary (deliberate, pinned by session-account-deletion tests):

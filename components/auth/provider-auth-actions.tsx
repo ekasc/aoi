@@ -159,7 +159,7 @@ export function ProviderAuthActions({
 
   return (
     <View style={styles.root}>
-      {isAppleNativeAvailable && !strippedCapabilities ? (
+      {!strippedCapabilities && isAppleNativeAvailable ? (
         <View style={isLoading ? styles.disabled : styles.resting}>
           <AppleAuthentication.AppleAuthenticationButton
             accessibilityLabel="Continue with Apple"
@@ -181,7 +181,7 @@ export function ProviderAuthActions({
             style={styles.appleNativeButton}
           />
         </View>
-      ) : (
+      ) : !strippedCapabilities ? (
         <Pressable
           accessibilityLabel="Continue with Apple"
           accessibilityRole="button"
@@ -210,7 +210,7 @@ export function ProviderAuthActions({
             Continue with Apple
           </Text>
         </Pressable>
-      )}
+      ) : null}
 
       <Pressable
         accessibilityLabel="Continue with Google"

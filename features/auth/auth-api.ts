@@ -78,6 +78,18 @@ class RemoteAuthApi implements AuthApi {
     });
   }
 
+  async revokeAllSessions(accessToken: string) {
+    const response = await fetch(`${this.baseUrl}/v1/auth/sessions`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Unable to sign out every session.');
+    }
+  }
+
   async deleteAccount(accessToken: string) {
     await fetch(`${this.baseUrl}/v1/auth/account`, {
       method: 'DELETE',

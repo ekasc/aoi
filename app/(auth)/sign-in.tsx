@@ -1,6 +1,6 @@
-import { useIsFocused, useRouter } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,7 +11,6 @@ import { LANDING_ERROR, landingThemeForColorScheme } from '@/constants/landing-t
 import { useAoiTheme } from '@/features/theme/theme-context';
 
 export default function SignInScreen() {
-  const router = useRouter();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { selectedTheme } = useAoiTheme();
@@ -19,10 +18,6 @@ export default function SignInScreen() {
     () => landingThemeForColorScheme(selectedTheme.dark),
     [selectedTheme],
   );
-
-  const handleContinue = useCallback(() => {
-    router.replace('/');
-  }, [router]);
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -48,7 +43,6 @@ export default function SignInScreen() {
                 googleBorderColor: theme.border,
                 errorColor: LANDING_ERROR,
               }}
-              onSuccess={handleContinue}
             />
           }
         />

@@ -142,7 +142,10 @@ async function signInWithAppleIOSNative(authApi: AuthApi): Promise<AuthSessionPa
  * sent (`if (nonce && jwtClaims.nonce !== nonce) return null` in
  * @better-auth/core/dist/social-providers/google.mjs).
  */
-async function signInWithGoogle(authApi: AuthApi): Promise<AuthSessionPayload> {
+async function signInWithGoogle(
+  authApi: AuthApi,
+  platform: 'ios' | 'android'
+): Promise<AuthSessionPayload> {
   if (isAuthStubMode()) {
     return authApi.signInWithGoogleIdToken({
       provider: 'google',
@@ -193,6 +196,7 @@ async function signInWithGoogle(authApi: AuthApi): Promise<AuthSessionPayload> {
     provider: 'google',
     idToken,
     displayName: response.data.user?.name?.trim() || undefined,
+    platform,
   });
 }
 
@@ -207,7 +211,7 @@ export async function signInWithOAuthProvider(
   }
 
   if (provider === 'google') {
-    return signInWithGoogle(authApi);
+    return signInWithGoogle(authApi, platform);
   }
 
   // Apple on Android: the native Apple sheet is iOS-only, and Better Auth's

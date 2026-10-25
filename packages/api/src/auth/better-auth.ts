@@ -29,7 +29,7 @@ export const BETTER_AUTH_BASE_PATH = '/api/auth';
 export const SESSION_COOKIE_NAME = 'better-auth.session_token';
 
 /** Session TTL (seconds) — mirrors Better Auth's default 7 days. */
-export const SESSION_TTL_SEC = 7 * 24 * 60 * 60;
+export const SESSION_TTL_SEC = 365 * 24 * 60 * 60;
 
 /** A constructed Better Auth instance (handler + api). */
 export type BetterAuthInstance = ReturnType<typeof betterAuth>;
@@ -98,9 +98,27 @@ export function makeBetterAuthService(
           config.get('GOOGLE_CLIENT_SECRET') ?? 'placeholder-secret',
       },
     },
+    session: {
+      expiresIn: SESSION_TTL_SEC,
+    },
     plugins: [bearer()],
+    // Aoi has no session-audit, support, or stolen-token workflow that reads
+    // these fields. Do not collect them: the IP is personal data and the UA is
+    // device-fingerprint-adjacent. The columns remain for the adapter.
     advanced: {
       useSecureCookies: config.get('APP_ENV') === 'production',
+      ipAddress: {
+        disableIpTracking: true,
+      },
+    },
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (session) => ({
+            data: { ...session, ipAddress: '', userAgent: '' },
+          }),
+        },
+      },
     },
   }) as unknown as BetterAuthInstance;
 

@@ -151,6 +151,7 @@ vi.mock('@/features/session/session-context', () => ({
   useSession: () => ({
     user: { id: 'user-1', displayName: 'Aoi', email: 'aoi@example.com' },
     signOut: signOutSpy,
+    signOutEverywhere: vi.fn(async () => {}),
     deleteAccount: deleteAccountSpy,
   }),
 }));
@@ -310,6 +311,14 @@ describe('Account relationship', () => {
     expect(screen.queryByText('New invite code')).toBeNull();
     expect(screen.queryByText('Invite pending')).toBeNull();
     expect(screen.queryByText('ABC123')).toBeNull();
+  });
+
+  it('does not offer relationship editing to the partner who joined', async () => {
+    mockSpace = joinedSpace({ createdByUserId: 'user-2' });
+    await renderAccount();
+
+    expect(screen.queryByText('Edit relationship')).toBeNull();
+    expect(screen.getAllByText('Partner').length).toBeGreaterThan(0);
   });
 
   it('renders the real partner with no invite confusion', async () => {
