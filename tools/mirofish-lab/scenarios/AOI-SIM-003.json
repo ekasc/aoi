@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-003",
+  "title": "Joiner edits relationship details and gets an unexplained failure",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-B-1792914406",
+    "observation_ids": [
+      "obs-001",
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "A created the space; B joined as the partner.",
+    "B opens Account and chooses Edit relationship.",
+    "B changes the anniversary date and saves."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "actor": "A",
+      "note": "A creates the space."
+    },
+    {
+      "op": "join_space",
+      "actor": "B",
+      "note": "B joins as the partner."
+    },
+    {
+      "op": "edit_relationship",
+      "actor": "B",
+      "note": "B opens Edit relationship and saves a new date."
+    }
+  ],
+  "expected_behavior": [
+    "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+    "A failed save explains the rule and preserves the current values.",
+    "The UI never implies that the partner's change was saved."
+  ],
+  "candidate_failure_modes": [
+    "The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+    "The partner retries because the message implies a transient network problem.",
+    "The partner believes the anniversary date changed when the server rejected it."
+  ],
+  "relevant_source_files": [
+    "app/(app)/account.tsx",
+    "app/(app)/profile/edit-relationship.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "features/space/space-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "Space hydration, foreground refresh, and mutation callbacks are scoped to the signed-in user id."
+    ],
+    "documented_requirement": [
+      "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+      "A failed save explains the rule and preserves the current values.",
+      "The UI never implies that the partner's change was saved."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"We are auditing Aoi for things that do not need to exist. Walk through the shared-memory flow you actually used this week: the composer, the Keep button, pending rows, retry and edit, author labels, the feed and gallery, empty and failed states, and every confirmation or helper line. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Bob Whitfield) said: \"Walked through this on a train with patchy signal. The Keep button is the first thing I'd remove. I recorded a voice note, then a Keep button appeared and I genuinely couldn't tell if I'd saved anything or was saving a second time — so I tapped it, and then wondered if I'd made two. If Keep went away, the only thing that breaks is my confusion. The pending rows and retry/edit: never touched them, because after one failed attempt I just text Alice and ask. What I'd keep is the first screen showing what she already saved — that's the only thing that tells me I'm in the right space at all. Author labels matter too, but only because I need my name on what I wrote; without that I'd assume it went in as hers. Three most useless: Keep, retry-and-edit, and the helper lines telling me what a memory is — I opened the link and I already knew.\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+      "Hypothesis, not reproduced: The partner retries because the message implies a transient network problem.",
+      "Hypothesis, not reproduced: The partner believes the anniversary date changed when the server rejected it."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

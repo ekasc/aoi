@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-009",
+  "title": "Restore from the recovery phrase is interrupted",
+  "experiment": "E",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-E-1792914471",
+    "observation_ids": [
+      "obs-001",
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "A replaced a phone and has the written recovery phrase.",
+    "The connection drops during restoration.",
+    "The old device is no longer available."
+  ],
+  "actions": [
+    {
+      "op": "replace_device",
+      "note": "A installs Aoi on a new phone."
+    },
+    {
+      "op": "restore_from_phrase",
+      "note": "A starts restoration and loses the connection."
+    },
+    {
+      "op": "restore_from_phrase",
+      "note": "A retries with the same phrase."
+    }
+  ],
+  "expected_behavior": [
+    "An interrupted restore does not consume or corrupt the phrase.",
+    "Retry can complete access without duplicate archive mutations.",
+    "Failure states keep the typed phrase and explain the next action."
+  ],
+  "candidate_failure_modes": [
+    "The phrase is rejected after an interrupted attempt.",
+    "The archive is partially restored and presented as complete.",
+    "The retry creates a second device identity that cannot be trusted."
+  ],
+  "relevant_source_files": [
+    "app/(app)/album/restore.tsx",
+    "features/album/protocol-recovery.ts",
+    "features/album/recovery.ts",
+    "tests/unit/album/protocol-recovery.test.ts"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "native",
+  "status": "not_automatable",
+  "claims": {
+    "observed_code_behavior": [
+      "Recovery is an explicit protocol transition, not a password reset."
+    ],
+    "documented_requirement": [
+      "An interrupted restore does not consume or corrupt the phrase.",
+      "Retry can complete access without duplicate archive mutations.",
+      "Failure states keep the typed phrase and explain the next action."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"We are auditing Aoi for things that do not need to exist. Walk through device recovery as you actually used it: the recovery phrase, the phrase check, restore, device enrollment, the device list, trust codes, and every warning or helper line. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Bob Whitfield) said: \"Okay, walking through this as someone who actually uses Aoi and nothing else: the recovery phrase and the phrase check are the first things I'd bin. I opened the invite link, made an account (thought that was the same as joining, apparently not?), hit the phrase check, got it wrong once, and just texted Alice instead. Why does it even exist? If it vanished I honestly wouldn't notice — nothing broke for me, I just gave up and asked a human. Same with trust codes, no idea what they're for. The one I'd keep is the device list, because that's the only screen that ever told me something I could use. Restore and device enrollment? Never touched them, probably never will.\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The phrase is rejected after an interrupted attempt.",
+      "Hypothesis, not reproduced: The archive is partially restored and presented as complete.",
+      "Hypothesis, not reproduced: The retry creates a second device identity that cannot be trusted."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

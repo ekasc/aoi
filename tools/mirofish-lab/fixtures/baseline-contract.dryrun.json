@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "aoi-simulation-bundle/1",
+  "mode": "dry_run_fixture",
+  "live": false,
+  "provenance": {
+    "simulation_id": "baseline-contract-questions-001",
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "seed_version": "seeds-v1",
+    "generated_at": "2026-10-22T00:00:00.000Z",
+    "label": "OFFLINE CONTRACT BASELINE FIXTURE — generated directly from Aoi product contracts, not a MiroFish run.",
+    "warning": "This is the comparison baseline. It is not a simulation and must not be reported as one."
+  },
+  "observations": [
+    {
+      "id": "obs-001",
+      "source": "report",
+      "round": 0,
+      "platform": "report",
+      "agent_id": 0,
+      "persona_id": "p-alice",
+      "text": "Contract question: what should a person see when an invitation has been shared but the partner has not yet completed joining with their own account?",
+      "theme": "A",
+      "signals": ["a1_delayed_invitation"]
+    },
+    {
+      "id": "obs-002",
+      "source": "report",
+      "round": 0,
+      "platform": "report",
+      "agent_id": 1,
+      "persona_id": "p-eli",
+      "text": "Contract question: what should happen when two members edit the same memory from stale copies, and which outcome must be visible to the person whose write lost?",
+      "theme": "B",
+      "signals": ["b1_concurrent_edit"]
+    },
+    {
+      "id": "obs-003",
+      "source": "report",
+      "round": 0,
+      "platform": "report",
+      "agent_id": 2,
+      "persona_id": "p-grace",
+      "text": "Contract question: how should the app distinguish a shared sky photo from a dated memory so a person does not conclude that a save failed?",
+      "theme": "C",
+      "signals": ["c1_sky_photo_versus_archive"]
+    },
+    {
+      "id": "obs-004",
+      "source": "report",
+      "round": 0,
+      "platform": "report",
+      "agent_id": 3,
+      "persona_id": "p-farah",
+      "text": "Contract question: can a response started under a previous account ever become the current account's space state after an account switch?",
+      "theme": "D",
+      "signals": ["d2_stale_account_join"]
+    },
+    {
+      "id": "obs-005",
+      "source": "report",
+      "round": 0,
+      "platform": "report",
+      "agent_id": 4,
+      "persona_id": "p-mira",
+      "text": "Contract question: what recovery path remains when a person has neither the recovery phrase nor a trusted device?",
+      "theme": "E",
+      "signals": ["e1_interrupted_restore"]
+    },
+    {
+      "id": "obs-006",
+      "source": "report",
+      "round": 0,
+      "platform": "report",
+      "agent_id": 5,
+      "persona_id": "p-rosa",
+      "text": "Contract question: which Plus benefits are Space-level, and what should the partner observe after one member's verified purchase?",
+      "theme": "F",
+      "signals": ["f1_partner_expects_plus"]
+    }
+  ],
+  "report": {
+    "summary": "OFFLINE CONTRACT BASELINE ONLY. Six questions derived by reading Aoi product contracts without a simulation.",
+    "findings": [
+      "The baseline has one representative question per experiment group.",
+      "It cannot represent persona disagreement, unexpected sequencing, or the language a user would actually use."
+    ]
+  }
+}

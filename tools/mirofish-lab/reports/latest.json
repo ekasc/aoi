@@ -1,0 +1,334 @@
+{
+  "schemaVersion": "aoi-mirofish-report/1",
+  "generatedAt": "2026-10-25T08:06:14.557Z",
+  "aoiCommit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+  "mirofishCommit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+  "run": {
+    "runId": "oasis-2026-10-25T07-46-14-281Z",
+    "mode": "oasis",
+    "live": false,
+    "rounds": 1,
+    "repeat": 1,
+    "status": "complete",
+    "backend": "oasis"
+  },
+  "personas": 26,
+  "couples": 13,
+  "scenarioCount": 63,
+  "coverage": {
+    "covered": 9,
+    "partial": 31,
+    "not_covered": 0,
+    "not_automatable": 23,
+    "invalid": 0
+  },
+  "executed": [],
+  "historicalReproducedDefects": [
+    {
+      "id": "AOI-SIM-011",
+      "beforeFix": {
+        "status": "executed_fail",
+        "failure": "AssertionError: expected 'space-a' to be 'space-b' // Object.is equality\n\nExpected: \"space-b\"\nReceived: \"space-a\""
+      },
+      "note": "Verified before the repair; not part of the current run."
+    }
+  ],
+  "reproducedDefects": [],
+  "hypotheses": [
+    {
+      "id": "AOI-SIM-002",
+      "title": "Pending media looks saved before its upload completes",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-003",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-004",
+      "title": "Pending media looks saved before its upload completes",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-005",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-007",
+      "title": "Pending media looks saved before its upload completes",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-009",
+      "title": "Restore from the recovery phrase is interrupted",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-010",
+      "title": "Pending media looks saved before its upload completes",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-012",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-014",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-015",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-016",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-017",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-019",
+      "title": "Pending media looks saved before its upload completes",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-020",
+      "title": "Restore from the recovery phrase is interrupted",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-022",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-025",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-026",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-028",
+      "title": "Pending media looks saved before its upload completes",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-029",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-030",
+      "title": "Restore from the recovery phrase is interrupted",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-031",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-032",
+      "title": "Pending media looks saved before its upload completes",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-036",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-037",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-039",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-041",
+      "title": "Restore from the recovery phrase is interrupted",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-042",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-046",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-047",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-049",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-052",
+      "title": "Restore from the recovery phrase is interrupted",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-057",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-058",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-060",
+      "title": "Restore from the recovery phrase is interrupted",
+      "level": "partial",
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    {
+      "id": "AOI-SIM-061",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    {
+      "id": "AOI-SIM-063",
+      "title": "A sky photo is expected to appear in Memories",
+      "level": "not_automatable",
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    }
+  ],
+  "baseline": {
+    "available": true,
+    "baselineCount": 6,
+    "simulationCount": 63,
+    "overlap": [
+      "A:Partner joins after the first memory was saved",
+      "C:A sky photo is expected to appear in Memories",
+      "E:Restore from the recovery phrase is interrupted",
+      "F:One member buys Plus and the partner expects it immediately",
+      "A:Partner joins after the first memory was saved",
+      "C:A sky photo is expected to appear in Memories",
+      "C:A sky photo is expected to appear in Memories",
+      "C:A sky photo is expected to appear in Memories",
+      "E:Restore from the recovery phrase is interrupted",
+      "F:One member buys Plus and the partner expects it immediately",
+      "C:A sky photo is expected to appear in Memories",
+      "A:Partner joins after the first memory was saved",
+      "C:A sky photo is expected to appear in Memories",
+      "E:Restore from the recovery phrase is interrupted",
+      "F:One member buys Plus and the partner expects it immediately",
+      "A:Partner joins after the first memory was saved",
+      "C:A sky photo is expected to appear in Memories",
+      "E:Restore from the recovery phrase is interrupted",
+      "C:A sky photo is expected to appear in Memories",
+      "F:One member buys Plus and the partner expects it immediately",
+      "A:Partner joins after the first memory was saved",
+      "C:A sky photo is expected to appear in Memories",
+      "E:Restore from the recovery phrase is interrupted",
+      "F:One member buys Plus and the partner expects it immediately",
+      "A:Partner joins after the first memory was saved",
+      "C:A sky photo is expected to appear in Memories",
+      "E:Restore from the recovery phrase is interrupted",
+      "F:One member buys Plus and the partner expects it immediately",
+      "C:A sky photo is expected to appear in Memories"
+    ],
+    "unique": [
+      "B:Pending media looks saved before its upload completes",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "B:Pending media looks saved before its upload completes",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "B:Pending media looks saved before its upload completes",
+      "B:Author deletes a memory while the partner is reading it",
+      "B:Pending media looks saved before its upload completes",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "B:Pending media looks saved before its upload completes",
+      "A:Invite code used after its 30-day window",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "B:Pending media looks saved before its upload completes",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "B:Pending media looks saved before its upload completes",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "B:Author deletes a memory while the partner is reading it",
+      "B:Author deletes a memory while the partner is reading it",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "B:Author deletes a memory while the partner is reading it",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "A:Invite code used after its 30-day window",
+      "A:Invite code used after its 30-day window",
+      "A:Joiner edits relationship details and gets an unexplained failure",
+      "D:Offline retry after a timeout creates a duplicate memory",
+      "A:Joiner edits relationship details and gets an unexplained failure"
+    ],
+    "note": "This comparison is structural. When the simulation bundle is a dry-run fixture, unique scenarios demonstrate pipeline breadth, not that MiroFish discovered them."
+  },
+  "baselineLlm": {
+    "available": false,
+    "reason": "No LLM baseline key was available."
+  },
+  "liveBlocked": null,
+  "verdict": "Pipeline verified; one cross-account state defect reproduced and repaired. MiroFish value remains unproven without a live run."
+}

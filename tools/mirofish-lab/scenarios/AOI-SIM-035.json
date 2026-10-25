@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-035",
+  "title": "Partner joins after the first memory was saved",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-11-A-1792914862",
+    "observation_ids": [
+      "obs-001",
+      "obs-002",
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-jules",
+    "p-mina"
+  ],
+  "preconditions": [
+    "Person A created a space and has not yet paired.",
+    "Person A saved one memory before Person B joined.",
+    "Person B has their own account and received the invite code or link."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "note": "A creates the space and receives an invite code."
+    },
+    {
+      "op": "create_memory",
+      "note": "A saves one note before B arrives."
+    },
+    {
+      "op": "invite_partner",
+      "note": "A shares the live invite code."
+    },
+    {
+      "op": "join_space",
+      "note": "B signs in with a different account and redeems the code."
+    },
+    {
+      "op": "refresh_space",
+      "note": "A returns to the foreground and checks membership."
+    }
+  ],
+  "expected_behavior": [
+    "The pre-join memory is visible to B after joining, with A shown as its author.",
+    "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+    "B can identify that they joined an existing space rather than creating a new one."
+  ],
+  "candidate_failure_modes": [
+    "A believes sharing completed the pairing and stops looking for B.",
+    "B creates a second space instead of redeeming the code.",
+    "The pre-join memory is missing or attributed to B after joining."
+  ],
+  "relevant_source_files": [
+    "docs/product/first-use-acceptance.md",
+    "components/space/partner-invitation.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "packages/api/src/domains/moments.ts"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "The product requires pending, failed, and saved states to be distinguishable.",
+      "The owner's physical two-phone acceptance run remains the gate for native UX.",
+      "The invitation sheet regenerates an expired code before sharing.",
+      "Opening the share sheet does not claim delivery or membership.",
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound."
+    ],
+    "documented_requirement": [
+      "The pre-join memory is visible to B after joining, with A shown as its author.",
+      "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+      "B can identify that they joined an existing space rather than creating a new one."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Jules Park) said: \"We are auditing Aoi for things that do not need to exist. Walk through the screens and flows you actually used this week around first use and invitations: create versus join, the invite code, the invitation surface, the account line, the sign-out line, confirmations, empty states and any step between opening the app and being in the space. For each control, line of copy, badge, animation or step, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you in time, attention or trust. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Mina Sol) said: \"Ran the first-use path with VoiceOver and 200% text on. Three things I'd remove — no redesign, just subtraction:\n\n1. The create/join fork on first open. Two controls, no explanation of the difference, and VoiceOver announces them as bare \"Create\" / \"Join\" with no hint of what happens after. It reads as a permanent decision before I've seen anything. Removing it breaks nothing I can find; the fork exists to look like a decision. Cost: one screen of attention and a small spike of anxiety before any value.\n\n2. The invitation surface as its own screen. The invite code is six characters. Put a text field and a copyable line inside the space and delete the surface — along with its extra heading, which is a duplicate of the one on the previous screen. Duplicate headings are what make rotor navigation useless; I hit \"Invitation, heading level 1\" twice in a row and had to guess which one was real.\n\n3. The sign-out line at the same weight as the account line, plus a confirmation dialog for it. Signing out is reversible. A confirm step on a reversible action is friction dressed up as safety, and both lines are announced with near-identical labels, so at large text they read as one duplicated control.\n\nThe one thing I'd keep: the empty state that says what happens next. It's the only copy in the whole flow that tells me the truth about the current state instead of describing the interface's structure. Keep it and make it the pattern everywhere else.\n\nTally: ~40 seconds and three swipes before I was in the space, two ambiguous heading announcements, one trust hit when the dialog appeared with no verb in its label.\"",
+      "A fictional participant (Jules Park) said: \"Ran the first-use flow twice, once with VoiceOver on and once with reduce-motion enabled. Answering the question directly.\n\nThree things that do not need to exist:\n\n1. The confirmation dialog after \"Create space.\" It confirms an action the user just typed a name to perform. Nothing is destructive, nothing is billable, nothing is irreversible. Cost: one tap, and a small flicker of \"did I miss something?\" Trust cost is worse than the time cost.\n\n2. The second invitation surface. Invite code panel, plus a separate \"invite by link\" panel, plus a share row — same intent, three labels, three layouts. Pick one surface and one verb: Invite. If the code is the mechanism, show the code plainly. Don't dress a string up as a feature.\n\n3. The sign-out line. It sits directly under the account line in identical type weight and identical row height, so two rows read as siblings while one of them ends your session. Destructive actions should not look like profile fields.\n\nThe one thing I'd keep: the empty state on a brand-new space. It's the only place in the flow that says what a space is *for* rather than what it *is*. One sentence, one action, no looping illustration. That's the whole model of the product, stated once, at the moment you need it.\n\nOne pattern worth naming: every element I removed above arrived with an entrance animation. None of them carried state. Motion was being spent to make small things feel intentional instead of making intentional things feel small. With reduced motion on, the flow got faster and lost nothing — which is the tell.\"",
+      "Jules Park assumes: the sky is not the archive",
+      "Jules Park assumes: a setting applies immediately",
+      "Mina Sol assumes: a heading is a heading",
+      "Mina Sol assumes: a button that looks disabled is disabled"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: A believes sharing completed the pairing and stops looking for B.",
+      "Hypothesis, not reproduced: B creates a second space instead of redeeming the code.",
+      "Hypothesis, not reproduced: The pre-join memory is missing or attributed to B after joining."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  },
+  "execution": {
+    "target": "integration",
+    "test_path": "tests/integration/mirofish-scenario-execution.test.ts",
+    "assertions": [
+      {
+        "kind": "space.memberCount",
+        "value": 2
+      },
+      {
+        "kind": "space.partnerJoined",
+        "viewer": "A",
+        "value": true
+      },
+      {
+        "kind": "moment.count",
+        "viewer": "A",
+        "value": 1
+      },
+      {
+        "kind": "moment.count",
+        "viewer": "B",
+        "value": 1
+      },
+      {
+        "kind": "moment.authorRole",
+        "viewer": "A",
+        "value": "you"
+      },
+      {
+        "kind": "moment.authorRole",
+        "viewer": "B",
+        "value": "partner"
+      }
+    ]
+  }
+}

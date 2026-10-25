@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-040",
+  "title": "Author deletes a memory while the partner is reading it",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-11-D-1792914941",
+    "observation_ids": [
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-jules",
+    "p-mina"
+  ],
+  "preconditions": [
+    "A authored a memory that B has opened.",
+    "A deletes it from their own device.",
+    "B refreshes or navigates back to the memory."
+  ],
+  "actions": [
+    {
+      "op": "delete_memory",
+      "note": "A deletes their own memory."
+    },
+    {
+      "op": "refresh_space",
+      "note": "B refreshes the archive."
+    }
+  ],
+  "expected_behavior": [
+    "Only the author can delete the memory.",
+    "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+    "The deletion does not affect B's ability to read other shared memories."
+  ],
+  "candidate_failure_modes": [
+    "B can still edit or delete A's memory.",
+    "The open detail shows stale content indefinitely or crashes.",
+    "Deleting the memory deletes unrelated media still used elsewhere."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/moments.ts",
+    "features/moments/ownership.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Memory create is idempotent per (space_id, client_id) while the row is live.",
+      "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+      "Authorship and authorName are computed per viewer, not stored as a snapshot."
+    ],
+    "documented_requirement": [
+      "Only the author can delete the memory.",
+      "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+      "The deletion does not affect B's ability to read other shared memories."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Jules Park) said: \"Ran this audit on the offline/account paths I actually use. Answers to \"why does this even exist?\", in order of how fast I wanted it gone:\n\n1. The persistent account indicator. It sits on every screen and tells me the thing Settings already tells me on demand. Break if removed: nothing — the account is one tap away, and the label is a static string, not state. Cost: it looks like a status, so I keep reading it as one and looking for meaning that isn't there.\n\n2. The \"Saving…\" toast, layered on top of a pending-save badge, layered on top of a spinner. Three controls for one fact. Break if removed: nothing; the badge already carries count and retry affordance. Cost: the toast steals the bottom of the screen and moves nothing forward. Also it ignores reduced motion — it slides in regardless of the setting, which is exactly the decorative motion that hides state.\n\n3. The \"Last synced 3 min ago\" line. It recomputes on foregrounding, not on a successful sync, so it's confidently wrong. Break if removed: nothing but a lie. Cost: false confidence in a path where confidence is the whole point.\n\nWhat I'd keep: the pending-save count. One integer, one source of truth, same label everywhere. If I had to defend a single line of that whole path, it's that one.\n\nRemoved, not redesigned. Nothing above needs a replacement — it needs deletion.\"",
+      "Jules Park assumes: the sky is not the archive",
+      "Jules Park assumes: a setting applies immediately",
+      "Mina Sol assumes: a heading is a heading",
+      "Mina Sol assumes: a button that looks disabled is disabled"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B can still edit or delete A's memory.",
+      "Hypothesis, not reproduced: The open detail shows stale content indefinitely or crashes.",
+      "Hypothesis, not reproduced: Deleting the memory deletes unrelated media still used elsewhere."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

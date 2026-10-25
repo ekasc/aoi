@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-006",
+  "title": "Offline retry after a timeout creates a duplicate memory",
+  "experiment": "D",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-D-1792914453",
+    "observation_ids": [
+      "obs-001"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "A saves a note while the connection is unreliable.",
+    "The first request times out after the server may have committed.",
+    "A retries the same draft."
+  ],
+  "actions": [
+    {
+      "op": "create_memory",
+      "note": "A sends a note with a stable client id."
+    },
+    {
+      "op": "lose_connection",
+      "note": "The response is lost."
+    },
+    {
+      "op": "retry_operation",
+      "note": "A retries the same draft."
+    },
+    {
+      "op": "refresh_space",
+      "note": "A checks the archive."
+    }
+  ],
+  "expected_behavior": [
+    "The retry is idempotent for the same client id.",
+    "The archive contains exactly one memory.",
+    "The retry reports the saved state truthfully."
+  ],
+  "candidate_failure_modes": [
+    "Two identical memories appear.",
+    "The retry creates a second media reservation.",
+    "The first success is reported as failed, so A keeps retrying."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/moments.ts",
+    "features/composer/send-pipeline.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Memory create is idempotent per (space_id, client_id) while the row is live.",
+      "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+      "Authorship and authorName are computed per viewer, not stored as a snapshot."
+    ],
+    "documented_requirement": [
+      "The retry is idempotent for the same client id.",
+      "The archive contains exactly one memory.",
+      "The retry reports the saved state truthfully."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"We are auditing Aoi for things that do not need to exist. Walk through the offline and account-lifecycle paths you actually used: the account indicator, pending saves, retry, backgrounding, switching accounts, session recovery, and every status line or control around them. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: Two identical memories appear.",
+      "Hypothesis, not reproduced: The retry creates a second media reservation.",
+      "Hypothesis, not reproduced: The first success is reported as failed, so A keeps retrying."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

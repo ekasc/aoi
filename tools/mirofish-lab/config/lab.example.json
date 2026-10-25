@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "aoi-mirofish-lab-config/1",
+  "mirofish": {
+    "baseUrl": "http://127.0.0.1:5001",
+    "requestTimeoutMs": 60000,
+    "pollIntervalMs": 5000,
+    "startupTimeoutMs": 900000
+  },
+  "simulation": {
+    "projectName": "Aoi two-person workflow lab",
+    "seedVersion": "seeds-v1",
+    "model": "deepseek-v4.1-flash",
+    "maxRounds": 12,
+    "repeatCount": 2,
+    "enableTwitter": false,
+    "enableReddit": true,
+    "interviewAgents": 8
+  }
+}

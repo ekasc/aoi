@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-028",
+  "title": "Pending media looks saved before its upload completes",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-10-D-1792914748",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-theo",
+    "p-nadia"
+  ],
+  "preconditions": [
+    "A saves a photo memory on a slow or interrupted connection.",
+    "The composer renders a local preview before the server upload completes.",
+    "A closes the app while the upload is pending."
+  ],
+  "actions": [
+    {
+      "op": "create_memory",
+      "note": "A attaches a photo and sends."
+    },
+    {
+      "op": "lose_connection",
+      "note": "The upload fails or stalls."
+    },
+    {
+      "op": "retry_operation",
+      "note": "A reopens and retries."
+    }
+  ],
+  "expected_behavior": [
+    "Pending is visually and semantically distinct from saved.",
+    "The draft survives the app being closed.",
+    "Retry produces one completed memory, not a duplicate."
+  ],
+  "candidate_failure_modes": [
+    "The local preview is read as confirmation of a completed save.",
+    "The pending item disappears after relaunch.",
+    "Retry creates a second memory or loses the attachment."
+  ],
+  "relevant_source_files": [
+    "features/composer/send-pipeline.ts",
+    "features/composer/composer-machine.ts",
+    "features/moments/moments-context.tsx",
+    "docs/product/first-use-acceptance.md"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "The product requires pending, failed, and saved states to be distinguishable.",
+      "The owner's physical two-phone acceptance run remains the gate for native UX."
+    ],
+    "documented_requirement": [
+      "Pending is visually and semantically distinct from saved.",
+      "The draft survives the app being closed.",
+      "Retry produces one completed memory, not a duplicate."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Theo Bennett) said: \"Did this on a patchy train connection this morning, large text + split screen, which is where the dead weight shows up.\n\nThree things that do not need to exist:\n1. The second \"Sync failed\" toast that stacks on top of the inline status line. Same information, and the toast is already stale by the time it renders. Removing it breaks nothing; I lost a tap trying to dismiss it before reading the inline copy that was actually accurate.\n2. The account indicator's halo animation. It is the *only* thing that visibly changes when you switch accounts while an upload is pending, so it is the app's loudest signal and it says the wrong thing. Removing it costs nothing. Keeping it cost me a support thread where I insisted my draft had saved when it had not.\n3. The \"Retry\" button that appears while auto-retry is already in flight. Tapping it queues a duplicate upload. I filed the repro steps for that one (pending row → airplane mode → background 20 min → foreground → tap Retry twice). Removing it and letting the pending row own the state would be strictly better.\n\nWhat I'd keep: the inline pending-save row with its timestamp. After a tunnel and a 20-minute background, it was the one control that told me the draft had survived, and it held up across a refresh. It earns its place.\n\n\"Why does this even exist?\" — for all three above, the honest answer was \"because a status was added in one place and never removed from the other.\"\"",
+      "Theo Bennett assumes: a pending upload is visibly pending",
+      "Theo Bennett assumes: a six-character code accepts a pasted message",
+      "Nadia Iqbal assumes: a disabled button explains why",
+      "Nadia Iqbal assumes: a save has a visible pending and failure state"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The local preview is read as confirmation of a completed save.",
+      "Hypothesis, not reproduced: The pending item disappears after relaunch.",
+      "Hypothesis, not reproduced: Retry creates a second memory or loses the attachment."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

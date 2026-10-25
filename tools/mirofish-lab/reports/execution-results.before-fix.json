@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "aoi-execution-results/1",
+  "label": "before-fix",
+  "generatedAt": "2026-10-22T22:55:54.000Z",
+  "aoiCommit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+  "note": "Recorded from the real pre-fix run of the newly generated scenario. The fix to features/space/space-context.tsx followed this failure.",
+  "commands": [
+    {
+      "project": "unit-app",
+      "testPath": "tests/unit/space/mirofish-stale-space-mutation.test.tsx",
+      "command": "NODE_OPTIONS=--max-old-space-size=512 pnpm exec vitest run --project unit-app --maxWorkers 1 tests/unit/space/mirofish-stale-space-mutation.test.tsx",
+      "exitCode": 1,
+      "stdoutTail": "FAIL tests/unit/space/mirofish-stale-space-mutation.test.tsx > space mutation across an account change > ignores a join that finishes after the signed-in account changes\nAssertionError: expected 'space-a' to be 'space-b'",
+      "stderrTail": ""
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "AOI-SIM-011",
+      "target": "unit-app",
+      "testPath": "tests/unit/space/mirofish-stale-space-mutation.test.tsx",
+      "status": "executed_fail",
+      "durationMs": 115,
+      "failure": "AssertionError: expected 'space-a' to be 'space-b' // Object.is equality\n\nExpected: \"space-b\"\nReceived: \"space-a\"",
+      "testTitles": [
+        "space mutation across an account change > ignores a join that finishes after the signed-in account changes"
+      ]
+    }
+  ]
+}

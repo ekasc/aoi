@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-060",
+  "title": "Restore from the recovery phrase is interrupted",
+  "experiment": "E",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-13-E-1792915302",
+    "observation_ids": [
+      "obs-001",
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-iris",
+    "p-oren"
+  ],
+  "preconditions": [
+    "A replaced a phone and has the written recovery phrase.",
+    "The connection drops during restoration.",
+    "The old device is no longer available."
+  ],
+  "actions": [
+    {
+      "op": "replace_device",
+      "note": "A installs Aoi on a new phone."
+    },
+    {
+      "op": "restore_from_phrase",
+      "note": "A starts restoration and loses the connection."
+    },
+    {
+      "op": "restore_from_phrase",
+      "note": "A retries with the same phrase."
+    }
+  ],
+  "expected_behavior": [
+    "An interrupted restore does not consume or corrupt the phrase.",
+    "Retry can complete access without duplicate archive mutations.",
+    "Failure states keep the typed phrase and explain the next action."
+  ],
+  "candidate_failure_modes": [
+    "The phrase is rejected after an interrupted attempt.",
+    "The archive is partially restored and presented as complete.",
+    "The retry creates a second device identity that cannot be trusted."
+  ],
+  "relevant_source_files": [
+    "app/(app)/album/restore.tsx",
+    "features/album/protocol-recovery.ts",
+    "features/album/recovery.ts",
+    "tests/unit/album/protocol-recovery.test.ts"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "native",
+  "status": "not_automatable",
+  "claims": {
+    "observed_code_behavior": [
+      "Recovery is an explicit protocol transition, not a password reset."
+    ],
+    "documented_requirement": [
+      "An interrupted restore does not consume or corrupt the phrase.",
+      "Retry can complete access without duplicate archive mutations.",
+      "Failure states keep the typed phrase and explain the next action."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Iris Vale) said: \"We are auditing Aoi for things that do not need to exist. Walk through device recovery as you actually used it: the recovery phrase, the phrase check, restore, device enrollment, the device list, trust codes, and every warning or helper line. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Iris Vale) said: \"Doing this exercise out loud, in the order you listed.\n\n1. **The phrase check.** It re-asks for words the user just transcribed, then lands on a failure state that offers no exit — no \"show me the phrase again,\" no \"restart,\" just a red line and a back chevron. Removing it breaks nothing: the phrase itself is verified at restore, which is the only place verification actually matters. Cost: one extra full-screen detour on the single most anxious moment in the flow.\n\n2. **The duplicate warning on trust codes.** The same sentence appears as a helper line under the code and again as a banner above the confirm button, in two different greys. Two copies of one warning doesn't double the caution, it halves the credibility of both. Remove the banner; keep the inline line where the decision is made.\n\n3. **The \"last active\" column in the device list.** It never updates without a manual pull, so it is stale information presented with the same weight as the device name. A column that lies is worse than an absent column.\n\n**Keep:** the recovery phrase screen itself — the one place the interface stops performing and just shows you a thing. That's the whole product in one screen.\n\nTwo things I'd add to the audit list even though they aren't features: the helper text is set at ~13px/1.2 against a 15px body, so every warning reads *quieter* than the thing it warns about — the hierarchy is inverted exactly where it shouldn't be. And each of these screens still animates its entry when reduced motion is on. Decoration beating content, on the screens where users are most likely to bail.\"",
+      "Iris Vale assumes: the interface should teach itself",
+      "Iris Vale assumes: empty states should be designed",
+      "Oren Pike assumes: a saved item survives relaunch",
+      "Oren Pike assumes: an error is not a dead end"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The phrase is rejected after an interrupted attempt.",
+      "Hypothesis, not reproduced: The archive is partially restored and presented as complete.",
+      "Hypothesis, not reproduced: The retry creates a second device identity that cannot be trusted."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

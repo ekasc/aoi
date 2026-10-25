@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-008",
+  "title": "Author deletes a memory while the partner is reading it",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-D-1792914453",
+    "observation_ids": [
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-bob",
+    "p-alice"
+  ],
+  "preconditions": [
+    "A authored a memory that B has opened.",
+    "A deletes it from their own device.",
+    "B refreshes or navigates back to the memory."
+  ],
+  "actions": [
+    {
+      "op": "delete_memory",
+      "note": "A deletes their own memory."
+    },
+    {
+      "op": "refresh_space",
+      "note": "B refreshes the archive."
+    }
+  ],
+  "expected_behavior": [
+    "Only the author can delete the memory.",
+    "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+    "The deletion does not affect B's ability to read other shared memories."
+  ],
+  "candidate_failure_modes": [
+    "B can still edit or delete A's memory.",
+    "The open detail shows stale content indefinitely or crashes.",
+    "Deleting the memory deletes unrelated media still used elsewhere."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/moments.ts",
+    "features/moments/ownership.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Memory create is idempotent per (space_id, client_id) while the row is live.",
+      "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+      "Authorship and authorName are computed per viewer, not stored as a snapshot."
+    ],
+    "documented_requirement": [
+      "Only the author can delete the memory.",
+      "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+      "The deletion does not affect B's ability to read other shared memories."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Bob Whitfield) said: \"Speaking as the guy who causes these paths to exist: I open the link Alice texts me without reading the words around it. It asks me to make an account, so I make an account — I assume that IS joining her space. Then I'm on a screen with a little account indicator and I genuinely can't tell whose space I'm in. That's the most useless thing: the indicator. It tells me a name I already know and never tells me the thing I actually want, which is \"is this Alice's?\" If it went away, nothing would break, because I already don't trust it.\n\nSecond: session recovery. On the train my signal drops, I hit retry once, it fails, and I'm done — I close the app and text Alice \"is it working for you?\" That flow costs me the whole attempt and gives me nothing back. Third: the status lines. They're wordy and I read none of them.\n\nThe one I'd keep: pending saves. That's the only one that does a job I can't do myself — I wrote a voice note and I want it to land later without me babysitting it. Keep that, remove the rest.\"",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B can still edit or delete A's memory.",
+      "Hypothesis, not reproduced: The open detail shows stale content indefinitely or crashes.",
+      "Hypothesis, not reproduced: Deleting the memory deletes unrelated media still used elsewhere."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "aoi-mirofish-experiments/1",
+  "groups": [
+    {
+      "id": "A",
+      "name": "First use and partner onboarding",
+      "seedFiles": ["01-onboarding-and-invitations.md"],
+      "simulationRequirement": "Explore how two fictional people in a private two-person relationship app decide whether they have created or joined the same space, what they expect sharing an invitation to do, how they interpret an expired code, and where one person proceeds while the other has not joined. Treat every statement as a fictional user's belief, never as a fact about the product.",
+      "focus": ["delayed invitation", "incorrect membership assumptions", "skipped setup", "expired codes", "creating versus joining"]
+    },
+    {
+      "id": "B",
+      "name": "Shared memories",
+      "seedFiles": ["02-shared-memories-and-authorship.md"],
+      "simulationRequirement": "Explore asynchronous contributions, concurrent edits, missing attachments, pending uploads, failed retries, deletion, and authorship expectations between two fictional members of one shared space. Report disagreements and assumptions separately from verified product behavior.",
+      "focus": ["asynchronous contribution", "concurrent editing", "pending uploads", "failed retries", "deletion", "authorship"]
+    },
+    {
+      "id": "C",
+      "name": "Us versus Memories",
+      "seedFiles": ["03-us-sky-versus-memories.md"],
+      "simulationRequirement": "Explore whether fictional users understand the difference between shared sky photos in Us and dated memories in Memories, what they expect each action to affect, and which ambiguities require real usability testing. Do not claim a UI defect from a simulated guess.",
+      "focus": ["content model", "sky photo expectations", "archive expectations", "ambiguous navigation"]
+    },
+    {
+      "id": "D",
+      "name": "Offline and account lifecycle",
+      "seedFiles": ["04-offline-save-and-recovery.md", "05-membership-and-accounts.md"],
+      "simulationRequirement": "Explore lost connections, interrupted uploads, account switching, stale asynchronous responses, session restoration, partner removal, and the risk that one account briefly sees another account's space or content. Two members per space only.",
+      "focus": ["offline", "interrupted upload", "account switching", "stale responses", "session restoration", "partner removal", "cross-account exposure"]
+    },
+    {
+      "id": "E",
+      "name": "Device recovery",
+      "seedFiles": ["05-membership-and-accounts.md", "06-device-authorization-and-recovery.md"],
+      "simulationRequirement": "Explore device replacement, recovery phrase handling, missing trusted devices, interrupted restoration, and loss of access for fictional couples. Never use real cryptographic secrets or personal data.",
+      "focus": ["device replacement", "recovery phrase", "trusted devices", "interrupted restore", "lost access"]
+    },
+    {
+      "id": "F",
+      "name": "Subscription boundaries",
+      "seedFiles": ["07-subscription-boundaries.md"],
+      "simulationRequirement": "Explore what two fictional members expect when one has Plus, when entitlement state changes, when a purchase fails, or when storage limits are reached. Judge against the stated product contract, not simulated willingness to pay.",
+      "focus": ["shared entitlement", "state change", "purchase failure", "storage limit", "partner expectations"]
+    }
+  ]
+}

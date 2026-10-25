@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aoi.local/schemas/scenario.v1.schema.json",
+  "title": "Aoi MiroFish Lab scenario",
+  "description": "Strict, versioned scenario specification produced from synthetic simulation observations. A scenario is a hypothesis until an execution record proves otherwise.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "title",
+    "experiment",
+    "source",
+    "actors",
+    "preconditions",
+    "actions",
+    "expected_behavior",
+    "candidate_failure_modes",
+    "relevant_source_files",
+    "existing_test_coverage",
+    "confidence",
+    "execution_target",
+    "status",
+    "claims",
+    "coverage",
+    "safety"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "aoi-scenario/1" },
+    "id": { "type": "string", "pattern": "^AOI-SIM-[0-9]{3}$" },
+    "title": { "type": "string", "minLength": 8, "maxLength": 160 },
+    "experiment": { "enum": ["A", "B", "C", "D", "E", "F"] },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aoi_commit",
+        "mirofish_commit",
+        "simulation_id",
+        "observation_ids",
+        "provenance",
+        "seed_version"
+      ],
+      "properties": {
+        "aoi_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "mirofish_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "simulation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "type": "string", "pattern": "^obs-[0-9]{3}$" }
+        },
+        "provenance": {
+          "enum": ["offline_fixture", "live_simulation", "contract_baseline", "local_oasis"]
+        },
+        "seed_version": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "actors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": { "type": "string", "pattern": "^p-[a-z0-9-]+$" }
+    },
+    "preconditions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "type": "string", "minLength": 1, "maxLength": 400 }
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["op"],
+        "properties": {
+          "op": {
+            "enum": [
+              "create_space",
+              "invite_partner",
+              "join_space",
+              "create_memory",
+              "edit_memory",
+              "delete_memory",
+              "refresh_space",
+              "leave_space",
+              "switch_account",
+              "lose_connection",
+              "retry_operation",
+              "open_us",
+              "open_memories",
+              "add_sky_photo",
+              "open_plans",
+              "open_collection",
+              "edit_relationship",
+              "replace_device",
+              "restore_from_phrase",
+              "change_subscription",
+              "reach_storage_limit"
+            ]
+          },
+          "note": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "actor": { "enum": ["A", "B", "C"] }
+        }
+      }
+    },
+    "expected_behavior": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "candidate_failure_modes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "relevant_source_files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "type": "string", "pattern": "^(app|components|features|packages|docs|tests|e2e)/" }
+    },
+    "existing_test_coverage": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+    },
+    "confidence": { "enum": ["hypothesis", "contract", "reproduced"] },
+    "execution_target": { "enum": ["integration", "unit", "native", "manual"] },
+    "status": {
+      "enum": [
+        "proposed",
+        "mapped",
+        "executed_pass",
+        "executed_fail",
+        "not_automatable",
+        "invalid"
+      ]
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observed_code_behavior",
+        "documented_requirement",
+        "hypothetical_user_behavior",
+        "potential_defect",
+        "reproduced_defect"
+      ],
+      "properties": {
+        "observed_code_behavior": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "documented_requirement": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "hypothetical_user_behavior": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "potential_defect": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "reproduced_defect": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "evidence", "notes"],
+      "properties": {
+        "level": {
+          "enum": ["unanalyzed", "covered", "partial", "not_covered", "not_automatable", "invalid"]
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 400 }
+        },
+        "notes": { "type": "string", "maxLength": 800 }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["synthetic_only", "contains_secrets", "production_data", "arbitrary_code"],
+      "properties": {
+        "synthetic_only": { "const": true },
+        "contains_secrets": { "const": false },
+        "production_data": { "const": false },
+        "arbitrary_code": { "const": false }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "test_path", "assertions"],
+      "properties": {
+        "target": { "enum": ["integration", "unit"] },
+        "test_path": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "assertions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "space.memberCount",
+                  "space.partnerJoined",
+                  "moment.count",
+                  "moment.authorRole",
+                  "moment.authorName",
+                  "response.status",
+                  "response.error.code",
+                  "account.spaceId",
+                  "plus.isPlus",
+                  "plus.mediaLimitBytes",
+                  "plus.futureLetterLimit"
+                ]
+              },
+              "viewer": { "type": "string", "pattern": "^[A-Z]$" },
+              "value": { "type": ["string", "number", "boolean"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-061",
+  "title": "Joiner edits relationship details and gets an unexplained failure",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-13-E-1792915302",
+    "observation_ids": [
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-oren",
+    "p-iris"
+  ],
+  "preconditions": [
+    "A created the space; B joined as the partner.",
+    "B opens Account and chooses Edit relationship.",
+    "B changes the anniversary date and saves."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "actor": "A",
+      "note": "A creates the space."
+    },
+    {
+      "op": "join_space",
+      "actor": "B",
+      "note": "B joins as the partner."
+    },
+    {
+      "op": "edit_relationship",
+      "actor": "B",
+      "note": "B opens Edit relationship and saves a new date."
+    }
+  ],
+  "expected_behavior": [
+    "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+    "A failed save explains the rule and preserves the current values.",
+    "The UI never implies that the partner's change was saved."
+  ],
+  "candidate_failure_modes": [
+    "The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+    "The partner retries because the message implies a transient network problem.",
+    "The partner believes the anniversary date changed when the server rejected it."
+  ],
+  "relevant_source_files": [
+    "app/(app)/account.tsx",
+    "app/(app)/profile/edit-relationship.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "features/space/space-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "Space hydration, foreground refresh, and mutation callbacks are scoped to the signed-in user id."
+    ],
+    "documented_requirement": [
+      "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+      "A failed save explains the rule and preserves the current values.",
+      "The UI never implies that the partner's change was saved."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Oren Pike) said: \"Ran this against actual use, not the docs: killed the app mid-enrollment, restored on a bad connection, and forced a failed restore to see what the flow does when it can't succeed. Three I'd remove:\n\n1) The phrase check (the \"type words 3, 7, 11\" step at enrollment). It verifies recall at the one moment the user has the phrase open in front of them, and never again. It caught nothing in my runs; the failures happen at restore time, which is the only check that matters. Cost: ~40 seconds and a false sense of verification.\n\n2) Trust codes as a manual eyeball-compare step. If the code is derived from keys already exchanged, showing it and asking me to confirm is theatre. Either verify it in the protocol and surface only a mismatch, or drop the screen. Cost: it trains people to tap \"they match\" without looking, which is worse than no check.\n\n3) The current-device row in the device list: read-only, no rename, no revoke, no inspect, no last-seen that's actually current. It exists to reassure, not to do anything. Cost: I treated it as inventory until I found an entry that survived a wipe — a status page pretending to be a control panel.\n\nKeep exactly one: restore that fails with a real error code and a retry that doesn't lose what I already typed. When my phrase attempt failed, that explicit reason plus preserved state was the only genuinely useful thing in the entire flow.\n\nTest I'd want before any of this is called done: does a saved item survive a background kill, and does a failed restore leave me able to try again. A screen that can't answer one of those two questions is decoration.\"",
+      "Oren Pike assumes: a saved item survives relaunch",
+      "Oren Pike assumes: an error is not a dead end",
+      "Iris Vale assumes: the interface should teach itself",
+      "Iris Vale assumes: empty states should be designed"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+      "Hypothesis, not reproduced: The partner retries because the message implies a transient network problem.",
+      "Hypothesis, not reproduced: The partner believes the anniversary date changed when the server rejected it."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

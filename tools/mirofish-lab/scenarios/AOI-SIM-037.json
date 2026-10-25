@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-037",
+  "title": "A sky photo is expected to appear in Memories",
+  "experiment": "C",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-11-C-1792914904",
+    "observation_ids": [
+      "obs-001",
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-jules",
+    "p-mina"
+  ],
+  "preconditions": [
+    "A adds a photo in Us.",
+    "B expects every shared photo to appear in Memories.",
+    "Neither has read the explanation of the two destinations."
+  ],
+  "actions": [
+    {
+      "op": "add_sky_photo",
+      "note": "A chooses a photo for the sky."
+    },
+    {
+      "op": "open_memories",
+      "note": "B searches Memories for the same photo."
+    }
+  ],
+  "expected_behavior": [
+    "The app makes clear that a sky photo and a dated memory are separate actions.",
+    "A sky photo does not silently become a dated memory.",
+    "The archive remains the complete place to browse dated content."
+  ],
+  "candidate_failure_modes": [
+    "B concludes the photo failed to save.",
+    "A believes one action published to both destinations.",
+    "The app adds a second, unrequested copy to resolve the ambiguity."
+  ],
+  "relevant_source_files": [
+    "docs/product/relationship-home-and-archive.md",
+    "app/(app)/(tabs)/together.tsx",
+    "features/album/sky-photo-repository.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+      "Free and Plus see the same relationship home."
+    ],
+    "documented_requirement": [
+      "The app makes clear that a sky photo and a dated memory are separate actions.",
+      "A sky photo does not silently become a dated memory.",
+      "The archive remains the complete place to browse dated content."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Jules Park) said: \"We are auditing Aoi for things that do not need to exist. Walk through Us and Memories as you actually used them: the photo sky, the history control, the help panel, the add-photo action, the dated-memory action, the distinction between the two surfaces, and every label or decoration around them. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Mina Sol) said: \"Ran the audit out loud, VoiceOver on, large text at 200%. Three things that do not need to exist:\n\n1) The decorative heading above the photo sky. It announces itself as a heading, so the rotor jumps there as if it were structure. It isn't. A heading that is decoration is a dead end for me — it promises navigation and delivers none. Cost: one rotor stop, every single pass, forever. Remove it; nothing breaks.\n\n2) The history control that reads as disabled but doesn't say why. Dimmed and still focusable means I spend a swipe and a doubt on it. Either it acts, or it says \"nothing to undo yet.\" A disabled control should say what to do next, or it's just a dead end with a grey coat.\n\n3) The doubled label on the add-photo action — glyph label plus text label, both reading \"Add photo.\" VoiceOver says it twice, and in that repetition I lose the one thing I actually need: which surface I'm on. One label. Verb first.\n\nWhat I would keep: the distinction between Us and Memories. Us is where we are; Memories is what we kept. That line is the entire product. Everything else is ornament competing with it.\n\nThe test I keep failing to see applied: if removing it breaks nothing, it was never load-bearing — it was just loud.\"",
+      "Jules Park assumes: the sky is not the archive",
+      "Jules Park assumes: a setting applies immediately",
+      "Mina Sol assumes: a heading is a heading",
+      "Mina Sol assumes: a button that looks disabled is disabled"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B concludes the photo failed to save.",
+      "Hypothesis, not reproduced: A believes one action published to both destinations.",
+      "Hypothesis, not reproduced: The app adds a second, unrequested copy to resolve the ambiguity."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

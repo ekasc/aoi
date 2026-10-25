@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-053",
+  "title": "Invite code used after its 30-day window",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-12-E-1792915134",
+    "observation_ids": [
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-vera",
+    "p-wolf"
+  ],
+  "preconditions": [
+    "A space was created more than 30 days ago.",
+    "The newest unredeemed invite is expired and no replacement has been shown.",
+    "Person B still has the old message containing the expired code."
+  ],
+  "actions": [
+    {
+      "op": "invite_partner",
+      "note": "A opens the invitation surface and sees an expired or absent code."
+    },
+    {
+      "op": "join_space",
+      "note": "B tries the old code."
+    },
+    {
+      "op": "invite_partner",
+      "note": "A regenerates a live code before sharing again."
+    }
+  ],
+  "expected_behavior": [
+    "An expired code is rejected with a useful explanation and does not admit a member.",
+    "The invitation surface regenerates before sharing; an expired displayed code is not copyable as valid.",
+    "The person can recover without recreating the space."
+  ],
+  "candidate_failure_modes": [
+    "The app presents an expired code as if it were live.",
+    "B is told only that the code is invalid and cannot tell expiry from a typo.",
+    "A creates a new space to recover, splitting the history."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/spaces.ts",
+    "components/space/partner-invitation.tsx",
+    "features/space/invite-code.ts"
+  ],
+  "existing_test_coverage": [
+    "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+  ],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "The invitation sheet regenerates an expired code before sharing.",
+      "Opening the share sheet does not claim delivery or membership."
+    ],
+    "documented_requirement": [
+      "An expired code is rejected with a useful explanation and does not admit a member.",
+      "The invitation surface regenerates before sharing; an expired displayed code is not copyable as valid.",
+      "The person can recover without recreating the space."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Vera Lind) said: \"Vera Lind. I ran this audit on my own setup last month, so here are my answers, in the format you asked for — existence, blast radius, cost — and no redesign proposals. Just removals.\n\n**1. The phrase check (the \"verify your recovery phrase\" quiz).**\nWhy does it exist? To prove I transcribed twelve words I wrote down sixty seconds ago. What breaks if removed: nothing. Restore already validates the phrase — the real test is whether it opens my account, not whether I can re-order words into the same boxes I just left. What it cost me: a second full transcription, a modal with no visible close affordance, and one failure state that did *not* preserve my input — I mistyped word 9, hit the check, and the field cleared back to word 1. At 200% text size the grid clips and words 7–12 are partially hidden, so the check was verifying my memory of a screen I couldn't fully read. Remove it. The phrase itself can stay; the quiz cannot.\n\n**2. Trust codes / the device-verification code comparison.**\nWhy does it exist? To let me compare six digits between two devices to prove they're the same session. In practice: I copy a code from a laptop into a phone, which is a transmission channel I do not control and cannot audit. The code proves that I can copy a string. What breaks if removed: nothing — the device list already names the enrollment, its date, and its platform, and revoke already exists. What it cost me: three minutes, one mistyped digit, and a copy of the string in my clipboard history. Remove the codes. Keep revoke.\n\n**3. The enrollment progress modal (\"Enrolling your device…\").**\nWhy does it exist? To reassure me that something is happening. It has no cancel, no percentage that means anything, and no timeout copy. It is fake progress on top of an operation that completes in under a second anyway. What breaks if removed: nothing, because the device list is the ground truth and it updates when the work is done. What it cost me: a trapped modal that ate a back gesture, and a second modal stacked on top when the operation *had* already finished. Remove the progress theater. Keep the outcome.\n\nAlso worth naming, because it's the same crime in a smaller font: every helper line that says \"for your security\" and then explains nothing. Four of them. Zero of them told me what would happen if I dismissed the dialog.\n\n**The one thing I would keep: the device list with revoke.**\nIt's the only surface in the whole flow that tells me the truth about who has access, in a place I can return to, with an action that actually does something. Everything else in recovery is either a quiz, a ceremony, or a progress bar. The device list is the product.\n\nOne caveat on the brief itself: \"do not propose a redesign, remove\" is the right constraint, but it only works if removal is allowed to *change the copy*, not just delete pixels. The phrase-check removal is only a real removal if the screen that replaces it doesn't grow a new \"we recommend verifying\" line. That's how it came back last time.\"",
+      "Vera Lind assumes: the app should never make me guess",
+      "Vera Lind assumes: a failed action must preserve my input",
+      "Wolf Adler assumes: a spinner is not a status",
+      "Wolf Adler assumes: a code field should accept a pasted message"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The app presents an expired code as if it were live.",
+      "Hypothesis, not reproduced: B is told only that the code is invalid and cannot tell expiry from a typo.",
+      "Hypothesis, not reproduced: A creates a new space to recover, splitting the history."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "covered",
+    "evidence": [
+      "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+    ],
+    "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

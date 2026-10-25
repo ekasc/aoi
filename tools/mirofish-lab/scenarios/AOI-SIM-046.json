@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-046",
+  "title": "Joiner edits relationship details and gets an unexplained failure",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-12-A-1792915010",
+    "observation_ids": [
+      "obs-002",
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-vera",
+    "p-wolf"
+  ],
+  "preconditions": [
+    "A created the space; B joined as the partner.",
+    "B opens Account and chooses Edit relationship.",
+    "B changes the anniversary date and saves."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "actor": "A",
+      "note": "A creates the space."
+    },
+    {
+      "op": "join_space",
+      "actor": "B",
+      "note": "B joins as the partner."
+    },
+    {
+      "op": "edit_relationship",
+      "actor": "B",
+      "note": "B opens Edit relationship and saves a new date."
+    }
+  ],
+  "expected_behavior": [
+    "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+    "A failed save explains the rule and preserves the current values.",
+    "The UI never implies that the partner's change was saved."
+  ],
+  "candidate_failure_modes": [
+    "The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+    "The partner retries because the message implies a transient network problem.",
+    "The partner believes the anniversary date changed when the server rejected it."
+  ],
+  "relevant_source_files": [
+    "app/(app)/account.tsx",
+    "app/(app)/profile/edit-relationship.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "features/space/space-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "Space hydration, foreground refresh, and mutation callbacks are scoped to the signed-in user id."
+    ],
+    "documented_requirement": [
+      "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+      "A failed save explains the rule and preserves the current values.",
+      "The UI never implies that the partner's change was saved."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Vera Lind) said: \"I did this walkthrough with my large-text setting on, and I deliberately took the wrong path at every fork. Results, in order of the flow.\n\n1. Create versus join. Two doors, same room. Both screens ask for the same thing and both end in the same place, so the choice is not a decision, it is a coin flip the app makes me perform. Remove: nothing breaks. One entry point, then a single field that accepts either a code or a new space name. Cost: I sat on that screen for eleven seconds deciding something that did not matter.\n\n2. The invite code. It is displayed, then hidden behind a \"reveal\" tap, then there is a copy button next to it. Three controls for one string. If the code were just selectable text, nothing breaks and I save two taps. The reveal step implies the code is secret; it is not, it is meant to be handed out. Copy is fine. Reveal is theatre.\n\n3. The invitation surface. It has a badge counting pending invitations that I cannot clear, because it counts things I have already acted on. A badge that cannot reach zero is a lie about progress. Remove the badge; the list already tells me the state.\n\n4. The account line. It says \"Account\" on the settings row, \"Profile\" on the screen it opens, and \"You\" in the header. Three names, one thing. Pick one. This is the kind of inconsistent copy I do not forgive, because it makes me re-verify that I am in the right place.\n\n5. The sign-out line. It is red, it is at the bottom, it is fine, but the confirmation modal has no cancel — only \"Sign out\" and a dismiss X that is 12pt and fails at large text. That is a modal that traps, or nearly does. A confirmation whose only visible exit is a tiny glyph is worse than no confirmation.\n\n6. Confirmations and empty states. Empty state says \"Nothing here yet!\" with an illustration and no action. That is a dead end with a smile. It should say what to do next, or it should not exist at all and the list should show the first step inline.\n\n7. The step between opening the app and being in the space: a splash animation, then a progress bar that is not measuring anything, then a fade. Fake progress. Remove all three; the space loads in under 200ms on my connection.\n\nThree most useless things: the create/join fork, the reveal-the-code tap, and the un-clearable badge. The one thing I would keep: the copy-code button, which does exactly one thing and does it.\n\nAnd the invariant I would enforce: a failed join must preserve the code I typed. Mine came back empty after a bad code, and I had to go find the message again. That is the only item on this list that cost me trust rather than time.\"",
+      "A fictional participant (Wolf Adler) said: \"Did the walk-through again with switch access, patchy wifi, and a fresh install. Exact repro, then the answer.\n\nThree most useless things:\n1. The Create / Join fork screen. Two large buttons, one paragraph of reassurance, one \"or\" divider — all of it doing the work that a single code field accepting a pasted message already does. Remove the fork; the code field decides for me. What breaks: nothing. What it costs: one extra decision at the exact moment I have the least context.\n2. The invite-code badge that animates on copy. An animation is not a status. It does not tell me the clipboard write succeeded, and on my setup it fires even when the copy silently failed. Replace with a persistent \"Copied — code still in field\" line, or nothing.\n3. The \"Are you sure?\" on sign-out. It fires with an empty editor and nothing unsaved, so I have learned to dismiss it without reading. Meanwhile leaving the space — actually destructive — gets no confirmation at all. Confirmation does not match consequence. That is a dark pattern, not a kindness.\n\nOne thing I would keep: the code field that accepts a pasted message. Genuinely good. It parsed a whole invite text and pulled the code out. Do not touch it.\n\nAlso, since the brief mentions steps between opening the app and being in the space: on a cold open with no connectivity the spinner ran ~40s and never resolved to either an empty state or an error. A spinner is not a status. Empty, loading and error need to be three visibly different things; right now they are one grey circle. And Back during the join edit exits mid-edit and drops the draft with no warning — back should never exit mid-edit.\n\nRepro steps: fresh install → airplane mode → open → wait 40s → spinner, no timeout, no copy explaining why. Repeat with switch access: the fork screen's second button is reachable but the focus ring is invisible against the panel.\n\nNo redesign proposed. Just remove.\"",
+      "Vera Lind assumes: the app should never make me guess",
+      "Vera Lind assumes: a failed action must preserve my input",
+      "Wolf Adler assumes: a spinner is not a status",
+      "Wolf Adler assumes: a code field should accept a pasted message"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+      "Hypothesis, not reproduced: The partner retries because the message implies a transient network problem.",
+      "Hypothesis, not reproduced: The partner believes the anniversary date changed when the server rejected it."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

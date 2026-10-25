@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-055",
+  "title": "Partner joins after the first memory was saved",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-13-A-1792915195",
+    "observation_ids": [
+      "obs-001",
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-iris",
+    "p-oren"
+  ],
+  "preconditions": [
+    "Person A created a space and has not yet paired.",
+    "Person A saved one memory before Person B joined.",
+    "Person B has their own account and received the invite code or link."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "note": "A creates the space and receives an invite code."
+    },
+    {
+      "op": "create_memory",
+      "note": "A saves one note before B arrives."
+    },
+    {
+      "op": "invite_partner",
+      "note": "A shares the live invite code."
+    },
+    {
+      "op": "join_space",
+      "note": "B signs in with a different account and redeems the code."
+    },
+    {
+      "op": "refresh_space",
+      "note": "A returns to the foreground and checks membership."
+    }
+  ],
+  "expected_behavior": [
+    "The pre-join memory is visible to B after joining, with A shown as its author.",
+    "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+    "B can identify that they joined an existing space rather than creating a new one."
+  ],
+  "candidate_failure_modes": [
+    "A believes sharing completed the pairing and stops looking for B.",
+    "B creates a second space instead of redeeming the code.",
+    "The pre-join memory is missing or attributed to B after joining."
+  ],
+  "relevant_source_files": [
+    "docs/product/first-use-acceptance.md",
+    "components/space/partner-invitation.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "packages/api/src/domains/moments.ts"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "The product requires pending, failed, and saved states to be distinguishable.",
+      "The owner's physical two-phone acceptance run remains the gate for native UX.",
+      "The invitation sheet regenerates an expired code before sharing.",
+      "Opening the share sheet does not claim delivery or membership.",
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound."
+    ],
+    "documented_requirement": [
+      "The pre-join memory is visible to B after joining, with A shown as its author.",
+      "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+      "B can identify that they joined an existing space rather than creating a new one."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Iris Vale) said: \"We are auditing Aoi for things that do not need to exist. Walk through the screens and flows you actually used this week around first use and invitations: create versus join, the invite code, the invitation surface, the account line, the sign-out line, confirmations, empty states and any step between opening the app and being in the space. For each control, line of copy, badge, animation or step, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you in time, attention or trust. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Iris Vale) said: \"Ran the audit against my own week. Three things that do not need to exist:\n\n1. The confirmation step after joining with a code. You typed the code, you pressed join, you are in. The modal that asks \"are you sure?\" is not protecting me from anything — the action is reversible by leaving. It cost me a tap and a small flicker of doubt: wait, should I be sure? If it were removed, nothing breaks. If the join is destructive (it isn't), make leaving cheap instead.\n\n2. The account line on the invitation surface. I am looking at an invite. I do not need to be reminded, in the same viewport, who I am signed in as. It is decoration wearing a function's clothes — and it competes with the one thing on the screen I came to act on. Remove it; identity belongs in settings, one level down.\n\n3. The empty state that is just a headline. \"No spaces yet.\" That is a sentence describing the absence, not a state that teaches. Either give it the one primary action (create or join, not both at equal weight) or delete the screen and land me in the action directly. An empty state with no verb is a dead end with better kerning.\n\nThe one thing I would keep: the invite code field itself, kept as a single unbroken line. It is honest about what it is, it needs no explanation, and it is the only control in the flow that earns its pixels.\n\nTwo notes while I am here: the radii drift between the card and the input in that flow (one looks 12, one looks 8), and the entrance animation on the join screen ignores prefers-reduced-motion. Both are small; both are the kind of thing that makes an interface feel assembled rather than intentional.\"",
+      "Iris Vale assumes: the interface should teach itself",
+      "Iris Vale assumes: empty states should be designed",
+      "Oren Pike assumes: a saved item survives relaunch",
+      "Oren Pike assumes: an error is not a dead end"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: A believes sharing completed the pairing and stops looking for B.",
+      "Hypothesis, not reproduced: B creates a second space instead of redeeming the code.",
+      "Hypothesis, not reproduced: The pre-join memory is missing or attributed to B after joining."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  },
+  "execution": {
+    "target": "integration",
+    "test_path": "tests/integration/mirofish-scenario-execution.test.ts",
+    "assertions": [
+      {
+        "kind": "space.memberCount",
+        "value": 2
+      },
+      {
+        "kind": "space.partnerJoined",
+        "viewer": "A",
+        "value": true
+      },
+      {
+        "kind": "moment.count",
+        "viewer": "A",
+        "value": 1
+      },
+      {
+        "kind": "moment.count",
+        "viewer": "B",
+        "value": 1
+      },
+      {
+        "kind": "moment.authorRole",
+        "viewer": "A",
+        "value": "you"
+      },
+      {
+        "kind": "moment.authorRole",
+        "viewer": "B",
+        "value": "partner"
+      }
+    ]
+  }
+}

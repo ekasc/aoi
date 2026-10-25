@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aoi.local/schemas/personas.v1.schema.json",
+  "title": "Aoi synthetic persona population",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedBy",
+    "disclaimer",
+    "couples",
+    "personas"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "aoi-personas/1"
+    },
+    "generatedBy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "disclaimer": {
+      "type": "string",
+      "minLength": 40
+    },
+    "couples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "summary",
+          "members"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^couple-[0-9]{2}$"
+          },
+          "kind": {
+            "enum": [
+              "long-distance",
+              "living-together",
+              "recently-formed"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 10
+          },
+          "members": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "string",
+              "pattern": "^p-[a-z0-9-]+$"
+            }
+          }
+        }
+      }
+    },
+    "personas": {
+      "type": "array",
+      "minItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "coupleId",
+          "spaceRole",
+          "partnerId",
+          "fictional",
+          "displayName",
+          "ageRange",
+          "locale",
+          "platform",
+          "technicalSkill",
+          "engagement",
+          "relationship",
+          "goals",
+          "expectations",
+          "behavioralTendencies",
+          "technicalKnowledge",
+          "privacyExpectation",
+          "accessibilityNeeds",
+          "connectivity",
+          "storagePressure",
+          "subscriptionAttitude",
+          "assumptions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^p-[a-z0-9-]+$"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^couple-[0-9]{2}$"
+          },
+          "spaceRole": {
+            "enum": [
+              "creator",
+              "joiner"
+            ]
+          },
+          "partnerId": {
+            "type": "string",
+            "pattern": "^p-[a-z0-9-]+$"
+          },
+          "fictional": {
+            "const": true
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 2
+          },
+          "ageRange": {
+            "type": "string",
+            "minLength": 2
+          },
+          "locale": {
+            "type": "string",
+            "minLength": 2
+          },
+          "platform": {
+            "enum": [
+              "ios",
+              "android",
+              "both"
+            ]
+          },
+          "technicalSkill": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "engagement": {
+            "type": "string",
+            "minLength": 2
+          },
+          "relationship": {
+            "type": "string",
+            "minLength": 2
+          },
+          "goals": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "expectations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "behavioralTendencies": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "technicalKnowledge": {
+            "type": "string",
+            "minLength": 5
+          },
+          "privacyExpectation": {
+            "enum": [
+              "medium",
+              "high",
+              "very high"
+            ]
+          },
+          "accessibilityNeeds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "connectivity": {
+            "type": "string",
+            "minLength": 2
+          },
+          "storagePressure": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "very high"
+            ]
+          },
+          "subscriptionAttitude": {
+            "type": "string",
+            "minLength": 2
+          },
+          "assumptions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "tier": {
+            "enum": [
+              "normal",
+              "frontend",
+              "critical"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

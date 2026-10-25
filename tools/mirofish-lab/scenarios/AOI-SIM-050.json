@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-050",
+  "title": "Author deletes a memory while the partner is reading it",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-12-C-1792915060",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-vera",
+    "p-wolf"
+  ],
+  "preconditions": [
+    "A authored a memory that B has opened.",
+    "A deletes it from their own device.",
+    "B refreshes or navigates back to the memory."
+  ],
+  "actions": [
+    {
+      "op": "delete_memory",
+      "note": "A deletes their own memory."
+    },
+    {
+      "op": "refresh_space",
+      "note": "B refreshes the archive."
+    }
+  ],
+  "expected_behavior": [
+    "Only the author can delete the memory.",
+    "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+    "The deletion does not affect B's ability to read other shared memories."
+  ],
+  "candidate_failure_modes": [
+    "B can still edit or delete A's memory.",
+    "The open detail shows stale content indefinitely or crashes.",
+    "Deleting the memory deletes unrelated media still used elsewhere."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/moments.ts",
+    "features/moments/ownership.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Memory create is idempotent per (space_id, client_id) while the row is live.",
+      "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+      "Authorship and authorName are computed per viewer, not stored as a snapshot."
+    ],
+    "documented_requirement": [
+      "Only the author can delete the memory.",
+      "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+      "The deletion does not affect B's ability to read other shared memories."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Vera Lind) said: \"Did the walkthrough. Twice, because the first time I deliberately took the wrong path to see whether the app would stop me. It didn't. Notes, in the order I hit things:\n\n1. The photo sky. Why does this exist? I could not find one action it enables that the plain list doesn't already enable. It exists to be looked at, and looking at it told me nothing: no dates, no counts, no indication of what is new. Remove it. What breaks: nothing. What it cost me: three taps and a moment of \"am I supposed to do something here?\" — a decoration that reads as a control is not decoration, it's a riddle.\n\n2. The help panel. This is the worst one because it is load-bearing and empty. I opened it specifically to have the app explain the difference between Us and Memories, and it explained neither. If the help panel cannot answer \"what is the difference between these two surfaces,\" then the two surfaces are the real bug and the help panel is the alibi. Remove the help panel and force the labels to do their job. What breaks: my last excuse for not understanding the app. What it cost me: I had to guess, which is exactly the thing this app should never make me do.\n\n3. The distinction between the two surfaces. I still can't state it in one sentence, and I read the labels carefully. Two tabs that differ by vibe is not a distinction, it's a coin flip. I tapped the wrong one first and the app let me, cheerfully, all the way to the end of the flow before anything revealed I was in the wrong place. That is a failure of naming, not of my reading. Remove one of the surfaces, or rename both so the choice is decidable before I commit.\n\nHonorable mentions, because I promised to try the wrong path: the \"add-photo\" action and the \"dated-memory\" action are visually identical in weight but do completely different things, and the copy on each is one word of difference. One of them failed on me mid-flow and returned me to a blank state — my input gone. A failed action that does not preserve my input is not a failed action, it's a deletion with an error message attached. That alone would be my third pick on a different day.\n\nThe one thing I would keep: the history control. It is the only element in the whole walkthrough that behaved consistently, named itself honestly, and let me reverse a decision. Every other piece of chrome in this app should be measured against it.\n\nAnd to whoever built the progress indicator: it moved before anything had actually happened. I sat and watched it not reach the end. Fake progress is worse than no progress, because it spends my trust and gives back nothing. Unexplained icons, decorations posing as buttons, modals that trap the back gesture, copy that contradicts the screen next to it — I found at least one of each. I'm not proposing a redesign. I'm proposing deletions, and I'd start with the three above.\"",
+      "Vera Lind assumes: the app should never make me guess",
+      "Vera Lind assumes: a failed action must preserve my input",
+      "Wolf Adler assumes: a spinner is not a status",
+      "Wolf Adler assumes: a code field should accept a pasted message"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B can still edit or delete A's memory.",
+      "Hypothesis, not reproduced: The open detail shows stale content indefinitely or crashes.",
+      "Hypothesis, not reproduced: Deleting the memory deletes unrelated media still used elsewhere."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

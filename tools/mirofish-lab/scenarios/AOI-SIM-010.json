@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-010",
+  "title": "Pending media looks saved before its upload completes",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-E-1792914471",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "A saves a photo memory on a slow or interrupted connection.",
+    "The composer renders a local preview before the server upload completes.",
+    "A closes the app while the upload is pending."
+  ],
+  "actions": [
+    {
+      "op": "create_memory",
+      "note": "A attaches a photo and sends."
+    },
+    {
+      "op": "lose_connection",
+      "note": "The upload fails or stalls."
+    },
+    {
+      "op": "retry_operation",
+      "note": "A reopens and retries."
+    }
+  ],
+  "expected_behavior": [
+    "Pending is visually and semantically distinct from saved.",
+    "The draft survives the app being closed.",
+    "Retry produces one completed memory, not a duplicate."
+  ],
+  "candidate_failure_modes": [
+    "The local preview is read as confirmation of a completed save.",
+    "The pending item disappears after relaunch.",
+    "Retry creates a second memory or loses the attachment."
+  ],
+  "relevant_source_files": [
+    "features/composer/send-pipeline.ts",
+    "features/composer/composer-machine.ts",
+    "features/moments/moments-context.tsx",
+    "docs/product/first-use-acceptance.md"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "The product requires pending, failed, and saved states to be distinguishable.",
+      "The owner's physical two-phone acceptance run remains the gate for native UX."
+    ],
+    "documented_requirement": [
+      "Pending is visually and semantically distinct from saved.",
+      "The draft survives the app being closed.",
+      "Retry produces one completed memory, not a duplicate."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"Honest answer from someone who never reads the helper lines: I don't know what most of those things are and I've never needed them. I hit the primary button, see the preview of my photo sitting in the archive, and that's my proof it saved. The three most useless things to me? The recovery phrase, the phrase check, and the trust codes — pure chore, and I'd never go looking for them. The one thing I'd keep: the preview. That visible thumbnail is the only thing that tells me the moment is actually home. Everything else could vanish and I'd probably not notice.\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The local preview is read as confirmation of a completed save.",
+      "Hypothesis, not reproduced: The pending item disappears after relaunch.",
+      "Hypothesis, not reproduced: Retry creates a second memory or loses the attachment."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

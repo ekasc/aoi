@@ -1,0 +1,1156 @@
+{
+  "schemaVersion": "aoi-scenario-index/1",
+  "generatedAt": "2026-10-25T08:02:01.433Z",
+  "scenarios": [
+    {
+      "id": "AOI-SIM-001",
+      "title": "Partner joins after the first memory was saved",
+      "experiment": "A",
+      "templateKey": "a1_delayed_invitation",
+      "probes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-002",
+      "title": "Pending media looks saved before its upload completes",
+      "experiment": "B",
+      "templateKey": "b2_pending_upload_misread",
+      "probes": [
+        "pending",
+        "failed",
+        "retry"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-003",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-004",
+      "title": "Pending media looks saved before its upload completes",
+      "experiment": "B",
+      "templateKey": "b2_pending_upload_misread",
+      "probes": [
+        "pending",
+        "failed",
+        "retry"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-005",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-006",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-007",
+      "title": "Pending media looks saved before its upload completes",
+      "experiment": "B",
+      "templateKey": "b2_pending_upload_misread",
+      "probes": [
+        "pending",
+        "failed",
+        "retry"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-002",
+        "obs-004"
+      ]
+    },
+    {
+      "id": "AOI-SIM-008",
+      "title": "Author deletes a memory while the partner is reading it",
+      "experiment": "B",
+      "templateKey": "b3_delete_while_reading",
+      "probes": [
+        "delete",
+        "tombstone",
+        "404"
+      ],
+      "actors": [
+        "p-bob",
+        "p-alice"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-009",
+      "title": "Restore from the recovery phrase is interrupted",
+      "experiment": "E",
+      "templateKey": "e1_interrupted_restore",
+      "probes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-010",
+      "title": "Pending media looks saved before its upload completes",
+      "experiment": "B",
+      "templateKey": "b2_pending_upload_misread",
+      "probes": [
+        "pending",
+        "failed",
+        "retry"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-011",
+      "title": "One member buys Plus and the partner expects it immediately",
+      "experiment": "F",
+      "templateKey": "f1_partner_expects_plus",
+      "probes": [
+        "partner reads the same state",
+        "isPlus"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-012",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-alice",
+        "p-bob"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-013",
+      "title": "Partner joins after the first memory was saved",
+      "experiment": "A",
+      "templateKey": "a1_delayed_invitation",
+      "probes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-014",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-015",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-016",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-017",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-018",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-019",
+      "title": "Pending media looks saved before its upload completes",
+      "experiment": "B",
+      "templateKey": "b2_pending_upload_misread",
+      "probes": [
+        "pending",
+        "failed",
+        "retry"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-002",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-020",
+      "title": "Restore from the recovery phrase is interrupted",
+      "experiment": "E",
+      "templateKey": "e1_interrupted_restore",
+      "probes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-021",
+      "title": "One member buys Plus and the partner expects it immediately",
+      "experiment": "F",
+      "templateKey": "f1_partner_expects_plus",
+      "probes": [
+        "partner reads the same state",
+        "isPlus"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-022",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-grace",
+        "p-hiro"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-023",
+      "title": "Partner joins after the first memory was saved",
+      "experiment": "A",
+      "templateKey": "a1_delayed_invitation",
+      "probes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-024",
+      "title": "Invite code used after its 30-day window",
+      "experiment": "A",
+      "templateKey": "a2_expired_code",
+      "probes": [
+        "expired",
+        "invite",
+        "join"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-025",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-026",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-027",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-028",
+      "title": "Pending media looks saved before its upload completes",
+      "experiment": "B",
+      "templateKey": "b2_pending_upload_misread",
+      "probes": [
+        "pending",
+        "failed",
+        "retry"
+      ],
+      "actors": [
+        "p-theo",
+        "p-nadia"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-029",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-030",
+      "title": "Restore from the recovery phrase is interrupted",
+      "experiment": "E",
+      "templateKey": "e1_interrupted_restore",
+      "probes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-031",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-032",
+      "title": "Pending media looks saved before its upload completes",
+      "experiment": "B",
+      "templateKey": "b2_pending_upload_misread",
+      "probes": [
+        "pending",
+        "failed",
+        "retry"
+      ],
+      "actors": [
+        "p-theo",
+        "p-nadia"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-033",
+      "title": "One member buys Plus and the partner expects it immediately",
+      "experiment": "F",
+      "templateKey": "f1_partner_expects_plus",
+      "probes": [
+        "partner reads the same state",
+        "isPlus"
+      ],
+      "actors": [
+        "p-nadia",
+        "p-theo"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-034",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-theo",
+        "p-nadia"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-035",
+      "title": "Partner joins after the first memory was saved",
+      "experiment": "A",
+      "templateKey": "a1_delayed_invitation",
+      "probes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-036",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-037",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-038",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-039",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-mina",
+        "p-jules"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-040",
+      "title": "Author deletes a memory while the partner is reading it",
+      "experiment": "B",
+      "templateKey": "b3_delete_while_reading",
+      "probes": [
+        "delete",
+        "tombstone",
+        "404"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-041",
+      "title": "Restore from the recovery phrase is interrupted",
+      "experiment": "E",
+      "templateKey": "e1_interrupted_restore",
+      "probes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-042",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-043",
+      "title": "One member buys Plus and the partner expects it immediately",
+      "experiment": "F",
+      "templateKey": "f1_partner_expects_plus",
+      "probes": [
+        "partner reads the same state",
+        "isPlus"
+      ],
+      "actors": [
+        "p-jules",
+        "p-mina"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-044",
+      "title": "Author deletes a memory while the partner is reading it",
+      "experiment": "B",
+      "templateKey": "b3_delete_while_reading",
+      "probes": [
+        "delete",
+        "tombstone",
+        "404"
+      ],
+      "actors": [
+        "p-mina",
+        "p-jules"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-045",
+      "title": "Partner joins after the first memory was saved",
+      "experiment": "A",
+      "templateKey": "a1_delayed_invitation",
+      "probes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-046",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-002",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-047",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-048",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-wolf",
+        "p-vera"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-049",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-050",
+      "title": "Author deletes a memory while the partner is reading it",
+      "experiment": "B",
+      "templateKey": "b3_delete_while_reading",
+      "probes": [
+        "delete",
+        "tombstone",
+        "404"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-051",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-052",
+      "title": "Restore from the recovery phrase is interrupted",
+      "experiment": "E",
+      "templateKey": "e1_interrupted_restore",
+      "probes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-053",
+      "title": "Invite code used after its 30-day window",
+      "experiment": "A",
+      "templateKey": "a2_expired_code",
+      "probes": [
+        "expired",
+        "invite",
+        "join"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-054",
+      "title": "One member buys Plus and the partner expects it immediately",
+      "experiment": "F",
+      "templateKey": "f1_partner_expects_plus",
+      "probes": [
+        "partner reads the same state",
+        "isPlus"
+      ],
+      "actors": [
+        "p-vera",
+        "p-wolf"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-055",
+      "title": "Partner joins after the first memory was saved",
+      "experiment": "A",
+      "templateKey": "a1_delayed_invitation",
+      "probes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ],
+      "actors": [
+        "p-iris",
+        "p-oren"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-056",
+      "title": "Invite code used after its 30-day window",
+      "experiment": "A",
+      "templateKey": "a2_expired_code",
+      "probes": [
+        "expired",
+        "invite",
+        "join"
+      ],
+      "actors": [
+        "p-oren",
+        "p-iris"
+      ],
+      "observationIds": [
+        "obs-002",
+        "obs-004"
+      ]
+    },
+    {
+      "id": "AOI-SIM-057",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-iris",
+        "p-oren"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-058",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-iris",
+        "p-oren"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002",
+        "obs-003",
+        "obs-004"
+      ]
+    },
+    {
+      "id": "AOI-SIM-059",
+      "title": "Offline retry after a timeout creates a duplicate memory",
+      "experiment": "D",
+      "templateKey": "d1_retry_duplicate",
+      "probes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ],
+      "actors": [
+        "p-iris",
+        "p-oren"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-060",
+      "title": "Restore from the recovery phrase is interrupted",
+      "experiment": "E",
+      "templateKey": "e1_interrupted_restore",
+      "probes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ],
+      "actors": [
+        "p-iris",
+        "p-oren"
+      ],
+      "observationIds": [
+        "obs-001",
+        "obs-002"
+      ]
+    },
+    {
+      "id": "AOI-SIM-061",
+      "title": "Joiner edits relationship details and gets an unexplained failure",
+      "experiment": "A",
+      "templateKey": "a4_partner_edit_relationship",
+      "probes": [
+        "Only the space creator",
+        "Unable to save",
+        "Edit relationship"
+      ],
+      "actors": [
+        "p-oren",
+        "p-iris"
+      ],
+      "observationIds": [
+        "obs-003"
+      ]
+    },
+    {
+      "id": "AOI-SIM-062",
+      "title": "One member buys Plus and the partner expects it immediately",
+      "experiment": "F",
+      "templateKey": "f1_partner_expects_plus",
+      "probes": [
+        "partner reads the same state",
+        "isPlus"
+      ],
+      "actors": [
+        "p-iris",
+        "p-oren"
+      ],
+      "observationIds": [
+        "obs-001"
+      ]
+    },
+    {
+      "id": "AOI-SIM-063",
+      "title": "A sky photo is expected to appear in Memories",
+      "experiment": "C",
+      "templateKey": "c1_sky_photo_versus_archive",
+      "probes": [
+        "sky photo",
+        "dated memory"
+      ],
+      "actors": [
+        "p-iris",
+        "p-oren"
+      ],
+      "observationIds": [
+        "obs-002"
+      ]
+    }
+  ]
+}

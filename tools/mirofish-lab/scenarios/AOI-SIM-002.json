@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-002",
+  "title": "Pending media looks saved before its upload completes",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-A-1792914393",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "A saves a photo memory on a slow or interrupted connection.",
+    "The composer renders a local preview before the server upload completes.",
+    "A closes the app while the upload is pending."
+  ],
+  "actions": [
+    {
+      "op": "create_memory",
+      "note": "A attaches a photo and sends."
+    },
+    {
+      "op": "lose_connection",
+      "note": "The upload fails or stalls."
+    },
+    {
+      "op": "retry_operation",
+      "note": "A reopens and retries."
+    }
+  ],
+  "expected_behavior": [
+    "Pending is visually and semantically distinct from saved.",
+    "The draft survives the app being closed.",
+    "Retry produces one completed memory, not a duplicate."
+  ],
+  "candidate_failure_modes": [
+    "The local preview is read as confirmation of a completed save.",
+    "The pending item disappears after relaunch.",
+    "Retry creates a second memory or loses the attachment."
+  ],
+  "relevant_source_files": [
+    "features/composer/send-pipeline.ts",
+    "features/composer/composer-machine.ts",
+    "features/moments/moments-context.tsx",
+    "docs/product/first-use-acceptance.md"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "The product requires pending, failed, and saved states to be distinguishable.",
+      "The owner's physical two-phone acceptance run remains the gate for native UX."
+    ],
+    "documented_requirement": [
+      "Pending is visually and semantically distinct from saved.",
+      "The draft survives the app being closed.",
+      "Retry produces one completed memory, not a duplicate."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"Doing this out loud in the app, in the order I actually hit things:\n\n1) The invite code. Why does it exist? I shared the link, the preview looked right, and I moved on with my day assuming we were connected. I never typed a code and I never will. Remove it — what breaks is nothing I noticed. What it cost me: a moment of \"wait, is a link enough, or do I need to send them a number too?\" That hesitation is the whole cost.\n\n2) The account line near the top. Why does it exist? It tells me nothing about the thing I care about, which is whether the two of us are in the same space. I'd rather see the other person's name sitting there as proof. Remove the account line; keep the shared line.\n\n3) The secondary explanation under the save button. I don't read it. I look at the preview, the preview looks saved, I believe it's saved. If the preview is honest, the paragraph is decoration. Remove the paragraph and make the preview tell the truth instead.\n\nThe one thing I'd keep: the visible preview of a saved note. It's the only place the app ever felt like a home instead of a form — and it's the only thing that made me trust that a small moment actually made it into our archive.\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The local preview is read as confirmation of a completed save.",
+      "Hypothesis, not reproduced: The pending item disappears after relaunch.",
+      "Hypothesis, not reproduced: Retry creates a second memory or loses the attachment."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

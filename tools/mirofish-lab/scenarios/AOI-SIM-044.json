@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-044",
+  "title": "Author deletes a memory while the partner is reading it",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-11-F-1792914989",
+    "observation_ids": [
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-mina",
+    "p-jules"
+  ],
+  "preconditions": [
+    "A authored a memory that B has opened.",
+    "A deletes it from their own device.",
+    "B refreshes or navigates back to the memory."
+  ],
+  "actions": [
+    {
+      "op": "delete_memory",
+      "note": "A deletes their own memory."
+    },
+    {
+      "op": "refresh_space",
+      "note": "B refreshes the archive."
+    }
+  ],
+  "expected_behavior": [
+    "Only the author can delete the memory.",
+    "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+    "The deletion does not affect B's ability to read other shared memories."
+  ],
+  "candidate_failure_modes": [
+    "B can still edit or delete A's memory.",
+    "The open detail shows stale content indefinitely or crashes.",
+    "Deleting the memory deletes unrelated media still used elsewhere."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/moments.ts",
+    "features/moments/ownership.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Memory create is idempotent per (space_id, client_id) while the row is live.",
+      "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+      "Authorship and authorName are computed per viewer, not stored as a snapshot."
+    ],
+    "documented_requirement": [
+      "Only the author can delete the memory.",
+      "B no longer sees it after refresh; an already-open detail reports that it is unavailable.",
+      "The deletion does not affect B's ability to read other shared memories."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Mina Sol) said: \"Did the walkthrough with VoiceOver on, large text on. Answering in the spirit of the ask: remove, don't redesign.\n\n1) The storage meter. Gone. As a sighted-by-graph element it has no accessible name and no threshold until you're already past it — it tells me a number I cannot act on, and it announces \"0 percent\" at full. What breaks if removed: nothing. Nobody has ever chosen a plan from that bar. Cost: every launch it makes me re-check whether storage is actually a limit or just decoration.\n\n2) \"Manage subscription\" as a second heading at the same level as \"Plan.\" Remove the link and fold the verb into the row label. Right now a heading-level sweep reads \"heading level 2, Plan\" twice and I have to open both to learn which one holds the action. Cost: duplicate headings are a tax paid at every single read.\n\n3) The upgrade prompt inside a feature gate. If the control looks disabled, it is disabled — so the prompt is telling me the one thing the control already told me, at a volume the control didn't. Remove the prompt, keep the gate, and let the disabled state carry a reason string. \"Why does this exist?\" It exists because the gate doesn't say why. Fix the gate by deleting its narrator.\n\nThe one thing I would keep: the paywall's plain-language line stating what you get in words. It's the only place in Plus and storage that says the cost out loud instead of drawing it. Every other surface is a picture of a decision. That line is the decision.\n\nRemoved four things and added zero. That was the whole job.\"",
+      "Mina Sol assumes: a heading is a heading",
+      "Mina Sol assumes: a button that looks disabled is disabled",
+      "Jules Park assumes: the sky is not the archive",
+      "Jules Park assumes: a setting applies immediately"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B can still edit or delete A's memory.",
+      "Hypothesis, not reproduced: The open detail shows stale content indefinitely or crashes.",
+      "Hypothesis, not reproduced: Deleting the memory deletes unrelated media still used elsewhere."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

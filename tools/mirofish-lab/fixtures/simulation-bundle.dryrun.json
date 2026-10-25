@@ -1,0 +1,301 @@
+{
+  "schemaVersion": "aoi-simulation-bundle/1",
+  "mode": "dry_run_fixture",
+  "live": false,
+  "provenance": {
+    "simulation_id": "dryrun-aoi-two-person-workflows-001",
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "seed_version": "seeds-v1",
+    "generated_at": "2026-10-22T00:00:00.000Z",
+    "label": "OFFLINE DRY-RUN FIXTURE \u2014 hand-authored synthetic discussion. This is not a MiroFish run and must never be reported as one.",
+    "warning": "Live simulation was not executed. Every observation below is fictional material designed to exercise the extraction, validation, coverage, and execution pipeline offline."
+  },
+  "observations": [
+    {
+      "id": "obs-001",
+      "source": "interview",
+      "round": 2,
+      "platform": "interview",
+      "agent_id": 1,
+      "persona_id": "p-alice",
+      "text": "I shared the invitation with Bob on Tuesday and assumed that meant we were connected. I kept writing notes. When he opened the app he said he had to join something first, and I realised the share sheet had told me nothing about whether he was actually in the space.",
+      "theme": "A",
+      "signals": [
+        "invite_share_not_joining",
+        "membership_assumption",
+        "delayed_invite"
+      ]
+    },
+    {
+      "id": "obs-002",
+      "source": "post",
+      "round": 3,
+      "platform": "reddit",
+      "agent_id": 2,
+      "persona_id": "p-bob",
+      "text": "The code in our old message just said it was invalid. It did not say it had expired. I tried it twice, then typed it again in case I had confused a zero with an O. We nearly made a second space because I thought the first one was broken.",
+      "theme": "A",
+      "signals": [
+        "expired_invite",
+        "code_expiry",
+        "stale_code"
+      ]
+    },
+    {
+      "id": "obs-003",
+      "source": "comment",
+      "round": 3,
+      "platform": "reddit",
+      "agent_id": 3,
+      "persona_id": "p-dara",
+      "text": "I did not understand that Chen had to join my space. I thought creating the space was the setup and the other person would appear automatically. When nothing happened I created another space with our names, which made it worse.",
+      "theme": "A",
+      "signals": [
+        "create_vs_join",
+        "accidental_second_space",
+        "wrong_direction"
+      ]
+    },
+    {
+      "id": "obs-004",
+      "source": "interview",
+      "round": 4,
+      "platform": "interview",
+      "agent_id": 4,
+      "persona_id": "p-eli",
+      "text": "Farah and I both had the same note open. She fixed a sentence and saved. I saved my version a minute later without reloading. If the app lets my old copy win, I would never know I erased her edit.",
+      "theme": "B",
+      "signals": [
+        "concurrent_edit",
+        "stale_write",
+        "lost_update"
+      ]
+    },
+    {
+      "id": "obs-005",
+      "source": "post",
+      "round": 2,
+      "platform": "reddit",
+      "agent_id": 5,
+      "persona_id": "p-ines",
+      "text": "I attached a photo and the preview appeared straight away, so I closed the app. The next day the memory was there but the photo was a grey box. I had assumed the preview meant the upload had finished.",
+      "theme": "B",
+      "signals": [
+        "pending_vs_saved",
+        "misleading_success",
+        "upload_pending"
+      ]
+    },
+    {
+      "id": "obs-006",
+      "source": "comment",
+      "round": 4,
+      "platform": "reddit",
+      "agent_id": 6,
+      "persona_id": "p-lea",
+      "text": "Kai deleted a note while I was reading it. I went back and it just vanished. I did not know whether he had removed it or whether the app had lost it. I also want to know that I cannot accidentally delete his words.",
+      "theme": "B",
+      "signals": [
+        "delete_while_reading",
+        "delete_authorship",
+        "tombstone"
+      ]
+    },
+    {
+      "id": "obs-007",
+      "source": "interview",
+      "round": 3,
+      "platform": "interview",
+      "agent_id": 7,
+      "persona_id": "p-bob",
+      "text": "I put a photo in the sky because it looked like the place for photos. Later I looked in Memories for it and it was not there. Alice said the sky and the memories are different, but I still do not know which button makes which one.",
+      "theme": "C",
+      "signals": [
+        "us_vs_memories",
+        "sky_archive_boundary"
+      ]
+    },
+    {
+      "id": "obs-008",
+      "source": "post",
+      "round": 5,
+      "platform": "reddit",
+      "agent_id": 8,
+      "persona_id": "p-grace",
+      "text": "I saved a memory with a photo and expected the sky to change. Nothing happened, so I saved it again. My partner said the sky only shows certain photos, but at the time I thought the first save had failed.",
+      "theme": "C",
+      "signals": [
+        "sky_memory_confusion",
+        "memory_sky_expectation"
+      ]
+    },
+    {
+      "id": "obs-009",
+      "source": "comment",
+      "round": 5,
+      "platform": "reddit",
+      "agent_id": 9,
+      "persona_id": "p-quinn",
+      "text": "I removed a photo from the sky to free space and assumed it would delete the copy from my phone too. It did not, and I had already deleted the original from my camera roll because I thought the app had it.",
+      "theme": "C",
+      "signals": [
+        "sky_photo_deletion",
+        "local_original_expectation"
+      ]
+    },
+    {
+      "id": "obs-010",
+      "source": "post",
+      "round": 4,
+      "platform": "reddit",
+      "agent_id": 10,
+      "persona_id": "p-jo",
+      "text": "The save timed out. I tapped retry three times because nothing happened. Later I had three of the same note in the feed. I do not know which one my partner read or whether deleting two of them removes the photo.",
+      "theme": "D",
+      "signals": [
+        "retry_duplicate",
+        "offline_retry",
+        "client_id"
+      ]
+    },
+    {
+      "id": "obs-011",
+      "source": "interview",
+      "round": 6,
+      "platform": "interview",
+      "agent_id": 11,
+      "persona_id": "p-farah",
+      "text": "I was joining Eli's space on the shared tablet when I realised I was signed in with my old account. I signed out and signed in as myself. For a moment the app still showed the space from the old account, and I panicked that I had joined as the wrong person.",
+      "theme": "D",
+      "signals": [
+        "stale_account_response",
+        "cross_account",
+        "account_switch_join"
+      ]
+    },
+    {
+      "id": "obs-012",
+      "source": "comment",
+      "round": 7,
+      "platform": "reddit",
+      "agent_id": 12,
+      "persona_id": "p-dara",
+      "text": "After Chen left, I still had the invite button. I made a new code and sent it to my sister to see if it worked, because I wanted to start again with someone else. It kept saying the space already had its partner. Nothing in the app told me the code could never work.",
+      "theme": "D",
+      "signals": [
+        "partner_left",
+        "invite_dead_end",
+        "pairing_binding"
+      ]
+    },
+    {
+      "id": "obs-013",
+      "source": "interview",
+      "round": 5,
+      "platform": "interview",
+      "agent_id": 13,
+      "persona_id": "p-mira",
+      "text": "My new phone lost the connection halfway through restoring from the phrase. I was afraid the phrase had been used up. I tried again and it worked, but the screen did not tell me whether the first attempt had left anything half-created.",
+      "theme": "E",
+      "signals": [
+        "restore_interrupted",
+        "replacement_device"
+      ]
+    },
+    {
+      "id": "obs-014",
+      "source": "post",
+      "round": 6,
+      "platform": "reddit",
+      "agent_id": 14,
+      "persona_id": "p-noor",
+      "text": "I cannot find the paper with the phrase. My old phone is gone. I asked Mira whether she could approve my new phone from hers, and she said she did not know. I assumed support could get the photos back because we pay for the app.",
+      "theme": "E",
+      "signals": [
+        "recovery_loss",
+        "lost_access"
+      ]
+    },
+    {
+      "id": "obs-015",
+      "source": "comment",
+      "round": 6,
+      "platform": "reddit",
+      "agent_id": 15,
+      "persona_id": "p-eli",
+      "text": "I restored on a new phone and gave the old one to a family member. I assumed restoring meant the old phone was no longer trusted. I never opened the devices screen because I did not know there was one.",
+      "theme": "E",
+      "signals": [
+        "device_authorization",
+        "revocation_expectation"
+      ]
+    },
+    {
+      "id": "obs-016",
+      "source": "interview",
+      "round": 4,
+      "platform": "interview",
+      "agent_id": 16,
+      "persona_id": "p-rosa",
+      "text": "I bought Plus mainly for the storage. Quinn was still on the free plan in the app and asked whether she had to buy it too. I told her it was for both of us, but I was only guessing. The app did not show me what she would see.",
+      "theme": "F",
+      "signals": [
+        "plus_shared_entitlement",
+        "entitlement_propagation"
+      ]
+    },
+    {
+      "id": "obs-017",
+      "source": "post",
+      "round": 5,
+      "platform": "reddit",
+      "agent_id": 17,
+      "persona_id": "p-quinn",
+      "text": "I tapped the yearly plan, then cancelled at the store sheet because it was more than I expected. The app came back and for a second looked like it had Plus. I was not sure whether I had been charged.",
+      "theme": "F",
+      "signals": [
+        "purchase_failure",
+        "purchase_cancel"
+      ]
+    },
+    {
+      "id": "obs-018",
+      "source": "comment",
+      "round": 7,
+      "platform": "reddit",
+      "agent_id": 18,
+      "persona_id": "p-hiro",
+      "text": "We hit the storage limit while I was uploading a video. Grace tried to add one photo and got the same error. I deleted a memory but the counter did not move until I reopened the app. It felt like the limit belonged to me, not to us.",
+      "theme": "F",
+      "signals": [
+        "storage_limit",
+        "media_quota"
+      ]
+    },
+    {
+      "id": "obs-019",
+      "source": "interview",
+      "round": 8,
+      "platform": "interview",
+      "agent_id": 19,
+      "persona_id": "p-farah",
+      "text": "I opened Edit relationship and changed our anniversary date. The form let me fill everything in, then it just said it could not save and asked me to try again. I tried three times before Eli told me only the person who created the space can change it. The app never said that.",
+      "theme": "A",
+      "signals": [
+        "partner_edit_relationship",
+        "creator_only_update"
+      ]
+    }
+  ],
+  "report": {
+    "summary": "OFFLINE FIXTURE ONLY. This file exists so the lab can be exercised without a MiroFish server, Zep Cloud, or an LLM key. It is not evidence that MiroFish produced these observations.",
+    "findings": [
+      "Fictional users repeatedly conflate sharing an invitation with completed membership.",
+      "Fictional users do not reliably distinguish the Us sky from the dated memory archive.",
+      "Fictional users expect a cancelled purchase to leave entitlement unchanged and a partner purchase to apply to both members.",
+      "The fixture includes one cross-account hypothesis (a join finishing after an account switch) that the source analysis says is not guarded on the mutation path.",
+      "A fictional partner was offered an edit form that the server only allows the creator to use, and the UI reported a generic save failure."
+    ]
+  }
+}

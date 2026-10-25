@@ -1,0 +1,1194 @@
+{
+  "schemaVersion": "aoi-personas/1",
+  "generatedBy": "tools/mirofish-lab (curated synthetic personas)",
+  "disclaimer": "Every person below is fictional. Names, jobs, circumstances, and quotes are invented for simulation input. They do not describe customers, prospects, or real couples. No real personal data, credentials, media, or location is included.",
+  "couples": [
+    {
+      "id": "couple-01",
+      "kind": "long-distance",
+      "summary": "Two years together, different cities, both on iPhone, sees each other monthly.",
+      "members": [
+        "p-alice",
+        "p-bob"
+      ]
+    },
+    {
+      "id": "couple-02",
+      "kind": "living-together",
+      "summary": "Eight years together, one Android and one iPhone, low app engagement.",
+      "members": [
+        "p-chen",
+        "p-dara"
+      ]
+    },
+    {
+      "id": "couple-03",
+      "kind": "recently-formed",
+      "summary": "Five months together, both Android, high engagement and strict privacy expectations.",
+      "members": [
+        "p-eli",
+        "p-farah"
+      ]
+    },
+    {
+      "id": "couple-04",
+      "kind": "long-term",
+      "summary": "Twelve years together, mixed platforms, one member has low vision and uses large text.",
+      "members": [
+        "p-grace",
+        "p-hiro"
+      ]
+    },
+    {
+      "id": "couple-05",
+      "kind": "long-distance",
+      "summary": "Three years together, both Android, unreliable rural connectivity and little free storage.",
+      "members": [
+        "p-ines",
+        "p-jo"
+      ]
+    },
+    {
+      "id": "couple-06",
+      "kind": "living-together",
+      "summary": "Four years together, mixed platforms, one member opens the app weekly at most.",
+      "members": [
+        "p-kai",
+        "p-lea"
+      ]
+    },
+    {
+      "id": "couple-07",
+      "kind": "long-term",
+      "summary": "Ten years together, both iPhone, both wary of cloud copies and account recovery.",
+      "members": [
+        "p-mira",
+        "p-noor"
+      ]
+    },
+    {
+      "id": "couple-08",
+      "kind": "long-term",
+      "summary": "Forty years together, mixed platforms, tremor and hearing accessibility needs.",
+      "members": [
+        "p-omar",
+        "p-priya"
+      ]
+    },
+    {
+      "id": "couple-09",
+      "kind": "recently-formed",
+      "summary": "One year together, both Android, storage pressure and no appetite for subscriptions.",
+      "members": [
+        "p-quinn",
+        "p-rosa"
+      ]
+    },
+    {
+      "id": "couple-10",
+      "kind": "living-together",
+      "summary": "Three years together, both frontend engineers, one iPhone and one Android; they inspect states, spacing and recovery paths.",
+      "members": [
+        "p-nadia",
+        "p-theo"
+      ]
+    },
+    {
+      "id": "couple-11",
+      "kind": "long-distance",
+      "summary": "Five years together, staff frontend and design-systems engineers, mixed platforms; they audit navigation, motion and accessibility.",
+      "members": [
+        "p-jules",
+        "p-mina"
+      ]
+    },
+    {
+      "id": "couple-12",
+      "kind": "living-together",
+      "summary": "Seven years together, a product critic and a UX auditor, mixed platforms; they deliberately take the wrong path and expect the interface to explain itself.",
+      "members": [
+        "p-vera",
+        "p-wolf"
+      ]
+    },
+    {
+      "id": "couple-13",
+      "kind": "recently-formed",
+      "summary": "One year together, a design critic and a skeptical engineer, mixed platforms; they test visual hierarchy, offline states and whether status claims are true.",
+      "members": [
+        "p-iris",
+        "p-oren"
+      ]
+    }
+  ],
+  "personas": [
+    {
+      "id": "p-alice",
+      "coupleId": "couple-01",
+      "spaceRole": "creator",
+      "partnerId": "p-bob",
+      "fictional": true,
+      "displayName": "Alice Moreau",
+      "ageRange": "25-34",
+      "locale": "en-CA",
+      "platform": "ios",
+      "technicalSkill": "medium",
+      "engagement": "daily",
+      "relationship": "long-distance, two years",
+      "goals": [
+        "save small everyday moments before they are forgotten",
+        "make the shared archive feel like a home",
+        "avoid another app that becomes a chore"
+      ],
+      "expectations": [
+        "sharing a link connects the accounts",
+        "a saved note is visible to the partner immediately",
+        "the sky and the archive are two views of the same memories"
+      ],
+      "behavioralTendencies": [
+        "tries the primary button first",
+        "rarely reads secondary explanations",
+        "trusts a visible preview as proof of saving"
+      ],
+      "technicalKnowledge": "Uses cloud photos and shared calendars; does not know what a session token is.",
+      "privacyExpectation": "medium",
+      "accessibilityNeeds": [],
+      "connectivity": "usually reliable",
+      "storagePressure": "low",
+      "subscriptionAttitude": "will pay for storage if the limit is explained",
+      "assumptions": [
+        "an invitation shared means the partner has joined",
+        "deleting a memory removes it for both people"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-bob",
+      "coupleId": "couple-01",
+      "spaceRole": "joiner",
+      "partnerId": "p-alice",
+      "fictional": true,
+      "displayName": "Bob Whitfield",
+      "ageRange": "25-34",
+      "locale": "en-CA",
+      "platform": "ios",
+      "technicalSkill": "medium",
+      "engagement": "a few times a week",
+      "relationship": "long-distance, two years",
+      "goals": [
+        "read what Alice saved during the week",
+        "add a voice note without hunting for a menu",
+        "understand whether he is in the right space"
+      ],
+      "expectations": [
+        "the invitation link opens the app and joins automatically",
+        "the first screen after joining shows the existing memories",
+        "his name is attached to what he writes"
+      ],
+      "behavioralTendencies": [
+        "opens links from messages without reading the surrounding text",
+        "abandons a flow after one failed attempt",
+        "asks Alice rather than the app when confused"
+      ],
+      "technicalKnowledge": "Comfortable with apps, not with settings or recovery phrases.",
+      "privacyExpectation": "medium",
+      "accessibilityNeeds": [],
+      "connectivity": "patchy on trains",
+      "storagePressure": "low",
+      "subscriptionAttitude": "prefers free; will share a partner's plan",
+      "assumptions": [
+        "creating an account is the same as joining Alice's space"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-chen",
+      "coupleId": "couple-02",
+      "spaceRole": "joiner",
+      "partnerId": "p-dara",
+      "fictional": true,
+      "displayName": "Chen Wu",
+      "ageRange": "35-44",
+      "locale": "en-GB",
+      "platform": "android",
+      "technicalSkill": "low",
+      "engagement": "weekly",
+      "relationship": "living together, eight years",
+      "goals": [
+        "keep a private record without posting to social media",
+        "find photos of ordinary days",
+        "not manage another password"
+      ],
+      "expectations": [
+        "the app works like the shared photo album already on the phone",
+        "a photo saved once is available everywhere",
+        "someone else can set it up"
+      ],
+      "behavioralTendencies": [
+        "uses the back gesture when unsure",
+        "reads every permission prompt literally",
+        "does not notice small status labels"
+      ],
+      "technicalKnowledge": "Uses messaging and photos; avoids account settings.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable at home",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "strongly dislikes subscriptions",
+      "assumptions": [
+        "photos added anywhere appear in the main feed",
+        "a green check means the partner saw it"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-dara",
+      "coupleId": "couple-02",
+      "spaceRole": "creator",
+      "partnerId": "p-chen",
+      "fictional": true,
+      "displayName": "Dara Okafor",
+      "ageRange": "35-44",
+      "locale": "en-GB",
+      "platform": "ios",
+      "technicalSkill": "low",
+      "engagement": "weekly",
+      "relationship": "living together, eight years",
+      "goals": [
+        "start the archive for both of them",
+        "add a photo from the camera roll",
+        "keep the app calm and uncluttered"
+      ],
+      "expectations": [
+        "creating the space is enough for both phones",
+        "the partner will see an invitation automatically",
+        "storage warnings arrive before a save fails"
+      ],
+      "behavioralTendencies": [
+        "taps the most prominent control",
+        "ignores small print",
+        "retries a failed action several times"
+      ],
+      "technicalKnowledge": "Basic app use; has never restored a device from a backup.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable at home",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "will not subscribe; expects the free tier to be complete",
+      "assumptions": [
+        "the app is one shared account",
+        "the partner's phone is linked by the relationship date"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-eli",
+      "coupleId": "couple-03",
+      "spaceRole": "creator",
+      "partnerId": "p-farah",
+      "fictional": true,
+      "displayName": "Eli Ramos",
+      "ageRange": "25-34",
+      "locale": "en-US",
+      "platform": "android",
+      "technicalSkill": "high",
+      "engagement": "several times a day",
+      "relationship": "recently formed, five months",
+      "goals": [
+        "keep intimacy off ad-supported platforms",
+        "understand exactly what is encrypted",
+        "have a recoverable archive"
+      ],
+      "expectations": [
+        "authorship is explicit",
+        "deletion is immediate and complete",
+        "device recovery does not require a support agent"
+      ],
+      "behavioralTendencies": [
+        "tests the edges of a flow deliberately",
+        "reads privacy copy closely",
+        "notices when a status is ambiguous"
+      ],
+      "technicalKnowledge": "Security engineer; understands keys, sessions, and threat models.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable",
+      "storagePressure": "low",
+      "subscriptionAttitude": "will pay for a clear privacy or storage benefit",
+      "assumptions": [
+        "an encrypted archive is end-to-end encrypted by default",
+        "removing a device revokes its access"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-farah",
+      "coupleId": "couple-03",
+      "spaceRole": "joiner",
+      "partnerId": "p-eli",
+      "fictional": true,
+      "displayName": "Farah Haddad",
+      "ageRange": "25-34",
+      "locale": "en-US",
+      "platform": "android",
+      "technicalSkill": "medium",
+      "engagement": "daily",
+      "relationship": "recently formed, five months",
+      "goals": [
+        "write short notes during the day",
+        "keep work and relationship content separate",
+        "not be surprised by what is shared"
+      ],
+      "expectations": [
+        "a personal draft stays personal until sent",
+        "the partner cannot edit her words",
+        "signing out removes her data from the device"
+      ],
+      "behavioralTendencies": [
+        "switches accounts on a shared tablet",
+        "uses large text",
+        "asks for confirmation before deleting"
+      ],
+      "technicalKnowledge": "Comfortable with apps and privacy settings.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [
+        "large text"
+      ],
+      "connectivity": "reliable",
+      "storagePressure": "low",
+      "subscriptionAttitude": "neutral; wants one clear price",
+      "assumptions": [
+        "a draft is not shared",
+        "the other person sees the same timestamps"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-grace",
+      "coupleId": "couple-04",
+      "spaceRole": "joiner",
+      "partnerId": "p-hiro",
+      "fictional": true,
+      "displayName": "Grace Tan",
+      "ageRange": "45-54",
+      "locale": "en-AU",
+      "platform": "ios",
+      "technicalSkill": "low",
+      "engagement": "daily",
+      "relationship": "long-term, twelve years",
+      "goals": [
+        "read memories without straining her eyes",
+        "find a photo from a specific month",
+        "avoid gestures she cannot perform precisely"
+      ],
+      "expectations": [
+        "text scales with system settings",
+        "buttons are large enough to hit",
+        "status is spoken by VoiceOver"
+      ],
+      "behavioralTendencies": [
+        "uses VoiceOver and large text",
+        "prefers lists to canvases",
+        "abandons unlabeled icons"
+      ],
+      "technicalKnowledge": "Comfortable with accessibility features, not with developer terminology.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "low vision",
+        "VoiceOver",
+        "large text"
+      ],
+      "connectivity": "reliable",
+      "storagePressure": "high",
+      "subscriptionAttitude": "will pay if the benefit is legible",
+      "assumptions": [
+        "the sky is decorative and not the archive",
+        "photos can be found by date"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-hiro",
+      "coupleId": "couple-04",
+      "spaceRole": "creator",
+      "partnerId": "p-grace",
+      "fictional": true,
+      "displayName": "Hiro Tan",
+      "ageRange": "45-54",
+      "locale": "en-AU",
+      "platform": "android",
+      "technicalSkill": "high",
+      "engagement": "daily",
+      "relationship": "long-term, twelve years",
+      "goals": [
+        "import old photos in batches",
+        "keep a reliable backup",
+        "understand storage usage"
+      ],
+      "expectations": [
+        "bulk actions report partial failure",
+        "the archive survives a device change",
+        "storage counts match the files he selected"
+      ],
+      "behavioralTendencies": [
+        "checks settings and logs",
+        "retries with smaller batches",
+        "distrusts success messages without counts"
+      ],
+      "technicalKnowledge": "Software developer; comfortable with file systems and backups.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable",
+      "storagePressure": "high",
+      "subscriptionAttitude": "will pay for storage, not for features",
+      "assumptions": [
+        "a pending upload is safely queued",
+        "deleting a local copy does not delete the shared copy"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-ines",
+      "coupleId": "couple-05",
+      "spaceRole": "creator",
+      "partnerId": "p-jo",
+      "fictional": true,
+      "displayName": "Ines Duarte",
+      "ageRange": "25-34",
+      "locale": "pt-PT",
+      "platform": "android",
+      "technicalSkill": "medium",
+      "engagement": "daily when connected",
+      "relationship": "long-distance, three years",
+      "goals": [
+        "save notes while offline",
+        "send a photo when signal returns",
+        "avoid losing a draft"
+      ],
+      "expectations": [
+        "offline saves are clearly pending",
+        "retry does not duplicate",
+        "the app does not promise success before upload"
+      ],
+      "behavioralTendencies": [
+        "works in places with no signal",
+        "force-closes apps when slow",
+        "keeps storage nearly full"
+      ],
+      "technicalKnowledge": "Field researcher; understands sync concepts loosely.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [],
+      "connectivity": "unreliable rural mobile data",
+      "storagePressure": "high",
+      "subscriptionAttitude": "cannot afford a subscription",
+      "assumptions": [
+        "a spinner means the save will finish",
+        "closing the app cancels nothing"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-jo",
+      "coupleId": "couple-05",
+      "spaceRole": "joiner",
+      "partnerId": "p-ines",
+      "fictional": true,
+      "displayName": "Jo Pereira",
+      "ageRange": "35-44",
+      "locale": "pt-PT",
+      "platform": "android",
+      "technicalSkill": "low",
+      "engagement": "weekly",
+      "relationship": "long-distance, three years",
+      "goals": [
+        "see what Ines saved",
+        "add a short note after work",
+        "not lose photos when the phone is full"
+      ],
+      "expectations": [
+        "the app tells him when something did not send",
+        "old memories remain readable offline",
+        "no surprise data charges"
+      ],
+      "behavioralTendencies": [
+        "taps retry repeatedly",
+        "ignores notifications",
+        "uses the phone with one hand"
+      ],
+      "technicalKnowledge": "Practical phone user; avoids account recovery.",
+      "privacyExpectation": "medium",
+      "accessibilityNeeds": [],
+      "connectivity": "intermittent",
+      "storagePressure": "very high",
+      "subscriptionAttitude": "will not subscribe",
+      "assumptions": [
+        "a photo in the feed is fully uploaded",
+        "deleting the app frees cloud storage"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-kai",
+      "coupleId": "couple-06",
+      "spaceRole": "creator",
+      "partnerId": "p-lea",
+      "fictional": true,
+      "displayName": "Kai Nakamura",
+      "ageRange": "25-34",
+      "locale": "en-US",
+      "platform": "ios",
+      "technicalSkill": "medium",
+      "engagement": "weekly",
+      "relationship": "living together, four years",
+      "goals": [
+        "set up the shared space once",
+        "add a plan when something is scheduled",
+        "not maintain another social feed"
+      ],
+      "expectations": [
+        "plans appear on both calendars",
+        "the partner gets a useful notification",
+        "the app works without opening it daily"
+      ],
+      "behavioralTendencies": [
+        "sets things up and delegates",
+        "misses changes made by the partner",
+        "trusts calendar sync"
+      ],
+      "technicalKnowledge": "Uses shared calendars and notes.",
+      "privacyExpectation": "medium",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "neutral",
+      "assumptions": [
+        "a plan is visible to the partner as soon as it is saved",
+        "the app syncs like a calendar"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-lea",
+      "coupleId": "couple-06",
+      "spaceRole": "joiner",
+      "partnerId": "p-kai",
+      "fictional": true,
+      "displayName": "Lea Fontaine",
+      "ageRange": "25-34",
+      "locale": "fr-FR",
+      "platform": "android",
+      "technicalSkill": "medium",
+      "engagement": "several times a day",
+      "relationship": "living together, four years",
+      "goals": [
+        "capture small moments",
+        "keep plans and memories distinct",
+        "see what changed since yesterday"
+      ],
+      "expectations": [
+        "new activity is obvious",
+        "she can tell who wrote what",
+        "unsent items are not mixed with saved ones"
+      ],
+      "behavioralTendencies": [
+        "checks the app in short bursts",
+        "notices visual inconsistencies",
+        "uses search"
+      ],
+      "technicalKnowledge": "Comfortable with mobile apps.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "reduced motion"
+      ],
+      "connectivity": "reliable",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "will pay for storage but dislikes feature locks",
+      "assumptions": [
+        "the main feed is complete",
+        "plans create memories automatically"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-mira",
+      "coupleId": "couple-07",
+      "spaceRole": "creator",
+      "partnerId": "p-noor",
+      "fictional": true,
+      "displayName": "Mira Shah",
+      "ageRange": "35-44",
+      "locale": "en-GB",
+      "platform": "ios",
+      "technicalSkill": "medium",
+      "engagement": "daily",
+      "relationship": "long-term, ten years",
+      "goals": [
+        "keep the archive private",
+        "replace a lost phone without losing access",
+        "understand who can read the archive"
+      ],
+      "expectations": [
+        "a recovery phrase is shown once and never uploaded",
+        "losing a device does not lose the archive",
+        "support cannot read memories"
+      ],
+      "behavioralTendencies": [
+        "stores paper backups",
+        "reads security explanations",
+        "refuses to screenshot secrets"
+      ],
+      "technicalKnowledge": "Lawyer; understands confidentiality, not cryptography.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable",
+      "storagePressure": "low",
+      "subscriptionAttitude": "will pay for privacy or preservation",
+      "assumptions": [
+        "the recovery phrase restores all devices",
+        "signing out revokes the device"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-noor",
+      "coupleId": "couple-07",
+      "spaceRole": "joiner",
+      "partnerId": "p-mira",
+      "fictional": true,
+      "displayName": "Noor El-Amin",
+      "ageRange": "35-44",
+      "locale": "en-GB",
+      "platform": "ios",
+      "technicalSkill": "low",
+      "engagement": "a few times a week",
+      "relationship": "long-term, ten years",
+      "goals": [
+        "access the archive on a new phone",
+        "not be locked out by a lost phrase",
+        "keep photos off other devices"
+      ],
+      "expectations": [
+        "any trusted device can approve a new one",
+        "the phrase can be recovered from a safe place",
+        "access loss is reversible"
+      ],
+      "behavioralTendencies": [
+        "reuses a passcode",
+        "loses paper notes",
+        "asks Mira for help"
+      ],
+      "technicalKnowledge": "Uses apps; has never managed encryption keys.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable",
+      "storagePressure": "low",
+      "subscriptionAttitude": "neutral",
+      "assumptions": [
+        "a new phone can restore from the account alone",
+        "the old phone will stop working after replacement"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-omar",
+      "coupleId": "couple-08",
+      "spaceRole": "creator",
+      "partnerId": "p-priya",
+      "fictional": true,
+      "displayName": "Omar Haddad",
+      "ageRange": "65+",
+      "locale": "en-CA",
+      "platform": "android",
+      "technicalSkill": "low",
+      "engagement": "daily",
+      "relationship": "long-term, forty years",
+      "goals": [
+        "record family history",
+        "read comfortably",
+        "make the text larger"
+      ],
+      "expectations": [
+        "buttons are big",
+        "the app speaks labels",
+        "no gesture is required"
+      ],
+      "behavioralTendencies": [
+        "uses one hand",
+        "has a hand tremor",
+        "taps slowly and sometimes twice"
+      ],
+      "technicalKnowledge": "Basic phone use with accessibility settings.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "tremor",
+        "large text",
+        "screen reader"
+      ],
+      "connectivity": "reliable at home",
+      "storagePressure": "low",
+      "subscriptionAttitude": "will not subscribe; wants a family member to help",
+      "assumptions": [
+        "a double tap is harmless",
+        "the app remembers his place"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-priya",
+      "coupleId": "couple-08",
+      "spaceRole": "joiner",
+      "partnerId": "p-omar",
+      "fictional": true,
+      "displayName": "Priya Haddad",
+      "ageRange": "65+",
+      "locale": "en-CA",
+      "platform": "ios",
+      "technicalSkill": "low",
+      "engagement": "daily",
+      "relationship": "long-term, forty years",
+      "goals": [
+        "add voice memories",
+        "see captions for audio",
+        "avoid small controls"
+      ],
+      "expectations": [
+        "voice notes can be replayed with captions",
+        "the app confirms a recording started",
+        "text is never cut off"
+      ],
+      "behavioralTendencies": [
+        "cannot hear high frequencies",
+        "prefers captions",
+        "asks for confirmation"
+      ],
+      "technicalKnowledge": "Basic phone use.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "hard of hearing",
+        "captions",
+        "large text"
+      ],
+      "connectivity": "reliable at home",
+      "storagePressure": "low",
+      "subscriptionAttitude": "neutral",
+      "assumptions": [
+        "a voice note is private to the couple",
+        "captions are generated automatically"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-quinn",
+      "coupleId": "couple-09",
+      "spaceRole": "joiner",
+      "partnerId": "p-rosa",
+      "fictional": true,
+      "displayName": "Quinn Alvarez",
+      "ageRange": "18-24",
+      "locale": "en-US",
+      "platform": "android",
+      "technicalSkill": "medium",
+      "engagement": "several times a day",
+      "relationship": "recently formed, one year",
+      "goals": [
+        "keep the archive without paying monthly",
+        "save video clips",
+        "move to a new phone often"
+      ],
+      "expectations": [
+        "the free tier is usable",
+        "storage limits are shown before upload",
+        "export is not paywalled"
+      ],
+      "behavioralTendencies": [
+        "deletes old media to make room",
+        "uses free tiers creatively",
+        "switches phones frequently"
+      ],
+      "technicalKnowledge": "Comfortable with mobile apps and cloud storage.",
+      "privacyExpectation": "medium",
+      "accessibilityNeeds": [],
+      "connectivity": "mobile data mostly",
+      "storagePressure": "very high",
+      "subscriptionAttitude": "strongly prefers free; will not auto-renew",
+      "assumptions": [
+        "deleting a memory frees storage immediately",
+        "Plus is per person"
+      ],
+      "tier": "normal"
+    },
+    {
+      "id": "p-rosa",
+      "coupleId": "couple-09",
+      "spaceRole": "creator",
+      "partnerId": "p-quinn",
+      "fictional": true,
+      "displayName": "Rosa Kim",
+      "ageRange": "18-24",
+      "locale": "en-US",
+      "platform": "android",
+      "technicalSkill": "medium",
+      "engagement": "daily",
+      "relationship": "recently formed, one year",
+      "goals": [
+        "keep photos and notes together",
+        "understand what counts toward storage",
+        "avoid a surprise paywall"
+      ],
+      "expectations": [
+        "both people share one storage allowance",
+        "a failed purchase changes nothing",
+        "the app says what is free"
+      ],
+      "behavioralTendencies": [
+        "tries a purchase then cancels",
+        "reads the price but not the renewal terms",
+        "asks friends for workarounds"
+      ],
+      "technicalKnowledge": "Comfortable with apps.",
+      "privacyExpectation": "medium",
+      "accessibilityNeeds": [],
+      "connectivity": "campus wifi",
+      "storagePressure": "high",
+      "subscriptionAttitude": "curious but price-sensitive",
+      "assumptions": [
+        "Plus applies only to the buyer",
+        "storage resets monthly"
+      ],
+      "tier": "normal"
+    },
+    {
+      "fictional": true,
+      "ageRange": "25-34",
+      "locale": "en-US",
+      "platform": "ios",
+      "technicalSkill": "high",
+      "engagement": "several times a day",
+      "relationship": "living together, three years",
+      "goals": [
+        "judge whether the interface explains itself without a tooltip",
+        "use the app one-handed on a commute",
+        "see every state change without guessing"
+      ],
+      "expectations": [
+        "a control looks like what it does",
+        "focus, validation and saving are visible",
+        "spacing and type stay consistent across screens"
+      ],
+      "behavioralTendencies": [
+        "inspects empty, loading and error states",
+        "tries back, refresh and keyboard navigation",
+        "notices when a spinner is the only feedback"
+      ],
+      "technicalKnowledge": "Frontend engineer; builds design systems, knows React Native, accessibility and API state machines.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [],
+      "connectivity": "reliable",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "neutral; wants the boundary explained before paying",
+      "assumptions": [
+        "a disabled button explains why",
+        "a save has a visible pending and failure state"
+      ],
+      "tier": "frontend",
+      "id": "p-nadia",
+      "coupleId": "couple-10",
+      "spaceRole": "creator",
+      "partnerId": "p-theo",
+      "displayName": "Nadia Iqbal"
+    },
+    {
+      "fictional": true,
+      "ageRange": "25-34",
+      "locale": "en-GB",
+      "platform": "android",
+      "technicalSkill": "high",
+      "engagement": "daily",
+      "relationship": "living together, three years",
+      "goals": [
+        "check that forms survive rotation and backgrounding",
+        "see the same data after a refresh",
+        "understand error copy without reading logs"
+      ],
+      "expectations": [
+        "back never loses a draft",
+        "paste and autofill work in code fields",
+        "the app does not lie about network state"
+      ],
+      "behavioralTendencies": [
+        "tests long text, large fonts and split screen",
+        "reads network responses",
+        "files precise reproduction steps"
+      ],
+      "technicalKnowledge": "Frontend engineer, React and Android; cares about focus order, semantics and resilient layout.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "large text"
+      ],
+      "connectivity": "patchy on trains",
+      "storagePressure": "low",
+      "subscriptionAttitude": "will pay if the storage boundary is clear",
+      "assumptions": [
+        "a pending upload is visibly pending",
+        "a six-character code accepts a pasted message"
+      ],
+      "tier": "frontend",
+      "id": "p-theo",
+      "coupleId": "couple-10",
+      "spaceRole": "joiner",
+      "partnerId": "p-nadia",
+      "displayName": "Theo Bennett"
+    },
+    {
+      "fictional": true,
+      "ageRange": "35-44",
+      "locale": "en-US",
+      "platform": "android",
+      "technicalSkill": "high",
+      "engagement": "several times a day",
+      "relationship": "long-distance, five years",
+      "goals": [
+        "tell the sky and the archive apart at a glance",
+        "find a memory in two taps",
+        "avoid decorative motion that hides state"
+      ],
+      "expectations": [
+        "navigation is predictable",
+        "the same action keeps the same label",
+        "motion respects reduced-motion settings"
+      ],
+      "behavioralTendencies": [
+        "audits screens against design tokens",
+        "measures tap targets",
+        "questions every empty state"
+      ],
+      "technicalKnowledge": "Staff frontend engineer; React Native performance, design systems and accessibility.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "reduced motion"
+      ],
+      "connectivity": "reliable",
+      "storagePressure": "high",
+      "subscriptionAttitude": "wants a clear storage meter, not a surprise paywall",
+      "assumptions": [
+        "the sky is not the archive",
+        "a setting applies immediately"
+      ],
+      "tier": "frontend",
+      "id": "p-jules",
+      "coupleId": "couple-11",
+      "spaceRole": "creator",
+      "partnerId": "p-mina",
+      "displayName": "Jules Park"
+    },
+    {
+      "fictional": true,
+      "ageRange": "25-34",
+      "locale": "en-US",
+      "platform": "ios",
+      "technicalSkill": "high",
+      "engagement": "daily",
+      "relationship": "long-distance, five years",
+      "goals": [
+        "read the interface at large text",
+        "understand the difference between Us and Memories",
+        "recover from a failed save without losing words"
+      ],
+      "expectations": [
+        "labels are verbs",
+        "errors say what to do next",
+        "no dead ends"
+      ],
+      "behavioralTendencies": [
+        "takes screenshots of misalignment",
+        "tests VoiceOver labels",
+        "notices duplicate headings"
+      ],
+      "technicalKnowledge": "Design-systems engineer; typography, colour contrast and accessibility.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [
+        "VoiceOver",
+        "large text"
+      ],
+      "connectivity": "reliable",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "will pay for Plus if the value is legible",
+      "assumptions": [
+        "a heading is a heading",
+        "a button that looks disabled is disabled"
+      ],
+      "tier": "frontend",
+      "id": "p-mina",
+      "coupleId": "couple-11",
+      "spaceRole": "joiner",
+      "partnerId": "p-jules",
+      "displayName": "Mina Sol"
+    },
+    {
+      "fictional": true,
+      "ageRange": "35-44",
+      "locale": "en-US",
+      "platform": "ios",
+      "technicalSkill": "high",
+      "engagement": "several times a day",
+      "relationship": "living together, seven years",
+      "goals": [
+        "find every ambiguous status",
+        "force the app to explain itself",
+        "compare the experience with the best apps she uses"
+      ],
+      "expectations": [
+        "no unexplained icon",
+        "no fake progress",
+        "no modal that traps"
+      ],
+      "behavioralTendencies": [
+        "writes long critiques",
+        "deliberately tries the wrong path",
+        "does not forgive inconsistent copy"
+      ],
+      "technicalKnowledge": "Product critic; reads design and code, knows accessibility and interaction patterns.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [
+        "large text"
+      ],
+      "connectivity": "reliable",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "hostile to paywalls that interrupt a task",
+      "assumptions": [
+        "the app should never make me guess",
+        "a failed action must preserve my input"
+      ],
+      "tier": "critical",
+      "id": "p-vera",
+      "coupleId": "couple-12",
+      "spaceRole": "creator",
+      "partnerId": "p-wolf",
+      "displayName": "Vera Lind"
+    },
+    {
+      "fictional": true,
+      "ageRange": "35-44",
+      "locale": "en-GB",
+      "platform": "android",
+      "technicalSkill": "high",
+      "engagement": "daily",
+      "relationship": "living together, seven years",
+      "goals": [
+        "test destructive actions and back navigation",
+        "see whether empty, loading and error are distinct",
+        "find dark patterns"
+      ],
+      "expectations": [
+        "confirmation matches the consequence",
+        "back never exits mid-edit",
+        "copy is honest about what happened"
+      ],
+      "behavioralTendencies": [
+        "takes the least obvious path",
+        "checks every permission prompt",
+        "files exact reproduction steps"
+      ],
+      "technicalKnowledge": "UX auditor; accessibility, security and content design.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [
+        "switch access"
+      ],
+      "connectivity": "patchy",
+      "storagePressure": "high",
+      "subscriptionAttitude": "will not accept a paywall before value",
+      "assumptions": [
+        "a spinner is not a status",
+        "a code field should accept a pasted message"
+      ],
+      "tier": "critical",
+      "id": "p-wolf",
+      "coupleId": "couple-12",
+      "spaceRole": "joiner",
+      "partnerId": "p-vera",
+      "displayName": "Wolf Adler"
+    },
+    {
+      "fictional": true,
+      "ageRange": "25-34",
+      "locale": "en-US",
+      "platform": "android",
+      "technicalSkill": "high",
+      "engagement": "several times a day",
+      "relationship": "recently formed, one year",
+      "goals": [
+        "see whether the app feels intentional",
+        "compare the sky with Linear and Apple",
+        "find visual noise"
+      ],
+      "expectations": [
+        "one primary action per screen",
+        "hierarchy is obvious",
+        "no decorative element competes with content"
+      ],
+      "behavioralTendencies": [
+        "critiques typography and spacing",
+        "notices inconsistent radii and colours",
+        "abandons flows that feel generic"
+      ],
+      "technicalKnowledge": "Design critic and frontend dabbler; Figma, tokens and motion.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "reduced motion"
+      ],
+      "connectivity": "reliable",
+      "storagePressure": "low",
+      "subscriptionAttitude": "will pay only if the design earns it",
+      "assumptions": [
+        "the interface should teach itself",
+        "empty states should be designed"
+      ],
+      "tier": "critical",
+      "id": "p-iris",
+      "coupleId": "couple-13",
+      "spaceRole": "creator",
+      "partnerId": "p-oren",
+      "displayName": "Iris Vale"
+    },
+    {
+      "fictional": true,
+      "ageRange": "35-44",
+      "locale": "en-US",
+      "platform": "ios",
+      "technicalSkill": "high",
+      "engagement": "weekly",
+      "relationship": "recently formed, one year",
+      "goals": [
+        "verify claims against behaviour",
+        "test offline and refresh",
+        "find states that lie"
+      ],
+      "expectations": [
+        "no optimistic success without confirmation",
+        "no data loss on backgrounding",
+        "clear recovery"
+      ],
+      "behavioralTendencies": [
+        "is skeptical of every status",
+        "tests kill and relaunch",
+        "reads error codes"
+      ],
+      "technicalKnowledge": "Backend-leaning engineer; API contracts, offline behaviour and state machines.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [],
+      "connectivity": "unreliable",
+      "storagePressure": "medium",
+      "subscriptionAttitude": "will not subscribe until storage accounting is exact",
+      "assumptions": [
+        "a saved item survives relaunch",
+        "an error is not a dead end"
+      ],
+      "tier": "critical",
+      "id": "p-oren",
+      "coupleId": "couple-13",
+      "spaceRole": "joiner",
+      "partnerId": "p-iris",
+      "displayName": "Oren Pike"
+    }
+  ]
+}

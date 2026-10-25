@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-036",
+  "title": "Joiner edits relationship details and gets an unexplained failure",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-11-B-1792914884",
+    "observation_ids": [
+      "obs-001",
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-jules",
+    "p-mina"
+  ],
+  "preconditions": [
+    "A created the space; B joined as the partner.",
+    "B opens Account and chooses Edit relationship.",
+    "B changes the anniversary date and saves."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "actor": "A",
+      "note": "A creates the space."
+    },
+    {
+      "op": "join_space",
+      "actor": "B",
+      "note": "B joins as the partner."
+    },
+    {
+      "op": "edit_relationship",
+      "actor": "B",
+      "note": "B opens Edit relationship and saves a new date."
+    }
+  ],
+  "expected_behavior": [
+    "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+    "A failed save explains the rule and preserves the current values.",
+    "The UI never implies that the partner's change was saved."
+  ],
+  "candidate_failure_modes": [
+    "The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+    "The partner retries because the message implies a transient network problem.",
+    "The partner believes the anniversary date changed when the server rejected it."
+  ],
+  "relevant_source_files": [
+    "app/(app)/account.tsx",
+    "app/(app)/profile/edit-relationship.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "features/space/space-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "Space hydration, foreground refresh, and mutation callbacks are scoped to the signed-in user id."
+    ],
+    "documented_requirement": [
+      "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+      "A failed save explains the rule and preserves the current values.",
+      "The UI never implies that the partner's change was saved."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Jules Park) said: \"We are auditing Aoi for things that do not need to exist. Walk through the shared-memory flow you actually used this week: the composer, the Keep button, pending rows, retry and edit, author labels, the feed and gallery, empty and failed states, and every confirmation or helper line. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Mina Sol) said: \"Audited it with VoiceOver on and large text at 200%. Three things that should not exist:\n\n1) The duplicate heading over the pending rows. It repeats the feed heading verbatim, so VoiceOver rotor shows two \"Memories\" landmarks stacked with nothing between them. Navigating by heading costs an extra swipe and a moment of \"did the save fail, or did I just not move?\" Removing it breaks nothing — the rows are already grouped by list semantics.\n\n2) The Keep button rendered in a disabled style while it is in fact enabled. It looks inert, it announces as a button with no hint, and I tapped past it twice assuming it was unavailable. This one is not just clutter: a control that looks disabled IS disabled, per every expectation I have. Cost: a lost draft, then a recovery I had to do by hand.\n\n3) The helper line under retry and edit that says \"Retry will retry.\" It restates the label and pushes the actual instruction — what happens to the words I already typed — off the line. An error should say what to do next, not narrate itself.\n\nThe one thing I would keep, without argument: the author labels. They are the only thing in the whole flow that tells me the difference between Us and Memories. Everything else is scaffolding around that one distinction.\n\nAnd a note for whoever does the removing: do it as a save-and-restore, not a redesign. I have lost words to a failed save before. If the audit removes a confirmation, replace it with a label that states the state, not a modal that asks me to agree with it.\"",
+      "Jules Park assumes: the sky is not the archive",
+      "Jules Park assumes: a setting applies immediately",
+      "Mina Sol assumes: a heading is a heading",
+      "Mina Sol assumes: a button that looks disabled is disabled"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+      "Hypothesis, not reproduced: The partner retries because the message implies a transient network problem.",
+      "Hypothesis, not reproduced: The partner believes the anniversary date changed when the server rejected it."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

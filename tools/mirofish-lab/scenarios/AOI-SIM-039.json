@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-039",
+  "title": "Joiner edits relationship details and gets an unexplained failure",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-11-D-1792914941",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-mina",
+    "p-jules"
+  ],
+  "preconditions": [
+    "A created the space; B joined as the partner.",
+    "B opens Account and chooses Edit relationship.",
+    "B changes the anniversary date and saves."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "actor": "A",
+      "note": "A creates the space."
+    },
+    {
+      "op": "join_space",
+      "actor": "B",
+      "note": "B joins as the partner."
+    },
+    {
+      "op": "edit_relationship",
+      "actor": "B",
+      "note": "B opens Edit relationship and saves a new date."
+    }
+  ],
+  "expected_behavior": [
+    "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+    "A failed save explains the rule and preserves the current values.",
+    "The UI never implies that the partner's change was saved."
+  ],
+  "candidate_failure_modes": [
+    "The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+    "The partner retries because the message implies a transient network problem.",
+    "The partner believes the anniversary date changed when the server rejected it."
+  ],
+  "relevant_source_files": [
+    "app/(app)/account.tsx",
+    "app/(app)/profile/edit-relationship.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "features/space/space-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "Space hydration, foreground refresh, and mutation callbacks are scoped to the signed-in user id."
+    ],
+    "documented_requirement": [
+      "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+      "A failed save explains the rule and preserves the current values.",
+      "The UI never implies that the partner's change was saved."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Mina Sol) said: \"Auditing as a VoiceOver + large-text user, answering out loud as asked. Three things that should not exist:\n\n1. The account indicator in the header. It duplicates the heading right below it, so VoiceOver reads \"Mina, account, Mina, account, heading level 1.\" It tells me nothing I can't get from the group I'm in. Remove it; the switcher itself carries the identity. What breaks: nothing I've found in six weeks of use. What it cost: two extra swipes per screen, every screen.\n\n2. The \"saved\" status line that appears *and* the toast that says the same thing 400ms later. Two announcements, same fact, one of them stealing focus mid-sentence. A save that worked doesn't need a sentence. Keep only the failure state — silence is the success state.\n\n3. The \"Retry\" control that appears next to a failed save but is visually dimmed while remaining tappable. A button that looks disabled is disabled. Either it's live and it says what it will do (\"Retry save\"), or it's inert and it isn't in the focus order at all. Right now I hit it, nothing happens, and I don't know if I lost my words.\n\nThe one I'd keep: the pending-save marker on the draft itself, not in the chrome. It sits on the thing that might be lost, says \"not yet saved,\" and tells me what to do next. That's the whole pattern — put the status where the risk is, name the recovery, no dead ends.\n\nSide note from a design-systems view: the duplicate headings and the dimmed-but-tappable control are the same bug wearing two hats. Both are states expressed in colour only. Neither survives a screenshot at 200% text, which is how I found them.\"",
+      "Mina Sol assumes: a heading is a heading",
+      "Mina Sol assumes: a button that looks disabled is disabled",
+      "Jules Park assumes: the sky is not the archive",
+      "Jules Park assumes: a setting applies immediately"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+      "Hypothesis, not reproduced: The partner retries because the message implies a transient network problem.",
+      "Hypothesis, not reproduced: The partner believes the anniversary date changed when the server rejected it."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

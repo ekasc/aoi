@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-034",
+  "title": "Offline retry after a timeout creates a duplicate memory",
+  "experiment": "D",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-10-F-1792914798",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-theo",
+    "p-nadia"
+  ],
+  "preconditions": [
+    "A saves a note while the connection is unreliable.",
+    "The first request times out after the server may have committed.",
+    "A retries the same draft."
+  ],
+  "actions": [
+    {
+      "op": "create_memory",
+      "note": "A sends a note with a stable client id."
+    },
+    {
+      "op": "lose_connection",
+      "note": "The response is lost."
+    },
+    {
+      "op": "retry_operation",
+      "note": "A retries the same draft."
+    },
+    {
+      "op": "refresh_space",
+      "note": "A checks the archive."
+    }
+  ],
+  "expected_behavior": [
+    "The retry is idempotent for the same client id.",
+    "The archive contains exactly one memory.",
+    "The retry reports the saved state truthfully."
+  ],
+  "candidate_failure_modes": [
+    "Two identical memories appear.",
+    "The retry creates a second media reservation.",
+    "The first success is reported as failed, so A keeps retrying."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/moments.ts",
+    "features/composer/send-pipeline.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Memory create is idempotent per (space_id, client_id) while the row is live.",
+      "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+      "Authorship and authorName are computed per viewer, not stored as a snapshot."
+    ],
+    "documented_requirement": [
+      "The retry is idempotent for the same client id.",
+      "The archive contains exactly one memory.",
+      "The retry reports the saved state truthfully."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Theo Bennett) said: \"Removing, not redesigning. Three things I'd take out:\n\n1) The storage meter. It renders a number I can't act on, and it disagreed with itself across a refresh, so I opened Settings to check whether it was real. Cost: one detour per session and a small permanent distrust of every other number in the app.\n\n2) Upgrade prompts inside feature gates. The gate already told me I can't proceed. The prompt is a second dialog I have to dismiss — and at large text in split screen it overlaps the field I was mid-way through typing in. Cost: lost keystrokes, which is a draft loss with extra steps.\n\n3) The manage-subscription link that deep-links into a web view. I come back and my form is cleared. If you must keep a route out, keep my state on the way back.\n\nKeep: the plan explanation. It's the only screen that states the limits in words instead of implying them with a disabled button, and it's the only one I've ever read to the end.\n\nWhat breaks if all three go: nothing functional — a few support tickets asking what the limits are, which the plan explanation already answers.\n\nOne thing to fix before removing anything: the paywall reports \"network error\" when the response is a 402. On a patchy train connection I genuinely cannot tell whether I'm offline or gated, so I retry a payment I've already been charged for. The app should not lie about network state — that's the one line of copy I'd rewrite today.\"",
+      "Theo Bennett assumes: a pending upload is visibly pending",
+      "Theo Bennett assumes: a six-character code accepts a pasted message",
+      "Nadia Iqbal assumes: a disabled button explains why",
+      "Nadia Iqbal assumes: a save has a visible pending and failure state"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: Two identical memories appear.",
+      "Hypothesis, not reproduced: The retry creates a second media reservation.",
+      "Hypothesis, not reproduced: The first success is reported as failed, so A keeps retrying."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

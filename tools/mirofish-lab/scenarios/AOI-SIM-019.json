@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-019",
+  "title": "Pending media looks saved before its upload completes",
+  "experiment": "B",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-04-D-1792914609",
+    "observation_ids": [
+      "obs-002",
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-grace",
+    "p-hiro"
+  ],
+  "preconditions": [
+    "A saves a photo memory on a slow or interrupted connection.",
+    "The composer renders a local preview before the server upload completes.",
+    "A closes the app while the upload is pending."
+  ],
+  "actions": [
+    {
+      "op": "create_memory",
+      "note": "A attaches a photo and sends."
+    },
+    {
+      "op": "lose_connection",
+      "note": "The upload fails or stalls."
+    },
+    {
+      "op": "retry_operation",
+      "note": "A reopens and retries."
+    }
+  ],
+  "expected_behavior": [
+    "Pending is visually and semantically distinct from saved.",
+    "The draft survives the app being closed.",
+    "Retry produces one completed memory, not a duplicate."
+  ],
+  "candidate_failure_modes": [
+    "The local preview is read as confirmation of a completed save.",
+    "The pending item disappears after relaunch.",
+    "Retry creates a second memory or loses the attachment."
+  ],
+  "relevant_source_files": [
+    "features/composer/send-pipeline.ts",
+    "features/composer/composer-machine.ts",
+    "features/moments/moments-context.tsx",
+    "docs/product/first-use-acceptance.md"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "The product requires pending, failed, and saved states to be distinguishable.",
+      "The owner's physical two-phone acceptance run remains the gate for native UX."
+    ],
+    "documented_requirement": [
+      "Pending is visually and semantically distinct from saved.",
+      "The draft survives the app being closed.",
+      "Retry produces one completed memory, not a duplicate."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Grace Tan) said: \"Answering from the outside, with VoiceOver on and my text scaled up — so I'll keep it to what I can actually touch. Three things I'd remove: (1) unlabelled icons — if VoiceOver can't say its name, I abandon it, so it may as well not exist; (2) touch targets too small for me to hit precisely, which turn a one-step task into five; (3) status lines that are only ever visual and never spoken, so the screen goes quiet at exactly the moment I need to know something happened. The one thing I would keep, without hesitation: the spoken status. \"Saved\", \"pending\", \"retry\" read aloud in order is the difference between me continuing and me giving up. Silence is the thing that costs me most. I can't follow the account-lifecycle and session-recovery language, but that's my list.\"",
+      "A fictional participant (Hiro Tan) said: \"Ran this audit on my own workflow — batch photo import, backup, storage reconciliation. Three I'd remove:\n\n1) The per-file \"Upload complete ✓\" toast that fires *before* the batch summary. It carries no count, so it's unverifiable. A pending upload is already queued safely; the toast only teaches me to ignore success messages.\n\n2) The \"Syncing…\" status line that cycles three states with no numbers. I retry with smaller batches precisely because I can't tell progress from animation. Show me n of m, or delete it.\n\n3) The delete confirmation for a local copy of a shared file. Deleting my local copy does not delete the shared copy — so the dialog is asking me to re-confirm something that cannot go wrong. Cost: one click per file, thousands of files.\n\nOne to keep: the pending-saves queue indicator. It's the only control that survived a device change and honestly told me what was still outstanding.\n\nThe real cost of the rest: I open settings and logs after every batch to verify counts myself. That's verification overhead created by interfaces that report activity instead of results.\"",
+      "Grace Tan assumes: the sky is decorative and not the archive",
+      "Grace Tan assumes: photos can be found by date",
+      "Hiro Tan assumes: a pending upload is safely queued",
+      "Hiro Tan assumes: deleting a local copy does not delete the shared copy"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The local preview is read as confirmation of a completed save.",
+      "Hypothesis, not reproduced: The pending item disappears after relaunch.",
+      "Hypothesis, not reproduced: Retry creates a second memory or loses the attachment."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

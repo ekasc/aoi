@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "aoi-execution-results/1",
+  "label": "after-fix",
+  "generatedAt": "2026-10-23T06:37:07.625Z",
+  "aoiCommit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+  "commands": [
+    {
+      "project": "integration",
+      "testPath": "tests/integration/mirofish-scenario-execution.test.ts",
+      "command": "pnpm exec vitest run --project integration --maxWorkers 1 --reporter=json --outputFile=tools/mirofish-lab/reports/artifacts/vitest-integration-after-fix.json tests/integration/mirofish-scenario-execution.test.ts",
+      "exitCode": 0,
+      "stdoutTail": "JSON report written to /Users/ekassinghchhabra/Projects/ts/aoi/tools/mirofish-lab/reports/artifacts/vitest-integration-after-fix.json\n",
+      "stderrTail": ""
+    },
+    {
+      "project": "unit-app",
+      "testPath": "tests/unit/space/mirofish-stale-space-mutation.test.tsx",
+      "command": "pnpm exec vitest run --project unit-app --maxWorkers 1 --reporter=json --outputFile=tools/mirofish-lab/reports/artifacts/vitest-unit-app-after-fix.json tests/unit/space/mirofish-stale-space-mutation.test.tsx",
+      "exitCode": 0,
+      "stdoutTail": "JSON report written to /Users/ekassinghchhabra/Projects/ts/aoi/tools/mirofish-lab/reports/artifacts/vitest-unit-app-after-fix.json\n",
+      "stderrTail": ""
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "AOI-SIM-001",
+      "target": "integration",
+      "testPath": "tests/integration/mirofish-scenario-execution.test.ts",
+      "status": "executed_pass",
+      "durationMs": 77.54895799999986,
+      "failure": null,
+      "testTitles": [
+        "MiroFish-lab executable scenarios AOI-SIM-001 — Partner joins after the first memory was saved"
+      ]
+    },
+    {
+      "id": "AOI-SIM-003",
+      "target": "integration",
+      "testPath": "tests/integration/mirofish-scenario-execution.test.ts",
+      "status": "executed_pass",
+      "durationMs": 31.721165999999812,
+      "failure": null,
+      "testTitles": [
+        "MiroFish-lab executable scenarios AOI-SIM-003 — Joiner creates a second space before redeeming the invite"
+      ]
+    },
+    {
+      "id": "AOI-SIM-004",
+      "target": "integration",
+      "testPath": "tests/integration/mirofish-scenario-execution.test.ts",
+      "status": "executed_pass",
+      "durationMs": 32.10420900000008,
+      "failure": null,
+      "testTitles": [
+        "MiroFish-lab executable scenarios AOI-SIM-004 — One author edits the same memory from two stale copies"
+      ]
+    },
+    {
+      "id": "AOI-SIM-012",
+      "target": "integration",
+      "testPath": "tests/integration/mirofish-scenario-execution.test.ts",
+      "status": "executed_pass",
+      "durationMs": 28.19004199999995,
+      "failure": null,
+      "testTitles": [
+        "MiroFish-lab executable scenarios AOI-SIM-012 — Remaining member can generate an invite nobody can redeem"
+      ]
+    },
+    {
+      "id": "AOI-SIM-016",
+      "target": "integration",
+      "testPath": "tests/integration/mirofish-scenario-execution.test.ts",
+      "status": "executed_pass",
+      "durationMs": 23.596416999999974,
+      "failure": null,
+      "testTitles": [
+        "MiroFish-lab executable scenarios AOI-SIM-016 — One member buys Plus and the partner expects it immediately"
+      ]
+    },
+    {
+      "id": "AOI-SIM-011",
+      "target": "unit-app",
+      "testPath": "tests/unit/space/mirofish-stale-space-mutation.test.tsx",
+      "status": "executed_pass",
+      "durationMs": 111.96970800000003,
+      "failure": null,
+      "testTitles": [
+        "space mutation across an account change [AOI-SIM-011] ignores a join that finishes after the previous account changes"
+      ]
+    }
+  ]
+}

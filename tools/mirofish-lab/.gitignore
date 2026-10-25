@@ -1,0 +1,12 @@
+# Local host configuration and secrets never belong in Git.
+config/lab.local.json
+.env
+.env.*
+runs/
+reports/artifacts/
+seeds/generated/
+*.log
+
+# Python
+__pycache__/
+*.pyc

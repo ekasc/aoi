@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-029",
+  "title": "Joiner edits relationship details and gets an unexplained failure",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-10-D-1792914748",
+    "observation_ids": [
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-nadia",
+    "p-theo"
+  ],
+  "preconditions": [
+    "A created the space; B joined as the partner.",
+    "B opens Account and chooses Edit relationship.",
+    "B changes the anniversary date and saves."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "actor": "A",
+      "note": "A creates the space."
+    },
+    {
+      "op": "join_space",
+      "actor": "B",
+      "note": "B joins as the partner."
+    },
+    {
+      "op": "edit_relationship",
+      "actor": "B",
+      "note": "B opens Edit relationship and saves a new date."
+    }
+  ],
+  "expected_behavior": [
+    "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+    "A failed save explains the rule and preserves the current values.",
+    "The UI never implies that the partner's change was saved."
+  ],
+  "candidate_failure_modes": [
+    "The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+    "The partner retries because the message implies a transient network problem.",
+    "The partner believes the anniversary date changed when the server rejected it."
+  ],
+  "relevant_source_files": [
+    "app/(app)/account.tsx",
+    "app/(app)/profile/edit-relationship.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "features/space/space-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "Space hydration, foreground refresh, and mutation callbacks are scoped to the signed-in user id."
+    ],
+    "documented_requirement": [
+      "A non-creator is either not offered the edit action or told plainly that only the creator can change space details.",
+      "A failed save explains the rule and preserves the current values.",
+      "The UI never implies that the partner's change was saved."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Nadia Iqbal) said: \"Did the walk-through this morning on my commute, one-handed, thumbs only. Three things that do not need to exist:\n\n1. The \"account indicator\" pill in the header. It tells me who I am on a single-account install, and it sits exactly where my thumb rests. Remove it. What breaks: nothing functional — the switcher already lives in Settings and shows the active account on open. Cost: I tapped it four times by accident in a 20-minute ride, twice landing on the account screen mid-scroll.\n\n2. The optimistic \"Saved ✓\" that appears before the write resolves. It is not a save, it is a guess. Remove it and keep one state: pending. What breaks: people will briefly think their save failed — no, they will think nothing, because nothing false was promised. Cost: I have trusted it, backgrounded the app, come back to a lost draft, and then spent time reconstructing what \"✓\" was even referring to.\n\n3. The retry button that appears next to the same error text that already says \"Tap to retry\" on the row itself. Two affordances, one action, and on a narrow screen they fight for the same line. Remove the button, keep the row as the tap target — but only if the row keeps a visible pressed state, otherwise it is a hidden control. Cost: the duplicate made me hesitate over which one was the real one, which is the worst possible outcome for a retry.\n\nThe one I would keep: the pending-save indicator with its failure transition into an inline, retryable row. That is the only place the app ever tells me the truth about my own data.\n\nEverything else I deleted from my mental model within a day: session recovery notices I read once, the backgrounding banner that reappears every foreground even when nothing changed, and the status line that says \"Connected\" on a connection that is always connected. A status line that never varies is decoration, not information.\"",
+      "Nadia Iqbal assumes: a disabled button explains why",
+      "Nadia Iqbal assumes: a save has a visible pending and failure state",
+      "Theo Bennett assumes: a pending upload is visibly pending",
+      "Theo Bennett assumes: a six-character code accepts a pasted message"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The partner taps a working-looking Edit relationship row, fills the form, and receives only \"Unable to save. Please try again.\"",
+      "Hypothesis, not reproduced: The partner retries because the message implies a transient network problem.",
+      "Hypothesis, not reproduced: The partner believes the anniversary date changed when the server rejected it."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

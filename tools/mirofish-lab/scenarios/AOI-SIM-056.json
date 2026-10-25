@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-056",
+  "title": "Invite code used after its 30-day window",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-13-A-1792915195",
+    "observation_ids": [
+      "obs-002",
+      "obs-004"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-oren",
+    "p-iris"
+  ],
+  "preconditions": [
+    "A space was created more than 30 days ago.",
+    "The newest unredeemed invite is expired and no replacement has been shown.",
+    "Person B still has the old message containing the expired code."
+  ],
+  "actions": [
+    {
+      "op": "invite_partner",
+      "note": "A opens the invitation surface and sees an expired or absent code."
+    },
+    {
+      "op": "join_space",
+      "note": "B tries the old code."
+    },
+    {
+      "op": "invite_partner",
+      "note": "A regenerates a live code before sharing again."
+    }
+  ],
+  "expected_behavior": [
+    "An expired code is rejected with a useful explanation and does not admit a member.",
+    "The invitation surface regenerates before sharing; an expired displayed code is not copyable as valid.",
+    "The person can recover without recreating the space."
+  ],
+  "candidate_failure_modes": [
+    "The app presents an expired code as if it were live.",
+    "B is told only that the code is invalid and cannot tell expiry from a typo.",
+    "A creates a new space to recover, splitting the history."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/spaces.ts",
+    "components/space/partner-invitation.tsx",
+    "features/space/invite-code.ts"
+  ],
+  "existing_test_coverage": [
+    "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+  ],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "The invitation sheet regenerates an expired code before sharing.",
+      "Opening the share sheet does not claim delivery or membership."
+    ],
+    "documented_requirement": [
+      "An expired code is rejected with a useful explanation and does not admit a member.",
+      "The invitation surface regenerates before sharing; an expired displayed code is not copyable as valid.",
+      "The person can recover without recreating the space."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Oren Pike) said: \"Audit test I actually run on any invite or first-use flow, in this order:\n\n1. Start the invite, background the app for 90s, kill it, relaunch on bad wifi.\n2. Same code or a new one? Same one — silently minting a second code is a bug even when the screen looks fine.\n3. Kill it mid-request. Does it resume, retry with backoff, or fail loudly with a code I can read? \"Something went wrong\" is not an error, it's a shrug.\n4. Does the empty state tell me what's empty, or just look pretty about it?\n\nA screen that lies about being saved is worse than one that admits it isn't. Verify against behaviour, not status text.\"",
+      "A fictional participant (Oren Pike) said: \"Caveat first: I can only name what I could reproduce, so this is candidates, not verdicts. My test is: start the flow, background the app 90s, kill it, relaunch on bad wifi.\n\nThree things I'd remove:\n1. The create-vs-join fork as a screen. If I arrived with a code, join is the only path; if I didn't, create is. The app can infer that from whether a pending code exists. Cost: one decision before I've seen anything worth deciding about.\n2. Success confirmations that restate the outcome (\"Invite sent!\"). The invite row already says sent. Delete the success path, keep the failure path and its error code — that's the one message I actually need.\n3. First-run empty states with badges and animations. An empty list should say what's empty and the single action that fills it. Animation on first run costs time and hides the absence of state.\n\nOne thing I'd keep: the invite code itself, as plain copyable text with its expiry visible. It's the only object that has to survive backgrounding, a relaunch and a dead connection. If the code silently changes across those, nothing else on the screen matters.\n\nRelated: if the sign-out or account line needs a confirmation dialog, that's a sign the state behind it is unclear, not that the dialog is needed.\"",
+      "Oren Pike assumes: a saved item survives relaunch",
+      "Oren Pike assumes: an error is not a dead end",
+      "Iris Vale assumes: the interface should teach itself",
+      "Iris Vale assumes: empty states should be designed"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The app presents an expired code as if it were live.",
+      "Hypothesis, not reproduced: B is told only that the code is invalid and cannot tell expiry from a typo.",
+      "Hypothesis, not reproduced: A creates a new space to recover, splitting the history."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "covered",
+    "evidence": [
+      "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+    ],
+    "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

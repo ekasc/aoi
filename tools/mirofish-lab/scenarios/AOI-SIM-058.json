@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-058",
+  "title": "A sky photo is expected to appear in Memories",
+  "experiment": "C",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-13-C-1792915264",
+    "observation_ids": [
+      "obs-001",
+      "obs-002",
+      "obs-003",
+      "obs-004"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-iris",
+    "p-oren"
+  ],
+  "preconditions": [
+    "A adds a photo in Us.",
+    "B expects every shared photo to appear in Memories.",
+    "Neither has read the explanation of the two destinations."
+  ],
+  "actions": [
+    {
+      "op": "add_sky_photo",
+      "note": "A chooses a photo for the sky."
+    },
+    {
+      "op": "open_memories",
+      "note": "B searches Memories for the same photo."
+    }
+  ],
+  "expected_behavior": [
+    "The app makes clear that a sky photo and a dated memory are separate actions.",
+    "A sky photo does not silently become a dated memory.",
+    "The archive remains the complete place to browse dated content."
+  ],
+  "candidate_failure_modes": [
+    "B concludes the photo failed to save.",
+    "A believes one action published to both destinations.",
+    "The app adds a second, unrequested copy to resolve the ambiguity."
+  ],
+  "relevant_source_files": [
+    "docs/product/relationship-home-and-archive.md",
+    "app/(app)/(tabs)/together.tsx",
+    "features/album/sky-photo-repository.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+      "Free and Plus see the same relationship home."
+    ],
+    "documented_requirement": [
+      "The app makes clear that a sky photo and a dated memory are separate actions.",
+      "A sky photo does not silently become a dated memory.",
+      "The archive remains the complete place to browse dated content."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Iris Vale) said: \"We are auditing Aoi for things that do not need to exist. Walk through Us and Memories as you actually used them: the photo sky, the history control, the help panel, the add-photo action, the dated-memory action, the distinction between the two surfaces, and every label or decoration around them. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Iris Vale) said: \"Did the removal audit on Aoi's two surfaces instead of a redesign.\n\nThree things that do not need to exist:\n- The photo sky. Decoration in the same plane as content. Costs contrast, returns nothing.\n- The Us / Memories split. Two labels, no taught difference — I re-derive the boundary every visit.\n- The help panel. A UI that explains a UI. Design the empty states and this surface disappears.\n\nOne thing I'd keep: the history control. It's the only element honest about where I am in time. It should be the primary action on the screen, not the thing losing to a floating add button.\n\nSide notes from staring at it: three radii (12/16/20) inside one card read as noise, not hierarchy. Pick one token. Dividers at the same weight as real separators. And every motion needs a reduced-motion path by default, not buried in settings.\n\nRemoval is the cheapest redesign.\"",
+      "A fictional participant (Iris Vale) said: \"Asking \"why does this exist?\" honestly, in order of how much it costs me:\n\n1. The photo sky. It's decorative atmosphere sharing a visual plane with content. It eats contrast and gives me no signal about state or place. If it were removed, nothing breaks except the mood — and the mood is the cheapest thing on the screen. Replace it with one static gradient and spend the saved budget on type.\n\n2. The Us/Memories distinction. Two surfaces, two labels, no taught difference. I have to infer the boundary on every visit, which means the interface isn't teaching itself. One surface plus a time control would break nothing and delete a whole vocabulary I had to learn. Cost of keeping it: permanent low-grade ambiguity.\n\n3. The help panel. A second UI explaining the first UI. If the empty states were actually designed — told me what goes here, what to do first — this panel would be redundant prose to maintain forever.\n\nAlso on the chopping block: decorative dividers that sit at the same weight as real separators, and mixed radii (12/16/20 inside one card) reading as noise instead of hierarchy. One radius token. One divider token.\n\nThe one thing I'd keep: the history control. It's the only element that is honest about where I am in time, and it's honest about its own state. Keep it — then make it the primary action per screen instead of letting the add-photo action compete with it.\n\nAnd before anyone ships another transition: every animation needs a reduced-motion path, not a settings toggle I have to find.\"",
+      "A fictional participant (Oren Pike) said: \"Ran this against actual usage — offline, backgrounded, killed mid-flow, relaunched.\n\n1. **Photo sky** — decoration. Removing it breaks nothing: the photos are still reachable through the dated list. What it costs: a render pass on every entry into Memories, and it's the first thing that stalls on a bad connection. Useless.\n\n2. **The distinction between Us and Memories** — two names, one dataset, and a rule nobody can state out loud. Remove the split; the surface that lies about which store it reads from is the one that goes. What breaks: my muscle memory about which tab shows what. That costs me two seconds, once.\n\n3. **The help panel copy around add-photo and dated-memory** — it describes a flow I can't complete offline and asserts success states that were never confirmed. That's a UI that reports a state the system isn't in. Remove the copy before the button.\n\n4. **History control** — keep. It's the only place I can verify what actually persisted after a relaunch. That's the one thing worth its existence.\n\nThree most useless: photo sky, the two-surface distinction, the optimistic help copy. One to keep: history control.\n\nOne caveat on scope: add-photo dies on kill mid-upload and reports nothing — that's not a removal candidate, that's a state machine that lies. Fix it or remove it, but don't redecorate it.\"",
+      "Iris Vale assumes: the interface should teach itself",
+      "Iris Vale assumes: empty states should be designed",
+      "Oren Pike assumes: a saved item survives relaunch",
+      "Oren Pike assumes: an error is not a dead end"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B concludes the photo failed to save.",
+      "Hypothesis, not reproduced: A believes one action published to both destinations.",
+      "Hypothesis, not reproduced: The app adds a second, unrequested copy to resolve the ambiguity."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

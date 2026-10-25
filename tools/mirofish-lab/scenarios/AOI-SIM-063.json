@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-063",
+  "title": "A sky photo is expected to appear in Memories",
+  "experiment": "C",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-13-F-1792915320",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-iris",
+    "p-oren"
+  ],
+  "preconditions": [
+    "A adds a photo in Us.",
+    "B expects every shared photo to appear in Memories.",
+    "Neither has read the explanation of the two destinations."
+  ],
+  "actions": [
+    {
+      "op": "add_sky_photo",
+      "note": "A chooses a photo for the sky."
+    },
+    {
+      "op": "open_memories",
+      "note": "B searches Memories for the same photo."
+    }
+  ],
+  "expected_behavior": [
+    "The app makes clear that a sky photo and a dated memory are separate actions.",
+    "A sky photo does not silently become a dated memory.",
+    "The archive remains the complete place to browse dated content."
+  ],
+  "candidate_failure_modes": [
+    "B concludes the photo failed to save.",
+    "A believes one action published to both destinations.",
+    "The app adds a second, unrequested copy to resolve the ambiguity."
+  ],
+  "relevant_source_files": [
+    "docs/product/relationship-home-and-archive.md",
+    "app/(app)/(tabs)/together.tsx",
+    "features/album/sky-photo-repository.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+      "Free and Plus see the same relationship home."
+    ],
+    "documented_requirement": [
+      "The app makes clear that a sky photo and a dated memory are separate actions.",
+      "A sky photo does not silently become a dated memory.",
+      "The archive remains the complete place to browse dated content."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Iris Vale) said: \"Three things to remove, one to keep.\n\n1) The storage meter. It's a progress bar whose only job is to generate anxiety about a ceiling nobody reaches. Remove it: nothing breaks, I stop checking a number that was never actionable, and the settings page loses its one decorative gradient.\n\n2) The second upgrade prompt inside a feature gate. The gate already said the feature exists; the follow-up modal is an apology with a price tag stapled to it. Remove it: one primary action per screen, and the gate becomes the whole conversation.\n\n3) The \"manage subscription\" link parked in a settings sub-sub-page. It exists to be missed. Remove it and put the exit where the entry was.\n\nKeep: the plan explanation — but cut to one plain sentence at the point of purchase. That's the only line here that earns its pixels, because it's the one that prevents a support ticket.\n\nCost: ~2 minutes per prompt, and a durable drop in how intentional the app feels. Also: the radii on these cards don't match the radii in the gate modals, and the upgrade button animates even with reduced motion on. Fix that before adding anything else.\"",
+      "Iris Vale assumes: the interface should teach itself",
+      "Iris Vale assumes: empty states should be designed",
+      "Oren Pike assumes: a saved item survives relaunch",
+      "Oren Pike assumes: an error is not a dead end"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B concludes the photo failed to save.",
+      "Hypothesis, not reproduced: A believes one action published to both destinations.",
+      "Hypothesis, not reproduced: The app adds a second, unrequested copy to resolve the ambiguity."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

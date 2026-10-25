@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-048",
+  "title": "Offline retry after a timeout creates a duplicate memory",
+  "experiment": "D",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-12-B-1792915042",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-wolf",
+    "p-vera"
+  ],
+  "preconditions": [
+    "A saves a note while the connection is unreliable.",
+    "The first request times out after the server may have committed.",
+    "A retries the same draft."
+  ],
+  "actions": [
+    {
+      "op": "create_memory",
+      "note": "A sends a note with a stable client id."
+    },
+    {
+      "op": "lose_connection",
+      "note": "The response is lost."
+    },
+    {
+      "op": "retry_operation",
+      "note": "A retries the same draft."
+    },
+    {
+      "op": "refresh_space",
+      "note": "A checks the archive."
+    }
+  ],
+  "expected_behavior": [
+    "The retry is idempotent for the same client id.",
+    "The archive contains exactly one memory.",
+    "The retry reports the saved state truthfully."
+  ],
+  "candidate_failure_modes": [
+    "Two identical memories appear.",
+    "The retry creates a second media reservation.",
+    "The first success is reported as failed, so A keeps retrying."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/moments.ts",
+    "features/composer/send-pipeline.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Memory create is idempotent per (space_id, client_id) while the row is live.",
+      "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+      "Authorship and authorName are computed per viewer, not stored as a snapshot."
+    ],
+    "documented_requirement": [
+      "The retry is idempotent for the same client id.",
+      "The archive contains exactly one memory.",
+      "The retry reports the saved state truthfully."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Wolf Adler) said: \"Ran the walkthrough on patchy connectivity with switch access. Answers, in the order you asked:\n\nCOMPOSER — exists. Removing it breaks the only input. Keep.\nKEEP BUTTON — does not need to exist. It duplicates a state the app already has (the draft). Removed, nothing breaks except a button that made me believe unkept text would be discarded. Cost: I re-tapped it four times on a bad link to \"be safe.\" That is a trust tax.\nPENDING ROWS — should exist as a concept, not as a separate visual row I have to interpret. Removed, I lose the only honest signal that a message left the device. Keep, but they must be labelled by state (queued / sending / failed), not by a spinner. A spinner is not a status.\nRETRY AND EDIT — the one thing I would keep. It is the only path that survives a dropped connection mid-send, and it is the only place the app tells me the truth about what happened.\nAUTHOR LABELS — do not need to exist here. There are two of us. Removed, nothing breaks; the label answers a question nobody in a two-person space is asking.\nFEED AND GALLERY — pick one. Two surfaces over the same items means two empty states, two error states, two sets of accessibility paths. Removing the gallery breaks nothing that the feed doesn't already do.\nEMPTY / LOADING / FAILED — these must stay distinct and must be distinct. I could not tell \"no messages yet\" from \"we haven't loaded yet\" from \"the request died.\" Three different truths, three different words.\nCONFIRMATIONS — the copy must match the consequence. When I queued a message the toast said it was sent. It was not sent. That is the dark pattern in this flow, and it is the one I would fix before anything else.\nBACK — exiting mid-edit with no warning is a destructive action behind a navigation gesture. Back should never discard typed content without a confirmation that names the content being discarded.\n\nThree most useless: the Keep button, author labels, the gallery view.\nOne I would keep: retry and edit.\n\nRepro for the copy problem: 1. Enable airplane mode. 2. Compose a message. 3. Tap send. 4. Observe success toast. 5. Re-enable network, observe nothing leaves. Expected: \"Queued — will send when connected.\" Actual: \"Sent.\"\"",
+      "Wolf Adler assumes: a spinner is not a status",
+      "Wolf Adler assumes: a code field should accept a pasted message",
+      "Vera Lind assumes: the app should never make me guess",
+      "Vera Lind assumes: a failed action must preserve my input"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: Two identical memories appear.",
+      "Hypothesis, not reproduced: The retry creates a second media reservation.",
+      "Hypothesis, not reproduced: The first success is reported as failed, so A keeps retrying."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

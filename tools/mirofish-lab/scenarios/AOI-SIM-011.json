@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-011",
+  "title": "One member buys Plus and the partner expects it immediately",
+  "experiment": "F",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-F-1792914496",
+    "observation_ids": [
+      "obs-001",
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "A and B are active members of one space on the Free plan.",
+    "A completes a Plus purchase.",
+    "B keeps the app open and checks storage limits."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "actor": "A",
+      "note": "A creates the shared space."
+    },
+    {
+      "op": "join_space",
+      "actor": "B",
+      "note": "B joins."
+    },
+    {
+      "op": "change_subscription",
+      "note": "A completes a verified Plus purchase."
+    },
+    {
+      "op": "open_memories",
+      "note": "B checks the current storage limit."
+    }
+  ],
+  "expected_behavior": [
+    "Plus is Space-level; both members read the same authoritative entitlement row.",
+    "B observes the higher media ceiling after the entitlement is applied, not merely after the store sheet closes.",
+    "A failed or delayed webhook does not grant Plus on the client alone."
+  ],
+  "candidate_failure_modes": [
+    "B sees Free limits indefinitely with no explanation.",
+    "The client grants Plus from local purchase state while the server still says Free.",
+    "A second purchase is required for the partner."
+  ],
+  "relevant_source_files": [
+    "packages/shared/src/plus.ts",
+    "packages/api/src/domains/plus.ts",
+    "features/subscription/subscription-context.tsx",
+    "docs/product/relationship-home-and-archive.md"
+  ],
+  "existing_test_coverage": [
+    "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+  ],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Plus is a Space-level entitlement: one row is shared by both active members.",
+      "The Free media ceiling is 250 MiB and the Plus ceiling is 5 GiB; future-letter allowance differs by plan.",
+      "The backend entitlement row is authoritative; client local purchase state cannot grant features.",
+      "Verified webhook deliveries are deduplicated and stale events cannot regress a newer state.",
+      "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+      "Free and Plus see the same relationship home."
+    ],
+    "documented_requirement": [
+      "Plus is Space-level; both members read the same authoritative entitlement row.",
+      "B observes the higher media ceiling after the entitlement is applied, not merely after the store sheet closes.",
+      "A failed or delayed webhook does not grant Plus on the client alone."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"We are auditing Aoi for things that do not need to exist. Walk through Plus and storage as you actually used them: the paywall, plan explanation, storage meter, manage-subscription link, upgrade prompts, feature gates, and every line of copy around them. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Bob Whitfield) said: \"Honestly this hits. The plan explanation and upgrade prompts — I have literally never read them. I just open the link from a message, hit one screen I don't understand, give up, and ask my partner instead. So: why does the paywall copy even exist if nobody like me reads it? If you removed the storage meter and manage-subscription link I genuinely wouldn't notice — I don't even know where they are. The one thing I'd keep is whatever tells me I'm in the right space, because half the time I can't tell if I'm in our space or not. Remove the rest.\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B sees Free limits indefinitely with no explanation.",
+      "Hypothesis, not reproduced: The client grants Plus from local purchase state while the server still says Free.",
+      "Hypothesis, not reproduced: A second purchase is required for the partner."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "covered",
+    "evidence": [
+      "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+    ],
+    "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  },
+  "execution": {
+    "target": "integration",
+    "test_path": "tests/integration/mirofish-scenario-execution.test.ts",
+    "assertions": [
+      {
+        "kind": "plus.isPlus",
+        "viewer": "A",
+        "value": true
+      },
+      {
+        "kind": "plus.isPlus",
+        "viewer": "B",
+        "value": true
+      },
+      {
+        "kind": "plus.mediaLimitBytes",
+        "viewer": "B",
+        "value": 5368709120
+      }
+    ]
+  }
+}

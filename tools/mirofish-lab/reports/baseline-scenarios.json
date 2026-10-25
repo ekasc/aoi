@@ -1,0 +1,696 @@
+[
+  {
+    "schemaVersion": "aoi-scenario/1",
+    "id": "AOI-SIM-001",
+    "title": "Partner joins after the first memory was saved",
+    "experiment": "A",
+    "source": {
+      "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+      "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+      "simulation_id": "baseline-contract-questions-001",
+      "observation_ids": [
+        "obs-001"
+      ],
+      "provenance": "contract_baseline",
+      "seed_version": "seeds-v1"
+    },
+    "actors": [
+      "p-alice",
+      "p-bob"
+    ],
+    "preconditions": [
+      "Person A created a space and has not yet paired.",
+      "Person A saved one memory before Person B joined.",
+      "Person B has their own account and received the invite code or link."
+    ],
+    "actions": [
+      {
+        "op": "create_space",
+        "note": "A creates the space and receives an invite code."
+      },
+      {
+        "op": "create_memory",
+        "note": "A saves one note before B arrives."
+      },
+      {
+        "op": "invite_partner",
+        "note": "A shares the live invite code."
+      },
+      {
+        "op": "join_space",
+        "note": "B signs in with a different account and redeems the code."
+      },
+      {
+        "op": "refresh_space",
+        "note": "A returns to the foreground and checks membership."
+      }
+    ],
+    "expected_behavior": [
+      "The pre-join memory is visible to B after joining, with A shown as its author.",
+      "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+      "B can identify that they joined an existing space rather than creating a new one."
+    ],
+    "candidate_failure_modes": [
+      "A believes sharing completed the pairing and stops looking for B.",
+      "B creates a second space instead of redeeming the code.",
+      "The pre-join memory is missing or attributed to B after joining."
+    ],
+    "relevant_source_files": [
+      "docs/product/first-use-acceptance.md",
+      "components/space/partner-invitation.tsx",
+      "packages/api/src/domains/spaces.ts",
+      "packages/api/src/domains/moments.ts"
+    ],
+    "existing_test_coverage": [],
+    "confidence": "hypothesis",
+    "execution_target": "integration",
+    "status": "mapped",
+    "claims": {
+      "observed_code_behavior": [
+        "The product requires pending, failed, and saved states to be distinguishable.",
+        "The owner's physical two-phone acceptance run remains the gate for native UX.",
+        "The invitation sheet regenerates an expired code before sharing.",
+        "Opening the share sheet does not claim delivery or membership.",
+        "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+        "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound."
+      ],
+      "documented_requirement": [
+        "The pre-join memory is visible to B after joining, with A shown as its author.",
+        "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+        "B can identify that they joined an existing space rather than creating a new one."
+      ],
+      "hypothetical_user_behavior": [
+        "A fictional participant (Alice Moreau) said: \"Contract question: what should a person see when an invitation has been shared but the partner has not yet completed joining with their own account?\"",
+        "Alice Moreau assumes: an invitation shared means the partner has joined",
+        "Alice Moreau assumes: deleting a memory removes it for both people",
+        "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+      ],
+      "potential_defect": [
+        "Hypothesis, not reproduced: A believes sharing completed the pairing and stops looking for B.",
+        "Hypothesis, not reproduced: B creates a second space instead of redeeming the code.",
+        "Hypothesis, not reproduced: The pre-join memory is missing or attributed to B after joining."
+      ],
+      "reproduced_defect": []
+    },
+    "coverage": {
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    "safety": {
+      "synthetic_only": true,
+      "contains_secrets": false,
+      "production_data": false,
+      "arbitrary_code": false
+    },
+    "execution": {
+      "target": "integration",
+      "test_path": "tests/integration/mirofish-scenario-execution.test.ts",
+      "assertions": [
+        {
+          "kind": "space.memberCount",
+          "value": 2
+        },
+        {
+          "kind": "space.partnerJoined",
+          "viewer": "A",
+          "value": true
+        },
+        {
+          "kind": "moment.count",
+          "viewer": "A",
+          "value": 1
+        },
+        {
+          "kind": "moment.count",
+          "viewer": "B",
+          "value": 1
+        },
+        {
+          "kind": "moment.authorRole",
+          "viewer": "A",
+          "value": "you"
+        },
+        {
+          "kind": "moment.authorRole",
+          "viewer": "B",
+          "value": "partner"
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": "aoi-scenario/1",
+    "id": "AOI-SIM-002",
+    "title": "One author edits the same memory from two stale copies",
+    "experiment": "B",
+    "source": {
+      "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+      "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+      "simulation_id": "baseline-contract-questions-001",
+      "observation_ids": [
+        "obs-002"
+      ],
+      "provenance": "contract_baseline",
+      "seed_version": "seeds-v1"
+    },
+    "actors": [
+      "p-eli",
+      "p-farah"
+    ],
+    "preconditions": [
+      "A is the author of a note and has it open on two devices.",
+      "The first device saves an edit.",
+      "The second device still holds the previous updatedAt and saves."
+    ],
+    "actions": [
+      {
+        "op": "create_space",
+        "actor": "A",
+        "note": "A creates the shared space."
+      },
+      {
+        "op": "join_space",
+        "actor": "B",
+        "note": "B joins, so both members are active."
+      },
+      {
+        "op": "create_memory",
+        "note": "A creates a note."
+      },
+      {
+        "op": "edit_memory",
+        "actor": "A",
+        "note": "The first device saves an edit."
+      },
+      {
+        "op": "edit_memory",
+        "actor": "A",
+        "note": "The second device saves from the stale copy."
+      },
+      {
+        "op": "refresh_space",
+        "note": "A reloads the archive."
+      }
+    ],
+    "expected_behavior": [
+      "The stale write is rejected rather than silently overwriting the first edit.",
+      "The second device sees a conflict and can reload the current content.",
+      "The archive contains one memory with the first saved value."
+    ],
+    "candidate_failure_modes": [
+      "A's stale save overwrites B without a warning.",
+      "The conflict is presented as a network error and the draft is lost.",
+      "Both edits are stored as duplicate memories."
+    ],
+    "relevant_source_files": [
+      "packages/api/src/domains/moments.ts",
+      "features/moments/moments-context.tsx",
+      "packages/shared/src/moment.ts"
+    ],
+    "existing_test_coverage": [],
+    "confidence": "hypothesis",
+    "execution_target": "integration",
+    "status": "mapped",
+    "claims": {
+      "observed_code_behavior": [
+        "Memory create is idempotent per (space_id, client_id) while the row is live.",
+        "Update and delete compare the observed updatedAt; a stale write returns 409 without side effects.",
+        "Authorship and authorName are computed per viewer, not stored as a snapshot."
+      ],
+      "documented_requirement": [
+        "The stale write is rejected rather than silently overwriting the first edit.",
+        "The second device sees a conflict and can reload the current content.",
+        "The archive contains one memory with the first saved value."
+      ],
+      "hypothetical_user_behavior": [
+        "A fictional participant (Eli Ramos) said: \"Contract question: what should happen when two members edit the same memory from stale copies, and which outcome must be visible to the person whose write lost?\"",
+        "Eli Ramos assumes: an encrypted archive is end-to-end encrypted by default",
+        "Eli Ramos assumes: removing a device revokes its access",
+        "Farah Haddad assumes: a draft is not shared",
+        "Farah Haddad assumes: the other person sees the same timestamps"
+      ],
+      "potential_defect": [
+        "Hypothesis, not reproduced: A's stale save overwrites B without a warning.",
+        "Hypothesis, not reproduced: The conflict is presented as a network error and the draft is lost.",
+        "Hypothesis, not reproduced: Both edits are stored as duplicate memories."
+      ],
+      "reproduced_defect": []
+    },
+    "coverage": {
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    "safety": {
+      "synthetic_only": true,
+      "contains_secrets": false,
+      "production_data": false,
+      "arbitrary_code": false
+    },
+    "execution": {
+      "target": "integration",
+      "test_path": "tests/integration/mirofish-scenario-execution.test.ts",
+      "assertions": [
+        {
+          "kind": "response.status",
+          "value": 409
+        },
+        {
+          "kind": "moment.count",
+          "viewer": "A",
+          "value": 1
+        },
+        {
+          "kind": "moment.authorRole",
+          "viewer": "A",
+          "value": "you"
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": "aoi-scenario/1",
+    "id": "AOI-SIM-003",
+    "title": "A sky photo is expected to appear in Memories",
+    "experiment": "C",
+    "source": {
+      "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+      "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+      "simulation_id": "baseline-contract-questions-001",
+      "observation_ids": [
+        "obs-003"
+      ],
+      "provenance": "contract_baseline",
+      "seed_version": "seeds-v1"
+    },
+    "actors": [
+      "p-grace",
+      "p-hiro"
+    ],
+    "preconditions": [
+      "A adds a photo in Us.",
+      "B expects every shared photo to appear in Memories.",
+      "Neither has read the explanation of the two destinations."
+    ],
+    "actions": [
+      {
+        "op": "add_sky_photo",
+        "note": "A chooses a photo for the sky."
+      },
+      {
+        "op": "open_memories",
+        "note": "B searches Memories for the same photo."
+      }
+    ],
+    "expected_behavior": [
+      "The app makes clear that a sky photo and a dated memory are separate actions.",
+      "A sky photo does not silently become a dated memory.",
+      "The archive remains the complete place to browse dated content."
+    ],
+    "candidate_failure_modes": [
+      "B concludes the photo failed to save.",
+      "A believes one action published to both destinations.",
+      "The app adds a second, unrequested copy to resolve the ambiguity."
+    ],
+    "relevant_source_files": [
+      "docs/product/relationship-home-and-archive.md",
+      "app/(app)/(tabs)/together.tsx",
+      "features/album/sky-photo-repository.ts",
+      "features/moments/moments-context.tsx"
+    ],
+    "existing_test_coverage": [],
+    "confidence": "hypothesis",
+    "execution_target": "manual",
+    "status": "mapped",
+    "claims": {
+      "observed_code_behavior": [
+        "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+        "Free and Plus see the same relationship home."
+      ],
+      "documented_requirement": [
+        "The app makes clear that a sky photo and a dated memory are separate actions.",
+        "A sky photo does not silently become a dated memory.",
+        "The archive remains the complete place to browse dated content."
+      ],
+      "hypothetical_user_behavior": [
+        "A fictional participant (Grace Tan) said: \"Contract question: how should the app distinguish a shared sky photo from a dated memory so a person does not conclude that a save failed?\"",
+        "Grace Tan assumes: the sky is decorative and not the archive",
+        "Grace Tan assumes: photos can be found by date",
+        "Hiro Tan assumes: a pending upload is safely queued",
+        "Hiro Tan assumes: deleting a local copy does not delete the shared copy"
+      ],
+      "potential_defect": [
+        "Hypothesis, not reproduced: B concludes the photo failed to save.",
+        "Hypothesis, not reproduced: A believes one action published to both destinations.",
+        "Hypothesis, not reproduced: The app adds a second, unrequested copy to resolve the ambiguity."
+      ],
+      "reproduced_defect": []
+    },
+    "coverage": {
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+    },
+    "safety": {
+      "synthetic_only": true,
+      "contains_secrets": false,
+      "production_data": false,
+      "arbitrary_code": false
+    }
+  },
+  {
+    "schemaVersion": "aoi-scenario/1",
+    "id": "AOI-SIM-004",
+    "title": "A join finishes after the account changes",
+    "experiment": "D",
+    "source": {
+      "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+      "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+      "simulation_id": "baseline-contract-questions-001",
+      "observation_ids": [
+        "obs-004"
+      ],
+      "provenance": "contract_baseline",
+      "seed_version": "seeds-v1"
+    },
+    "actors": [
+      "p-farah",
+      "p-eli"
+    ],
+    "preconditions": [
+      "Person A starts joining a space on a slow connection.",
+      "Before the request resolves, the device signs out and signs in as Person B.",
+      "Person B has a different active space."
+    ],
+    "actions": [
+      {
+        "op": "join_space",
+        "note": "A starts the join."
+      },
+      {
+        "op": "switch_account",
+        "note": "The device signs out and signs in as B before the join resolves."
+      },
+      {
+        "op": "refresh_space",
+        "note": "B's space hydrates."
+      }
+    ],
+    "expected_behavior": [
+      "A response started under a previous account never becomes the current account's space state.",
+      "B sees only B's space after the switch.",
+      "The stale operation may fail silently; it must not surface A's space to B."
+    ],
+    "candidate_failure_modes": [
+      "B briefly or persistently sees the space A joined.",
+      "B's subsequent reads or writes are scoped to A's space object.",
+      "The stale membership flashes before hydration corrects it."
+    ],
+    "relevant_source_files": [
+      "features/space/space-context.tsx",
+      "features/session/session-context.tsx",
+      "tests/unit/space/space-context-refresh.test.tsx",
+      "docs/product/first-use-acceptance.md"
+    ],
+    "existing_test_coverage": [
+      "tests/unit/space/mirofish-stale-space-mutation.test.tsx:64 — [AOI-SIM-011] ignores a join that finishes after the previous account changes"
+    ],
+    "confidence": "hypothesis",
+    "execution_target": "unit",
+    "status": "mapped",
+    "claims": {
+      "observed_code_behavior": [
+        "Space hydration, foreground refresh, and mutation callbacks are scoped to the signed-in user id.",
+        "Session restore republishes API tokens before remote reads.",
+        "Sign out clears the stored session and token plumbing.",
+        "The product requires pending, failed, and saved states to be distinguishable.",
+        "The owner's physical two-phone acceptance run remains the gate for native UX."
+      ],
+      "documented_requirement": [
+        "A response started under a previous account never becomes the current account's space state.",
+        "B sees only B's space after the switch.",
+        "The stale operation may fail silently; it must not surface A's space to B."
+      ],
+      "hypothetical_user_behavior": [
+        "A fictional participant (Farah Haddad) said: \"Contract question: can a response started under a previous account ever become the current account's space state after an account switch?\"",
+        "Farah Haddad assumes: a draft is not shared",
+        "Farah Haddad assumes: the other person sees the same timestamps",
+        "Eli Ramos assumes: an encrypted archive is end-to-end encrypted by default",
+        "Eli Ramos assumes: removing a device revokes its access"
+      ],
+      "potential_defect": [
+        "Hypothesis, not reproduced: B briefly or persistently sees the space A joined.",
+        "Hypothesis, not reproduced: B's subsequent reads or writes are scoped to A's space object.",
+        "Hypothesis, not reproduced: The stale membership flashes before hydration corrects it."
+      ],
+      "reproduced_defect": []
+    },
+    "coverage": {
+      "level": "covered",
+      "evidence": [
+        "tests/unit/space/mirofish-stale-space-mutation.test.tsx:64 — [AOI-SIM-011] ignores a join that finishes after the previous account changes"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes."
+    },
+    "safety": {
+      "synthetic_only": true,
+      "contains_secrets": false,
+      "production_data": false,
+      "arbitrary_code": false
+    },
+    "execution": {
+      "target": "unit",
+      "test_path": "tests/unit/space/mirofish-stale-space-mutation.test.tsx",
+      "assertions": [
+        {
+          "kind": "account.spaceId",
+          "viewer": "B",
+          "value": "space-2"
+        }
+      ]
+    }
+  },
+  {
+    "schemaVersion": "aoi-scenario/1",
+    "id": "AOI-SIM-005",
+    "title": "Restore from the recovery phrase is interrupted",
+    "experiment": "E",
+    "source": {
+      "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+      "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+      "simulation_id": "baseline-contract-questions-001",
+      "observation_ids": [
+        "obs-005"
+      ],
+      "provenance": "contract_baseline",
+      "seed_version": "seeds-v1"
+    },
+    "actors": [
+      "p-mira",
+      "p-noor"
+    ],
+    "preconditions": [
+      "A replaced a phone and has the written recovery phrase.",
+      "The connection drops during restoration.",
+      "The old device is no longer available."
+    ],
+    "actions": [
+      {
+        "op": "replace_device",
+        "note": "A installs Aoi on a new phone."
+      },
+      {
+        "op": "restore_from_phrase",
+        "note": "A starts restoration and loses the connection."
+      },
+      {
+        "op": "restore_from_phrase",
+        "note": "A retries with the same phrase."
+      }
+    ],
+    "expected_behavior": [
+      "An interrupted restore does not consume or corrupt the phrase.",
+      "Retry can complete access without duplicate archive mutations.",
+      "Failure states keep the typed phrase and explain the next action."
+    ],
+    "candidate_failure_modes": [
+      "The phrase is rejected after an interrupted attempt.",
+      "The archive is partially restored and presented as complete.",
+      "The retry creates a second device identity that cannot be trusted."
+    ],
+    "relevant_source_files": [
+      "app/(app)/album/restore.tsx",
+      "features/album/protocol-recovery.ts",
+      "features/album/recovery.ts",
+      "tests/unit/album/protocol-recovery.test.ts"
+    ],
+    "existing_test_coverage": [],
+    "confidence": "hypothesis",
+    "execution_target": "native",
+    "status": "not_automatable",
+    "claims": {
+      "observed_code_behavior": [
+        "Recovery is an explicit protocol transition, not a password reset."
+      ],
+      "documented_requirement": [
+        "An interrupted restore does not consume or corrupt the phrase.",
+        "Retry can complete access without duplicate archive mutations.",
+        "Failure states keep the typed phrase and explain the next action."
+      ],
+      "hypothetical_user_behavior": [
+        "A fictional participant (Mira Shah) said: \"Contract question: what recovery path remains when a person has neither the recovery phrase nor a trusted device?\"",
+        "Mira Shah assumes: the recovery phrase restores all devices",
+        "Mira Shah assumes: signing out revokes the device",
+        "Noor El-Amin assumes: a new phone can restore from the account alone",
+        "Noor El-Amin assumes: the old phone will stop working after replacement"
+      ],
+      "potential_defect": [
+        "Hypothesis, not reproduced: The phrase is rejected after an interrupted attempt.",
+        "Hypothesis, not reproduced: The archive is partially restored and presented as complete.",
+        "Hypothesis, not reproduced: The retry creates a second device identity that cannot be trusted."
+      ],
+      "reproduced_defect": []
+    },
+    "coverage": {
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+    },
+    "safety": {
+      "synthetic_only": true,
+      "contains_secrets": false,
+      "production_data": false,
+      "arbitrary_code": false
+    }
+  },
+  {
+    "schemaVersion": "aoi-scenario/1",
+    "id": "AOI-SIM-006",
+    "title": "One member buys Plus and the partner expects it immediately",
+    "experiment": "F",
+    "source": {
+      "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+      "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+      "simulation_id": "baseline-contract-questions-001",
+      "observation_ids": [
+        "obs-006"
+      ],
+      "provenance": "contract_baseline",
+      "seed_version": "seeds-v1"
+    },
+    "actors": [
+      "p-rosa",
+      "p-quinn"
+    ],
+    "preconditions": [
+      "A and B are active members of one space on the Free plan.",
+      "A completes a Plus purchase.",
+      "B keeps the app open and checks storage limits."
+    ],
+    "actions": [
+      {
+        "op": "create_space",
+        "actor": "A",
+        "note": "A creates the shared space."
+      },
+      {
+        "op": "join_space",
+        "actor": "B",
+        "note": "B joins."
+      },
+      {
+        "op": "change_subscription",
+        "note": "A completes a verified Plus purchase."
+      },
+      {
+        "op": "open_memories",
+        "note": "B checks the current storage limit."
+      }
+    ],
+    "expected_behavior": [
+      "Plus is Space-level; both members read the same authoritative entitlement row.",
+      "B observes the higher media ceiling after the entitlement is applied, not merely after the store sheet closes.",
+      "A failed or delayed webhook does not grant Plus on the client alone."
+    ],
+    "candidate_failure_modes": [
+      "B sees Free limits indefinitely with no explanation.",
+      "The client grants Plus from local purchase state while the server still says Free.",
+      "A second purchase is required for the partner."
+    ],
+    "relevant_source_files": [
+      "packages/shared/src/plus.ts",
+      "packages/api/src/domains/plus.ts",
+      "features/subscription/subscription-context.tsx",
+      "docs/product/relationship-home-and-archive.md"
+    ],
+    "existing_test_coverage": [
+      "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+    ],
+    "confidence": "hypothesis",
+    "execution_target": "integration",
+    "status": "mapped",
+    "claims": {
+      "observed_code_behavior": [
+        "Plus is a Space-level entitlement: one row is shared by both active members.",
+        "The Free media ceiling is 250 MiB and the Plus ceiling is 5 GiB; future-letter allowance differs by plan.",
+        "The backend entitlement row is authoritative; client local purchase state cannot grant features.",
+        "Verified webhook deliveries are deduplicated and stale events cannot regress a newer state.",
+        "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+        "Free and Plus see the same relationship home."
+      ],
+      "documented_requirement": [
+        "Plus is Space-level; both members read the same authoritative entitlement row.",
+        "B observes the higher media ceiling after the entitlement is applied, not merely after the store sheet closes.",
+        "A failed or delayed webhook does not grant Plus on the client alone."
+      ],
+      "hypothetical_user_behavior": [
+        "A fictional participant (Rosa Kim) said: \"Contract question: which Plus benefits are Space-level, and what should the partner observe after one member's verified purchase?\"",
+        "Rosa Kim assumes: Plus applies only to the buyer",
+        "Rosa Kim assumes: storage resets monthly",
+        "Quinn Alvarez assumes: deleting a memory frees storage immediately",
+        "Quinn Alvarez assumes: Plus is per person"
+      ],
+      "potential_defect": [
+        "Hypothesis, not reproduced: B sees Free limits indefinitely with no explanation.",
+        "Hypothesis, not reproduced: The client grants Plus from local purchase state while the server still says Free.",
+        "Hypothesis, not reproduced: A second purchase is required for the partner."
+      ],
+      "reproduced_defect": []
+    },
+    "coverage": {
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes."
+    },
+    "safety": {
+      "synthetic_only": true,
+      "contains_secrets": false,
+      "production_data": false,
+      "arbitrary_code": false
+    },
+    "execution": {
+      "target": "integration",
+      "test_path": "tests/integration/mirofish-scenario-execution.test.ts",
+      "assertions": [
+        {
+          "kind": "plus.isPlus",
+          "viewer": "A",
+          "value": true
+        },
+        {
+          "kind": "plus.isPlus",
+          "viewer": "B",
+          "value": true
+        },
+        {
+          "kind": "plus.mediaLimitBytes",
+          "viewer": "B",
+          "value": 5368709120
+        }
+      ]
+    }
+  }
+]

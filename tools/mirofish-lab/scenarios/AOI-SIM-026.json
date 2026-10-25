@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-026",
+  "title": "A sky photo is expected to appear in Memories",
+  "experiment": "C",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-10-C-1792914726",
+    "observation_ids": [
+      "obs-001",
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-nadia",
+    "p-theo"
+  ],
+  "preconditions": [
+    "A adds a photo in Us.",
+    "B expects every shared photo to appear in Memories.",
+    "Neither has read the explanation of the two destinations."
+  ],
+  "actions": [
+    {
+      "op": "add_sky_photo",
+      "note": "A chooses a photo for the sky."
+    },
+    {
+      "op": "open_memories",
+      "note": "B searches Memories for the same photo."
+    }
+  ],
+  "expected_behavior": [
+    "The app makes clear that a sky photo and a dated memory are separate actions.",
+    "A sky photo does not silently become a dated memory.",
+    "The archive remains the complete place to browse dated content."
+  ],
+  "candidate_failure_modes": [
+    "B concludes the photo failed to save.",
+    "A believes one action published to both destinations.",
+    "The app adds a second, unrequested copy to resolve the ambiguity."
+  ],
+  "relevant_source_files": [
+    "docs/product/relationship-home-and-archive.md",
+    "app/(app)/(tabs)/together.tsx",
+    "features/album/sky-photo-repository.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+      "Free and Plus see the same relationship home."
+    ],
+    "documented_requirement": [
+      "The app makes clear that a sky photo and a dated memory are separate actions.",
+      "A sky photo does not silently become a dated memory.",
+      "The archive remains the complete place to browse dated content."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Nadia Iqbal) said: \"We are auditing Aoi for things that do not need to exist. Walk through Us and Memories as you actually used them: the photo sky, the history control, the help panel, the add-photo action, the dated-memory action, the distinction between the two surfaces, and every label or decoration around them. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Theo Bennett) said: \"Audited as a user, not a designer: 200% text, split screen, patchy train wifi. Repro steps as I actually hit them.\n\nThree things that shouldn't exist:\n\n1. The photo sky. Decorative layer behind text. Cost: contrast changes photo to photo, so I can't rely on a single text colour, and at large text it's just a smear behind the line I'm reading. Nothing breaks if it goes — I never read anything through it. Remove.\n\n2. The help panel as its own surface. It's a second home for copy about actions that already have labels, so it drifts stale, and it inserts a tab stop between me and the control it describes. Nothing breaks on removal if the copy moves inline beside the control. Remove.\n\n3. The framing labels around Us / Memories, plus the dated-memory chrome. If I can't tell the two surfaces apart from the labels, the labels aren't doing the work — the content order is. The date badge sits on top of a date that's already in the text. Cost: extra stops before the first real control, and two more strings to keep in sync. Remove; keep the date as plain text.\n\nThe one thing I'd keep: the history control. It's the only piece that survives \"what breaks if it's gone\" — go back out of a memory, or come back to a backgrounded tab on a train, and the draft is still there. Keep it, and keep it honest: a pending upload must look pending, not uploaded. No app should lie about network state.\n\nNo redesign per the brief — just deletions.\"",
+      "Nadia Iqbal assumes: a disabled button explains why",
+      "Nadia Iqbal assumes: a save has a visible pending and failure state",
+      "Theo Bennett assumes: a pending upload is visibly pending",
+      "Theo Bennett assumes: a six-character code accepts a pasted message"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B concludes the photo failed to save.",
+      "Hypothesis, not reproduced: A believes one action published to both destinations.",
+      "Hypothesis, not reproduced: The app adds a second, unrequested copy to resolve the ambiguity."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

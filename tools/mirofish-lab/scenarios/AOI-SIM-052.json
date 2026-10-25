@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-052",
+  "title": "Restore from the recovery phrase is interrupted",
+  "experiment": "E",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-12-E-1792915134",
+    "observation_ids": [
+      "obs-001",
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-vera",
+    "p-wolf"
+  ],
+  "preconditions": [
+    "A replaced a phone and has the written recovery phrase.",
+    "The connection drops during restoration.",
+    "The old device is no longer available."
+  ],
+  "actions": [
+    {
+      "op": "replace_device",
+      "note": "A installs Aoi on a new phone."
+    },
+    {
+      "op": "restore_from_phrase",
+      "note": "A starts restoration and loses the connection."
+    },
+    {
+      "op": "restore_from_phrase",
+      "note": "A retries with the same phrase."
+    }
+  ],
+  "expected_behavior": [
+    "An interrupted restore does not consume or corrupt the phrase.",
+    "Retry can complete access without duplicate archive mutations.",
+    "Failure states keep the typed phrase and explain the next action."
+  ],
+  "candidate_failure_modes": [
+    "The phrase is rejected after an interrupted attempt.",
+    "The archive is partially restored and presented as complete.",
+    "The retry creates a second device identity that cannot be trusted."
+  ],
+  "relevant_source_files": [
+    "app/(app)/album/restore.tsx",
+    "features/album/protocol-recovery.ts",
+    "features/album/recovery.ts",
+    "tests/unit/album/protocol-recovery.test.ts"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "native",
+  "status": "not_automatable",
+  "claims": {
+    "observed_code_behavior": [
+      "Recovery is an explicit protocol transition, not a password reset."
+    ],
+    "documented_requirement": [
+      "An interrupted restore does not consume or corrupt the phrase.",
+      "Retry can complete access without duplicate archive mutations.",
+      "Failure states keep the typed phrase and explain the next action."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Vera Lind) said: \"We are auditing Aoi for things that do not need to exist. Walk through device recovery as you actually used it: the recovery phrase, the phrase check, restore, device enrollment, the device list, trust codes, and every warning or helper line. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Wolf Adler) said: \"Did the walkthrough with switch access and a flaky connection, so timings are real rather than idealised. Asking \"why does this even exist?\" out loud each time:\n\n1. THE PHRASE CHECK. It makes you re-enter words you wrote down ninety seconds ago, then — and this is the finding — lets you proceed on a mismatch after a single \"continue anyway\" tap. So it verifies nothing, blocks nobody, and costs me roughly two minutes and one panic per restore. Remove it. What breaks: nothing. The phrase is already confirmed the moment a restore actually succeeds; the check is theatre, not a gate.\n\n2. TRUST CODES AS A SEPARATE SURFACE. Six digits, its own screen, its own copy, and no sentence anywhere explaining what trusting a device actually does or what it lets that device see. Cost: a permission prompt I cannot evaluate, which for someone with very high privacy expectations is worse than no prompt at all. Remove the screen; if the underlying relationship matters, it belongs inside the device list entry it describes, with a plain-language line about what the trusted device can reach. What breaks: nothing functional — only the illusion that I consented to something specific.\n\n3. \"LAST SEEN\" ON THE DEVICE LIST. It exists to look reassuring and instead manufactures worry: a timestamp from three weeks ago reads as an intruder when it is just the tablet in a drawer. Cost: I have chased this twice. Remove it. What breaks: nothing; a device that is signed in is either signed in or not, and revocation is the action that matters.\n\nKEEP: the warning line immediately before restore that names exactly what gets destroyed. It is the only copy in the whole flow that is honest about consequence, it appears at the moment of decision rather than in a scroll-past paragraph, and it costs one screen-height. That one earns its existence.\n\nAside, exact repro: the recovery-phrase field rejects a pasted message, so on switch access I retyped 24 words by hand and lost the flow twice when the connection dropped mid-entry. A code field should accept a pasted message — that is the whole point of a code.\n\nNot proposing a redesign. Just the deletions.\"",
+      "Vera Lind assumes: the app should never make me guess",
+      "Vera Lind assumes: a failed action must preserve my input",
+      "Wolf Adler assumes: a spinner is not a status",
+      "Wolf Adler assumes: a code field should accept a pasted message"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The phrase is rejected after an interrupted attempt.",
+      "Hypothesis, not reproduced: The archive is partially restored and presented as complete.",
+      "Hypothesis, not reproduced: The retry creates a second device identity that cannot be trusted."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

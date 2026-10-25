@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-005",
+  "title": "A sky photo is expected to appear in Memories",
+  "experiment": "C",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-C-1792914422",
+    "observation_ids": [
+      "obs-001",
+      "obs-002",
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "A adds a photo in Us.",
+    "B expects every shared photo to appear in Memories.",
+    "Neither has read the explanation of the two destinations."
+  ],
+  "actions": [
+    {
+      "op": "add_sky_photo",
+      "note": "A chooses a photo for the sky."
+    },
+    {
+      "op": "open_memories",
+      "note": "B searches Memories for the same photo."
+    }
+  ],
+  "expected_behavior": [
+    "The app makes clear that a sky photo and a dated memory are separate actions.",
+    "A sky photo does not silently become a dated memory.",
+    "The archive remains the complete place to browse dated content."
+  ],
+  "candidate_failure_modes": [
+    "B concludes the photo failed to save.",
+    "A believes one action published to both destinations.",
+    "The app adds a second, unrequested copy to resolve the ambiguity."
+  ],
+  "relevant_source_files": [
+    "docs/product/relationship-home-and-archive.md",
+    "app/(app)/(tabs)/together.tsx",
+    "features/album/sky-photo-repository.ts",
+    "features/moments/moments-context.tsx"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "manual",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Us and Memories are intentionally separate destinations; sky photos are not dated memories.",
+      "Free and Plus see the same relationship home."
+    ],
+    "documented_requirement": [
+      "The app makes clear that a sky photo and a dated memory are separate actions.",
+      "A sky photo does not silently become a dated memory.",
+      "The archive remains the complete place to browse dated content."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"We are auditing Aoi for things that do not need to exist. Walk through Us and Memories as you actually used them: the photo sky, the history control, the help panel, the add-photo action, the dated-memory action, the distinction between the two surfaces, and every label or decoration around them. For each one, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Bob Whitfield) said: \"Honestly as someone who just opens the link Alice sends and wants to hear what she saved, most of this stuff I never touch. The history control and the help panel? Never opened them once. The add-photo and dated-memory actions I've tried, hit a wall, and given up after one try — then I just text Alice instead of poking around the app. Keep the memories themselves; that's the whole reason I'm here. Everything else is decoration I have to look past to find the voice note button.\"",
+      "A fictional participant (Alice Moreau) said: \"Walking through it honestly: the help panel — why does it even exist? I have never opened it. I tap the add-photo button, I see the preview, and that's my proof the moment got saved. Nothing would break if the help panel vanished; what it costs me is nothing, because I skip it.\n\nThe history control: I don't need a timeline of my own archive. I need the sky to still be there tomorrow. If it were removed, I'd lose a thing I never touched.\n\nThe explanation of \"the distinction between the two surfaces\": that's the paperwork voice again. Us and Memories are two views of the same memories — I don't want to be told that, I want to feel it. Removing that label breaks nothing.\n\nSo my three most useless: the help panel, the history control, and the two-surface explainer. The one thing I'd keep, without hesitation: the photo sky. It's the only place where a small moment I saved looks like it's actually home — and like my partner can already see it. Everything else is decoration that makes saving a moment feel like a chore.\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: B concludes the photo failed to save.",
+      "Hypothesis, not reproduced: A believes one action published to both destinations.",
+      "Hypothesis, not reproduced: The app adds a second, unrequested copy to resolve the ambiguity."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "not_automatable",
+    "evidence": [],
+    "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}

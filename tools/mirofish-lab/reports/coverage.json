@@ -1,0 +1,872 @@
+{
+  "schemaVersion": "aoi-coverage/1",
+  "aoiCommit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+  "generatedAt": "2026-10-25T08:02:01.417Z",
+  "summary": {
+    "covered": 9,
+    "partial": 31,
+    "not_covered": 0,
+    "not_automatable": 23,
+    "invalid": 0
+  },
+  "scenarios": [
+    {
+      "id": "AOI-SIM-001",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_space",
+        "create_memory",
+        "invite_partner",
+        "join_space",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ]
+    },
+    {
+      "id": "AOI-SIM-002",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory"
+      ],
+      "matchedProbes": [
+        "pending",
+        "failed",
+        "retry"
+      ]
+    },
+    {
+      "id": "AOI-SIM-003",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-004",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory"
+      ],
+      "matchedProbes": [
+        "pending",
+        "failed",
+        "retry"
+      ]
+    },
+    {
+      "id": "AOI-SIM-005",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-006",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-007",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory"
+      ],
+      "matchedProbes": [
+        "pending",
+        "failed",
+        "retry"
+      ]
+    },
+    {
+      "id": "AOI-SIM-008",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "delete_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "delete",
+        "tombstone",
+        "404"
+      ]
+    },
+    {
+      "id": "AOI-SIM-009",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [],
+      "matchedProbes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "AOI-SIM-010",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory"
+      ],
+      "matchedProbes": [
+        "pending",
+        "failed",
+        "retry"
+      ]
+    },
+    {
+      "id": "AOI-SIM-011",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "create_space",
+        "join_space",
+        "change_subscription"
+      ],
+      "matchedProbes": [
+        "partner reads the same state",
+        "isPlus"
+      ]
+    },
+    {
+      "id": "AOI-SIM-012",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-013",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_space",
+        "create_memory",
+        "invite_partner",
+        "join_space",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ]
+    },
+    {
+      "id": "AOI-SIM-014",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-015",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-016",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-017",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-018",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-019",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory"
+      ],
+      "matchedProbes": [
+        "pending",
+        "failed",
+        "retry"
+      ]
+    },
+    {
+      "id": "AOI-SIM-020",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [],
+      "matchedProbes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "AOI-SIM-021",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "create_space",
+        "join_space",
+        "change_subscription"
+      ],
+      "matchedProbes": [
+        "partner reads the same state",
+        "isPlus"
+      ]
+    },
+    {
+      "id": "AOI-SIM-022",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-023",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_space",
+        "create_memory",
+        "invite_partner",
+        "join_space",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ]
+    },
+    {
+      "id": "AOI-SIM-024",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "invite_partner",
+        "join_space",
+        "invite_partner"
+      ],
+      "matchedProbes": [
+        "expired",
+        "invite",
+        "join"
+      ]
+    },
+    {
+      "id": "AOI-SIM-025",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-026",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-027",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-028",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory"
+      ],
+      "matchedProbes": [
+        "pending",
+        "failed",
+        "retry"
+      ]
+    },
+    {
+      "id": "AOI-SIM-029",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-030",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [],
+      "matchedProbes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "AOI-SIM-031",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-032",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory"
+      ],
+      "matchedProbes": [
+        "pending",
+        "failed",
+        "retry"
+      ]
+    },
+    {
+      "id": "AOI-SIM-033",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "create_space",
+        "join_space",
+        "change_subscription"
+      ],
+      "matchedProbes": [
+        "partner reads the same state",
+        "isPlus"
+      ]
+    },
+    {
+      "id": "AOI-SIM-034",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-035",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_space",
+        "create_memory",
+        "invite_partner",
+        "join_space",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ]
+    },
+    {
+      "id": "AOI-SIM-036",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-037",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-038",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-039",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-040",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "delete_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "delete",
+        "tombstone",
+        "404"
+      ]
+    },
+    {
+      "id": "AOI-SIM-041",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [],
+      "matchedProbes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "AOI-SIM-042",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-043",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "create_space",
+        "join_space",
+        "change_subscription"
+      ],
+      "matchedProbes": [
+        "partner reads the same state",
+        "isPlus"
+      ]
+    },
+    {
+      "id": "AOI-SIM-044",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "delete_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "delete",
+        "tombstone",
+        "404"
+      ]
+    },
+    {
+      "id": "AOI-SIM-045",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_space",
+        "create_memory",
+        "invite_partner",
+        "join_space",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ]
+    },
+    {
+      "id": "AOI-SIM-046",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-047",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-048",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-049",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-050",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "delete_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "delete",
+        "tombstone",
+        "404"
+      ]
+    },
+    {
+      "id": "AOI-SIM-051",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-052",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [],
+      "matchedProbes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "AOI-SIM-053",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "invite_partner",
+        "join_space",
+        "invite_partner"
+      ],
+      "matchedProbes": [
+        "expired",
+        "invite",
+        "join"
+      ]
+    },
+    {
+      "id": "AOI-SIM-054",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "create_space",
+        "join_space",
+        "change_subscription"
+      ],
+      "matchedProbes": [
+        "partner reads the same state",
+        "isPlus"
+      ]
+    },
+    {
+      "id": "AOI-SIM-055",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_space",
+        "create_memory",
+        "invite_partner",
+        "join_space",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "invite",
+        "join",
+        "partnerJoined"
+      ]
+    },
+    {
+      "id": "AOI-SIM-056",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "invite_partner",
+        "join_space",
+        "invite_partner"
+      ],
+      "matchedProbes": [
+        "expired",
+        "invite",
+        "join"
+      ]
+    },
+    {
+      "id": "AOI-SIM-057",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-058",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    },
+    {
+      "id": "AOI-SIM-059",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [
+        "create_memory",
+        "refresh_space"
+      ],
+      "matchedProbes": [
+        "clientId",
+        "duplicate",
+        "idempotent"
+      ]
+    },
+    {
+      "id": "AOI-SIM-060",
+      "level": "partial",
+      "evidence": [],
+      "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior.",
+      "matchedOps": [],
+      "matchedProbes": [
+        "restore",
+        "phrase",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "AOI-SIM-061",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [
+        "create_space",
+        "join_space"
+      ],
+      "matchedProbes": [
+        "Edit relationship"
+      ]
+    },
+    {
+      "id": "AOI-SIM-062",
+      "level": "covered",
+      "evidence": [
+        "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
+      ],
+      "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes.",
+      "matchedOps": [
+        "create_space",
+        "join_space",
+        "change_subscription"
+      ],
+      "matchedProbes": [
+        "partner reads the same state",
+        "isPlus"
+      ]
+    },
+    {
+      "id": "AOI-SIM-063",
+      "level": "not_automatable",
+      "evidence": [],
+      "notes": "This is a UX hypothesis about comprehension or visual expectations; the current harness cannot observe it and it needs human validation.",
+      "matchedOps": [],
+      "matchedProbes": []
+    }
+  ]
+}

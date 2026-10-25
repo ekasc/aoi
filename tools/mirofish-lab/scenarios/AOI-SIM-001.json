@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-001",
+  "title": "Partner joins after the first memory was saved",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-01-A-1792914393",
+    "observation_ids": [
+      "obs-001",
+      "obs-003"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-alice",
+    "p-bob"
+  ],
+  "preconditions": [
+    "Person A created a space and has not yet paired.",
+    "Person A saved one memory before Person B joined.",
+    "Person B has their own account and received the invite code or link."
+  ],
+  "actions": [
+    {
+      "op": "create_space",
+      "note": "A creates the space and receives an invite code."
+    },
+    {
+      "op": "create_memory",
+      "note": "A saves one note before B arrives."
+    },
+    {
+      "op": "invite_partner",
+      "note": "A shares the live invite code."
+    },
+    {
+      "op": "join_space",
+      "note": "B signs in with a different account and redeems the code."
+    },
+    {
+      "op": "refresh_space",
+      "note": "A returns to the foreground and checks membership."
+    }
+  ],
+  "expected_behavior": [
+    "The pre-join memory is visible to B after joining, with A shown as its author.",
+    "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+    "B can identify that they joined an existing space rather than creating a new one."
+  ],
+  "candidate_failure_modes": [
+    "A believes sharing completed the pairing and stops looking for B.",
+    "B creates a second space instead of redeeming the code.",
+    "The pre-join memory is missing or attributed to B after joining."
+  ],
+  "relevant_source_files": [
+    "docs/product/first-use-acceptance.md",
+    "components/space/partner-invitation.tsx",
+    "packages/api/src/domains/spaces.ts",
+    "packages/api/src/domains/moments.ts"
+  ],
+  "existing_test_coverage": [],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "The product requires pending, failed, and saved states to be distinguishable.",
+      "The owner's physical two-phone acceptance run remains the gate for native UX.",
+      "The invitation sheet regenerates an expired code before sharing.",
+      "Opening the share sheet does not claim delivery or membership.",
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound."
+    ],
+    "documented_requirement": [
+      "The pre-join memory is visible to B after joining, with A shown as its author.",
+      "A observes partnerJoined only after the server records the membership, not when the share sheet opens.",
+      "B can identify that they joined an existing space rather than creating a new one."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Alice Moreau) said: \"We are auditing Aoi for things that do not need to exist. Walk through the screens and flows you actually used this week around first use and invitations: create versus join, the invite code, the invitation surface, the account line, the sign-out line, confirmations, empty states and any step between opening the app and being in the space. For each control, line of copy, badge, animation or step, ask out loud: \"Why does this even exist?\" Then say what would break if it were removed, and what it cost you in time, attention or trust. Name the three most useless things and the one thing you would keep. Do not propose a redesign; remove.\"",
+      "A fictional participant (Bob Whitfield) said: \"Writing this as someone who did the first-use flow on a train with two bars of signal, from a link Alice texted me.\n\nThree things that don't need to exist:\n1. The \"Create account\" path on an invitation link. I came here from Alice's message. I'm joining, there's nothing to create. I picked it anyway because it was the first thing on screen, it seemed to work, and then I was sitting in an empty app with no Alice in it. I didn't try the other option. I texted her instead. That one cost me real trust, not just time — I assumed I'd broken something.\n2. The confirmation screen after joining that says it worked and then waits for a tap. The space is right there behind it. It already told me.\n3. The empty-state explainer that describes the space before there's anything in it. I don't need a tour of a room I can see is empty.\n\nWhat I'd keep: the invitation surface, as dumb as possible. One link, opens, I'm in, my name is already on what I write. That's the whole product for me. Everything else is a step between me and Alice.\n\n(Sign-out line can go too. I'm not signing out of Alice's living room.)\"",
+      "Alice Moreau assumes: an invitation shared means the partner has joined",
+      "Alice Moreau assumes: deleting a memory removes it for both people",
+      "Bob Whitfield assumes: creating an account is the same as joining Alice's space"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: A believes sharing completed the pairing and stops looking for B.",
+      "Hypothesis, not reproduced: B creates a second space instead of redeeming the code.",
+      "Hypothesis, not reproduced: The pre-join memory is missing or attributed to B after joining."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "partial",
+    "evidence": [],
+    "notes": "Related assertions or operations exist, but no single test block exercises the full scenario and proves the expected behavior."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  },
+  "execution": {
+    "target": "integration",
+    "test_path": "tests/integration/mirofish-scenario-execution.test.ts",
+    "assertions": [
+      {
+        "kind": "space.memberCount",
+        "value": 2
+      },
+      {
+        "kind": "space.partnerJoined",
+        "viewer": "A",
+        "value": true
+      },
+      {
+        "kind": "moment.count",
+        "viewer": "A",
+        "value": 1
+      },
+      {
+        "kind": "moment.count",
+        "viewer": "B",
+        "value": 1
+      },
+      {
+        "kind": "moment.authorRole",
+        "viewer": "A",
+        "value": "you"
+      },
+      {
+        "kind": "moment.authorRole",
+        "viewer": "B",
+        "value": "partner"
+      }
+    ]
+  }
+}

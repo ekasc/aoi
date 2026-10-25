@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "aoi-scenario/1",
+  "id": "AOI-SIM-024",
+  "title": "Invite code used after its 30-day window",
+  "experiment": "A",
+  "source": {
+    "aoi_commit": "048f78383a2ff423a8b3c1f0532c4514b387708f",
+    "mirofish_commit": "7657031ac01184afe2cb220f5ee3545573b5e843",
+    "simulation_id": "oasis-couple-10-A-1792914672",
+    "observation_ids": [
+      "obs-002"
+    ],
+    "provenance": "local_oasis",
+    "seed_version": "seeds-v1"
+  },
+  "actors": [
+    "p-nadia",
+    "p-theo"
+  ],
+  "preconditions": [
+    "A space was created more than 30 days ago.",
+    "The newest unredeemed invite is expired and no replacement has been shown.",
+    "Person B still has the old message containing the expired code."
+  ],
+  "actions": [
+    {
+      "op": "invite_partner",
+      "note": "A opens the invitation surface and sees an expired or absent code."
+    },
+    {
+      "op": "join_space",
+      "note": "B tries the old code."
+    },
+    {
+      "op": "invite_partner",
+      "note": "A regenerates a live code before sharing again."
+    }
+  ],
+  "expected_behavior": [
+    "An expired code is rejected with a useful explanation and does not admit a member.",
+    "The invitation surface regenerates before sharing; an expired displayed code is not copyable as valid.",
+    "The person can recover without recreating the space."
+  ],
+  "candidate_failure_modes": [
+    "The app presents an expired code as if it were live.",
+    "B is told only that the code is invalid and cannot tell expiry from a typo.",
+    "A creates a new space to recover, splitting the history."
+  ],
+  "relevant_source_files": [
+    "packages/api/src/domains/spaces.ts",
+    "components/space/partner-invitation.tsx",
+    "features/space/invite-code.ts"
+  ],
+  "existing_test_coverage": [
+    "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+  ],
+  "confidence": "hypothesis",
+  "execution_target": "integration",
+  "status": "mapped",
+  "claims": {
+    "observed_code_behavior": [
+      "Spaces enforce one active membership per user and one active partner per space at the storage layer.",
+      "Joining redeems an invite once; an expired or already-redeemed code is rejected, and a historical partner slot is permanently bound.",
+      "Leaving flips the caller's membership to left and keeps shared history for the remaining member.",
+      "The invitation sheet regenerates an expired code before sharing.",
+      "Opening the share sheet does not claim delivery or membership."
+    ],
+    "documented_requirement": [
+      "An expired code is rejected with a useful explanation and does not admit a member.",
+      "The invitation surface regenerates before sharing; an expired displayed code is not copyable as valid.",
+      "The person can recover without recreating the space."
+    ],
+    "hypothetical_user_behavior": [
+      "A fictional participant (Nadia Iqbal) said: \"Ran this out loud on my commute, one-handed, which is the honest test.\n\nThree most useless, in order:\n\n1. The \"confirm you want to join\" screen after the invite code. I already typed the code, that was the intent. The confirmation adds a tap, a spinner with no label, and a back button that loses the code. Remove it — join on submit, show a pending state on the button itself.\n2. The account line on the invite surface. It shows my own name on a screen whose only job is to get someone else in. It exists to reassure me I'm signed in, which the app should make obvious once, globally, not per screen. Remove.\n3. The create-vs-join choice as two separate screens. Same decision, two routes, two sets of empty states to maintain. One screen, one code field, one \"create instead\" link. Remove the branch.\n\nWhat would break if each were removed: nothing functional. What it costs: a tap each, plus one moment of \"wait, did it work?\" on the unlabeled spinner.\n\nThe one thing I'd keep: the invite code field showing the code after success with a copy affordance. That's the only moment the interface tells me something true and useful without me guessing.\n\nAlso: the disabled Join button with no explanation. If the code is malformed, say so under the field. A disabled control that doesn't say why is just a dead end with a gray tint.\"",
+      "Nadia Iqbal assumes: a disabled button explains why",
+      "Nadia Iqbal assumes: a save has a visible pending and failure state",
+      "Theo Bennett assumes: a pending upload is visibly pending",
+      "Theo Bennett assumes: a six-character code accepts a pasted message"
+    ],
+    "potential_defect": [
+      "Hypothesis, not reproduced: The app presents an expired code as if it were live.",
+      "Hypothesis, not reproduced: B is told only that the code is invalid and cannot tell expiry from a typo.",
+      "Hypothesis, not reproduced: A creates a new space to recover, splitting the history."
+    ],
+    "reproduced_defect": []
+  },
+  "coverage": {
+    "level": "covered",
+    "evidence": [
+      "packages/api/src/__tests__/routes/session-space-lifecycle.test.ts:142 — expired invites are never presented as active"
+    ],
+    "notes": "Assertion evidence found in 1 test block(s), matching all routed operations and scenario probes."
+  },
+  "safety": {
+    "synthetic_only": true,
+    "contains_secrets": false,
+    "production_data": false,
+    "arbitrary_code": false
+  }
+}
