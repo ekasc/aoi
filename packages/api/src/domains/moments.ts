@@ -129,10 +129,11 @@ export /**
  *   semantics, and the R2 bytes stay referenced for the retryable media
  *   purge — an R2 failure never loses the DB row.
  */
-const releaseMediaIfUnreferenced = (db: DbService, mediaId: string, at: number, activityId: string) =>
+const releaseMediaIfUnreferenced = (db: DbService, mediaId: string, at: number, activityId: string, ownerUserId: string) =>
   db.d1.prepare(
     `update media_objects set deleted_at = ?
      where id = ? and deleted_at is null
+        and created_by_user_id = ?
         and exists (select 1 from space_activity where id = ?)
        and not exists (select 1 from moments where media_id = ? and deleted_at is null)
        and not exists (select 1 from moment_attachments ma
@@ -141,7 +142,7 @@ const releaseMediaIfUnreferenced = (db: DbService, mediaId: string, at: number, 
        and not exists (select 1 from moment_responses r
                        join moments m on m.id = r.moment_id
                        where r.media_id = ? and m.deleted_at is null)`
-  ).bind(at, mediaId, activityId, mediaId, mediaId, mediaId);
+  ).bind(at, mediaId, ownerUserId, activityId, mediaId, mediaId, mediaId);
 
 const requireLiveSpaceMedia = (
   db: DbService,
@@ -795,10 +796,6 @@ export const updateMomentProgram = (
     if (!existing) {
       return yield* Effect.fail(notFound('Moment not found'));
     }
-    if (existing.created_by_user_id !== userId) {
-      return yield* Effect.fail(forbidden('You can only edit your own moments'));
-    }
-
     const membership = yield* Effect.tryPromise({
       try: () =>
         db.d1
@@ -811,7 +808,11 @@ export const updateMomentProgram = (
       catch: () => new InternalError({}),
     });
     if (!membership) {
-      return yield* Effect.fail(forbidden('You are not an active member of this space'));
+      // Non-members get the same answer as a missing id: no existence oracle.
+      return yield* Effect.fail(notFound('Moment not found'));
+    }
+    if (existing.created_by_user_id !== userId) {
+      return yield* Effect.fail(forbidden('You can only edit your own moments'));
     }
 
     if (Date.parse(input.expectedUpdatedAt) !== existing.updated_at) {
@@ -897,7 +898,7 @@ export const updateMomentProgram = (
             )),
           ]
         : []),
-      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at, activityId)),
+      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at, activityId, userId)),
     ]);
 
     if ((results[0]?.meta?.changes ?? 0) === 0) {
@@ -949,10 +950,6 @@ export const deleteMomentProgram = (
     if (!existing) {
       return yield* Effect.fail(notFound('Moment not found'));
     }
-    if (existing.created_by_user_id !== userId) {
-      return yield* Effect.fail(forbidden('You can only delete your own moments'));
-    }
-
     const membership = yield* Effect.tryPromise({
       try: () =>
         db.d1
@@ -965,7 +962,10 @@ export const deleteMomentProgram = (
       catch: () => new InternalError({}),
     });
     if (!membership) {
-      return yield* Effect.fail(forbidden('You are not an active member of this space'));
+      return yield* Effect.fail(notFound('Moment not found'));
+    }
+    if (existing.created_by_user_id !== userId) {
+      return yield* Effect.fail(forbidden('You can only delete your own moments'));
     }
 
     if (Date.parse(input.expectedUpdatedAt) !== existing.updated_at) {
@@ -1003,7 +1003,7 @@ export const deleteMomentProgram = (
       // legacy `media_id` and every attachment row are releasable; the
       // `not exists` checks cover both reference paths in post-write state.
       db.d1.prepare('delete from moment_responses where moment_id = ? and exists (select 1 from space_activity where id = ?)').bind(momentId, activityId),
-      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at, activityId)),
+      ...[...toRelease].map((mediaId) => releaseMediaIfUnreferenced(db, mediaId, at, activityId, userId)),
     ]);
 
     if ((results[0]?.meta?.changes ?? 0) === 0) {

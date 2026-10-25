@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { classifyPhotoSource } from '@/features/export/keepsake-assets';
+
 vi.mock('expo-print', () => ({
   printToFileAsync: vi.fn(),
 }));
@@ -712,5 +714,23 @@ describe('keepsake native temp cleanup (Astra #9)', () => {
     const cancelled = await exportChapterKeepsake(input, { assets, export: cancelExporter });
     expect(cancelled).toEqual({ status: 'cancelled' });
     expect(removed.length).toBeGreaterThan(0);
+  });
+});
+
+
+describe('keepsake photo source classification', () => {
+  it('never treats an attacker-controlled host as an app-origin prefix', () => {
+    expect(classifyPhotoSource('https://api.test.local.outside.test/photo.jpg')).toEqual({
+      kind: 'public',
+      uri: 'https://api.test.local.outside.test/photo.jpg',
+    });
+  });
+
+  it('still authenticates real app-origin media paths', () => {
+    expect(classifyPhotoSource('https://api.test.local/v1/media/id/raw')).toEqual({
+      kind: 'authed',
+      uri: 'https://api.test.local/v1/media/id/raw',
+      path: '/v1/media/id/raw',
+    });
   });
 });

@@ -135,7 +135,7 @@ describe('Worker memory optimistic concurrency', () => {
     const stale = { expectedUpdatedAt: new Date(NOW - 1000).toISOString() };
     expect((await ctx.request(ctx.path, method, stale, B)).status).toBe(403);
     ctx.harness.d1.runSync(`update space_members set state = 'left' where user_id = ?`, A);
-    expect((await ctx.request(ctx.path, method, stale)).status).toBe(403);
+    expect((await ctx.request(ctx.path, method, stale)).status).toBe(404);
     expect((await ctx.request(`/v1/moments/${uuid(999)}`, method, stale)).status).toBe(404);
   });
 });

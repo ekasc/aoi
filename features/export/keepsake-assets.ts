@@ -38,9 +38,16 @@ export function classifyPhotoSource(uri: string): PhotoSource {
     return { kind: 'authed', uri, path: uri };
   }
   try {
-    const base = getApiBaseUrl();
-    if (uri.startsWith(base)) {
-      return { kind: 'authed', uri, path: uri.slice(base.length) || '/' };
+    const base = new URL(getApiBaseUrl());
+    const candidate = new URL(uri);
+    // Compare origins, never string prefixes: `https://api.example.test`
+    // is a prefix of `https://api.example.test.outside.test`.
+    if (candidate.origin === base.origin) {
+      const basePath = base.pathname.replace(/\/$/, '');
+      const path = basePath && candidate.pathname.startsWith(basePath)
+        ? candidate.pathname.slice(basePath.length) || '/'
+        : candidate.pathname;
+      return { kind: 'authed', uri, path: `${path}${candidate.search}` };
     }
     return { kind: 'public', uri };
   } catch {

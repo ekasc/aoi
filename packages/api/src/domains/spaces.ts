@@ -3,7 +3,7 @@ import { Effect, Data } from 'effect';
 import { enqueueJob, type JobQueueService } from '../services/job-queue';
 import type { Space } from '@aoi/shared';
 
-import { Db, guardedUpdate } from '../effects/d1';
+import { Db } from '../effects/d1';
 import { nowMs } from '../effects/clock';
 import { newId } from '../effects/id';
 import { Logger, logInfo, type LoggerService } from '../effects/logger';
@@ -37,7 +37,7 @@ import type { IdService } from '../effects/id';
  *   and (for the partner) the partner slot.
  */
 
-export const INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+export const INVITE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 export const MAX_INVITE_GENERATION_ATTEMPTS = 3;
 
 /**
@@ -182,36 +182,6 @@ const loadSpaceWithInvite = (
       },
       catch: () => new InternalError({}),
     })
-  );
-
-/**
- * Archive a space with no active members left (last leave / solo delete).
- * Deterministic and idempotent: re-running on an archived space is a no-op.
- * Shared memories are NEVER hard-deleted here — the archive flag is a
- * read-side tombstone; rows stay queryable for export/support.
- */
-const archiveSpaceIfAbandoned = (
-  spaceId: string,
-  now: number
-): Effect.Effect<void, InternalError, DbService> =>
-  Effect.flatMap(Db, (s) =>
-    Effect.tryPromise({
-      try: async () => {
-        const remaining = await s.d1
-          .prepare(
-            "select 1 as active from space_members where space_id = ? and state = 'active' limit 1"
-          )
-          .bind(spaceId)
-          .first<{ active: number }>();
-        if (!remaining) {
-          await s.d1
-            .prepare('update spaces set archived_at = ?, updated_at = ? where id = ? and archived_at is null')
-            .bind(now, now, spaceId)
-            .run();
-        }
-      },
-      catch: () => new InternalError({}),
-    }).pipe(Effect.as(undefined))
   );
 
 /**
@@ -457,21 +427,43 @@ export const joinSpaceProgram = (
              and (expires_at is null or expires_at > ?)`
         )
         .bind(userId, now, invite.id, now),
+      // The membership insert is conditional on THIS user's redemption
+      // winning in the same batch. A rotating invite can zero the redeem
+      // update; without this guard the insert would still commit and grant
+      // access even though the join returned an error.
       db.d1
         .prepare(
-          "insert into space_members (space_id, user_id, role, state, joined_at) values (?, ?, 'partner', 'active', ?)"
+          `insert into space_members (space_id, user_id, role, state, joined_at)
+           select ?, ?, 'partner', 'active', ?
+           where exists (
+             select 1 from space_invites
+             where id = ? and redeemed_by_user_id = ? and redeemed_at is not null
+           )`
         )
-        .bind(invite.space_id, userId, now),
+        .bind(invite.space_id, userId, now, invite.id, userId),
       db.d1
-        .prepare('update spaces set partner_name = ?, updated_at = ? where id = ?')
-        .bind(partnerName?.name ?? space.name, now, invite.space_id),
+        .prepare(
+          `update spaces set partner_name = ?, updated_at = ?
+           where id = ? and exists (
+             select 1 from space_members
+             where space_id = ? and user_id = ? and state = 'active'
+           )`
+        )
+        .bind(partnerName?.name ?? space.name, now, invite.space_id, invite.space_id, userId),
       // Bind the pairing atomically with the membership insert: the first
       // partner to commit wins; the loser's member insert rolls the whole
       // batch back, binding included. Conditional so a re-run can never
       // overwrite an established binding.
       db.d1
-        .prepare('update spaces set partner_user_id = ? where id = ? and partner_user_id is null')
-        .bind(userId, invite.space_id),
+        .prepare(
+          `update spaces set partner_user_id = ?
+           where id = ? and partner_user_id is null
+             and exists (
+               select 1 from space_members
+               where space_id = ? and user_id = ? and state = 'active'
+             )`
+        )
+        .bind(userId, invite.space_id, invite.space_id, userId),
     ];
 
     // Classify storage errors WITHOUT throwing from tryPromise's catch.
@@ -709,25 +701,44 @@ export const leaveSpaceProgram = (
     if (!spaceId) {
       return yield* Effect.fail(notFound('No active space to leave'));
     }
-    const updated = yield* guardedUpdate(
-      "update space_members set state = 'left', left_at = ? where user_id = ? and state = 'active'",
-      now,
-      userId
-    );
-    if (updated.changes === 0) {
-      return yield* Effect.fail(notFound('No active space to leave'));
-    }
-
-    // Privacy hygiene: location sharing is ephemeral by design — leaving a
-    // space must not leave the caller's position row behind in the old
-    // space's scope. Best-effort (a missing row is the common case).
     const db = yield* Db;
-    yield* Effect.tryPromise({
-      try: () => db.d1.prepare('delete from location_shares where user_id = ?').bind(userId).run(),
+    // Leave is one atomic unit: membership flip, location cleanup, invite
+    // revocation, and archive-if-abandoned either all commit or all roll back.
+    // A failure after the membership flip used to leave an active invite into
+    // a space with no active members, and a retry could not repair it.
+    const results = yield* Effect.tryPromise({
+      try: () =>
+        db.batch([
+          db.d1
+            .prepare(
+              "update space_members set state = 'left', left_at = ? where user_id = ? and state = 'active'"
+            )
+            .bind(now, userId),
+          db.d1.prepare('delete from location_shares where user_id = ?').bind(userId),
+          db.d1
+            .prepare(
+              'update space_invites set revoked_at = ? where space_id = ? and redeemed_at is null and revoked_at is null'
+            )
+            .bind(now, spaceId),
+          db.d1
+            .prepare(
+              `update spaces set archived_at = ?, updated_at = ?
+               where id = ? and archived_at is null
+                 and not exists (
+                   select 1 from space_members where space_id = ? and state = 'active'
+                 )
+                 and exists (
+                   select 1 from space_members
+                   where space_id = ? and user_id = ? and state = 'left' and left_at = ?
+                 )`
+            )
+            .bind(now, now, spaceId, spaceId, spaceId, userId, now),
+        ]),
       catch: () => new InternalError({}),
     });
-
-    yield* archiveSpaceIfAbandoned(spaceId, now);
+    if ((results[0]?.meta?.changes ?? 0) === 0) {
+      return yield* Effect.fail(notFound('No active space to leave'));
+    }
     yield* logInfo('spaces: left', { userId });
     return { ok: true as const };
   });

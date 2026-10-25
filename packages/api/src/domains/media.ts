@@ -16,6 +16,7 @@ import { Logger, type LoggerService } from '../effects/logger';
 import { enqueueJob, type JobQueueService } from '../services/job-queue';
 import {
   MediaStore,
+  deleteKeyConfirmed,
   MEDIA_PRESIGN_TTL_SEC,
   type MediaStoreService,
 } from '../services/media-store';
@@ -242,6 +243,12 @@ export const completeUploadProgram = (
     if (!media) {
       return yield* Effect.fail(notFound('Media not found'));
     }
+    // Completing is a write into the media's Space. A caller who left (or
+    // never belonged) must not finish an upload that charges that Space.
+    const activeSpaceId = yield* getActiveSpaceId(userId);
+    if (activeSpaceId !== media.space_id) {
+      return yield* Effect.fail(notFound('Media not found'));
+    }
     if (media.created_by_user_id !== userId) {
       return yield* Effect.fail(forbidden('You can only confirm your own uploads'));
     }
@@ -263,12 +270,21 @@ export const completeUploadProgram = (
 
     if (!verified) {
       // The device lied (wrong content type, wrong size) or the object never
-      // landed. Terminal: pending → failed, and the caller gets a 400.
+      // landed. Terminal: pending → failed, and the caller gets a 400. Reclaim
+      // the object; if that cannot be confirmed, keep the reserved bytes
+      // counted and let the orphan sweep retry.
+      const removed = yield* deleteKeyConfirmed(store, media.storage_key).pipe(
+        Effect.catchAll(() => Effect.succeed(false))
+      );
       yield* Effect.tryPromise({
         try: () =>
           db.d1
-            .prepare(`update media_objects set upload_state = 'failed' where id = ? and upload_state = 'pending'`)
-            .bind(mediaId)
+            .prepare(
+              `update media_objects
+               set upload_state = 'failed', size_bytes = case when ? = 1 then 0 else size_bytes end
+               where id = ? and upload_state = 'pending'`
+            )
+            .bind(removed ? 1 : 0, mediaId)
             .run(),
         catch: () => new InternalError({}),
       });
@@ -367,7 +383,7 @@ const rejectOverQuotaUpload = (
       yield* Effect.tryPromise({
         try: () =>
           d1
-            .prepare(`update media_objects set upload_state = 'failed' where id = ? and upload_state = 'pending'`)
+            .prepare(`update media_objects set upload_state = 'failed', size_bytes = 0 where id = ? and upload_state = 'pending'`)
             .bind(media.id)
             .run(),
         catch: () => new InternalError({}),

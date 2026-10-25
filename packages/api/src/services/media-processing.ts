@@ -8,6 +8,7 @@ import { Db, type DbService } from '../effects/d1';
 import { Logger, type LoggerService } from '../effects/logger';
 import {
   MediaStore,
+  deleteKeyConfirmed,
   type MediaStoreService,
 } from '../services/media-store';
 import { mediaDisplayKey, mediaThumbKey } from '../domains/media';
@@ -88,27 +89,40 @@ interface MediaRowLike {
   processing_attempts: number;
 }
 
-/** Guarded terminal transition complete → failed (best-effort). */
-function markFailed(db: DbService, mediaId: string, attempts: number, at: number): Effect.Effect<void, never, LoggerService> {
-  return Effect.tryPromise({
-    try: () =>
-      db.d1
-        .prepare(
-          `update media_objects
-           set upload_state = 'failed', processing_attempts = ?, completed_at = ?
-           where id = ? and upload_state = 'complete'`
-        )
-        .bind(attempts + 1, at, mediaId)
-        .run(),
-    catch: () => new Error('media: failed-state update failed'),
-  }).pipe(
-    Effect.catchAll(() =>
-      Effect.flatMap(Logger, (logger) => {
-        logger.warn('media: failed-state update failed', { mediaId });
-        return Effect.void;
-      })
-    )
-  );
+/** Guarded terminal transition complete → failed, reclaiming the stored bytes when possible. */
+function markFailed(
+  db: DbService,
+  store: MediaStoreService,
+  mediaId: string,
+  storageKey: string,
+  attempts: number,
+  at: number
+): Effect.Effect<void, never, LoggerService> {
+  return Effect.gen(function* () {
+    const removed = yield* deleteKeyConfirmed(store, storageKey).pipe(
+      Effect.catchAll(() => Effect.succeed(false))
+    );
+    yield* Effect.tryPromise({
+      try: () =>
+        db.d1
+          .prepare(
+            `update media_objects
+             set upload_state = 'failed', processing_attempts = ?, completed_at = ?,
+                 size_bytes = case when ? = 1 then 0 else size_bytes end
+             where id = ? and upload_state = 'complete'`
+          )
+          .bind(attempts + 1, at, removed ? 1 : 0, mediaId)
+          .run(),
+      catch: () => new Error('media: failed-state update failed'),
+    }).pipe(
+      Effect.catchAll(() =>
+        Effect.flatMap(Logger, (logger) => {
+          logger.warn('media: failed-state update failed', { mediaId });
+          return Effect.void;
+        })
+      )
+    );
+  });
 }
 
 /**
@@ -164,7 +178,7 @@ function sanitizeMediaBody(
       });
       if (!original) {
         // Object missing (never uploaded / purged) — terminal: fail the row.
-        yield* markFailed(db, mediaId, row.processing_attempts, yield* nowMs);
+        yield* markFailed(db, store, mediaId, row.storage_key, row.processing_attempts, yield* nowMs);
         logger.warn('media: original object missing, marked failed', { mediaId });
         return;
       }
@@ -176,7 +190,7 @@ function sanitizeMediaBody(
         })
       );
       if (bytes.byteLength > MEDIA_MAX_BYTES) {
-        yield* markFailed(db, mediaId, row.processing_attempts, yield* nowMs);
+        yield* markFailed(db, store, mediaId, row.storage_key, row.processing_attempts, yield* nowMs);
         logger.warn('media: oversized object, marked failed', { mediaId });
         return;
       }
@@ -186,7 +200,7 @@ function sanitizeMediaBody(
         catch: () => new Error('media: magic-byte detection failed'),
       });
       if (!magicMatches(row.mime_type, detected)) {
-        yield* markFailed(db, mediaId, row.processing_attempts, yield* nowMs);
+        yield* markFailed(db, store, mediaId, row.storage_key, row.processing_attempts, yield* nowMs);
         logger.warn('media: magic-byte mismatch, marked failed', {
           mediaId,
           declared: row.mime_type,
@@ -237,7 +251,7 @@ function sanitizeMediaBody(
       const width = metadata.width ?? 0;
       const height = metadata.height ?? 0;
       if (width <= 0 || height <= 0 || width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-        yield* markFailed(db, mediaId, row.processing_attempts, yield* nowMs);
+        yield* markFailed(db, store, mediaId, row.storage_key, row.processing_attempts, yield* nowMs);
         logger.warn('media: dimension cap exceeded, marked failed', { mediaId, width, height });
         return;
       }
@@ -255,7 +269,7 @@ function sanitizeMediaBody(
         catch: () => new Error('media: display encode failed'),
       });
       if (display.byteLength > DISPLAY_MAX_BYTES) {
-        yield* markFailed(db, mediaId, row.processing_attempts, yield* nowMs);
+        yield* markFailed(db, store, mediaId, row.storage_key, row.processing_attempts, yield* nowMs);
         logger.warn('media: display cap exceeded, marked failed', { mediaId });
         return;
       }
@@ -270,7 +284,7 @@ function sanitizeMediaBody(
         catch: () => new Error('media: thumb encode failed'),
       });
       if (thumb.byteLength > THUMB_MAX_BYTES) {
-        yield* markFailed(db, mediaId, row.processing_attempts, yield* nowMs);
+        yield* markFailed(db, store, mediaId, row.storage_key, row.processing_attempts, yield* nowMs);
         logger.warn('media: thumb cap exceeded, marked failed', { mediaId });
         return;
       }
@@ -324,21 +338,22 @@ export const sanitizeMediaJob = (
     Effect.catchAll((error) =>
       Effect.gen(function* () {
         const db = yield* Db;
+        const store = yield* MediaStore;
         const logger = yield* Logger;
 
-        // Re-read the current attempt count (concurrent deliveries may have
-        // bumped it already).
+        // Re-read the current attempt count and storage key (concurrent
+        // deliveries may have bumped it already).
         const row = yield* Effect.tryPromise({
           try: () =>
             db.d1
               .prepare(
-                'select processing_attempts from media_objects where id = ? limit 1'
+                'select processing_attempts, storage_key from media_objects where id = ? limit 1'
               )
               .bind(mediaId)
-              .first<{ processing_attempts: number }>(),
+              .first<{ processing_attempts: number; storage_key: string }>(),
           catch: () => new Error('media: attempts read failed'),
         }).pipe(
-          Effect.catchAll(() => Effect.succeed({ processing_attempts: 0 }))
+          Effect.catchAll(() => Effect.succeed({ processing_attempts: 0, storage_key: '' }))
         );
 
         if (!row) {
@@ -349,7 +364,7 @@ export const sanitizeMediaJob = (
 
         const nextAttempts = row.processing_attempts + 1;
         if (nextAttempts >= MAX_MEDIA_PROCESSING_ATTEMPTS) {
-          yield* markFailed(db, mediaId, row.processing_attempts, yield* nowMs);
+          yield* markFailed(db, store, mediaId, row.storage_key, row.processing_attempts, yield* nowMs);
           logger.error('media: sanitize terminally failed', {
             mediaId,
             attempts: nextAttempts,

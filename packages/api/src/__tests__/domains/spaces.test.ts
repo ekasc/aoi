@@ -88,6 +88,10 @@ describe('createSpaceProgram', () => {
     expect(result.space.partnerName).toBe('Bob');
     expect(result.space.createdByUserId).toBe(USER_A);
     expect(result.space.inviteCode).toMatch(/^[A-Z2-9]{6}$/);
+    expect(result.space.inviteExpiresAt).not.toBeNull();
+    expect(Date.parse(result.space.inviteExpiresAt!) - Date.parse(result.space.createdAt)).toBe(
+      15 * 60 * 1000
+    );
 
     const members = ctx.d1.rawDb.prepare('select * from space_members').all();
     expect(members).toHaveLength(1);

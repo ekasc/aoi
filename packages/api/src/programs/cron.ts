@@ -452,7 +452,7 @@ export const mediaPurgeProgram = Effect.gen(function* () {
       try: () =>
         db.d1
           .prepare(
-            `select storage_key, variant_keys from media_objects`
+            `select storage_key, variant_keys from media_objects where upload_state != 'failed'`
           )
           .all<{ storage_key: string; variant_keys: string | null }>(),
       catch: () => new Error('cron: known-keys query failed'),

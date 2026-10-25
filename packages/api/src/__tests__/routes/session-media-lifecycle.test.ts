@@ -247,7 +247,7 @@ describe('moment deletion releases unreferenced media', () => {
     expect(await mediaUsedBytes(app, TOKEN_A)).toBe(SIZE);
   });
 
-  it('a reference created before the delete wins; creating onto dead media fails honestly', async () => {
+  it('a non-owner delete cannot release the owner\'s media', async () => {
     const { harness, app } = makeApp();
     const spaceId = await setupPairedSpace(app, harness);
     insertCompleteMedia(harness, spaceId, MEDIA_A);
@@ -269,13 +269,11 @@ describe('moment deletion releases unreferenced media', () => {
       body: JSON.stringify({ expectedUpdatedAt: middleVersion }),
     });
     expect(deletedMiddle.status).toBe(200);
-    expect(mediaRow(harness, MEDIA_A)?.deleted_at).toBeTypeOf('number');
-    const resurrect = await app.request('/v1/spaces/current/moments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({ type: 'media', title: 'Ghost', mediaId: MEDIA_A, clientId: 'client-race-4' }),
-    });
-    expect(resurrect.status).toBe(404);
+    // B never owned MEDIA_A; deleting B's own reference must not tombstone
+    // the owner's upload.
+    expect(mediaRow(harness, MEDIA_A)?.deleted_at).toBeNull();
+    const reuse = await createPhotoMoment(app, TOKEN_A, MEDIA_A, 'client-race-4');
+    expect(reuse.id).toBeTruthy();
   });
 
   it('deleting a moment with pending media releases the reservation; late complete fails', async () => {
