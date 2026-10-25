@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Share, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -11,27 +11,15 @@ import { useSession } from '@/features/session/session-context';
 import { useSpace } from '@/features/space/space-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
-type PartnerInvitationProps = {
-  /**
-   * `section` is the stable status block in Account: membership when the
-   * partner has joined, an invitation when they have not.
-   *
-   * `inline` is the quiet second action under the first-page dedication, and
-   * it only exists while the space is waiting. Inviting is easy to find, not
-   * a badge that follows every tab.
-   */
-  variant?: 'section' | 'inline';
-};
-
 /**
- * The one invitation surface, shared by Account and the first empty page.
+ * The one invitation surface, in Account.
  *
  * It reads the space directly rather than taking a code or a waiting flag, so
- * both callers show the same server-derived membership state and the same
- * expiry recovery. Nothing here knows which tab is focused, where the tab bar
- * is, or whether the sky is on screen.
+ * it shows the same server-derived membership state and expiry recovery the
+ * post-create sky welcome does. Nothing here knows which tab is focused, where
+ * the tab bar is, or whether the sky is on screen.
  */
-export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProps) {
+export function PartnerInvitation() {
   const { user } = useSession();
   const { space, regenerateInvite, refreshSpace } = useSpace();
   const muted = useThemeColor({}, 'muted');
@@ -41,14 +29,28 @@ export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProp
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
-  const [openedAt, setOpenedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
 
   const waitingForPartner = Boolean(space) && !space?.partnerJoined;
   const inviteCode = space?.inviteCode ?? '';
-  const expired = Boolean(space?.inviteExpiresAt && Date.parse(space.inviteExpiresAt) <= openedAt);
+  const expiresAt = space?.inviteExpiresAt ? Date.parse(space.inviteExpiresAt) : null;
+  const remainingMs = expiresAt === null ? null : Math.max(0, expiresAt - now);
+  const remainingSeconds = remainingMs === null ? null : Math.ceil(remainingMs / 1000);
+  const remainingLabel = remainingSeconds === null
+    ? null
+    : remainingSeconds >= 3600
+      ? `${Math.floor(remainingSeconds / 3600)}h ${Math.floor((remainingSeconds % 3600) / 60)}m`
+      : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`;
+  const expired = remainingMs === 0;
+
+  useEffect(() => {
+    if (!visible || expiresAt === null) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt, visible]);
 
   const open = useCallback(() => {
-    setOpenedAt(Date.now());
+    setNow(Date.now());
     setError('');
     setNotice('');
     setVisible(true);
@@ -77,7 +79,7 @@ export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProp
           setError("Couldn't create a new code. Please try again.");
           return;
         }
-        setOpenedAt(Date.now());
+        setNow(Date.now());
       }
       // Opening the share sheet is not delivery and not membership, so it
       // changes nothing about the state shown here.
@@ -120,7 +122,7 @@ export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProp
     setNotice('');
     const now = Date.now();
     if (space?.inviteExpiresAt && Date.parse(space.inviteExpiresAt) <= now) {
-      setOpenedAt(now);
+      setNow(now);
       setError('This code has expired. Share invite makes a new one.');
       return;
     }
@@ -131,6 +133,28 @@ export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProp
       setError("Couldn't copy the code. You can select it above instead.");
     }
   }, [inviteCode, space]);
+
+  const handleNewCode = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const code = await regenerateInvite();
+      if (!code) {
+        setError("Couldn't create a new code. Please try again.");
+        return;
+      }
+      setNow(Date.now());
+      setNotice('New code ready.');
+    } catch {
+      setError("Couldn't create a new code. Please try again.");
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }, [regenerateInvite]);
 
   if (!space) {
     return null;
@@ -155,17 +179,24 @@ export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProp
               Your partner has not joined yet. You can keep saving memories while you wait.
             </ThemedText>
             {inviteCode && !expired ? (
-              <ThemedText
-                accessibilityLabel={`Invite code, ${inviteCode.split('').join(' ')}`}
-                selectable
-                type="subheading"
-              >
-                {inviteCode}
-              </ThemedText>
+              <>
+                <ThemedText
+                  accessibilityLabel={`Invite code, ${inviteCode.split('').join(' ')}`}
+                  selectable
+                  type="subheading"
+                >
+                  {inviteCode}
+                </ThemedText>
+                <ThemedText type="caption" style={{ color: muted }}>
+                  {remainingLabel === null
+                    ? 'This code expires after 15 minutes.'
+                    : `Expires in ${remainingLabel}.`}
+                </ThemedText>
+              </>
             ) : (
               <ThemedText type="caption" style={{ color: muted }}>
                 {inviteCode
-                  ? 'This code has expired. Share invite makes a new one.'
+                  ? 'This code has expired. Make a new one before sharing.'
                   : 'Share invite makes your code.'}
               </ThemedText>
             )}
@@ -175,6 +206,14 @@ export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProp
               label={busy ? 'Please wait…' : 'Share invite'}
               onPress={() => void handleShare()}
             />
+            {expired ? (
+              <Button
+                disabled={busy}
+                label="Make a new code"
+                variant="secondary"
+                onPress={() => void handleNewCode()}
+              />
+            ) : null}
             {inviteCode && !expired ? (
               <Button
                 disabled={busy}
@@ -213,24 +252,6 @@ export function PartnerInvitation({ variant = 'section' }: PartnerInvitationProp
       </ScrollView>
     </NativeSheet>
   );
-
-  if (variant === 'inline') {
-    if (!waitingForPartner) {
-      return null;
-    }
-    return (
-      <>
-        <Button
-          accessibilityHint="Shows your invite code, sharing options and joining instructions"
-          label="Invite your partner"
-          onPress={open}
-          size="sm"
-          variant="ghost"
-        />
-        {sheet}
-      </>
-    );
-  }
 
   return (
     <View style={styles.section}>

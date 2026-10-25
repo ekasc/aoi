@@ -44,6 +44,10 @@ const halfPalette = {
   disabled: '#A99AA3',
 };
 
+vi.mock('@/features/session/session-context', () => ({
+  useSession: () => ({ user: { displayName: 'Alice Moreau', email: 'alice@example.com' } }),
+}));
+
 vi.mock('@/features/theme/theme-context', () => ({
   useAoiTheme: () => ({
     colors: halfPalette,
@@ -275,9 +279,28 @@ describe('setup wizard screen', () => {
     expect(screen.getByText('joining their space')).toBeTruthy();
     expect(screen.getByText('creating our space')).toBeTruthy();
     // And the consequence of the choice is revealed on the same sheet.
+    expect(screen.getByText('Signed in as Alice Moreau')).toBeTruthy();
     expect(screen.getByText('Invite code')).toBeTruthy();
     expect(screen.getByText('Join space')).toBeTruthy();
     expect(screen.getByText('Back')).toBeTruthy();
+  });
+
+  it('explains a disabled join instead of leaving a dead button', () => {
+    flowMock.current = flow({ step: 'join', inviteCode: 'ABCDE', canJoin: false });
+    render(createElement(OnboardingWizard));
+    expect(screen.getByText('Enter all six characters to join.')).toBeTruthy();
+  });
+
+  it('names the existing-space conflict when an invite cannot be redeemed', () => {
+    flowMock.current = flow({
+      step: 'join',
+      inviteCode: 'ABCDEF',
+      canJoin: true,
+      skipToStory: true,
+    });
+    render(createElement(OnboardingWizard));
+    expect(screen.getByText('You’re already in a space')).toBeTruthy();
+    expect(screen.getByText('Open my space')).toBeTruthy();
   });
 
   it('fills the code boxes from a paste of the invite message', () => {
@@ -317,7 +340,7 @@ describe('setup wizard screen', () => {
     // only an example. A placeholder standing in for the label is the pattern
     // that hides the field and reads as pre-filled data.
     expect(WIZARD_SOURCE).toContain('label="Their name"');
-    expect(WIZARD_SOURCE).toContain('placeholder="June"');
+    expect(WIZARD_SOURCE).toMatch(/placeholder="e\.g\. [^"]+"/);
     expect(WIZARD_SOURCE).toContain('accessibilityLabel="Their name"');
     // The platform's own row rather than Material's underline, which reads as a
     // ported control on iOS.

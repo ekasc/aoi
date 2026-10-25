@@ -72,6 +72,11 @@ export function SkyWelcome({ details, onEnter }: { details: SkyEntry; onEnter: (
           </View>
         ) : <ThemedText style={muted}>{details.partnerName ? `${details.partnerName} is already here.` : 'Your space is ready.'}</ThemedText>}
         {details.kind === 'created' ? (
+          <ThemedText type="caption" style={muted}>
+            This code expires 15 minutes after it was made.
+          </ThemedText>
+        ) : null}
+        {details.kind === 'created' ? (
           <>
             <ThemedText type="body" style={muted}>Send this invite to your partner. They sign in on their phone and join your space with this code. You can start adding memories while you wait.</ThemedText>
             {/* The link is the good path and the share sheet is the natural way

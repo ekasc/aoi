@@ -27,6 +27,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { isDarkBackground } from '@/components/home/memory-sky';
 import { useAoiTheme } from '@/features/theme/theme-context';
+import { useSession } from '@/features/session/session-context';
 import { haptics } from '@/features/haptics/haptics';
 
 // Setup collects identity on paper. Memories owns the invitation and its sky.
@@ -43,7 +44,6 @@ const FOLIO: Record<string, string> = {
   identity: 'ii',
   join: 'i',
   minted: 'iii',
-  joined: 'iii',
 };
 
 const styles = StyleSheet.create({
@@ -223,10 +223,17 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     gap: Spacing[8],
   },
+  otpRowWrap: {
+    alignSelf: 'center',
+    height: 56,
+    maxWidth: OTP_ROW_WIDTH,
+    position: 'relative',
+    width: '100%',
+  },
   otpRow: {
     flexDirection: 'row',
     gap: OTP_GAP,
-    maxWidth: OTP_ROW_WIDTH,
+    height: '100%',
     width: '100%',
   },
   otpBox: {
@@ -244,14 +251,31 @@ const styles = StyleSheet.create({
     width: OTP_CELL,
   },
   /**
-   * Invisible but real: it carries the keyboard, the autofill and the paste,
-   * and it has to keep a tappable footprint inside the row it is painted on.
+   * Invisible but real: it covers the whole row, so a tap, a long-press and
+   * the native paste menu all land on the actual text control rather than a
+   * one-pixel target hidden behind the boxes.
    */
   otpField: {
-    height: 1,
-    opacity: 0.01,
+    backgroundColor: 'transparent',
+    bottom: 0,
+    color: 'transparent',
+    fontSize: 16,
+    left: 0,
+    padding: 0,
     position: 'absolute',
-    width: 1,
+    right: 0,
+    textAlign: 'center',
+    top: 0,
+  },
+  notice: {
+    flex: 1,
+    gap: Spacing[16],
+    justifyContent: 'center',
+    paddingHorizontal: PAGE_GUTTER,
+  },
+  accountLine: {
+    paddingBottom: Spacing[8],
+    paddingHorizontal: PAGE_GUTTER,
   },
   signOut: {
     paddingTop: Spacing[24],
@@ -448,25 +472,10 @@ function DoorBlock({
     );
   }
   if (flow.step === 'joined') {
-    // The one door whose line is not fixed: it names the person who was
-    // already there, which is the whole point of this beat.
-    const partner = flow.partnerName;
-    return (
-      <View>
-        <Door
-          detail={
-            partner
-              ? `You're in. ${partner} is already here.`
-              : "You're in. Your sky is shared now."
-          }
-          palette={palette}
-          sentence="We'll begin by joining their space"
-          state="settled"
-          tone={palette.partner}
-          visible="joining their space"
-        />
-      </View>
-    );
+    // The destination already says who is here. Repeating it on the setup
+    // sheet made the join feel like a confirmation dialog; the sky welcome is
+    // the one confirmation, and the handoff leaves on the next layout pass.
+    return null;
   }
   return <View>{create('settled')}</View>;
 }
@@ -527,23 +536,46 @@ function IdentityStep({
           label="Their name"
           maxLength={PARTNER_NAME_MAX}
           onChangeText={flow.setPartnerNameDraft}
-          placeholder="June"
+          placeholder="e.g. June"
           returnKeyType="done"
           tone="paper"
           value={flow.partnerNameDraft}
           variant="row"
         />
-        {/* The visible label is the book's word for it. The question is what a
-            screen reader hears, which is why it is passed separately. */}
-        <NativeDateTimeField
-          accessibilityLabel="When did you two start?"
-          label="Since"
-          mode="date"
-          onChange={flow.setStartDate}
-          textColor={palette.ink}
-          value={flow.startDate}
-          variant="row"
-        />
+        {/* The date is optional. An unset date is shown as a clear action, not
+            as today's date pretending to be a choice. */}
+        {flow.startDate ? (
+          <>
+            <NativeDateTimeField
+              accessibilityLabel="When did you two start?"
+              label="Since"
+              mode="date"
+              onChange={flow.setStartDate}
+              textColor={palette.ink}
+              value={flow.startDate}
+              variant="row"
+            />
+            <Pressable
+              accessibilityLabel="Skip the relationship start date"
+              accessibilityRole="button"
+              onPress={() => flow.setStartDate(null)}
+            >
+              <ThemedText type="link" style={{ color: palette.ink }}>
+                Skip the date
+              </ThemedText>
+            </Pressable>
+          </>
+        ) : (
+          <Pressable
+            accessibilityLabel="Add your relationship start date"
+            accessibilityRole="button"
+            onPress={() => flow.setStartDate(new Date())}
+          >
+            <ThemedText type="link" style={{ color: palette.ink }}>
+              Add your start date (optional)
+            </ThemedText>
+          </Pressable>
+        )}
         <View style={styles.actions}>
           {/* The name is required, but the button stays live: a disabled
               Continue that does nothing teaches nothing. Pressing it says
@@ -643,6 +675,11 @@ function JoinStep({
     <>
       <Animated.View entering={Reveal.up()} style={styles.form}>
         <InviteCodeBoxes flow={flow} palette={palette} />
+        {flow.inviteCode.trim().length > 0 && !flow.canJoin ? (
+          <ThemedText type="caption" style={{ color: palette.muted }}>
+            Enter all six characters to join.
+          </ThemedText>
+        ) : null}
         <Button
           label={flow.isSubmitting ? 'Joining…' : 'Join space'}
           onPress={() => void flow.submitJoin()}
@@ -682,7 +719,6 @@ function InviteCodeBoxes({
   palette: StepPalette;
 }) {
   const [focused, setFocused] = useState(false);
-  const inputRef = useRef<TextInput | null>(null);
   // Boxes display the normalized code; the flow keeps whatever arrives and
   // judges it on its own terms.
   const code = normalizeInviteCode(flow.inviteCode);
@@ -690,13 +726,7 @@ function InviteCodeBoxes({
   const activeIndex = focused ? Math.min(code.length, 5) : -1;
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Invite code"
-      accessibilityHint="Opens the keyboard to type or paste the 6-character code"
-      onPress={() => inputRef.current?.focus()}
-      style={styles.otpGroup}
-    >
+    <View style={styles.otpGroup}>
       <ThemedText
         accessibilityLiveRegion="polite"
         style={{ color: palette.muted }}
@@ -704,57 +734,64 @@ function InviteCodeBoxes({
       >
         Invite code
       </ThemedText>
-      <TextInput
-        ref={inputRef}
-        accessibilityLabel="Invite code, 6 characters"
-        autoCapitalize="characters"
-        autoCorrect={false}
-        keyboardType="default"
-        maxLength={6}
-        onBlur={() => setFocused(false)}
-        onChangeText={(value) => {
-          const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-          if (cleaned.length < 6) {
-            flow.setInviteCode(cleaned);
-            return;
-          }
-          // A paste of more typing than a code — the invite message itself is
-          // the usual cargo — is read the way the flow reads the clipboard:
-          // the code is a word inside the sentence, so pick it out.
-          const fromMessage =
-            value.length > 6 ? findInviteCode(value) : null;
-          flow.setInviteCode(fromMessage ?? cleaned.slice(0, 6));
-        }}
-        onFocus={() => setFocused(true)}
-        // Invisible but pressable, so the keyboard still arrives: it is the
-        // one real field, and the boxes are its reflection.
-        style={styles.otpField}
-        returnKeyType="done"
-        textContentType="oneTimeCode"
-        value={code}
-      />
-      <View pointerEvents="none" style={styles.otpRow}>
-        {Array.from({ length: 6 }, (_, index) => {
-          const char = code[index] ?? '';
-          const active = index === activeIndex;
-          return (
-            <View
-              // Six fixed cells: the keys stabilise as long as the code does.
-              key={index}
-              accessible={false}
-              style={[
-                styles.otpBox,
-                { borderColor: char || active ? palette.focusRing : palette.border },
-              ]}
-            >
-              <ThemedText style={{ color: palette.ink }} type="title">
-                {char}
-              </ThemedText>
-            </View>
-          );
-        })}
+      <View style={styles.otpRowWrap}>
+        <TextInput
+          accessibilityLabel="Invite code, 6 characters"
+          autoCapitalize="characters"
+          autoCorrect={false}
+          caretHidden
+          keyboardType="default"
+          // The field has to receive the whole message, not just six
+          // characters: the common paste is the invitation sentence, and
+          // truncating it in the native field loses the code inside it.
+          maxLength={128}
+          onBlur={() => setFocused(false)}
+          onChangeText={(value) => {
+            const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (cleaned.length < 6) {
+              flow.setInviteCode(cleaned);
+              return;
+            }
+            // A paste of more typing than a code — the invite message itself is
+            // the usual cargo — is read the way the flow reads the clipboard:
+            // the code is a word inside the sentence, so pick it out.
+            const fromMessage =
+              value.length > 6 ? findInviteCode(value) : null;
+            flow.setInviteCode(fromMessage ?? cleaned.slice(0, 6));
+          }}
+          onFocus={() => setFocused(true)}
+          // The real field covers the boxes so a long-press lands on the
+          // native text control and opens its paste menu. Its text is
+          // transparent; the boxes below are the visible reflection.
+          style={styles.otpField}
+          returnKeyType="done"
+          textAlign="center"
+          textContentType="oneTimeCode"
+          value={code}
+        />
+        <View pointerEvents="none" style={styles.otpRow}>
+          {Array.from({ length: 6 }, (_, index) => {
+            const char = code[index] ?? '';
+            const active = index === activeIndex;
+            return (
+              <View
+                // Six fixed cells: the keys stabilise as long as the code does.
+                key={index}
+                accessible={false}
+                style={[
+                  styles.otpBox,
+                  { borderColor: char || active ? palette.focusRing : palette.border },
+                ]}
+              >
+                <ThemedText style={{ color: palette.ink }} type="title">
+                  {char}
+                </ThemedText>
+              </View>
+            );
+          })}
+        </View>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -775,7 +812,7 @@ function SignOut({
         Wrong space?{' '}
       </ThemedText>
       <Pressable
-        accessibilityHint="Signs out and returns to the landing screen"
+        accessibilityHint="Signs out so you can use another account"
         accessibilityLabel="Sign out"
         accessibilityRole="link"
         hitSlop={8}
@@ -826,6 +863,38 @@ function useRise(target: number, durationMs: number, immediate: boolean) {
   return value;
 }
 
+/**
+ * An invite cannot be redeemed by someone who already has a space.
+ *
+ * The setup route is the only place an invite link can land. Redirecting
+ * straight to Memories made the link look successful while doing nothing;
+ * this screen names the conflict and offers the two real exits.
+ */
+function ExistingSpaceNotice({ flow }: { flow: ReturnType<typeof useOnboardingFlow> }) {
+  const { colors } = useAoiTheme();
+  return (
+    <View style={[styles.notice, { backgroundColor: colors.background }]}>
+      <ThemedText style={{ color: colors.textMuted }} type="meta">
+        aoi
+      </ThemedText>
+      <ThemedText style={{ color: colors.textPrimary }} type="title">
+        You&rsquo;re already in a space
+      </ThemedText>
+      <ThemedText style={{ color: colors.textSecondary }} type="body">
+        This invite can&rsquo;t be added while you&rsquo;re already in a space. Open your
+        space, or sign out and open the invite link again with the account that
+        should join.
+      </ThemedText>
+      <Button label="Open my space" onPress={flow.enterStory} />
+      <Button
+        label="Sign out"
+        variant="secondary"
+        onPress={() => void flow.signOut()}
+      />
+    </View>
+  );
+}
+
 export function OnboardingWizard({ onEnter }: { onEnter?: () => void } = {}) {
   const state = useOnboardingFlow();
   const flow = useMemo(() => onEnter ? { ...state, enterStory: onEnter } : state, [onEnter, state]);
@@ -848,7 +917,12 @@ export function OnboardingWizard({ onEnter }: { onEnter?: () => void } = {}) {
     haptics.tap();
     flow.enterStory();
   }, [onSky, prepare, flow, source]);
-  if (flow.skipToStory) return <Redirect href="/(app)/(tabs)/(memories)" />;
+  if (flow.skipToStory) {
+    if (flow.inviteCode.trim().length > 0) {
+      return <ExistingSpaceNotice flow={flow} />;
+    }
+    return <Redirect href="/(app)/(tabs)/(memories)" />;
+  }
   return <OnboardingForm flow={visibleFlow} inert={onSky} />;
 }
 
@@ -856,6 +930,8 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
   const visibleFlow = flow;
   const insets = useSafeAreaInsets();
   const { colors } = useAoiTheme();
+  const { user } = useSession();
+  const accountLabel = user?.displayName?.trim() || user?.email?.trim() || 'your account';
   const palette = useStepPalette();
   const dark = isDarkBackground(colors.background);
   const reduceMotion = useReducedMotion();
@@ -935,6 +1011,11 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
               </ThemedText>
               <ThemedText style={{ color: palette.muted }} type="meta">
                 {FOLIO[visibleFlow.step]}
+              </ThemedText>
+            </View>
+            <View style={styles.accountLine}>
+              <ThemedText style={{ color: palette.muted }} type="caption">
+                Signed in as {accountLabel}
               </ThemedText>
             </View>
 

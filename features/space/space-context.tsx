@@ -94,24 +94,36 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		};
 	}, [repository, sessionStatus, user]);
 
+	// Mutation callbacks started under one account must not write state after
+	// the session has changed. The hydration effect and refreshSpace already
+	// guard this; create/join/update/leave/regenerate need the same check
+	// because their requests can also outlive a sign-out or account switch.
+	const isStillActiveUser = useCallback(
+		(userId: string | undefined) =>
+			Boolean(userId) && activeUser.current === userId,
+		[],
+	);
+
 	const createSpace = useCallback(
 		async (input: CreateSpaceInput) => {
 			const nextSpace = await repository.createSpace(input);
+			if (!isStillActiveUser(user?.id)) return nextSpace;
 			setSpace(nextSpace);
 			setStatus("ready");
 			return nextSpace;
 		},
-		[repository],
+		[isStillActiveUser, repository, user?.id],
 	);
 
 	const joinSpace = useCallback(
 		async (input: JoinSpaceInput) => {
 			const joinedSpace = await repository.joinSpace(input);
+			if (!isStillActiveUser(user?.id)) return joinedSpace;
 			setSpace(joinedSpace);
 			setStatus("ready");
 			return joinedSpace;
 		},
-		[repository],
+		[isStillActiveUser, repository, user?.id],
 	);
 
 	const updateSpace = useCallback(
@@ -124,11 +136,12 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 				user.id,
 				input,
 			);
+			if (!isStillActiveUser(user.id)) return nextSpace;
 			setSpace(nextSpace);
 			setStatus(nextSpace ? "ready" : "none");
 			return nextSpace;
 		},
-		[repository, user],
+		[isStillActiveUser, repository, user],
 	);
 
 	const clearSpace = useCallback(async () => {
@@ -137,9 +150,10 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		}
 
 		await repository.clearSpaceForUser(user.id);
+		if (!isStillActiveUser(user.id)) return;
 		setSpace(null);
 		setStatus("none");
-	}, [repository, user]);
+	}, [isStillActiveUser, repository, user]);
 
 	const leaveSpace = useCallback(async () => {
 		if (!user) {
@@ -147,9 +161,10 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		}
 
 		await repository.leaveSpace(user.id);
+		if (!isStillActiveUser(user.id)) return;
 		setSpace(null);
 		setStatus("none");
-	}, [repository, user]);
+	}, [isStillActiveUser, repository, user]);
 
 	const regenerateInvite = useCallback(async () => {
 		if (!user) {
@@ -159,13 +174,14 @@ export function SpaceProvider({ children }: PropsWithChildren) {
 		const inviteCode = await repository.regenerateInvite(user.id);
 		// Re-read so expiry/joined state comes from the authority, not a guess.
 		const refreshed = await repository.getSpaceForUser(user.id).catch(() => null);
+		if (!isStillActiveUser(user.id)) return inviteCode;
 		if (refreshed) {
 			setSpace(refreshed);
 		} else {
 			setSpace((current) => (current ? { ...current, inviteCode } : current));
 		}
 		return inviteCode;
-	}, [repository, user]);
+	}, [isStillActiveUser, repository, user]);
 
 	const refreshSpace = useCallback(async () => {
 		if (!user) {

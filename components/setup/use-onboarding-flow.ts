@@ -50,12 +50,12 @@ export type OnboardingFlow = {
   /**
    * The day the relationship started, which is the sky's calendar.
    *
-   * Defaults to today rather than to null, and the field shows it, so the date
-   * is never invented behind the reader's back: it is on screen, it is one tap
-   * to change, and a null here means the sky loses its timeline entirely.
+   * Null until the reader chooses a date. The product contract allows setup
+   * without one, and inventing today would give the sky a timeline the couple
+   * never supplied. The date is optional, visible, and one tap to set or clear.
    */
-  startDate: Date;
-  setStartDate: (value: Date) => void;
+  startDate: Date | null;
+  setStartDate: (value: Date | null) => void;
   /** The space's cover photo, chosen on the title page. */
   photoUri: string | null;
   setPhotoUri: (uri: string | null) => void;
@@ -136,7 +136,7 @@ export function useOnboardingFlow(): OnboardingFlow {
   // the next keystroke. It decides *when* the field speaks, never *what* it
   // says: the reason and its wording come from checkPartnerName.
   const [createAttempted, setCreateAttempted] = useState(false);
-  const [startDate, setStartDate] = useState<Date>(() => new Date());
+  const [startDate, setStartDate] = useState<Date | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   // What the space was actually made with, captured at the create rather than
   // read back from the space context: the context can lag the create, and the
@@ -252,7 +252,7 @@ export function useOnboardingFlow(): OnboardingFlow {
         createdByUserId: user.id,
         yourName: you,
         partnerName,
-        relationshipStartDate: toDateKey(startDate),
+        ...(startDate ? { relationshipStartDate: toDateKey(startDate) } : {}),
         ...(photoUri ? { photoUri } : {}),
       });
       spaceCreatedRef.current = true;

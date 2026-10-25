@@ -100,6 +100,22 @@ describe('onboarding create path (minimum pre-Story state)', () => {
     expect(replaceMock).toHaveBeenCalledWith('/(app)/(tabs)/(memories)');
   });
 
+  it('creates without inventing a relationship date when the date is skipped', async () => {
+    const { result } = renderHook(() => useOnboardingFlow());
+    await act(async () => {
+      result.current.goIdentity();
+      result.current.setPartnerNameDraft('June');
+    });
+    expect(result.current.startDate).toBeNull();
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+    expect(spaceMock.createSpace).toHaveBeenCalledTimes(1);
+    const sent = spaceMock.createSpace.mock.calls[0][0] as Record<string, unknown>;
+    expect('relationshipStartDate' in sent).toBe(false);
+    expect(result.current.step).toBe('minted');
+  });
+
   it('refuses to create an unnamed space and reports why, not just that', async () => {
     const { result } = renderHook(() => useOnboardingFlow());
     await act(async () => {
@@ -427,8 +443,7 @@ describe('onboarding flow surface', () => {
     expect(result.current.step).toBe('welcome');
     expect(result.current.skipToStory).toBe(false);
     expect(result.current.partnerName).toBe('');
-    // The date defaults to today rather than to null, because a null date is a
-    // sky with no calendar. It is on screen and one tap to change.
-    expect(result.current.startDate).toBeInstanceOf(Date);
+    // A date is not invented before the reader chooses one.
+    expect(result.current.startDate).toBeNull();
   });
 });

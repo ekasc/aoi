@@ -13,7 +13,6 @@ export default function AuthLayout() {
   const segments = useSegments();
   const routeName = segments[segments.length - 1];
   const isSignInRoute = routeName === 'sign-in';
-  const isVerifyRoute = routeName === 'verify-code';
   const isSpaceSetupRoute = routeName === 'space-setup';
   const isSignedInOnlyRoute = isSpaceSetupRoute;
 
@@ -32,7 +31,7 @@ export default function AuthLayout() {
       return null;
     }
 
-    if (isSignInRoute || isVerifyRoute) {
+    if (isSignInRoute) {
       if (spaceStatus !== 'ready') {
         return <Redirect href="/(auth)/space-setup" />;
       }
@@ -64,7 +63,6 @@ export default function AuthLayout() {
       }}
     >
       <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} />
-      <Stack.Screen name="verify-code" options={{ title: 'Verify code' }} />
       {/* The screen renders its own heading, so the nav bar stays out of it.
           Naming it here set a title and re-enabled a header the route had
           explicitly opted out of. */}

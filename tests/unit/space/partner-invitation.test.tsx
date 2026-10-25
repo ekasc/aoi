@@ -83,9 +83,9 @@ function waitingSpace(overrides: Record<string, any> = {}) {
   };
 }
 
-async function renderInvitation(variant?: 'section' | 'inline') {
+async function renderInvitation() {
   const { PartnerInvitation } = await import('@/components/space/partner-invitation');
-  return render(createElement(PartnerInvitation, variant ? { variant } : null));
+  return render(createElement(PartnerInvitation));
 }
 
 function openSheet() {
@@ -197,22 +197,6 @@ describe('PartnerInvitation', () => {
   it('renders nothing when the space has not loaded', async () => {
     state.space = null;
     const { container } = await renderInvitation();
-
-    expect(container.textContent).toBe('');
-  });
-});
-
-describe('inline invitation', () => {
-  it('offers a quiet invitation while waiting without taking over the page', async () => {
-    await renderInvitation('inline');
-
-    openSheet();
-    expect(screen.getByText('Share invite')).toBeTruthy();
-  });
-
-  it('disappears once the partner has joined', async () => {
-    state.space = waitingSpace({ partnerJoined: true, partnerName: 'June' });
-    const { container } = await renderInvitation('inline');
 
     expect(container.textContent).toBe('');
   });
