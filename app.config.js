@@ -40,12 +40,24 @@ module.exports = ({ config }) => {
   const ios = config.ios ?? {};
   const bundleId = ios.bundleIdentifier ?? PROD_BUNDLE_ID;
 
+  // The Apple auth config plugin adds the Sign in with Apple entitlement
+  // unconditionally, so it must be removed from the plugin list — not just
+  // switched off in ios config — for a personal-team build to sign.
+  const plugins = (config.plugins ?? []).filter((plugin) => {
+    const name = Array.isArray(plugin) ? plugin[0] : plugin;
+    return name !== 'expo-apple-authentication';
+  });
+
   return {
     ...config,
+    plugins,
     ios: {
       ...ios,
       bundleIdentifier: `${bundleId}${DEV_BUNDLE_SUFFIX}`,
+      // Local builds sign with the free personal team that owns the identity.
+      appleTeamId: process.env.AOI_DEV_TEAM_ID ?? '3D973X589K',
       // Dropped for a personal team. Both are re-added by the real build.
+      usesAppleSignIn: false,
       entitlements: {
         'com.apple.developer.applesignin': undefined,
         'aps-environment': undefined,
