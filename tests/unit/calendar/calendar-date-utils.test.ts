@@ -4,6 +4,8 @@ import {
   anniversaryInMonth,
   daysInMonth,
   daysUntilDate,
+  eventDayKeys,
+  isEventOnDate,
   findCountdownEvent,
   formatAgendaDayLabel,
   formatAnniversaryLabel,
@@ -363,9 +365,9 @@ describe('groupAgendaEvents', () => {
     });
 
     const days = groupAgendaEvents([ongoing], NOW);
-    expect(days).toHaveLength(1);
-    expect(days[0].key).toBe('2026-08-02');
-    expect(days[0].label).toBe('Sun, Aug 2');
+    expect(days.map((day) => day.key)).toEqual(['2026-08-03', '2026-08-04']);
+    expect(days[0].label).toBe('Today');
+    expect(days[1].label).toBe('Tomorrow');
   });
 
   it('drops events that already ended', () => {
@@ -452,5 +454,28 @@ describe('seed hour parsing', () => {
     expect(parseSeedHour('24')).toBeNull();
     expect(parseSeedHour('-1')).toBeNull();
     expect(parseSeedHour('lunchtime')).toBeNull();
+  });
+});
+
+describe('multi-day event visibility', () => {
+  it('covers every day of a multi-day all-day event', () => {
+    const event = makeEvent({
+      allDay: true,
+      startsAt: new Date(2026, 2, 10, 0, 0).toISOString(),
+      endsAt: new Date(2026, 2, 13, 0, 0).toISOString(),
+    });
+    expect(eventDayKeys(event)).toEqual(['2026-03-10', '2026-03-11', '2026-03-12']);
+    expect(isEventOnDate(event, new Date(2026, 2, 10))).toBe(true);
+    expect(isEventOnDate(event, new Date(2026, 2, 11))).toBe(true);
+    expect(isEventOnDate(event, new Date(2026, 2, 12))).toBe(true);
+    expect(isEventOnDate(event, new Date(2026, 2, 13))).toBe(false);
+  });
+
+  it('covers the next day for an event crossing midnight', () => {
+    const event = makeEvent({
+      startsAt: new Date(2026, 2, 10, 22, 0).toISOString(),
+      endsAt: new Date(2026, 2, 11, 2, 0).toISOString(),
+    });
+    expect(eventDayKeys(event)).toEqual(['2026-03-10', '2026-03-11']);
   });
 });

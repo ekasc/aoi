@@ -205,7 +205,7 @@ export const listEventsProgram = (
           .prepare(
             `${EVENT_SELECT}
              where space_id = ? and deleted_at is null
-               and ends_at >= ? and starts_at < ?
+               and ends_at > ? and starts_at < ?
              order by starts_at asc`
           )
           .bind(spaceId, fromMs, toMs)

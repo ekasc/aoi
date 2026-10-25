@@ -13,7 +13,7 @@ import {
 import {
 	addDays,
 	addMonths,
-	isEventOnDate,
+	eventDayKeys,
 	monthBounds,
 	startOfDay,
 	startOfMonth,
@@ -346,11 +346,7 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 	const eventsForDay = useMemo<Record<string, CalendarEvent[]>>(() => {
 		const map: Record<string, CalendarEvent[]> = {};
 		for (const event of events) {
-			const eventDate = new Date(event.startsAt);
-			// Gather all day keys this event falls on using isEventOnDate
-			// We iterate over all unique day keys present in events plus the event's own day
-			const dayKey = toDayKey(eventDate);
-			if (isEventOnDate(event, eventDate)) {
+			for (const dayKey of eventDayKeys(event)) {
 				if (!map[dayKey]) {
 					map[dayKey] = [];
 				}
@@ -398,19 +394,20 @@ export function CalendarProvider({ children }: PropsWithChildren) {
 
 	const monthSummary = useMemo<CalendarMonthSummary>(() => {
 		return events.reduce<CalendarMonthSummary>((summary, event) => {
-			const dayKey = toDayKey(new Date(event.startsAt));
-			const current = summary[dayKey] ?? {
-				total: 0,
-				youCount: 0,
-				partnerCount: 0,
-			};
+			for (const dayKey of eventDayKeys(event)) {
+				const current = summary[dayKey] ?? {
+					total: 0,
+					youCount: 0,
+					partnerCount: 0,
+				};
 
-			summary[dayKey] = {
-				total: current.total + 1,
-				youCount: current.youCount + (event.actor === "you" ? 1 : 0),
-				partnerCount:
-					current.partnerCount + (event.actor === "partner" ? 1 : 0),
-			};
+				summary[dayKey] = {
+					total: current.total + 1,
+					youCount: current.youCount + (event.actor === "you" ? 1 : 0),
+					partnerCount:
+						current.partnerCount + (event.actor === "partner" ? 1 : 0),
+				};
+			}
 
 			return summary;
 		}, {});

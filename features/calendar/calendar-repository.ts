@@ -191,7 +191,7 @@ export async function listEventsInMonth(monthStartIso: string, monthEndIso: stri
   const db = await getDatabase();
   const rows = await db.getAllAsync<CalendarEventRow>(
     `SELECT * FROM calendar_events
-     WHERE starts_at >= ? AND starts_at < ?
+     WHERE ends_at > ? AND starts_at < ?
      ORDER BY starts_at ASC`,
     monthStartIso,
     monthEndIso
@@ -204,7 +204,7 @@ export async function listEventsForDay(dayStartIso: string, dayEndIso: string) {
   const db = await getDatabase();
   const rows = await db.getAllAsync<CalendarEventRow>(
     `SELECT * FROM calendar_events
-     WHERE starts_at >= ? AND starts_at < ?
+     WHERE ends_at > ? AND starts_at < ?
      ORDER BY starts_at ASC`,
     dayStartIso,
     dayEndIso
@@ -221,7 +221,7 @@ export async function listEventsInRange(fromIso: string, toIso: string) {
   const db = await getDatabase();
   const rows = await db.getAllAsync<CalendarEventRow>(
     `SELECT * FROM calendar_events
-     WHERE starts_at < ? AND ends_at >= ?
+     WHERE starts_at < ? AND ends_at > ?
      ORDER BY starts_at ASC`,
     toIso,
     fromIso

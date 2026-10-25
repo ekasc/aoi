@@ -3,7 +3,7 @@ import { FlatList, StyleSheet, useWindowDimensions, type NativeScrollEvent, type
 
 import { YearMonthRow, yearSectionHeight, yearMiniWidth, yearRowCount, yearRowLayout, type YearPlans } from '@/components/calendar/year-section';
 import { useCalendar } from '@/features/calendar/calendar-context';
-import { toDayKey } from '@/features/calendar/calendar-date-utils';
+import { eventDayKeys } from '@/features/calendar/calendar-date-utils';
 import { getEventOwnership, type EventOwnershipTone } from '@/features/calendar/event-ownership';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { beginPhase, readPhases, resetPhases } from '@/features/dev/phase-timer';
@@ -54,10 +54,11 @@ export function YearPager({ initialYear, width, now, selectedDate, onOpen, onVis
       if (requestGeneration !== generation.current) return;
       const tones = new Map<string, EventOwnershipTone>();
       for (const event of events) {
-        const key = toDayKey(new Date(event.startsAt));
         const tone = getEventOwnership(event, { ownColor, partnerColor }).tone;
-        const previous = tones.get(key);
-        if (previous === undefined || TONE_RANK[tone] > TONE_RANK[previous]) tones.set(key, tone);
+        for (const key of eventDayKeys(event)) {
+          const previous = tones.get(key);
+          if (previous === undefined || TONE_RANK[tone] > TONE_RANK[previous]) tones.set(key, tone);
+        }
       }
       setPlans((current) => ({ ...current, [year]: { tones, failed: false } }));
     }, () => {

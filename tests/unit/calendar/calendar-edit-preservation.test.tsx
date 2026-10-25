@@ -196,20 +196,6 @@ describe('EditCalendarEventScreen preservation', () => {
     );
   });
 
-  it('keeps the weekly recurrence the toggle represents', async () => {
-    getEventById.mockResolvedValueOnce({ ...storedEvent, recurrence: 'weekly' as const });
-    const { default: EditCalendarEventScreen } = await import(
-      '@/app/(app)/calendar/edit/[id]'
-    );
-    render(<EditCalendarEventScreen />);
-
-    await waitFor(() => expect(screen.getByText('Save changes')).toBeTruthy());
-    fireEvent.click(screen.getByText('Save changes'));
-
-    await waitFor(() => expect(updateEventSpy).toHaveBeenCalledTimes(1));
-    expect(updateEventSpy.mock.calls[0][0].recurrence).toBe('weekly');
-  });
-
   it('saves where the event happens, trimmed', async () => {
     const { default: EditCalendarEventScreen } = await import(
       '@/app/(app)/calendar/edit/[id]'

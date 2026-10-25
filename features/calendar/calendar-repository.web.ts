@@ -256,7 +256,7 @@ export async function listEventsForDay(
 export async function listEventsInRange(fromIso: string, toIso: string) {
   const rows = await getRows();
   return rows
-    .filter((row) => row.starts_at < toIso && row.ends_at >= fromIso)
+    .filter((row) => row.starts_at < toIso && row.ends_at > fromIso)
     .sort(compareStartsAt)
     .map(toCalendarEvent);
 }

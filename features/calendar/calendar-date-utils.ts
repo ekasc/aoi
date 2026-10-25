@@ -117,8 +117,31 @@ export function initialEventStart(
 
 export const DEFAULT_EVENT_HOUR = 9;
 
+/**
+ * The local calendar days an event occupies.
+ *
+ * A timed event can cross midnight, and an all-day event stores an exclusive
+ * next-midnight end. Both must appear on every day they cover, not only the
+ * day they start.
+ */
+export function eventDayKeys(event: CalendarEvent): string[] {
+  const start = startOfDay(new Date(event.startsAt));
+  if (Number.isNaN(start.getTime())) return [];
+  const end = new Date(event.endsAt);
+  if (Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) {
+    return [toDayKey(start)];
+  }
+  const keys: string[] = [];
+  let cursor = start;
+  while (cursor.getTime() < end.getTime()) {
+    keys.push(toDayKey(cursor));
+    cursor = addDays(cursor, 1);
+  }
+  return keys;
+}
+
 export function isEventOnDate(event: CalendarEvent, date: Date) {
-  return toDayKey(new Date(event.startsAt)) === toDayKey(date);
+  return eventDayKeys(event).includes(toDayKey(date));
 }
 
 export type WeekBounds = { weekStart: Date; weekEnd: Date };
@@ -381,13 +404,20 @@ export function groupAgendaEvents(
   });
 
   const byDay = new Map<string, CalendarEvent[]>();
+  const windowStart = startOfDay(now);
   for (const event of upcoming) {
-    const key = toDayKey(new Date(event.startsAt));
-    const bucket = byDay.get(key);
-    if (bucket) {
-      bucket.push(event);
-    } else {
-      byDay.set(key, [event]);
+    for (const key of eventDayKeys(event)) {
+      const [year, month, day] = key.split('-').map(Number);
+      const dayDate = new Date(year, month - 1, day);
+      if (dayDate.getTime() < windowStart.getTime() || dayDate.getTime() >= windowEnd.getTime()) {
+        continue;
+      }
+      const bucket = byDay.get(key);
+      if (bucket) {
+        bucket.push(event);
+      } else {
+        byDay.set(key, [event]);
+      }
     }
   }
 
@@ -399,7 +429,7 @@ export function groupAgendaEvents(
     );
     days.push({
       key,
-      label: formatAgendaDayLabel(new Date(dayEvents[0].startsAt), now),
+      label: formatAgendaDayLabel(new Date(`${key}T00:00:00`), now),
       events: dayEvents,
     });
   }
