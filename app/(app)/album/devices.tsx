@@ -7,9 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Spacing } from '@/constants/theme';
 import {
   approveEnrolmentClaim,
+  enrolledProtocolDevices,
   enrolmentFingerprint,
   establishProtocolArchive,
   pendingEnrolmentClaims,
+  revokeProtocolDevice,
+  type EnrolledDevice,
   type PendingEnrolmentClaim,
   type ProtocolArchiveReady,
 } from '@/features/album/protocol-archive';
@@ -28,7 +31,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 type View_ =
   | { kind: 'loading' }
   | { kind: 'unavailable'; message: string }
-  | { kind: 'ready'; session: ProtocolArchiveReady; claims: PendingEnrolmentClaim[] }
+  | { kind: 'ready'; session: ProtocolArchiveReady; claims: PendingEnrolmentClaim[]; devices: EnrolledDevice[] }
   | { kind: 'approved'; deviceId: string };
 
 export default function DevicesRoute() {
@@ -38,6 +41,8 @@ export default function DevicesRoute() {
   const spaceId = space?.id;
   const [state, setState] = useState<View_>({ kind: 'loading' });
   const [selected, setSelected] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokedNotice, setRevokedNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +53,8 @@ export default function DevicesRoute() {
     await Promise.resolve();
     setBusy(true);
     setError(null);
+    setRevokedNotice(null);
+    setRevoking(null);
     try {
       const archive = await establishProtocolArchive({ spaceId });
       if (archive.status !== 'ready') {
@@ -61,7 +68,8 @@ export default function DevicesRoute() {
         return;
       }
       const claims = await pendingEnrolmentClaims(archive);
-      setState({ kind: 'ready', session: archive, claims });
+      const devices = await enrolledProtocolDevices(archive);
+      setState({ kind: 'ready', session: archive, claims, devices });
       setSelected((current) =>
         current && claims.some((claim) => claim.deviceId === current) ? current : null
       );
@@ -98,6 +106,32 @@ export default function DevicesRoute() {
     }
   }, [claim, state]);
 
+  const revokeTarget =
+    state.kind === 'ready' && revoking
+      ? (state.devices.find((device) => device.deviceId === revoking) ?? null)
+      : null;
+
+  const revoke = useCallback(async () => {
+    if (state.kind !== 'ready' || !revokeTarget) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await revokeProtocolDevice(state.session, revokeTarget.deviceId, new Date().toISOString());
+      setState({
+        ...state,
+        devices: state.devices.filter((device) => device.deviceId !== revokeTarget.deviceId),
+      });
+      setRevoking(null);
+      setRevokedNotice(
+        `Device ${revokeTarget.deviceId.slice(0, 8)} revoked. It will stop opening the shared album on its next check.`
+      );
+    } catch {
+      setError('Could not revoke that device. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }, [revokeTarget, state]);
+
   return (
     <View style={styles.page}>
       <Stack.Screen options={{ title: 'Devices' }} />
@@ -130,6 +164,76 @@ export default function DevicesRoute() {
 
         {state.kind === 'ready' ? (
           <>
+            <ThemedText type="subheading">Your devices</ThemedText>
+            <ThemedText type="body" style={styles.muted}>
+              These phones can open the shared album. Revoke one you no longer
+              use; it will lose access on its next check.
+            </ThemedText>
+            {state.devices.filter((device) => device.trusted).length === 0 ? (
+              <ThemedText type="body" style={styles.muted}>
+                No trusted devices are enrolled yet.
+              </ThemedText>
+            ) : (
+              state.devices
+                .filter((device) => device.trusted)
+                .map((device) => (
+                  <View key={device.deviceId} style={styles.deviceRow}>
+                    <ThemedText type="body">
+                      Device {device.deviceId.slice(0, 8)}
+                      {device.isCurrent ? ' · this phone' : ''}
+                      {device.isRoot ? ' · root device' : ''}
+                    </ThemedText>
+                    <ThemedText type="caption" style={styles.muted}>
+                      Added {device.createdAt.slice(0, 10)}
+                    </ThemedText>
+                    {!device.isCurrent ? (
+                      <Button
+                        label="Revoke"
+                        variant="secondary"
+                        size="sm"
+                        onPress={() => {
+                          setSelected(null);
+                          setError(null);
+                          setRevoking(device.deviceId);
+                        }}
+                        accessibilityLabel={`Revoke device ${device.deviceId}`}
+                      />
+                    ) : null}
+                  </View>
+                ))
+            )}
+            {revokeTarget ? (
+              <>
+                <ThemedText type="body" style={styles.muted}>
+                  {revokeTarget.isRoot
+                    ? `Revoke the root device ${revokeTarget.deviceId.slice(0, 8)}? This can lock out every phone that depends on it. Only continue if you have the recovery phrase. `
+                    : `Revoke device ${revokeTarget.deviceId.slice(0, 8)}? It will stop opening the shared album on its next check. `}
+                  This cannot be undone.
+                </ThemedText>
+                {error ? (
+                  <ThemedText type="body" accessibilityRole="alert" style={[styles.error, { color: danger }]}>
+                    {error}
+                  </ThemedText>
+                ) : null}
+                <Button
+                  label="Revoke this device"
+                  disabled={busy}
+                  onPress={() => void revoke()}
+                />
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  disabled={busy}
+                  onPress={() => setRevoking(null)}
+                />
+              </>
+            ) : null}
+            {revokedNotice ? (
+              <ThemedText type="body" accessibilityLiveRegion="polite" style={styles.muted}>
+                {revokedNotice}
+              </ThemedText>
+            ) : null}
+
             {state.claims.length === 0 ? (
               <>
                 <ThemedText type="subheading">No requests</ThemedText>
@@ -169,9 +273,9 @@ export default function DevicesRoute() {
                 <View style={styles.fingerprint}>
                   <ThemedText
                     type="title"
-                    accessibilityLabel={`Verification code ${enrolmentFingerprint(state.session, claim.signingPublicKey)}`}
+                    accessibilityLabel={`Verification code ${enrolmentFingerprint(state.session, claim.signingPublicKey, claim.agreementPublicKey)}`}
                   >
-                    {enrolmentFingerprint(state.session, claim.signingPublicKey)}
+                    {enrolmentFingerprint(state.session, claim.signingPublicKey, claim.agreementPublicKey)}
                   </ThemedText>
                 </View>
                 {error ? (
@@ -208,5 +312,6 @@ const styles = StyleSheet.create({
   content: { gap: Spacing[12], padding: Spacing[24] },
   muted: { opacity: 0.7 },
   error: {},
+  deviceRow: { gap: Spacing[4] },
   fingerprint: { paddingVertical: Spacing[16] },
 });

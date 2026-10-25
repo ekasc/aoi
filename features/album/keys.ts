@@ -154,14 +154,11 @@ export function verifyDeviceKey(
  * Both identities are sorted before hashing, so both people see the same
  * number regardless of who is holding the phone.
  */
-export function verificationFingerprint(
-  mine: Uint8Array,
-  theirs: Uint8Array,
-): string {
-  const a = toBase64(mine);
-  const b = toBase64(theirs);
-  const [first, second] = a < b ? [a, b] : [b, a];
-  const digest = sha256(new TextEncoder().encode(`aoi/verify/v1|${first}|${second}`));
+export function verificationFingerprint(...keys: Uint8Array[]): string {
+  // Every key that can change who receives the Space key belongs in the code.
+  // Sorting makes the string identical on both phones regardless of who shows it.
+  const payload = keys.map(toBase64).sort().join('|');
+  const digest = sha256(new TextEncoder().encode(`aoi/verify/v1|${payload}`));
   // 30 bytes as 60 hex characters in 12 groups of 5. Five is the group size
   // that survives being read aloud to another person; ten does not, and a
   // fingerprint nobody can compare reliably is not a check at all.

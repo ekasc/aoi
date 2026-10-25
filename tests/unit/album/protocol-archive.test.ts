@@ -8,6 +8,7 @@ import {
   type WireAlbumMediaReservationResponse,
   type WireAlbumProtocolSnapshot,
   type WireDeviceRecord,
+  type WireDeviceTombstone,
   type WireMediaManifest,
   type WireMediaTombstone,
   type WireRecoveryEnvelope,
@@ -32,6 +33,7 @@ import {
   publishProtocolDeviceRecord,
   readProtocolArchive,
   recoverProtocolArchive,
+  revokeProtocolDevice,
   removeProtocolPhoto,
   uploadProtocolPhoto,
   type ProtocolArchiveReady,
@@ -108,6 +110,7 @@ class FakeServer implements AlbumProtocolClient {
   readonly objects = new Map<string, { bytes: Uint8Array; etag: string }>();
   readonly manifests = new Map<string, WireMediaManifest>();
   readonly tombstones: WireMediaTombstone[] = [];
+  readonly deviceTombstones: WireDeviceTombstone[] = [];
   readonly offers = new Map<string, WireDeviceRecord>();
   withholdTombstones = false;
   failNextPut = false;
@@ -126,7 +129,7 @@ class FakeServer implements AlbumProtocolClient {
         createdAt: '2026-01-15T00:00:00.000Z',
       })),
       offers: [...this.offers.values()],
-      tombstones: [],
+      tombstones: this.deviceTombstones,
       envelopes: this.envelopes,
       recoveryEnvelopes: this.recoveryEnvelopes,
     };
@@ -157,6 +160,12 @@ class FakeServer implements AlbumProtocolClient {
 
   async putEnrollmentOffer(record: WireDeviceRecord) {
     this.offers.set(record.deviceId, record);
+  }
+
+  async postDeviceTombstone(tombstone: WireDeviceTombstone) {
+    if (!this.deviceTombstones.some((item) => JSON.stringify(item) === JSON.stringify(tombstone))) {
+      this.deviceTombstones.push(tombstone);
+    }
   }
 
   async putSpaceKeyEnvelope(envelope: WireSpaceKeyEnvelope) {
@@ -351,6 +360,22 @@ describe('the connected signed archive', () => {
     expect(read.photos).toHaveLength(1);
     expect(text(read.photos[0].bytes)).toBe('photo:alice.jpg');
     expect(read.photos[0].width).toBe(10);
+  });
+
+  it('revokes a paired device and does not let it look like a fresh claim', async () => {
+    const { server, alice, bob, bobKeys } = await couple();
+
+    await revokeProtocolDevice(alice, bob.deviceId, NOW);
+    expect(server.deviceTombstones).toHaveLength(1);
+
+    const again = await establishProtocolArchive({
+      spaceId: server.spaceId,
+      deviceId: 'device-bob',
+      client: server,
+      keyStore: keyStoreFor(bobKeys),
+      now: NOW,
+    });
+    expect(again.status).toBe('blocked');
   });
 
   it('lets Bob upload and Alice open the photo', async () => {
@@ -809,15 +834,16 @@ describe('the enrolment fingerprint', () => {
 
     // Bob is enrolled but is not the root. Both sides derive the code from the
     // joining key and the anchor's root key, so they agree anyway.
-    const fromApprover = enrolmentFingerprint(bob, carol.signing.publicKey);
+    const fromApprover = enrolmentFingerprint(bob, carol.signing.publicKey, carol.agreement.publicKey);
     const fromJoiner = joiningFingerprint(
       carol.signing.publicKey,
+      carol.agreement.publicKey,
       alice.anchor.rootSigningPublicKey
     );
     expect(fromApprover).toBe(fromJoiner);
 
     // And a different key is a different code: there is no near-miss to accept.
-    const wrong = enrolmentFingerprint(bob, device('device-other').signing.publicKey);
+    const wrong = enrolmentFingerprint(bob, device('device-other').signing.publicKey, device('device-other').agreement.publicKey);
     expect(wrong).not.toBe(fromApprover);
   });
 });

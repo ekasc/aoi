@@ -81,7 +81,10 @@ vi.mock('@/features/album/protocol-local-state', () => localState);
 const { default: EnrolDeviceRoute } = await import('@/app/(app)/album/enroll');
 
 function device() {
-  return { signing: { publicKey: new Uint8Array(32).fill(9) } };
+  return {
+    signing: { publicKey: new Uint8Array(32).fill(9) },
+    agreement: { publicKey: new Uint8Array(32).fill(8) },
+  };
 }
 
 beforeEach(() => {

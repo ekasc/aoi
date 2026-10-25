@@ -49,6 +49,8 @@ const archive = vi.hoisted(() => ({
   establish: vi.fn(),
   claims: vi.fn(),
   approve: vi.fn(),
+  devices: vi.fn(),
+  revoke: vi.fn(),
   fingerprint: vi.fn(() => 'CCCCC DDDDD EEEEE'),
 }));
 
@@ -56,6 +58,8 @@ vi.mock('@/features/album/protocol-archive', () => ({
   establishProtocolArchive: archive.establish,
   pendingEnrolmentClaims: archive.claims,
   approveEnrolmentClaim: archive.approve,
+  enrolledProtocolDevices: archive.devices,
+  revokeProtocolDevice: archive.revoke,
   enrolmentFingerprint: archive.fingerprint,
 }));
 
@@ -67,6 +71,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   archive.fingerprint.mockReturnValue('CCCCC DDDDD EEEEE');
   archive.establish.mockResolvedValue({ status: 'ready', ...session });
+  archive.devices.mockResolvedValue([
+    {
+      deviceId: 'device-alice',
+      createdAt: '2026-01-15T00:00:00.000Z',
+      isCurrent: true,
+      isRoot: true,
+      trusted: true,
+    },
+  ]);
 });
 
 describe('the devices screen', () => {
@@ -131,6 +144,39 @@ describe('the devices screen', () => {
 
     fireEvent.click(screen.getByText('Refresh'));
     await waitFor(() => expect(screen.getByText('Waiting to join')).toBeTruthy());
+  });
+
+  it('lists enrolled devices and revokes another one after confirmation', async () => {
+    archive.claims.mockResolvedValueOnce([]);
+    archive.devices.mockResolvedValueOnce([
+      {
+        deviceId: 'device-alice',
+        createdAt: '2026-01-15T00:00:00.000Z',
+        isCurrent: true,
+        isRoot: true,
+        trusted: true,
+      },
+      {
+        deviceId: 'device-bob',
+        createdAt: '2026-01-16T00:00:00.000Z',
+        isCurrent: false,
+        isRoot: false,
+        trusted: true,
+      },
+    ]);
+    archive.revoke.mockResolvedValueOnce({});
+    render(<DevicesRoute />);
+
+    await waitFor(() => expect(screen.getByText('Your devices')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText('Revoke device device-bob'));
+    await waitFor(() => expect(screen.getByText('Revoke this device')).toBeTruthy());
+    fireEvent.click(screen.getByText('Revoke this device'));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Device device-b revoked/)).toBeTruthy()
+    );
+    expect(archive.revoke).toHaveBeenCalledOnce();
+    expect(archive.revoke.mock.calls[0][1]).toBe('device-bob');
   });
 
   it('reports an unverifiable archive instead of the list', async () => {

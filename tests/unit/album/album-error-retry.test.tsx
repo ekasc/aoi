@@ -89,7 +89,10 @@ const localState = vi.hoisted(() => ({
   anchorsMatch: vi.fn((left: unknown, right: unknown) => left === right),
 }));
 const keyStore = vi.hoisted(() => ({
-  ensureDevice: vi.fn(async () => ({ signing: { publicKey: new Uint8Array(32).fill(9) } })),
+  ensureDevice: vi.fn(async () => ({
+    signing: { publicKey: new Uint8Array(32).fill(9) },
+    agreement: { publicKey: new Uint8Array(32).fill(8) },
+  })),
 }));
 
 vi.mock('@/features/album/protocol-archive', () => ({
@@ -117,7 +120,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   localState.readPinnedAnchor.mockResolvedValue({ state: 'none' as const });
   localState.anchorsMatch.mockImplementation((left: unknown, right: unknown) => left === right);
-  keyStore.ensureDevice.mockResolvedValue({ signing: { publicKey: new Uint8Array(32).fill(9) } });
+  keyStore.ensureDevice.mockResolvedValue({
+    signing: { publicKey: new Uint8Array(32).fill(9) },
+    agreement: { publicKey: new Uint8Array(32).fill(8) },
+  });
 });
 
 describe('unit: enroll screen error and retry', () => {

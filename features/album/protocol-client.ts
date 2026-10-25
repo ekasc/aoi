@@ -1,5 +1,6 @@
 import {
   wireAlbumDeviceRecordResponseSchema,
+  wireAlbumDeviceTombstoneResponseSchema,
   wireAlbumEnrollmentOfferResponseSchema,
   wireAlbumMediaManifestResponseSchema,
   wireAlbumMediaProtocolSchema,
@@ -14,6 +15,7 @@ import {
   type WireAlbumMediaReservationResponse,
   type WireAlbumProtocolSnapshot,
   type WireDeviceRecord,
+  type WireDeviceTombstone,
   type WireMediaManifest,
   type WireMediaTombstone,
   type WireRecoveryEnvelope,
@@ -65,6 +67,7 @@ export interface AlbumProtocolClient {
   putAnchor(anchor: WireSpaceTrustAnchor): Promise<void>;
   claimDevice(claim: DeviceClaimRequest): Promise<void>;
   putDeviceRecord(record: WireDeviceRecord): Promise<void>;
+  postDeviceTombstone(tombstone: WireDeviceTombstone): Promise<void>;
   putEnrollmentOffer(record: WireDeviceRecord): Promise<void>;
   putSpaceKeyEnvelope(envelope: WireSpaceKeyEnvelope): Promise<void>;
   putRecoveryEnvelope(generation: number, envelope: WireRecoveryEnvelope): Promise<void>;
@@ -124,6 +127,14 @@ function remoteClient(): AlbumProtocolClient {
         await request<unknown>(`${PROTOCOL}/devices/${encodeURIComponent(record.deviceId)}`, {
           method: 'PUT',
           body: JSON.stringify(record),
+        })
+      );
+    },
+    async postDeviceTombstone(tombstone) {
+      wireAlbumDeviceTombstoneResponseSchema.parse(
+        await request<unknown>(`${PROTOCOL}/device-tombstones`, {
+          method: 'POST',
+          body: JSON.stringify(tombstone),
         })
       );
     },
@@ -216,6 +227,7 @@ function unavailableClient(): AlbumProtocolClient {
     putAnchor: async () => refuse(),
     claimDevice: async () => refuse(),
     putDeviceRecord: async () => refuse(),
+    postDeviceTombstone: async () => refuse(),
     putEnrollmentOffer: async () => refuse(),
     putSpaceKeyEnvelope: async () => refuse(),
     putRecoveryEnvelope: async () => refuse(),

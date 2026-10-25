@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Spacing } from '@/constants/theme';
 import { phraseFromRecoveryEntropy } from '@/features/album/recovery';
 import { readRecoveryEntropy } from '@/features/album/protocol-local-state';
+import { markRecoveryPhraseConfirmed } from '@/features/album/recovery-phrase-status';
 import { useSpace } from '@/features/space/space-context';
 
 /**
@@ -152,6 +153,9 @@ export default function RecoveryPhraseRoute() {
                     if (ok) {
                       setCheckError('');
                       setConfirmed(true);
+                      if (spaceId) {
+                        void markRecoveryPhraseConfirmed(spaceId);
+                      }
                     } else {
                       setCheckError(
                         'That does not match — check your paper and try again.',

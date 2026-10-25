@@ -87,7 +87,9 @@ export default function RestoreRoute() {
           </ThemedText>
         ) : null}
         <Button
-          label="Restore this album"
+          label={busy ? 'Restoring…' : 'Restore this album'}
+          accessibilityLiveRegion="polite"
+          accessibilityHint="Decrypts the shared album on this phone"
           disabled={busy || wordCount !== RECOVERY_WORDS}
           onPress={() => void restore()}
         />

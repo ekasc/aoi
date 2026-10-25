@@ -9,12 +9,15 @@ import {
   parseWireSpaceKeyEnvelope,
   parseWireSpaceTrustAnchor,
   toWireDeviceRecord,
+  toWireDeviceTombstone,
   toWireMediaManifest,
   toWireMediaTombstone,
   toWireRecoveryEnvelope,
   toWireSpaceKeyEnvelope,
   toWireSpaceTrustAnchor,
   type DeviceRecord,
+  type DeviceTombstone,
+  type DeviceTombstoneInput,
   type MediaManifest,
   type MediaManifestInput,
   type MediaTombstone,
@@ -42,6 +45,7 @@ import {
   sealSpaceKeyForDevice,
   sealSpaceKeyForRecovery,
   signDeviceRecord,
+  signDeviceTombstone,
   signMediaManifest,
   signMediaTombstone,
   signSpaceTrustAnchor,
@@ -76,7 +80,7 @@ import {
   readArchiveMedia,
   verifyArchiveManifest,
 } from '@/features/album/protocol-read';
-import { verifyDeviceProvenance, verifyDeviceTrust } from '@/features/album/protocol-trust';
+import { verifyDeviceTrust } from '@/features/album/protocol-trust';
 import { generateRecoveryPhrase, recoveryEntropyFromPhrase } from '@/features/album/recovery';
 
 /**
@@ -320,7 +324,14 @@ export async function establishProtocolArchive(
 
   const mine = highestRevision(records, deviceId);
 
-  if (mine && verifyDeviceProvenance(deviceId, anchor, records).trusted) {
+  if (mine && !verifyDeviceTrust(deviceId, anchor, records, deviceTombstones).trusted) {
+    // A record exists but its chain is not trusted: a revoked device, a bad
+    // signature, or an authoriser this device cannot verify. Re-claiming would
+    // make a revoked phone look like a fresh enrolment request forever.
+    return { status: 'blocked' };
+  }
+
+  if (mine && verifyDeviceTrust(deviceId, anchor, records, deviceTombstones).trusted) {
     const envelope = snapshot.envelopes
       .map(parseWireSpaceKeyEnvelope)
       .find(
@@ -1116,11 +1127,13 @@ export async function removeProtocolPhoto(
  */
 export function enrolmentFingerprint(
   session: ProtocolArchiveReady,
-  targetSigningPublicKey: Uint8Array
+  targetSigningPublicKey: Uint8Array,
+  targetAgreementPublicKey: Uint8Array
 ): string {
   return verificationFingerprint(
     session.anchor.rootSigningPublicKey,
-    targetSigningPublicKey
+    targetSigningPublicKey,
+    targetAgreementPublicKey
   );
 }
 
@@ -1133,9 +1146,10 @@ export function enrolmentFingerprint(
  */
 export function joiningFingerprint(
   ownSigningPublicKey: Uint8Array,
+  ownAgreementPublicKey: Uint8Array,
   rootSigningPublicKey: Uint8Array
 ): string {
-  return verificationFingerprint(ownSigningPublicKey, rootSigningPublicKey);
+  return verificationFingerprint(ownSigningPublicKey, ownAgreementPublicKey, rootSigningPublicKey);
 }
 
 export type PendingEnrolmentClaim = {
@@ -1155,6 +1169,34 @@ export async function pendingEnrolmentClaims(
     signingPublicKey: fromBase64(claim.signingPublicKey),
     agreementPublicKey: fromBase64(claim.agreementPublicKey),
     createdAt: claim.createdAt,
+  }));
+}
+
+export type EnrolledDevice = {
+  deviceId: string;
+  createdAt: string;
+  isCurrent: boolean;
+  isRoot: boolean;
+  trusted: boolean;
+};
+
+/** Enrolled devices, with the same revocation rules the read path uses. */
+export async function enrolledProtocolDevices(
+  session: ProtocolArchiveReady
+): Promise<EnrolledDevice[]> {
+  const snapshot = await session.client.getSnapshot();
+  const tombstones = snapshot.tombstones.map(parseWireDeviceTombstone);
+  return session.records.map((record) => ({
+    deviceId: record.deviceId,
+    createdAt: record.createdAt,
+    isCurrent: record.deviceId === session.deviceId,
+    isRoot: record.deviceId === session.anchor.rootDeviceId,
+    trusted: verifyDeviceTrust(
+      record.deviceId,
+      session.anchor,
+      session.records,
+      tombstones
+    ).trusted,
   }));
 }
 
@@ -1181,6 +1223,47 @@ export async function approveEnrolmentClaim(
   );
   await session.client.putEnrollmentOffer(toWireDeviceRecord(record));
   return record;
+}
+
+/**
+ * Revoke another device in this Space.
+ *
+ * The server only checks that the revoker is a device this account owns; the
+ * signature is what makes the revocation authoritative to every other client.
+ * A device can never revoke itself, and a target must be one of the records
+ * this session already trusts.
+ */
+export async function revokeProtocolDevice(
+  session: ProtocolArchiveReady,
+  targetDeviceId: string,
+  now: string
+): Promise<DeviceTombstone> {
+  if (targetDeviceId === session.deviceId) {
+    throw new Error('A device cannot revoke itself');
+  }
+  const snapshot = await session.client.getSnapshot();
+  const records = snapshot.records.map(parseWireDeviceRecord);
+  const tombstones = snapshot.tombstones.map(parseWireDeviceTombstone);
+  const target = records.find((record) => record.deviceId === targetDeviceId);
+  if (!target) {
+    throw new Error('That device is not enrolled in this Space');
+  }
+  if (!verifyDeviceTrust(targetDeviceId, session.anchor, records, tombstones).trusted) {
+    throw new Error('That device is no longer trusted in this Space');
+  }
+  const input: DeviceTombstoneInput = {
+    spaceId: session.spaceId,
+    targetDeviceId,
+    revision: target.revision + 1,
+    revokedBy: { kind: 'device', deviceId: session.deviceId },
+    revokedAt: now,
+  };
+  const tombstone: DeviceTombstone = {
+    ...input,
+    signature: signDeviceTombstone(input, session.device.signingPrivateKey),
+  };
+  await session.client.postDeviceTombstone(toWireDeviceTombstone(tombstone));
+  return tombstone;
 }
 
 /**
@@ -1230,6 +1313,13 @@ export async function acceptEnrolmentOffer(input: {
     return { status: 'waiting' };
   }
 
+  let tombstones;
+  try {
+    tombstones = snapshot.tombstones.map(parseWireDeviceTombstone);
+  } catch {
+    return { status: 'blocked' };
+  }
+
   const authoriser = offer.authorisedBy;
   if (authoriser.kind !== 'device') {
     return { status: 'blocked' };
@@ -1237,7 +1327,7 @@ export async function acceptEnrolmentOffer(input: {
   const signer = highestRevision(records, authoriser.deviceId);
   if (
     !signer ||
-    !verifyDeviceProvenance(authoriser.deviceId, pinned.anchor, records).trusted ||
+    !verifyDeviceTrust(authoriser.deviceId, pinned.anchor, records, tombstones).trusted ||
     !verifyDeviceRecord(offer, signer.signingPublicKey)
   ) {
     return { status: 'blocked' };

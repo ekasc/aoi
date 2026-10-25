@@ -59,6 +59,7 @@ export default function EnrolDeviceRoute() {
         if (archive.status === 'unverified') {
           const fingerprint = joiningFingerprint(
             device.signing.publicKey,
+            device.agreement.publicKey,
             archive.anchor.rootSigningPublicKey
           );
           if (!pinIfUnverified) {
@@ -100,7 +101,7 @@ export default function EnrolDeviceRoute() {
         );
         const fingerprint =
           pinned.state === 'pinned'
-            ? joiningFingerprint(device.signing.publicKey, pinned.anchor.rootSigningPublicKey)
+            ? joiningFingerprint(device.signing.publicKey, device.agreement.publicKey, pinned.anchor.rootSigningPublicKey)
             : '';
 
         if (archive.status === 'waiting') {
