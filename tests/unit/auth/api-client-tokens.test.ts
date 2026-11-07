@@ -48,6 +48,91 @@ describe('api-client token plumbing (remote mode)', () => {
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer token-1');
   });
 
+  it.each([503, 429, 'offline'])('keeps the session when refresh fails with %s', async (failure) => {
+    const { setApiTokens, apiFetch, setUnauthorizedHandler } = await loadApiClient();
+    const revoked = vi.fn();
+    setUnauthorizedHandler(revoked);
+    setApiTokens({ accessToken: 'old', refreshToken: 'refresh' });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/refresh')) {
+        if (failure === 'offline') throw new TypeError('offline');
+        return jsonResponse({}, failure);
+      }
+      return jsonResponse({ error: { message: 'expired' } }, 401);
+    }));
+    await expect(apiFetch('/v1/spaces/current')).rejects.toThrow();
+    expect(revoked).not.toHaveBeenCalled();
+  });
+
+  it('does not sign out account B for a late account A 401', async () => {
+    const { setApiTokens, apiFetch, setUnauthorizedHandler } = await loadApiClient();
+    const revoked = vi.fn();
+    setUnauthorizedHandler(revoked);
+    setApiTokens({ accessToken: 'A', refreshToken: 'refresh-A' });
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      setApiTokens({ accessToken: 'B', refreshToken: 'refresh-B' });
+      return jsonResponse({}, 401);
+    }));
+    await expect(apiFetch('/v1/spaces/current')).rejects.toThrow();
+    expect(revoked).not.toHaveBeenCalled();
+  });
+
+  it('rejects account A data that arrives after switching to account B', async () => {
+    const { setApiTokens, apiFetch } = await loadApiClient();
+    setApiTokens({ accessToken: 'A', refreshToken: 'refresh-A' });
+    let finish: (response: Response) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    const pending = apiFetch('/v1/spaces/current');
+    setApiTokens({ accessToken: 'B', refreshToken: 'refresh-B' });
+    finish(jsonResponse({ space: { id: 'private-space-A' } }));
+    await expect(pending).rejects.toMatchObject({ code: 'SESSION_CHANGED' });
+  });
+
+  it('rejects an old request after an A-B-A switch even when the original token object is reused', async () => {
+    const { setApiTokens, apiFetch } = await loadApiClient();
+    const original = { accessToken: 'A', refreshToken: 'refresh-A' };
+    setApiTokens(original);
+    let finish: (response: Response) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    const pending = apiFetch('/v1/spaces/current');
+    setApiTokens({ accessToken: 'B', refreshToken: 'refresh-B' });
+    setApiTokens(original);
+    finish(jsonResponse({ space: { id: 'obsolete-A' } }));
+    await expect(pending).rejects.toMatchObject({ code: 'SESSION_CHANGED' });
+  });
+
+  it('keeps in-flight successful reads valid when only the same session credential is renewed', async () => {
+    const { setApiTokens, apiFetch } = await loadApiClient();
+    setApiTokens({ accessToken: 'old', refreshToken: 'refresh' });
+    let finish: (response: Response) => void = () => {};
+    let renewalRequests = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/slow')) return new Promise<Response>((resolve) => { finish = resolve; });
+      if (url.endsWith('/refresh')) return jsonResponse({ accessToken: 'fresh', refreshToken: 'fresh-refresh', expiresInSec: 3600 });
+      renewalRequests += 1;
+      return renewalRequests === 1 ? jsonResponse({}, 401) : jsonResponse({ ok: true });
+    }));
+    const pending = apiFetch('/v1/slow');
+    await expect(apiFetch('/v1/renew')).resolves.toEqual({ ok: true });
+    finish(jsonResponse({ ok: true }));
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
+  it('rejects account A bytes if the account switches while the response body is reading', async () => {
+    const { setApiTokens, apiFetchBytes } = await loadApiClient();
+    setApiTokens({ accessToken: 'A', refreshToken: 'refresh-A' });
+    let finishBody: (value: Uint8Array) => void = () => {};
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { finishBody = (value) => { controller.enqueue(value); controller.close(); }; },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body)));
+    const pending = apiFetchBytes('/v1/media/private/object');
+    await Promise.resolve();
+    setApiTokens({ accessToken: 'B', refreshToken: 'refresh-B' });
+    finishBody(new Uint8Array([1, 2, 3]));
+    await expect(pending).rejects.toMatchObject({ code: 'SESSION_CHANGED' });
+  });
+
   it('sends no Authorization header when no tokens are set', async () => {
     const { apiFetch } = await loadApiClient();
 

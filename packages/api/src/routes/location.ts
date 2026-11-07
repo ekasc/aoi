@@ -25,7 +25,7 @@ const locationRouter = new Hono();
 /**
  * Optional, consensual, bounded location sharing.
  *
- * Privacy rules enforced here (see CONTEXT.md / TODOS §2):
+ * Privacy rules enforced here:
  * - BOTH partners must be opted in before any position flows (both-consent
  *   gate). Consent lives on `space_members.location_consent_at` — the
  *   simplest correct design: the member row already exists, consent is one
@@ -63,14 +63,14 @@ function validationHook(
 // strings must never contain anything resembling coordinates.
 const latitudeSchema = (message: string) =>
   z
-    .number({ invalid_type_error: message })
+    .number({ error: message })
     .finite()
     .gte(-90, message)
     .lte(90, message);
 
 const longitudeSchema = (message: string) =>
   z
-    .number({ invalid_type_error: message })
+    .number({ error: message })
     .finite()
     .gte(-180, message)
     .lte(180, message);
@@ -84,7 +84,7 @@ const locationDestinationSchema = z.object({
   latitude: latitudeSchema(INVALID_DESTINATION),
   longitude: longitudeSchema(INVALID_DESTINATION),
   radiusMeters: z
-    .number({ invalid_type_error: INVALID_DESTINATION })
+    .number({ error: INVALID_DESTINATION })
     .finite()
     .positive(INVALID_DESTINATION)
     .max(LOCATION_DESTINATION_RADIUS_MAX_METERS, INVALID_DESTINATION),
@@ -92,13 +92,11 @@ const locationDestinationSchema = z.object({
 
 const shareLocationSchema = z
   .object({
-    mode: z.enum(LOCATION_SHARE_MODES, {
-      errorMap: () => ({ message: INVALID_LOCATION }),
-    }),
+    mode: z.enum(LOCATION_SHARE_MODES, { error: INVALID_LOCATION }),
     latitude: latitudeSchema(INVALID_LOCATION),
     longitude: longitudeSchema(INVALID_LOCATION),
     accuracyMeters: z
-      .number({ invalid_type_error: INVALID_LOCATION })
+      .number({ error: INVALID_LOCATION })
       .finite()
       .positive(INVALID_LOCATION)
       .max(LOCATION_ACCURACY_MAX_METERS, INVALID_LOCATION)
@@ -110,7 +108,7 @@ const shareLocationSchema = z
   });
 
 const consentSchema = z.object({
-  consented: z.boolean({ invalid_type_error: INVALID_LOCATION }),
+  consented: z.boolean({ error: INVALID_LOCATION }),
 });
 
 // ── Space context helper ─────────────────────────────────────────────────

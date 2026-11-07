@@ -68,7 +68,7 @@ export type AuthApi = {
     input: GoogleIdTokenSignInRequest
   ) => Promise<AuthSessionPayload>;
   getSession: (accessToken: string) => Promise<AuthSessionUser>;
-  logout: (accessToken: string, refreshToken?: string) => Promise<void>;
+  logout: (accessToken: string, refreshToken?: string, expoPushToken?: string) => Promise<void>;
   revokeAllSessions: (accessToken: string) => Promise<void>;
   deleteAccount: (accessToken: string) => Promise<void>;
 };

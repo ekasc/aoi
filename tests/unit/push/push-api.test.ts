@@ -8,6 +8,7 @@ import {
 
 const apiClientMock = vi.hoisted(() => ({
   apiFetch: vi.fn(),
+  getApiSessionGeneration: vi.fn(() => 0),
 }));
 
 vi.mock('@/features/api-client', () => apiClientMock);
@@ -15,6 +16,7 @@ vi.mock('@/features/api-client', () => apiClientMock);
 const TOKEN = 'ExpoPushToken[push-api-test-token]';
 
 beforeEach(async () => {
+  apiClientMock.getApiSessionGeneration.mockReturnValue(0);
   apiClientMock.apiFetch.mockReset();
   apiClientMock.apiFetch.mockResolvedValue({});
   // Drain whatever the previous test registered — the module keeps state.
@@ -42,6 +44,57 @@ describe('registerPushToken', () => {
 });
 
 describe('unregisterPushToken', () => {
+  it('does not send an old account queued registration using the next account credentials', async () => {
+    await registerPushToken(TOKEN, 'ios');
+    let finishDelete: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { finishDelete = resolve; });
+    apiClientMock.apiFetch.mockImplementationOnce(() => gate);
+    const old = unregisterPushToken();
+    await vi.waitFor(() => expect(apiClientMock.apiFetch).toHaveBeenCalledTimes(2));
+    const stale = expect(registerPushToken('stale-account-token', 'ios')).rejects.toMatchObject({ code: 'SESSION_CHANGED' });
+    apiClientMock.getApiSessionGeneration.mockReturnValue(1);
+    const next = registerPushToken(TOKEN, 'ios');
+    finishDelete();
+    await Promise.all([old, stale, next]);
+    expect(getLastRegisteredPushToken()).toBe(TOKEN);
+    expect(apiClientMock.apiFetch.mock.calls.some(([, options]) => options.body?.includes('stale-account-token'))).toBe(false);
+    await unregisterPushToken();
+  });
+
+  it('keeps the server registration when a new registration starts during an old delete', async () => {
+    let registered = false;
+    let finishDelete: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { finishDelete = resolve; });
+    apiClientMock.apiFetch.mockImplementation(async (_path: string, options: RequestInit) => {
+      if (options.method === 'DELETE') await gate;
+      registered = options.method === 'POST';
+      return {};
+    });
+    await registerPushToken(TOKEN, 'ios');
+    const old = unregisterPushToken();
+    const next = registerPushToken(TOKEN, 'ios');
+    await Promise.resolve();
+    finishDelete();
+    await Promise.all([old, next]);
+    expect(registered).toBe(true);
+    expect(getLastRegisteredPushToken()).toBe(TOKEN);
+  });
+
+  it('does not clear a newer registration when an old unregister finishes, even for the same device token', async () => {
+    await registerPushToken(TOKEN, 'ios');
+    let finish: () => void = () => {};
+    apiClientMock.apiFetch.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const old = unregisterPushToken();
+    const next = registerPushToken(TOKEN, 'ios');
+    await vi.waitFor(() => expect(apiClientMock.apiFetch).toHaveBeenCalledTimes(2));
+    finish();
+    await Promise.all([old, next]);
+    expect(getLastRegisteredPushToken()).toBe(TOKEN);
+    apiClientMock.apiFetch.mockClear();
+    await unregisterPushToken();
+    expect(apiClientMock.apiFetch).toHaveBeenCalledOnce();
+  });
+
   it('no-ops when nothing was registered this session', async () => {
     await unregisterPushToken();
     expect(apiClientMock.apiFetch).not.toHaveBeenCalled();
@@ -79,7 +132,7 @@ describe('unregisterPushToken', () => {
     apiClientMock.apiFetch.mockRejectedValueOnce(new Error('network down'));
 
     // Swallowed — tender-error policy.
-    await expect(unregisterPushToken()).resolves.toBeUndefined();
+    await expect(unregisterPushToken()).resolves.toBe(TOKEN);
     expect(getLastRegisteredPushToken()).toBeNull();
 
     // And the failure is never retried with a stale token.

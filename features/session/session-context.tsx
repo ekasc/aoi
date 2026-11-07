@@ -3,15 +3,17 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { AppState } from 'react-native';
 
 import { getAuthApi } from '@/features/auth/auth-api';
-import { isAuthStubMode } from '@/features/auth/auth-config';
-import { setApiTokens, setUnauthorizedHandler } from '@/features/api-client';
+import { getApiTokens, setApiTokens, setTokensRefreshedHandler, setUnauthorizedHandler } from '@/features/api-client';
 import { getLocalStressConfig } from '@/features/dev/local-stress-config';
 import {
   OAuthClientError,
@@ -37,14 +39,16 @@ function isValidStoredSession(value: unknown): value is StoredSession {
     return false;
   }
 
-  const candidate = value as Partial<StoredSession>;
-
-  return Boolean(
-    candidate.user?.id &&
-      candidate.user?.email &&
-      candidate.user?.displayName &&
-      candidate.tokens?.accessToken
-  );
+  if (!('user' in value) || !value.user || typeof value.user !== 'object' ||
+      !('tokens' in value) || !value.tokens || typeof value.tokens !== 'object') return false;
+  const { user, tokens } = value;
+  return 'id' in user && typeof user.id === 'string' && user.id.length > 0 &&
+    'email' in user && typeof user.email === 'string' &&
+    'displayName' in user && typeof user.displayName === 'string' &&
+    (!('avatarUrl' in user) || user.avatarUrl === undefined || typeof user.avatarUrl === 'string') &&
+    'accessToken' in tokens && typeof tokens.accessToken === 'string' && tokens.accessToken.length > 0 &&
+    (!('refreshToken' in tokens) || tokens.refreshToken === undefined || typeof tokens.refreshToken === 'string') &&
+    (!('expiresAt' in tokens) || tokens.expiresAt === undefined || typeof tokens.expiresAt === 'string');
 }
 
 function parseStoredSession(rawValue: string) {
@@ -62,21 +66,6 @@ function parseStoredSession(rawValue: string) {
 }
 
 /**
- * Whether a failed session check means the stored credentials are dead.
- * Only an explicit 401 discards: network failures, server hiccups, and
- * unparseable bodies keep the stored session (fail open — a missed 401
- * retries next launch, but wrongly deleted credentials strand a valid
- * sign-in and force a fresh login).
- */
-function isSessionRejected(error: unknown): boolean {
-  if (error instanceof TypeError) {
-    return false;
-  }
-  const status = (error as { status?: unknown } | null)?.status;
-  return status === 401;
-}
-
-/**
  * Exported for dev-preview routes, which provide seed values directly
  * (headless environments have no SecureStore, so the real provider can
  * never sign in there). Never used by app UI.
@@ -89,30 +78,82 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [tokens, setTokens] = useState<SessionTokens | null>(null);
+  const activeUser = useRef<SessionUser | null>(null);
+  const lifecycle = useRef(0);
+  const restoreBlocked = useRef(false);
+  const storageQueue = useRef(Promise.resolve());
+
+  const store = useCallback((operation: () => Promise<void>) => {
+    const pending = storageQueue.current.then(operation);
+    storageQueue.current = pending.catch(() => {});
+    return pending;
+  }, []);
 
   const clearStoredSession = useCallback(async () => {
     if (getLocalStressConfig()) return;
-    await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
-  }, []);
+    const attempt = lifecycle.current;
+    await store(async () => {
+      if (attempt === lifecycle.current) await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
+    });
+  }, [store]);
 
   const persistSession = useCallback(
     async (nextUser: SessionUser, nextTokens: SessionTokens) => {
       if (getLocalStressConfig()) return;
+      const attempt = lifecycle.current;
       const serializedSession = JSON.stringify({
         user: nextUser,
         tokens: nextTokens,
       } satisfies StoredSession);
-      await SecureStore.setItemAsync(SESSION_STORAGE_KEY, serializedSession);
+      await store(async () => {
+        if (attempt === lifecycle.current) await SecureStore.setItemAsync(SESSION_STORAGE_KEY, serializedSession);
+      });
     },
-    []
+    [store]
   );
 
+  const endSession = useCallback(async (reason: 'local' | 'revoked' = 'local') => {
+    const attempt = ++lifecycle.current;
+    const previousUser = activeUser.current;
+    const previousTokens = getApiTokens();
+    restoreBlocked.current = false;
+    activeUser.current = null;
+    setApiTokens(null);
+    try {
+      await clearStoredSession();
+    } catch (error) {
+      if (reason === 'local') {
+        if (attempt === lifecycle.current) {
+          activeUser.current = previousUser;
+          setApiTokens(previousTokens);
+        }
+        throw error;
+      }
+      // A confirmed revocation cannot be undone by a local keychain failure.
+    }
+    if (attempt !== lifecycle.current) return;
+    setUser(null);
+    setTokens(null);
+    setStatus('signed_out');
+    setIsHydrated(true);
+  }, [clearStoredSession]);
+
   const restoreSession = useCallback(async () => {
-    setStatus('loading');
+    const attempt = ++lifecycle.current;
+    restoreBlocked.current = false;
 
     try {
       const stress = getLocalStressConfig();
-      const storedRawSession = stress ? JSON.stringify(stress.session) : await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
+      const liveTokens = getApiTokens();
+      const liveSession = activeUser.current && liveTokens
+        ? { user: activeUser.current, tokens: liveTokens }
+        : null;
+      const storedRawSession = liveSession
+        ? JSON.stringify(liveSession)
+        : stress ? JSON.stringify(stress.session)
+        : process.env.EXPO_OS === 'web' ? null
+        : await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
+      if (attempt !== lifecycle.current) return;
 
       if (!storedRawSession) {
         setUser(null);
@@ -125,7 +166,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       const storedSession = parseStoredSession(storedRawSession);
 
       if (!storedSession) {
-        await clearStoredSession();
+        // Leave unreadable credentials on disk so a later retry can recover them.
         setUser(null);
         setTokens(null);
         setApiTokens(null);
@@ -133,45 +174,32 @@ export function SessionProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      let resolvedUser = storedSession.user;
-
-      try {
-        resolvedUser = await authApi.getSession(storedSession.tokens.accessToken);
-      } catch (err) {
-        if (!isAuthStubMode() && isSessionRejected(err)) {
-          // Only sign out on dead credentials (explicit 401), not network
-          // failures or server hiccups — fetch throws TypeError for network
-          // errors; auth API throws status-carrying Errors for HTTP errors.
-          await clearStoredSession();
-          setUser(null);
-          setTokens(null);
-          setApiTokens(null);
-          setStatus('signed_out');
-          return;
-        }
-        // Network error, server hiccup, or stub: stay signed in with the
-        // stored user data.
-      }
-
-      setUser(resolvedUser);
+      activeUser.current = storedSession.user;
+      setUser(storedSession.user);
       setTokens(storedSession.tokens);
-      // Token plumbing: the api-client reads module state, so every session
-      // restore must republish the tokens or remote calls go out without an
-      // Authorization header (was: setApiTokens never called → remote mode
-      // always 401d).
       setApiTokens(storedSession.tokens);
       setStatus('signed_in');
-      await persistSession(resolvedUser, storedSession.tokens);
-    } catch {
-      setUser(null);
-      setTokens(null);
-      setApiTokens(null);
-      setStatus('signed_out');
-      await clearStoredSession().catch(() => {});
-    } finally {
       setIsHydrated(true);
+
+      try {
+        const resolvedUser = await authApi.getSession(storedSession.tokens.accessToken);
+        if (attempt !== lifecycle.current) return;
+        activeUser.current = resolvedUser;
+        setUser(resolvedUser);
+        const liveTokens = getApiTokens();
+        if (liveTokens) {
+          setTokens(liveTokens);
+          await persistSession(resolvedUser, liveTokens);
+        }
+      } catch {
+        // Failed validation or metadata persistence must not erase the last login.
+      }
+    } catch {
+      if (attempt === lifecycle.current && !activeUser.current) restoreBlocked.current = true;
+    } finally {
+      if (attempt === lifecycle.current && !restoreBlocked.current) setIsHydrated(true);
     }
-  }, [authApi, clearStoredSession, persistSession]);
+  }, [authApi, persistSession]);
 
   useEffect(() => {
     // Hydrates external SecureStore/API state, rather than deriving state from props.
@@ -180,46 +208,59 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, [restoreSession]);
 
   useEffect(() => {
-    // A failed refresh means the session cannot authenticate another request.
-    // End it locally without calling the API again (which would 401 in turn).
-    setUnauthorizedHandler(() => {
-      void clearStoredSession().catch(() => {});
-      setUser(null);
-      setTokens(null);
-      setApiTokens(null);
-      setStatus('signed_out');
+    const subscription = AppState.addEventListener('change', (next) => {
+      // Keychain access can fail while the phone is locked. Retry after unlock.
+      if (next === 'active' && restoreBlocked.current) void restoreSession();
     });
-    return () => setUnauthorizedHandler(null);
-  }, [clearStoredSession]);
+    return () => subscription.remove();
+  }, [restoreSession]);
+
+  useLayoutEffect(() => {
+    setUnauthorizedHandler(() => {
+      void endSession('revoked');
+    });
+    setTokensRefreshedHandler(async (nextTokens) => {
+      const currentUser = activeUser.current;
+      const attempt = lifecycle.current;
+      if (!currentUser) return;
+      await persistSession(currentUser, nextTokens);
+      if (attempt === lifecycle.current) setTokens(nextTokens);
+    });
+    return () => {
+      lifecycle.current += 1;
+      setUnauthorizedHandler(null);
+      setTokensRefreshedHandler(null);
+    };
+  }, [endSession, persistSession]);
 
   const signInWithProvider = useCallback(
     async (provider: 'apple' | 'google') => {
+      const attempt = ++lifecycle.current;
       // Stay on the current status while the native sheet is up: flipping to
       // 'loading' unmounts the landing behind the sheet (every route guard
       // renders null while loading) and replays the boot sequence on
       // resolution. The buttons already show progress via activeProvider.
       try {
         const authSession = await signInWithOAuthProvider(provider, authApi);
+        if (attempt !== lifecycle.current) return { ok: false, error: 'Sign in was canceled.' };
 
         // Persist before publishing the signed-in state. Route guards react to
         // the status change immediately; if storage then failed, the app would
         // navigate into the authenticated tree and fall back out of it.
         await persistSession(authSession.user, authSession.tokens);
+        if (attempt !== lifecycle.current) return { ok: false, error: 'Sign in was canceled.' };
 
+        activeUser.current = authSession.user;
         setUser(authSession.user);
         setTokens(authSession.tokens);
         // Token plumbing: publish the fresh tokens to the api-client so
         // remote calls carry the Bearer header.
         setApiTokens(authSession.tokens);
         setStatus('signed_in');
+        setIsHydrated(true);
 
         return { ok: true };
       } catch (error) {
-        setUser(null);
-        setTokens(null);
-        setApiTokens(null);
-        setStatus('signed_out');
-
         if (error instanceof OAuthClientError && error.code === 'cancelled') {
           return { ok: false, error: 'Sign in was canceled.' };
         }
@@ -231,48 +272,38 @@ export function SessionProvider({ children }: PropsWithChildren) {
   );
 
   const signOut = useCallback(async () => {
-    const accessToken = tokens?.accessToken;
-    const refreshToken = tokens?.refreshToken;
+    const attempt = ++lifecycle.current;
 
-    // Single choke point for letting go of this device's push registration —
-    // every sign-out path goes through here, while the access token is still
-    // valid. Failures are swallowed inside (tender-error policy), and the
-    // call is idempotent, so a repeated sign-out never double-unregisters.
-    await unregisterPushToken().catch(() => {});
+    // This device's registration must be removed before its credential is revoked.
+    const pushToken = await unregisterPushToken().catch(() => undefined);
+    if (attempt !== lifecycle.current) return;
 
+    const { accessToken, refreshToken } = getApiTokens() ?? {};
+    let revoked = false;
     if (accessToken) {
-      await authApi.logout(accessToken, refreshToken).catch(() => {});
+      revoked = await authApi.logout(accessToken, refreshToken, pushToken).then(() => true, () => false);
     }
 
-    await clearStoredSession().catch(() => {});
-    setUser(null);
-    setTokens(null);
-    setApiTokens(null);
-    setStatus('signed_out');
-  }, [authApi, clearStoredSession, tokens?.accessToken, tokens?.refreshToken]);
+    if (attempt !== lifecycle.current) return;
+    await endSession(revoked ? 'revoked' : 'local');
+  }, [authApi, endSession]);
 
   const signOutEverywhere = useCallback(async () => {
-    const accessToken = tokens?.accessToken;
-
-    // Drop this device's push registration first; the endpoint also clears
-    // every token for the account, but keeping sign-out idempotent here means
-    // a failed request cannot leave this device registered.
-    await unregisterPushToken().catch(() => {});
+    const attempt = lifecycle.current;
+    const accessToken = getApiTokens()?.accessToken;
 
     if (!accessToken) {
       throw new Error('Not signed in.');
     }
     await authApi.revokeAllSessions(accessToken);
+    if (attempt !== lifecycle.current) return;
 
-    await clearStoredSession().catch(() => {});
-    setUser(null);
-    setTokens(null);
-    setApiTokens(null);
-    setStatus('signed_out');
-  }, [authApi, clearStoredSession, tokens?.accessToken]);
+    await endSession('revoked');
+  }, [authApi, endSession]);
 
   const deleteAccountFn = useCallback(async () => {
-    const accessToken = tokens?.accessToken;
+    const attempt = lifecycle.current;
+    const accessToken = getApiTokens()?.accessToken;
 
     // The local teardown is what makes the deletion irreversible on this
     // device, so it waits for the server to confirm. Clearing the session in a
@@ -283,16 +314,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
     // keeps the user in place and renders the error. Dropping this device's
     // session is still one tap away on the account screen's Sign out row, so a
     // user who cannot reach the server is never trapped.
-    if (accessToken) {
-      await authApi.deleteAccount(accessToken);
-    }
+    if (!accessToken) throw new Error('Not signed in.');
+    await authApi.deleteAccount(accessToken);
+    if (attempt !== lifecycle.current) return;
 
-    await clearStoredSession().catch(() => {});
-    setUser(null);
-    setTokens(null);
-    setApiTokens(null);
-    setStatus('signed_out');
-  }, [authApi, clearStoredSession, tokens?.accessToken]);
+    await endSession('revoked');
+  }, [authApi, endSession]);
 
   const value = useMemo<SessionContextValue>(
     () => ({

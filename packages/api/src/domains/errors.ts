@@ -55,7 +55,7 @@ export class TooManyRequestsError extends Data.TaggedError('TooManyRequestsError
 }> {}
 
 /**
- * Plus-limit rejection (media quota, future-letter allowance). Carries
+ * Plus-limit rejection (media quota). Carries
  * machine-readable `details` (see LimitDetails) so the client can explain
  * the exact limit reached and offer Plus — numbers only, never storage
  * internals or other-Space data. HTTP 403: the caller is authenticated but

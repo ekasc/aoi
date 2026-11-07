@@ -27,9 +27,8 @@ import type { DbService } from '../effects/d1';
  * + revoke all sessions + leave the space, atomically).
  *
  * Session tokens are opaque strings in `user_sessions.token` (unique index).
- * Validation is a DB lookup against token + expiry + user-not-deleted — the
- * DB is the single source of truth, so revocation is immediate and races are
- * impossible.
+ * Validation is a DB lookup against token + user-not-deleted. Sessions persist
+ * until explicitly revoked; expires_at is renewal metadata, not an access cutoff.
  */
 
 export interface SessionUser {
@@ -77,22 +76,19 @@ function rowToSessionUser(row: SessionRow): SessionUser {
 }
 
 /**
- * Resolve a Bearer session token to a live session + user. Returns null when
- * the token is unknown, expired, or the user is soft-deleted (all render as
- * 401 at the transport layer). Time reads the Clock service so tests pin it.
+ * Unknown tokens and deleted users cannot authenticate. Old expiry metadata
+ * must not eject an established user, including sessions minted before this policy.
  */
 export const resolveSessionByToken = (
   token: string
 ): Effect.Effect<ResolvedSession | null, InternalError, DbService | ClockService> =>
   Effect.gen(function* () {
-    const now = yield* nowMs;
     const db = yield* Db;
     const row = yield* Effect.tryPromise({
       try: () => db.d1.prepare(SESSION_LOOKUP_SQL).bind(token).first<SessionRow>(),
       catch: () => new InternalError({}),
     });
     if (!row) return null;
-    if (row.expires_at <= now) return null;
     return {
       sessionId: row.id,
       userId: row.user_id,
@@ -102,7 +98,7 @@ export const resolveSessionByToken = (
   });
 
 /**
- * Session read for GET /v1/auth/session. 401 on invalid/expired token.
+ * Session read for GET /v1/auth/session. 401 on an unknown or revoked token.
  */
 export const getSessionProgram = (
   token: string
@@ -124,11 +120,8 @@ export const getSessionProgram = (
   });
 
 /**
- * Refresh: the same opaque session credential is extended (Better Auth's
- * sliding-window model — there is no separate refresh token). Touching the
- * row is guarded (`expires_at > now`) so an already-expired session cannot be
- * revived; the client-facing contract keeps accessToken/refreshToken fields,
- * both carrying the session token.
+ * Renew the metadata for an existing credential, even after its old expiry.
+ * A deleted session row cannot be recreated by renewal.
  */
 export const refreshSessionProgram = (
   token: string
@@ -145,11 +138,10 @@ export const refreshSessionProgram = (
     const now = yield* nowMs;
     const nextExpiry = now + SESSION_TTL_SEC * 1000;
     const updated = yield* guardedUpdate(
-      'update user_sessions set expires_at = ?, updated_at = ? where id = ? and expires_at > ?',
+      'update user_sessions set expires_at = ?, updated_at = ? where id = ?',
       nextExpiry,
       now,
-      resolved.sessionId,
-      now
+      resolved.sessionId
     );
     if (updated.changes === 0) {
       return yield* Effect.fail(new UnauthorizedError({ message: 'Invalid or expired session' }));
@@ -165,14 +157,21 @@ export const refreshSessionProgram = (
  * Sign out: revoke the presented session row. Deleting the row (rather than
  * tombstoning) is exactly what Better Auth's sign-out does; the token dies
  * instantly because validation is a DB lookup.
+ * Device-scoped push cleanup shares the transaction; other devices stay registered.
  */
 export const signOutProgram = (
-  token: string
+  token: string,
+  expoPushToken?: string
 ): Effect.Effect<{ ok: true }, InternalError, DbService> =>
   Effect.flatMap(Db, (s) =>
     Effect.tryPromise({
       try: async () => {
-        await s.d1.prepare('delete from user_sessions where token = ?').bind(token).run();
+        await s.d1.batch([
+          ...(expoPushToken ? [s.d1.prepare(
+            'delete from push_tokens where expo_push_token = ? and user_id = (select user_id from user_sessions where token = ?)'
+          ).bind(expoPushToken, token)] : []),
+          s.d1.prepare('delete from user_sessions where token = ?').bind(token),
+        ]);
         return { ok: true as const };
       },
       catch: () => new InternalError({}),
@@ -216,7 +215,7 @@ export const revokeAllSessionsProgram = (
  *   is a DB lookup), push registrations, preferences, and precise
  *   location shares (plus consent withdrawal on the member row).
  * - RETAINED (shared relationship content for the remaining partner):
- *   moments, letters, calendar, someday, weekly answers, media
+ *   moments, calendar, someday, weekly answers, media
  *   rows + bytes, spaces, invites, activity, the Plus row (the partner's
  *   paid period runs on), and the membership row itself (flipped to left
  *   — pairing history and the audit trail stay intact).
