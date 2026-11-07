@@ -10,8 +10,8 @@ import { makeTestHarness } from './effects/test-harness';
 import type { MediaStoreService } from './services/media-store';
 
 const profiles = {
-  established: { couples: 50, backgroundMoments: 800, moments: 5000, events: 2000, lists: 50, items: 5000, letters: 200 },
-  heavy: { couples: 100, backgroundMoments: 1000, moments: 20000, events: 10000, lists: 100, items: 20000, letters: 1000 },
+  established: { couples: 50, backgroundMoments: 800, moments: 5000, events: 2000, lists: 50, items: 5000 },
+  heavy: { couples: 100, backgroundMoments: 1000, moments: 20000, events: 10000, lists: 100, items: 20000 },
 } as const;
 const profileName = process.env.AOI_STRESS_PROFILE ?? 'established';
 if (profileName !== 'established' && profileName !== 'heavy') throw new Error('Unknown stress profile');
@@ -113,7 +113,6 @@ db.transaction(() => {
   const event = db.prepare('insert into calendar_events (id,space_id,created_by_user_id,actor,actor_name,title,starts_at,ends_at,label_preset,together,created_at,updated_at) values (?,?,?,?,?,?,?,?,?,?,?,?)');
   const collection = db.prepare('insert into collections (id,space_id,created_by_user_id,name,position,created_at,updated_at) values (?,?,?,?,?,?,?)');
   const item = db.prepare('insert into collection_items (id,collection_id,space_id,created_by_user_id,title,note,position,created_at,updated_at) values (?,?,?,?,?,?,?,?,?)');
-  const letter = db.prepare('insert into letters (id,space_id,author_user_id,caption,body,sealed_until,created_at) values (?,?,?,?,?,?,?)');
   for (let couple = 0; couple < profile.couples; couple++) {
     const userId = id(1, couple, 0);
     const partnerId = id(1, couple, 1);
@@ -145,7 +144,6 @@ db.transaction(() => {
     if (couple !== 0) continue;
     for (let index = 0; index < profile.lists; index++) collection.run(id(5, couple, index), spaceId, userId, `Stress list ${index}`, index, now, now);
     for (let index = 0; index < profile.items; index++) item.run(id(6, couple, index), id(5, couple, index % profile.lists), spaceId, userId, `Thing ${index}`, 'Synthetic item note. '.repeat(10), index, now, now);
-    for (let index = 0; index < profile.letters; index++) letter.run(id(7, couple, index), spaceId, index % 2 ? partnerId : userId, `Letter ${index}`, 'A synthetic letter kept for later. '.repeat(50), now + (index % 30) * day, now - index * day);
   }
 })();
 

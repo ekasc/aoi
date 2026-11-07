@@ -7,7 +7,7 @@
  * the wire contract rather than an implementation detail, and it lives in one
  * place.
  *
- * The rules, from `docs/shape/album-protocol.md`:
+ * The rules below are the contract; both client and server enforce them:
  *
  *   - a format version byte leads every structure
  *   - fields are written in the order the structure declares them

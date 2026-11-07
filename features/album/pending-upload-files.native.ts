@@ -20,7 +20,7 @@ export async function writePendingBytes(id: string, bytes: Uint8Array): Promise<
   if (file.exists) {
     file.delete();
   }
-  file.write(bytes);
+  await file.write(bytes);
 }
 
 export async function readPendingBytes(id: string): Promise<Uint8Array | null> {

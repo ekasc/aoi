@@ -11,4 +11,4 @@
  * Flip it when notifications can be tested for real: a development build on
  * both platforms.
  */
-export const NOTIFICATIONS_ENABLED = false;
+export const NOTIFICATIONS_ENABLED = true;
