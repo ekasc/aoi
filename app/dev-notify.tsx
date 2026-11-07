@@ -20,6 +20,16 @@ import { notifyIn } from "@/features/dev/device-automation";
  * this screen. Genuinely development-only: production redirects to the root.
  */
 export default function DevNotify() {
+  // The gate runs before any hook: a production build must not schedule a
+  // notification or ask for permission on its way to the redirect.
+  if (!__DEV__) {
+    return <Redirect href="/" />;
+  }
+
+  return <DevNotifyTrigger />;
+}
+
+function DevNotifyTrigger() {
   const params = useLocalSearchParams<{ seconds?: string; title?: string }>();
   const [scheduled, setScheduled] = useState(false);
 
@@ -48,10 +58,6 @@ export default function DevNotify() {
     // waiting for, and this screen must not be what the reader lands on.
     router.replace('/');
   }, [scheduled]);
-
-  if (!__DEV__) {
-    return <Redirect href="/" />;
-  }
 
   return <View testID="dev-notify" />;
 }

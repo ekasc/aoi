@@ -215,7 +215,7 @@ step(`scheduling a notification in ${SECONDS}s via aoi://dev-notify`);
 deviceShell(
   `am start -a android.intent.action.VIEW -d 'aoi://dev-notify?seconds=${SECONDS}&title=${encodeURIComponent(
     TITLE
-  )}'`
+  ).replace(/'/g, '%27')}'`
 );
 
 // ------------------------------------------------------------------ delivery
