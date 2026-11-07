@@ -29,7 +29,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ekasc.aoi"
+      "package": "com.ekasc.aoi",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -39,8 +40,7 @@
       "expo-router",
       "expo-apple-authentication",
       "./plugins/expo-dev-menu-fab",
-      "./plugins/with-ios-scene-delegate",
-			"./plugins/with-ios-personal-team",
+      "./plugins/with-ios-personal-team",
       [
         "expo-splash-screen",
         {
@@ -80,7 +80,10 @@
       ],
       "expo-notifications",
       "expo-asset",
-      "expo-video"
+      "expo-video",
+      "expo-image",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

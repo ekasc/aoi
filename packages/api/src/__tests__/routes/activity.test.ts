@@ -52,7 +52,7 @@ function spaceMemberRow(overrides: Record<string, unknown> = {}) {
 
 function activityRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: '00000000-0000-0000-0000-000000000040',
+    id: '00000000-0000-4000-8000-000000000040',
     kind: 'moment_deleted' as const,
     actorName: 'Sam',
     occurredAt: new Date(),
@@ -87,7 +87,7 @@ describe('GET /v1/spaces/current/activity', () => {
       ['actorName', 'id', 'kind', 'occurredAt'].sort()
     );
     expect(body.activity[0]).toMatchObject({
-      id: '00000000-0000-0000-0000-000000000040',
+      id: '00000000-0000-4000-8000-000000000040',
       kind: 'moment_deleted',
       actorName: 'Sam',
     });
@@ -105,11 +105,11 @@ describe('GET /v1/spaces/current/activity', () => {
   it('excludes rows older than 7 days', async () => {
     const jwt = await getTestJwt();
     const stale = activityRow({
-      id: '00000000-0000-0000-0000-000000000041',
+      id: '00000000-0000-4000-8000-000000000041',
       occurredAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
     });
     const recent = activityRow({
-      id: '00000000-0000-0000-0000-000000000042',
+      id: '00000000-0000-4000-8000-000000000042',
       occurredAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
     });
     mockSelectQueue.push([spaceMemberRow()], [stale, recent]);
@@ -117,14 +117,14 @@ describe('GET /v1/spaces/current/activity', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.activity).toHaveLength(1);
-    expect(body.activity[0].id).toBe('00000000-0000-0000-0000-000000000042');
+    expect(body.activity[0].id).toBe('00000000-0000-4000-8000-000000000042');
   });
 
   it('never widens the window past 7 days even with an older since param', async () => {
     const jwt = await getTestJwt();
     const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
     const stale = activityRow({
-      id: '00000000-0000-0000-0000-000000000043',
+      id: '00000000-0000-4000-8000-000000000043',
       // Inside the requested `since` window, but outside the 7-day clamp.
       occurredAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
     });

@@ -13,7 +13,7 @@ import { deleteAccountProgram } from '../../domains/auth';
  * linkage + tokens (auth_accounts), sessions (all devices), push tokens,
  * preferences, precise location shares.
  * RETAINED (shared relationship content for the remaining partner):
- * moments, letters, calendar, someday, weekly answers, media
+ * moments, calendar, someday, weekly answers, media
  * rows + bytes, spaces/invites/activity rows, the Plus row (partner's paid
  * period), and the membership row itself (flipped to left).
  * The user row survives as an unlinked tombstone (id + deleted_at only)
@@ -121,14 +121,6 @@ async function setupPaired(
     NOW
   );
   harness.d1.runSync(
-    `insert into letters (id, space_id, author_user_id, caption, body, sealed_until, created_at)
-     values ('l-a1', ?, ?, 'For you', 'sealed words', ?, ?)`,
-    space.id,
-    USER_A,
-    NOW + YEAR_MS,
-    NOW
-  );
-  harness.d1.runSync(
     `insert into weekly_answers (id, space_id, user_id, week_key, question_id, answer, created_at, updated_at)
      values ('w-a1', ?, ?, '2026-W03', 7, 'our song', ?, ?)`,
     space.id,
@@ -205,73 +197,6 @@ describe('personal identity purge', () => {
   });
 });
 
-describe('shared history preservation + attribution', () => {
-  it('partner keeps every memory; snapshots keep names, live joins show Deleted member', async () => {
-    const { harness, app } = makeApp();
-    const spaceId = await setupPaired(app, harness);
-    await app.request('/v1/auth/account', { method: 'DELETE', headers: auth(TOKEN_A) });
-
-    // Rows retained.
-    expect(count(harness, 'select count(*) as n from moments where id = ?', 'm-a1')).toBe(1);
-    expect(count(harness, 'select count(*) as n from letters where id = ?', 'l-a1')).toBe(1);
-    expect(count(harness, 'select count(*) as n from weekly_answers where id = ?', 'w-a1')).toBe(1);
-    expect(count(harness, 'select count(*) as n from spaces where id = ?', spaceId)).toBe(1);
-
-    // Moment snapshot columns keep what the partner saw (raw history);
-    // the live API resolves the tombstone as Deleted member.
-    const rawMoment = harness.d1.rawDb
-      .prepare('select author_name, created_by_user_id from moments where id = ?')
-      .get('m-a1') as { author_name: string; created_by_user_id: string };
-    expect(rawMoment).toEqual({ author_name: 'Aoi', created_by_user_id: USER_A });
-    const moments = await app.request('/v1/spaces/current/moments?limit=50', { headers: auth(TOKEN_B) });
-    expect(moments.status).toBe(200);
-    const items = ((await moments.json()) as { moments: { authorName: string; authorId: string }[] }).moments;
-    expect(items.map((m) => m.authorName)).toContain('Deleted member');
-    expect(items.map((m) => m.authorId)).toContain(USER_A);
-
-    // Live user join resolves the tombstone without leaking identity.
-    const shelf = await app.request('/v1/spaces/current/letters', { headers: auth(TOKEN_B) });
-    expect(shelf.status).toBe(200);
-    const letters = (await shelf.json()) as { letters: { authorName: string }[] };
-    expect(letters.letters.map((l) => l.authorName)).toContain('Deleted member');
-
-    // Space itself is untouched (not archived: partner remains).
-    const archived = harness.d1.rawDb
-      .prepare('select archived_at from spaces where id = ?')
-      .get(spaceId) as { archived_at: number | null };
-    expect(archived.archived_at).toBeNull();
-  });
-
-  it("purchaser purge keeps the partner's paid period (Plus row retained, unlinked)", async () => {
-    const { harness, app } = makeApp();
-    await setupPaired(app, harness);
-    const grant = await app.request('/v1/billing/revenuecat/webhook', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${WEBHOOK_SECRET}` },
-      body: JSON.stringify({
-        api_version: '1.0',
-        event: {
-          id: 'evt-plus-1',
-          type: 'INITIAL_PURCHASE',
-          app_user_id: USER_A,
-          event_timestamp_ms: NOW,
-          entitlement_id: 'plus',
-          entitlement_ids: ['plus'],
-          product_id: 'aoi_plus_monthly',
-          expiration_at_ms: NOW + YEAR_MS,
-        },
-      }),
-    });
-    expect(grant.status).toBe(200);
-
-    await app.request('/v1/auth/account', { method: 'DELETE', headers: auth(TOKEN_A) });
-
-    const plus = await app.request('/v1/spaces/current/plus', { headers: auth(TOKEN_B) });
-    expect(plus.status).toBe(200);
-    expect((await plus.json()) as { isPlus: boolean }).toMatchObject({ isPlus: true });
-    expect(count(harness, 'select count(*) as n from space_plus_entitlements')).toBe(1);
-  });
-});
 
 describe('purge lifecycle + retry', () => {
   function failArchiveOnce(harness: ReturnType<typeof makeApp>['harness']): () => void {

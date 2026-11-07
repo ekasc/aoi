@@ -61,7 +61,9 @@ function LiveWaveformComponent({
   const muted = useThemeColor({}, 'muted');
 
   const wavePath = useDerivedValue(() => {
-    const path = Skia.Path.Make();
+    // Skia 2.14 moved path building onto SkPathBuilder; SkPath is now
+    // immutable, so the bars are appended to a builder and built once.
+    const path = Skia.PathBuilder.Make();
     const values = levels.value;
     const step = width / Math.max(1, columns);
     const radius = barWidth / 2;
@@ -72,7 +74,7 @@ function LiveWaveformComponent({
       const y = (height - barHeight) / 2;
       path.addRRect(Skia.RRectXY(Skia.XYWHRect(x, y, barWidth, barHeight), radius, radius));
     }
-    return path;
+    return path.build();
   });
 
   const playedClip = useDerivedValue(() =>
