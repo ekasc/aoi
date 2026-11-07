@@ -40,7 +40,6 @@ describe('isExpoPushToken', () => {
 describe('parsePushNotificationData', () => {
   it('recognizes every known kind', () => {
     for (const kind of [
-      'squeeze',
       'moment_added',
       'moment_edited',
       'moment_deleted',
@@ -60,7 +59,7 @@ describe('parsePushNotificationData', () => {
   it('ignores malformed payloads', () => {
     expect(parsePushNotificationData(undefined)).toBeNull();
     expect(parsePushNotificationData(null)).toBeNull();
-    expect(parsePushNotificationData('squeeze')).toBeNull();
+    expect(parsePushNotificationData('moment_added')).toBeNull();
     expect(parsePushNotificationData({ kind: 7 })).toBeNull();
     expect(parsePushNotificationData({})).toBeNull();
   });

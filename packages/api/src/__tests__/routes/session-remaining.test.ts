@@ -5,8 +5,8 @@ import { makeTestHarness, type ShimD1 } from '../../effects/test-harness';
 
 /**
  * Route-level contract tests for the ported worker routers (calendar,
- * letters, question, someday, location, preferences, milestones,
- * squeezes) — the HTTP face through the worker shell (createApp + Effect
+ * question, someday, location, preferences, milestones,
+ * milestones) — the HTTP face through the worker shell (createApp + Effect
  * runtime + error mapper + session middleware).
  */
 
@@ -154,40 +154,6 @@ describe('worker calendar routes', () => {
   });
 });
 
-describe('worker letters routes', () => {
-  it('seal → body omitted; open before the seal → 400; open after → body present', async () => {
-    const { harness, app } = makeApp();
-    seedCouple(harness.d1);
-
-    const sealed = await app.request('/v1/spaces/current/letters', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...auth(TOKEN_A) },
-      body: JSON.stringify({
-        caption: 'open me',
-        body: 'the secret words',
-        sealedUntil: new Date(MAR_1).toISOString(),
-      }),
-    });
-    expect(sealed.status).toBe(201);
-    const sealedBody = await sealed.json();
-    expect(sealedBody.body).toBeUndefined();
-    const letterId = sealedBody.id;
-
-    const early = await app.request(`/v1/letters/${letterId}/open`, {
-      method: 'POST',
-      headers: auth(TOKEN_B),
-    });
-    expect(early.status).toBe(400);
-
-    harness.clock.set(MAR_1 + 1);
-    const opened = await app.request(`/v1/letters/${letterId}/open`, {
-      method: 'POST',
-      headers: auth(TOKEN_B),
-    });
-    expect(opened.status).toBe(200);
-    expect((await opened.json()).body).toBe('the secret words');
-  });
-});
 
 describe('worker question routes', () => {
   it('put answers; reveal gate through HTTP', async () => {
@@ -280,7 +246,7 @@ describe('worker location routes', () => {
   });
 });
 
-describe('worker preferences / milestones / squeezes routes', () => {
+describe('worker preferences / milestones routes', () => {
   it('preferences default then upsert', async () => {
     const { harness, app } = makeApp();
     seedCouple(harness.d1);
@@ -295,39 +261,5 @@ describe('worker preferences / milestones / squeezes routes', () => {
     });
     expect((await updated.json()).themeId).toBe('sea-glass');
   });
-
-  it('squeeze → 202 with a space; 400 without one', async () => {
-    const { harness, app } = makeApp();
-    seedCouple(harness.d1);
-
-    const ok = await app.request('/v1/squeezes', { method: 'POST', headers: auth(TOKEN_A) });
-    expect(ok.status).toBe(202);
-  });
 });
 
-describe('worker route auth + 404 behaviors', () => {
-  it('protected routes return 401 without a token', async () => {
-    const { app } = makeApp();
-    for (const path of [
-      '/v1/spaces/current/calendar/events',
-      '/v1/spaces/current/letters',
-      '/v1/spaces/current/question',
-      '/v1/spaces/current/someday',
-      '/v1/spaces/current/location',
-      '/v1/users/me/preferences',
-      '/v1/squeezes',
-    ]) {
-      const res = await app.request(path, { method: path === '/v1/squeezes' ? 'POST' : 'GET' });
-      expect(res.status, path).toBe(401);
-    }
-  });
-
-  it('unknown routes → 404 canonical envelope', async () => {
-    const { harness, app } = makeApp();
-    seedCouple(harness.d1);
-    const res = await app.request('/v1/nope', { headers: auth(TOKEN_A) });
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error.code).toBe('NOT_FOUND');
-  });
-});

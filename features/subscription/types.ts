@@ -61,7 +61,5 @@ export type ServerPlusState =
       expiresAt: string | null;
       mediaUsedBytes: number;
       mediaLimitBytes: number;
-      activeFutureLetters: number;
-      futureLetterLimit: number | null;
     }
   | null;

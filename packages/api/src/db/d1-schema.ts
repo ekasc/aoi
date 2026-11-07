@@ -546,28 +546,6 @@ export const locationShares = sqliteTable(
   ]
 );
 
-// ── Letters (time capsule) ─────────────────────────────────────────────────
-
-export const letters = sqliteTable(
-  'letters',
-  {
-    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    spaceId: text('space_id')
-      .notNull()
-      .references(() => spaces.id, { onDelete: 'cascade' }),
-    authorUserId: text('author_user_id')
-      .notNull()
-      .references(() => users.id),
-    caption: text('caption'),
-    body: text('body').notNull(),
-    sealedUntil: integer('sealed_until', { mode: 'timestamp_ms' }).notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`).$defaultFn(() => new Date()),
-    openedAt: integer('opened_at', { mode: 'timestamp_ms' }),
-    openedByUserId: text('opened_by_user_id').references(() => users.id),
-  },
-  (table) => [index('idx_letters_space_sealed_until').on(table.spaceId, table.sealedUntil)]
-);
-
 // ── Push Tokens ────────────────────────────────────────────────────────────
 
 export const pushTokens = sqliteTable(

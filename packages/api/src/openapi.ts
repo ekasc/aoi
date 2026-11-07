@@ -15,7 +15,6 @@ import {
   createCalendarEventRequestSchema,
   createSomedayItemRequestSchema,
   currentLocationResponseSchema,
-  letterSchema,
   locationConsentRequestSchema,
   locationConsentResponseSchema,
   locationShareRequestSchema,
@@ -32,7 +31,6 @@ import {
   timelineQuerySchema,
   timelineResponseSchema,
   putWeeklyAnswerRequestSchema,
-  sealLetterRequestSchema,
   somedayItemSchema,
   somedayListResponseSchema,
   spaceActivityItemSchema,
@@ -86,8 +84,6 @@ export const SHARED_COMPONENT_SCHEMAS = {
   CalendarEvent: calendarEventSchema,
   CreateCalendarEventRequest: createCalendarEventRequestSchema,
   UpdateCalendarEventRequest: updateCalendarEventRequestSchema,
-  Letter: letterSchema,
-  SealLetterRequest: sealLetterRequestSchema,
   WeeklyQuestionResponse: weeklyQuestionResponseSchema,
   PutWeeklyAnswerRequest: putWeeklyAnswerRequestSchema,
   SomedayItem: somedayItemSchema,
@@ -156,6 +152,7 @@ export function registerOpenApiRoutes<E extends Env>(app: OpenAPIHono<E>): void 
   // truth: whatever the client validates against is what the server uses).
   // `register` accepts zod schemas directly and emits $ref components.
   for (const [name, schema] of Object.entries(SHARED_COMPONENT_SCHEMAS)) {
+    // Shared contracts can be constructed before the OpenAPI extension loads.
     app.openAPIRegistry.register(name, schema);
   }
 

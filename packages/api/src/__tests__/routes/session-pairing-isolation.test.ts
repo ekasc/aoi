@@ -69,7 +69,6 @@ interface Scenario {
   code2: string;
   noteId: string;
   mediaId: string;
-  letterId: string;
   eventId: string;
 }
 
@@ -121,14 +120,6 @@ async function setupAdversarialHistory(
     headers: auth(TOKEN_B),
   });
   expect(complete.status).toBe(200);
-
-  const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  const letter = await app.request(
-    '/v1/spaces/current/letters',
-    json(TOKEN_B, { caption: 'For Aoi', body: 'Blake secret words', sealedUntil: future })
-  );
-  expect(letter.status).toBe(201);
-  const letterId = ((await letter.json()) as { id: string }).id;
 
   // B answers the weekly reflection + imports a goal milestone.
   const answer = await app.request(
@@ -185,7 +176,7 @@ async function setupAdversarialHistory(
   const code2 = ((await rotated.json()) as { inviteCode: string }).inviteCode;
   expect(code2).not.toBe(code1);
 
-  return { spaceId, code1, code2, noteId, mediaId, letterId, eventId };
+  return { spaceId, code1, code2, noteId, mediaId, eventId };
 }
 
 describe('adversarial pairing isolation (A/B/C over HTTP)', () => {
@@ -233,21 +224,9 @@ describe('adversarial pairing isolation (A/B/C over HTTP)', () => {
     expect([403, 404]).toContain(res.status);
   });
 
-  it("C cannot read letters, plans, goals, Someday, chapters, or metadata", async () => {
+  it("C cannot read plans, goals, Someday, chapters, or metadata", async () => {
     const { harness, app } = makeApp();
     const s = await setupAdversarialHistory(app, harness);
-
-    // Letters shelf: C's own (empty) scope only.
-    const shelf = await app.request('/v1/spaces/current/letters', { headers: auth(TOKEN_C) });
-    expect(shelf.status).toBe(200);
-    expect(JSON.stringify(await shelf.json())).not.toContain('Blake secret words');
-
-    // Sealed open attempt: indistinguishable from missing.
-    const open = await app.request(`/v1/letters/${s.letterId}/open`, {
-      method: 'POST',
-      headers: auth(TOKEN_C),
-    });
-    expect(open.status).toBe(404);
 
     // Plans surfaces: empty scope, direct ids rejected.
     const events = await app.request(
@@ -545,12 +524,6 @@ describe('pairing isolation mutation sweep (C cannot alter B history)', () => {
       headers: auth(TOKEN_C),
     });
     expect([400, 403, 404]).toContain(rotate.status);
-
-    const seal = await app.request(
-      '/v1/spaces/current/letters',
-      json(TOKEN_C, { caption: 'C letter', body: 'C words', sealedUntil: new Date(Date.now() + 86400000).toISOString() })
-    );
-    expect([400, 403, 404]).toContain(seal.status);
 
     // Nothing changed: A reads the original titles and space.
     const list = (await (

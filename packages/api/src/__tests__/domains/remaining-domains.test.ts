@@ -9,11 +9,6 @@ import {
   listEventsProgram,
   updateEventProgram,
 } from '../../domains/calendar';
-import {
-  listLettersProgram,
-  openLetterProgram,
-  sealLetterProgram,
-} from '../../domains/letters';
 import { getQuestionProgram, putAnswerProgram } from '../../domains/question';
 import {
   createSomedayProgram,
@@ -31,7 +26,6 @@ import {
   getPreferencesProgram,
   updatePreferencesProgram,
 } from '../../domains/preferences';
-import { sendSqueezeProgram } from '../../domains/squeezes';
 import {
   BadRequestError,
   ForbiddenError,
@@ -43,11 +37,10 @@ import {
  * level against the real D1 baseline (better-sqlite3 shim):
  * - calendar: range list, creator-only update/delete, weekly expansion into
  *   concrete instances;
- * - letters: seal horizon, body lock, guarded one-way open;
  * - question: reveal gate (both answers before partner content);
  * - someday: membership gate, meaningful-only transitions;
  * - location: consent mutuality, freshness, one-time grant consumption;
- * - preferences / milestones / squeezes: basic flows.
+ * - preferences / milestones: basic flows.
  */
 
 const USER_A = '00000000-0000-4000-8000-000000000001';
@@ -116,25 +109,6 @@ function insertCalendarEvent(
   );
 }
 
-function insertLetter(
-  d1: ShimD1,
-  id: string,
-  spaceId: string,
-  authorId: string,
-  sealedUntilMs: number
-): void {
-  d1.runSync(
-    `insert into letters
-       (id, space_id, author_user_id, caption, body, sealed_until, created_at)
-     values (?, ?, ?, null, 'secret body', ?, ?)`,
-    id,
-    spaceId,
-    authorId,
-    sealedUntilMs,
-    Date.parse('2026-01-01T00:00:00.000Z')
-  );
-}
-
 function insertAnswer(
   d1: ShimD1,
   id: string,
@@ -192,7 +166,6 @@ const JAN_2 = Date.parse('2026-01-02T00:00:00.000Z');
 const JAN_3 = Date.parse('2026-01-03T00:00:00.000Z');
 const JAN_10 = Date.parse('2026-01-10T00:00:00.000Z');
 // The harness clock starts at 2026-01-15T00:00:00Z — future-facing dates
-// for letters (seal + open gates).
 const FEB_1 = Date.parse('2026-02-01T00:00:00.000Z');
 const FEB_2 = Date.parse('2026-02-02T00:00:00.000Z');
 const MAR_1 = Date.parse('2026-03-01T00:00:00.000Z');
@@ -293,76 +266,6 @@ describe('calendar domain', () => {
     const events = await run(ctx.provide(listEventsProgram(USER_A, { from: new Date(JAN_1 - 1).toISOString(), to: new Date(JAN_2 + 1).toISOString() })));
     expect(events).toHaveLength(0);
     expect(hasPushKind(ctx.harness.capturedQueue, 'event_deleted')).toBe(true);
-  });
-});
-
-// ── Letters ──────────────────────────────────────────────────────────────
-
-describe('letters domain', () => {
-  it('seal enforces future + horizon; response omits the body', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-
-    const failPast = await failureOf(
-      ctx.provide(sealLetterProgram(USER_A, { body: 'hi', sealedUntil: new Date(JAN_1).toISOString() }))
-    );
-    expect(failPast).toBeInstanceOf(BadRequestError);
-
-    const sealed = await run(
-      ctx.provide(
-        sealLetterProgram(USER_A, {
-          body: 'secret body',
-          caption: 'open me',
-          sealedUntil: new Date(MAR_1).toISOString(),
-        })
-      )
-    );
-    expect(sealed.body).toBeUndefined();
-    expect(sealed.isOpened).toBe(false);
-    expect(sealed.readyToOpen).toBe(false);
-    expect(hasPushKind(ctx.harness.capturedQueue, 'letter_sealed')).toBe(true);
-  });
-
-  it('list never leaks an unopened body; open is a guarded one-way transition', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertUser(ctx.harness.d1, USER_B, 'b@example.com', 'Bob');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    insertMember(ctx.harness.d1, SPACE_1, USER_B, 'partner');
-    insertLetter(ctx.harness.d1, '00000000-0000-4000-8000-000000000041', SPACE_1, USER_A, MAR_1);
-
-    const list = await run(ctx.provide(listLettersProgram(USER_B)));
-    expect(list).toHaveLength(1);
-    expect(list[0].body).toBeUndefined();
-    expect(list[0].authorRole).toBe('partner');
-
-    // Not yet time.
-    const failEarly = await failureOf(ctx.provide(openLetterProgram(USER_B, '00000000-0000-4000-8000-000000000041')));
-    expect(failEarly).toBeInstanceOf(BadRequestError);
-
-    // Advance the clock past the seal and open.
-    ctx.harness.clock.set(MAR_1 + 1);
-    const opened = await run(ctx.provide(openLetterProgram(USER_B, '00000000-0000-4000-8000-000000000041')));
-    expect(opened.body).toBe('secret body');
-    expect(opened.isOpened).toBe(true);
-    expect(opened.readyToOpen).toBe(true);
-
-    // Idempotent re-open.
-    const again = await run(ctx.provide(openLetterProgram(USER_B, '00000000-0000-4000-8000-000000000041')));
-    expect(again.body).toBe('secret body');
-  });
-
-  it('a letter from another space is indistinguishable from none (404)', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_A, 'a@example.com', 'Alice');
-    insertUser(ctx.harness.d1, USER_C, 'c@example.com', 'Casey');
-    insertSpace(ctx.harness.d1, SPACE_1, USER_A);
-    // USER_C has no membership anywhere.
-    insertLetter(ctx.harness.d1, '00000000-0000-4000-8000-000000000042', SPACE_1, USER_A, JAN_1);
-
-    const fail = await failureOf(ctx.provide(openLetterProgram(USER_C, '00000000-0000-4000-8000-000000000042')));
-    expect(fail).toBeInstanceOf(NotFoundError);
   });
 });
 
@@ -577,7 +480,7 @@ describe('location domain', () => {
   });
 });
 
-// ── Preferences / Milestones / Squeezes ─────────────────────────────────
+// ── Preferences / Milestones ────────────────────────────────────────────
 
 describe('preferences domain', () => {
   it('returns defaults then upserts', async () => {
@@ -595,17 +498,3 @@ describe('preferences domain', () => {
   });
 });
 
-describe('squeezes domain', () => {
-  it('enqueues a wordless push; requires a space', async () => {
-    const ctx = makeCtx();
-    insertUser(ctx.harness.d1, USER_C, 'c@example.com', 'Casey');
-
-    const fail = await failureOf(ctx.provide(sendSqueezeProgram(USER_C)));
-    expect(fail).toBeInstanceOf(BadRequestError);
-
-    insertSpace(ctx.harness.d1, SPACE_1, USER_C);
-    const ok = await run(ctx.provide(sendSqueezeProgram(USER_C)));
-    expect(ok).toEqual({ ok: true });
-    expect(hasPushKind(ctx.harness.capturedQueue, 'squeeze')).toBe(true);
-  });
-});

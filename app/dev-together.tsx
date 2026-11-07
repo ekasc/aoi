@@ -21,7 +21,6 @@ import { ResponsesProvider } from "@/features/responses/responses-context";
 import { SessionContext } from "@/features/session/session-context";
 import { SomedayProvider } from "@/features/someday/someday-context";
 import { SpaceContext } from "@/features/space/space-context";
-import { SqueezeProvider } from "@/features/squeeze/squeeze-context";
 
 /**
  * Development-only Us screen preview: the whole mock world behind the same
@@ -79,7 +78,7 @@ function DevTogetherPreview() {
 					<PartnerDetailsProvider>
 						<SomedayProvider>
 							<QuestionProvider>
-								<SqueezeProvider>
+								
 											<PushProvider>
 												<ResponsesProvider>
 													<ComposerProvider>
@@ -89,7 +88,7 @@ function DevTogetherPreview() {
 													</ComposerProvider>
 												</ResponsesProvider>
 											</PushProvider>
-								</SqueezeProvider>
+								
 							</QuestionProvider>
 						</SomedayProvider>
 					</PartnerDetailsProvider>

@@ -103,7 +103,6 @@ describe('export read boundary', () => {
     );
     await getJson(app, '/v1/spaces/current/someday', TOKEN_A);
     await getJson(app, '/v1/spaces/current/question', TOKEN_A);
-    await getJson(app, '/v1/spaces/current/letters', TOKEN_A);
     // Free, no entitlement row at all — reads stay 200 regardless.
     const plus = (await getJson(app, '/v1/spaces/current/plus', TOKEN_A)) as { isPlus: boolean };
     expect(plus.isPlus).toBe(false);
@@ -129,41 +128,6 @@ describe('export read boundary', () => {
     expect(leave.status).toBe(200);
     const archived = (await getJson(app, '/v1/spaces/current', TOKEN_C)) as { space: null };
     expect(archived.space).toBeNull();
-  });
-
-  it('sealed bodies stay sealed; opened bodies read (same semantics as export)', async () => {
-    const { harness, app } = makeApp();
-    const spaceId = await setupPairedSpace(app, harness);
-    harness.d1.runSync(
-      `insert into letters (id, space_id, author_user_id, caption, body, sealed_until, created_at)
-       values ('00000000-0000-4000-8000-000000000011', ?, ?, 'Later', 'not yet', ?, ?)`,
-      spaceId,
-      USER_A,
-      NOW + YEAR_MS,
-      NOW
-    );
-    harness.d1.runSync(
-      `insert into letters (id, space_id, author_user_id, caption, body, sealed_until, created_at)
-       values ('00000000-0000-4000-8000-000000000012', ?, ?, 'Now', 'opened words', ?, ?)`,
-      spaceId,
-      USER_A,
-      NOW - 1000,
-      NOW
-    );
-    const open = await app.request('/v1/letters/00000000-0000-4000-8000-000000000012/open', {
-      method: 'POST',
-      headers: auth(TOKEN_B),
-    });
-    expect(open.status).toBe(200);
-
-    const shelf = (await getJson(app, '/v1/spaces/current/letters', TOKEN_B)) as {
-      letters: Record<string, unknown>[];
-    };
-    const sealed = shelf.letters.find((l) => l.id === '00000000-0000-4000-8000-000000000011');
-    const opened = shelf.letters.find((l) => l.id === '00000000-0000-4000-8000-000000000012');
-    expect(sealed).toBeDefined();
-    expect('body' in (sealed ?? {})).toBe(false);
-    expect(opened).toMatchObject({ body: 'opened words' });
   });
 
   it('tombstone authors resolve without erased email/provider identity', async () => {

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 
 import { PushProvider } from '@/features/push/push-context';
-import { SqueezeProvider } from '@/features/squeeze/squeeze-context';
 
 // Separate file from push-context.test.tsx on purpose: the register-once
 // flag is module state, and this file gets a fresh module instance so the
@@ -53,11 +52,9 @@ const VALID_TOKEN = 'ExpoPushToken[registration-test-token]';
 
 function renderProvider() {
   return render(
-    <SqueezeProvider>
-      <PushProvider>
-        <div />
-      </PushProvider>
-    </SqueezeProvider>
+    <PushProvider>
+      <div />
+    </PushProvider>
   );
 }
 

@@ -41,7 +41,7 @@ const ENV_BINDINGS = {
     queueDlq: 'aoi-queue-dlq-dev',
     analytics: 'AOI_ANALYTICS',
     crons: [] as string[],
-    rl: { auth: '91001', general: '91002', squeeze: '91003', location: '91004', media: '91005' },
+    rl: { auth: '91001', general: '91002', location: '91004', media: '91005' },
   },
   prod: {
     name: 'aoi-api-prod',
@@ -59,7 +59,7 @@ const ENV_BINDINGS = {
     analytics: 'AOI_ANALYTICS',
     // Daily retention/media purge.
     crons: ['0 3 * * *'] as string[],
-    rl: { auth: '93001', general: '93002', squeeze: '93003', location: '93004', media: '93005' },
+    rl: { auth: '93001', general: '93002', location: '93004', media: '93005' },
   },
 } as const;
 
@@ -80,7 +80,6 @@ const bindings = ENV_BINDINGS[deployEnv];
 const rateLimitBindings = [
   { name: 'RATE_LIMIT_AUTH', namespace_id: bindings.rl.auth, simple: { limit: 10, period: 60 } },
   { name: 'RATE_LIMIT_GENERAL', namespace_id: bindings.rl.general, simple: { limit: 100, period: 60 } },
-  { name: 'RATE_LIMIT_SQUEEZE', namespace_id: bindings.rl.squeeze, simple: { limit: 10, period: 60 } },
   { name: 'RATE_LIMIT_LOCATION_REQUEST', namespace_id: bindings.rl.location, simple: { limit: 3, period: 60 } },
   { name: 'RATE_LIMIT_MEDIA', namespace_id: bindings.rl.media, simple: { limit: 20, period: 60 } },
 ];
