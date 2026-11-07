@@ -289,8 +289,13 @@ describe('ChapterDetailScreen export action', () => {
     // cleanup all happen inside the orchestration (pinned downstream).
     expect(exportChapterKeepsakeSpy).toHaveBeenCalledTimes(1);
     const [input] = exportChapterKeepsakeSpy.mock.calls[0];
-    // Human filename from the chapter title, not the id grammar.
-    expect(input.filename).toContain(`aoi-keepsake-august-2026`);
+    // Human filename from the chapter title, not the id grammar. The month
+    // comes from the fixture key so the expectation does not age out.
+    const [year, month] = key.split('-').map(Number);
+    const monthName = new Date(Date.UTC(year, month - 1, 1))
+      .toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })
+      .toLowerCase();
+    expect(input.filename).toContain(`aoi-keepsake-${monthName}-${year}`);
     expect(input.members.map((member: { id: string }) => member.id)).toEqual([
       'm-note',
       'm-photo',
