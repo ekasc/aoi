@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from 'effect';
 
 /**
  * Clock — the single `now` source for every domain program. All time-based
- * decisions (letter horizons, location freshness, retention purges, cursor
+ * decisions (location freshness, retention purges, cursor
  * keys) read from here so tests can pin time with TestClock.
  */
 export interface ClockService {

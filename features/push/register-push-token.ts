@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { isExpoPushToken, type PushTokenPlatform } from '@aoi/shared';
 
 import { notificationsModule } from '@/features/notifications/notifications-module';
@@ -48,10 +49,25 @@ export async function registerDevicePushToken(): Promise<boolean> {
 
     // Throws on simulators and without a physical-device project — guarded
     // by the surrounding catch.
-    const token = await notifications.getExpoPushTokenAsync();
+    //
+    // The projectId is passed explicitly rather than left to the build: the
+    // docs recommend it, and a token minted without it is attributed by
+    // whatever the binary was built with, which is how a token ends up
+    // pointing at the wrong project and delivering nothing.
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    const token = await notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
 
     if (!isExpoPushToken(token.data)) {
       return false;
+    }
+
+    // Dev-only: the token is what you paste into expo.dev/notifications to
+    // prove delivery end-to-end without waiting on a partner's action.
+    if (__DEV__) {
+      console.log(`[push] ExpoPushToken ${token.data} (${currentPlatform()})`);
     }
 
     await registerPushToken(token.data, currentPlatform());

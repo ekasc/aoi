@@ -6,21 +6,20 @@ import { withRequestDeadline } from '@/features/request-deadline';
 
 let currentTokens: AuthSessionTokens | null = null;
 let tokenGeneration = 0;
+let sessionGeneration = 0;
 let unauthorizedHandler: (() => void) | null = null;
+let tokensRefreshedHandler: ((tokens: AuthSessionTokens) => Promise<void>) | null = null;
 
-/** Session teardown for a dead refresh token. Set by SessionProvider. */
+/** Only a rejected refresh credential can revoke the local session. */
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
 }
 
-function notifyUnauthorized() {
-  unauthorizedHandler?.();
+export function setTokensRefreshedHandler(handler: typeof tokensRefreshedHandler) {
+  tokensRefreshedHandler = handler;
 }
 
-// One refresh POST per refresh token, ever concurrently: the server treats a
-// rotated-out refresh token presented twice as theft and revokes ALL of the
-// user's sessions (packages/api/src/routes/auth.ts), so requests 401ing
-// together must share one refresh, never race two.
+// Concurrent requests share recovery, including compatibility with rotating tokens.
 const refreshInflight = new Map<string, Promise<AuthSessionTokens | null>>();
 
 // The latest rotation this client performed: which refresh token it consumed
@@ -31,12 +30,27 @@ const refreshInflight = new Map<string, Promise<AuthSessionTokens | null>>();
 let lastRotation: { fromRefreshToken: string; tokens: AuthSessionTokens } | null = null;
 
 export function setApiTokens(tokens: AuthSessionTokens | null) {
+  sessionGeneration += 1;
+  publishTokens(tokens);
+}
+
+function publishTokens(tokens: AuthSessionTokens | null) {
   currentTokens = tokens;
   tokenGeneration += 1;
 }
 
+function assertCurrentSession(generation: number) {
+  if (sessionGeneration !== generation) {
+    throw Object.assign(new Error('The account changed while this request was running.'), { code: 'SESSION_CHANGED' });
+  }
+}
+
 export function getApiTokens() {
   return currentTokens;
+}
+
+export function getApiSessionGeneration() {
+  return sessionGeneration;
 }
 
 export function getApiBaseUrl(): string {
@@ -68,7 +82,13 @@ async function doRefresh(
         body: JSON.stringify({ refreshToken: captured.refreshToken }),
         signal,
       });
-      if (!response.ok) return null;
+      if (signal.aborted) return null;
+      if (!response.ok) {
+        if (response.status === 401 && currentTokens === captured && tokenGeneration === capturedGeneration) {
+          unauthorizedHandler?.();
+        }
+        return null;
+      }
       return refreshResponseSchema.parse(await response.json());
     });
     if (!data) return null;
@@ -80,7 +100,9 @@ async function doRefresh(
     // Same-session check: only the captured session may publish. A switch
     // during the await drops the stale result (never setApiTokens).
     if (currentTokens !== captured || tokenGeneration !== capturedGeneration) return null;
-    setApiTokens(newTokens);
+    await tokensRefreshedHandler?.(newTokens);
+    if (currentTokens !== captured || tokenGeneration !== capturedGeneration) return null;
+    publishTokens(newTokens);
     lastRotation = { fromRefreshToken: captured.refreshToken, tokens: newTokens };
     return newTokens;
   } catch {
@@ -89,11 +111,7 @@ async function doRefresh(
 }
 
 /**
- * The single flight for one refresh-token lineage: concurrent 401s share
- * the first refresh instead of each POSTing (which the server reads as
- * token reuse and answers by revoking every session). Registration is
- * synchronous — no await sits between the miss and the set — so two
- * continuations cannot both start one.
+ * Register synchronously so concurrent 401s share one renewal request.
  */
 function startRefresh(
   captured: AuthSessionTokens,
@@ -120,8 +138,7 @@ function startRefresh(
  * its tokens + generation up front; if the generation/identity changed
  * (account switch) before or during the refresh, it NEVER refreshes,
  * retries, or publishes — the original 401 is returned so an A request can
- * never replay on B credentials. Concurrent 401s share one refresh flight
- * (the server revokes all sessions on refresh-token reuse), and a loser
+ * never replay on B credentials. Concurrent 401s share one refresh flight, and a loser
  * whose 401 lands after our own rotation completed retries once with that
  * rotation's lineage. Shared by JSON and binary reads.
  * Throws on stub mode and on non-OK statuses after the refresh attempt.
@@ -152,8 +169,7 @@ async function authorizedFetch(path: string, options: RequestInit = {}): Promise
   // only. An account switch anywhere in the flight aborts with zero further
   // network, so an A request can never replay on B credentials.
   if (response.status === 401 && captured?.refreshToken) {
-    // A refresh is already running for our lineage: join it instead of
-    // POSTing a second one (the server revokes all sessions on reuse).
+    // Join recovery already running for the captured credential.
     // The shared tokens are provably ours, so liveness is reference
     // equality with them — not the capture (the winner's own publish
     // always drifts a joiner). Anything else means a switch intervened.
@@ -174,8 +190,7 @@ async function authorizedFetch(path: string, options: RequestInit = {}): Promise
       if (
         rotated &&
         rotated.fromRefreshToken === captured.refreshToken &&
-        currentTokens === rotated.tokens &&
-        rotated.tokens.accessToken !== captured.accessToken
+        currentTokens === rotated.tokens
       ) {
         return retryWithToken(baseUrl, path, options, rotated.tokens.accessToken);
       }
@@ -221,6 +236,7 @@ async function apiFetchJson<T>(
   path: string,
   options: RequestInit
 ): Promise<T> {
+  const generation = sessionGeneration;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
@@ -245,11 +261,12 @@ async function apiFetchJson<T>(
     if (errorBody?.error && 'details' in errorBody.error) {
       error.details = (errorBody.error as { details?: unknown }).details;
     }
-    if (error.status === 401) notifyUnauthorized();
     throw error;
   }
 
-  return response.json() as Promise<T>;
+  const data = await response.json();
+  assertCurrentSession(generation);
+  return data;
 }
 
 export type ApiBytesResult = {
@@ -268,6 +285,7 @@ export async function apiFetchBytes(path: string): Promise<ApiBytesResult> {
 }
 
 async function readApiBytes(path: string, signal: AbortSignal): Promise<ApiBytesResult> {
+  const generation = sessionGeneration;
   const response = await authorizedFetch(path, { signal });
 
   if (!response.ok) {
@@ -279,6 +297,7 @@ async function readApiBytes(path: string, signal: AbortSignal): Promise<ApiBytes
   }
 
   const buffer = await response.arrayBuffer();
+  assertCurrentSession(generation);
   const contentType = response.headers?.get?.('content-type') ?? null;
   return { bytes: new Uint8Array(buffer), contentType, status: response.status };
 }

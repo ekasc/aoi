@@ -17,7 +17,7 @@ import type { ConfigService } from '../effects/config';
  *   schema object (`user`/`session`/`account`/`verification`);
  * - session tokens are opaque random strings stored in `user_sessions.token`
  *   (unique index) — the middleware validates Bearer tokens by DB lookup
- *   (expiry + user-not-deleted), not by cookie-signature tricks;
+ *   (token + user-not-deleted), not by cookie-signature tricks;
  * - `sign-in/social` accepts an idToken branch for `apple`/`google`, which
  *   is exactly what the native mobile flow needs (expo-apple-authentication
  *   / expo-auth-session return idTokens);
@@ -28,7 +28,7 @@ import type { ConfigService } from '../effects/config';
 export const BETTER_AUTH_BASE_PATH = '/api/auth';
 export const SESSION_COOKIE_NAME = 'better-auth.session_token';
 
-/** Session TTL (seconds) — mirrors Better Auth's default 7 days. */
+/** Renewal metadata for Better Auth; the app API requires explicit revocation. */
 export const SESSION_TTL_SEC = 365 * 24 * 60 * 60;
 
 /** A constructed Better Auth instance (handler + api). */

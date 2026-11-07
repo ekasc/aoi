@@ -64,4 +64,23 @@ describe('API deadline wiring', () => {
     expect(getApiTokens()).toEqual(original);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('does not sign out when a timed-out renewal returns a late 401', async () => {
+    const { apiFetch, setApiTokens, setUnauthorizedHandler } = await import('@/features/api-client');
+    vi.useFakeTimers();
+    setApiTokens({ accessToken: 'old', refreshToken: 'refresh' });
+    const revoked = vi.fn();
+    setUnauthorizedHandler(revoked);
+    let finish: (response: Response) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/refresh')
+      ? new Promise<Response>((resolve) => { finish = resolve; })
+      : Response.json({}, { status: 401 })));
+    const pending = expect(apiFetch('/slow')).rejects.toMatchObject({ code: 'NETWORK_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await pending;
+    finish(Response.json({}, { status: 401 }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revoked).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

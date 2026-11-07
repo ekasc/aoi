@@ -87,11 +87,11 @@ describe('resolveSessionByToken', () => {
     expect(await run(ctx.provide(resolveSessionByToken('nope')))).toBeNull();
   });
 
-  it('returns null for an expired session', async () => {
+  it('keeps an existing session valid after its old expiry', async () => {
     const ctx = makeCtx();
     insertUser(ctx.d1, USER_ID, 'alice@example.com', 'Alice');
     insertSession(ctx.d1, 's1', USER_ID, TOKEN, Date.parse('2026-01-01T00:00:00.000Z'));
-    expect(await run(ctx.provide(resolveSessionByToken(TOKEN)))).toBeNull();
+    expect((await run(ctx.provide(resolveSessionByToken(TOKEN))))?.userId).toBe(USER_ID);
   });
 
   it('returns null when the user is soft-deleted', async () => {
