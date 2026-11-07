@@ -1,0 +1,173 @@
+name: Android cloud device (interactive)
+
+# A headless Android emulator that outlives a normal CI step, so a person and an
+# agent can both drive it: scrcpy for the human, adb for the agent.
+#
+# Why this exists: the local emulator costs the dev machine a couple of GB and a
+# warm CPU, and this repo already proves the cloud shape works (see
+# e2e-android.yml, which boots two Pixel 6 emulators here). This turns that into
+# a session you can look at.
+#
+# What runs: one emulator, the debug APK from the dispatched ref, Metro is NOT
+# started here on purpose. Metro and .env.local stay on the dev machine, which is
+# where they already work, and reach the device through `adb reverse`. So the
+# only thing that moved to the cloud is the device itself.
+#
+# Getting in: the runner joins the tailnet (Tailscale), then forwards the
+# emulator's adb port to a second port. Both ends are private.
+#
+#   adb connect <tailscale-ip>:15555
+#   adb reverse tcp:8081 tcp:8081
+#   pnpm run start            # Metro on the dev machine
+#   scrcpy -s <tailscale-ip>:15555
+#
+# Requires: repo secret TS_AUTHKEY, an ephemeral, reusable Tailscale auth key.
+# Without it the job stops rather than exposing an unauthenticated adb port on
+# the public internet, because emulator images run adbd with ro.adb.secure=0 and
+# a forwarded port would be full control of the device.
+#
+# Cost: nothing. This repository is public, so GitHub-hosted minutes are free.
+# Limits: 360 minutes maximum per job: runner is 4 vCPU / 16 GB with KVM, which is
+# faster than most small VPS instances. The runner is destroyed when the job ends.
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: How long to hold the session open
+        type: number
+        default: 90
+      profile:
+        description: AVD device profile
+        type: choice
+        default: pixel_9
+        options:
+          - pixel_9
+          - pixel_9_pro
+          - pixel_8
+          - pixel_7
+      api_level:
+        description: Android API level (system image must have google_apis for Play Services)
+        type: choice
+        default: '35'
+        options:
+          - '35'
+          - '34'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cloud-device:
+    name: Cloud Android device
+    runs-on: ubuntu-latest
+    timeout-minutes: 260
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Join the tailnet
+        # A missing secret fails here and the guard below explains it, so the job
+        # can never reach the step that forwards adb.
+        continue-on-error: true
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          hostname: aoi-android
+
+      - name: Refuse to expose an unauthenticated adb port
+        run: |
+          if ! tailscale status >/dev/null 2>&1; then
+            echo "TS_AUTHKEY is not set or Tailscale did not come up." >&2
+            echo "Add a repo secret TS_AUTHKEY (ephemeral + reusable) and re-run." >&2
+            exit 1
+          fi
+          echo "tailnet address: $(tailscale ip -4)"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Materialize the Firebase config
+        # app.json points expo-google-services at ./google-services.json and the
+        # file is gitignored, so prebuild fails on a clean checkout without it.
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "GOOGLE_SERVICES_JSON is not set. Add the base64-encoded" >&2
+            echo "Firebase config as a repository secret and re-run." >&2
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 --decode > google-services.json
+
+      - name: Build debug APK
+        run: |
+          npx expo prebuild --platform android --non-interactive
+          pushd android
+          ./gradlew assembleDebug --no-daemon
+          popd
+          ls android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Boot the device and hold the session
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          SESSION_MINUTES: ${{ inputs.minutes }}
+          AVD_PROFILE: ${{ inputs.profile }}
+          API_LEVEL: ${{ inputs.api_level }}
+        with:
+          api-level: ${{ inputs.api_level }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ inputs.profile }}
+          disable-animations: false
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          script: |
+            set -euo pipefail
+
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+
+            command -v socat >/dev/null || sudo apt-get install -y socat
+            socat TCP-LISTEN:15555,fork,reuseaddr TCP:127.0.0.1:5555 &
+            socat_pid=$!
+            trap 'kill "$socat_pid" 2>/dev/null || true' EXIT
+
+            host_ip="$(tailscale ip -4 | head -1)"
+            {
+              echo ""
+              echo "### Cloud Android device ready"
+              echo ""
+              echo "Profile: ${AVD_PROFILE:-unknown} (API ${API_LEVEL:-unknown})"
+              echo "Host: \`${host_ip}:15555\`"
+              echo "Holding for ${SESSION_MINUTES} minutes."
+              echo ""
+              echo '```'
+              echo "adb connect ${host_ip}:15555"
+              echo "adb reverse tcp:8081 tcp:8081"
+              echo "scrcpy -s ${host_ip}:15555"
+              echo '```'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+
+            # Keep the device alive for the session. adb reports "unauthorized"
+            # if the device cannot be reached, so that ends the job early.
+            for _ in $(seq 1 $(( SESSION_MINUTES * 2 ))); do
+              sleep 30
+              if ! adb devices | grep -qE 'emulator-[0-9]+\s+device$'; then
+                echo "device lost, ending session" >&2
+                exit 1
+              fi
+            done

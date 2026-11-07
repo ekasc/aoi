@@ -35,6 +35,9 @@ yarn-error.*
 .env
 .env*.local
 
+# Firebase config referenced by app.json for Android builds; project values stay local.
+google-services.json
+
 # typescript
 *.tsbuildinfo
 

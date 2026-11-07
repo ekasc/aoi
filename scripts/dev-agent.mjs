@@ -60,8 +60,11 @@ const timeout = option('--timeout', null);
 // @react-native/dev-middleware) 401s any websocket whose Origin is missing or
 // is not localhost/127.0.0.1, and Node's built-in WebSocket can't set headers
 // — so the client is `ws` and always sends this Origin.
-const origin = option('--origin', 'http://127.0.0.1:8081');
 const base = `http://${host}:${port}`;
+// The proxy rejects any Origin that is not its own, so the default has to
+// follow --port. Defaulting to 8081 broke every dev:eval/logs/screenshot run
+// against Metro on 8877, with a socket that opened and then never answered.
+const origin = option('--origin', base);
 const RESPONSE_TIMEOUT_MS = 8000;
 
 function log(line) {
@@ -471,7 +474,20 @@ async function commandEval() {
   // `pnpm run dev:eval -- "<js>"` forwards the `--` separator into argv, so the
   // expression is the first positional after it, not a fixed index. Passing the
   // raw `--` through is what made every expression fail to compile.
-  const positional = args.slice(1).filter((arg) => arg !== '--');
+  // Flags are parsed for the connection but stay in argv, so they used to be
+  // glued onto the expression: `dev:eval --port 8877 "1+1"` became
+  // `return (--port 8877 1+1)`. Drop option pairs here.
+  const VALUE_FLAGS = new Set(['--port', '--host', '--target', '--origin', '--timeout']);
+  const positional = [];
+  for (let index = 1; index < args.length; index += 1) {
+    const current = args[index];
+    if (current === '--') continue;
+    if (VALUE_FLAGS.has(current)) {
+      index += 1;
+      continue;
+    }
+    positional.push(current);
+  }
   const fromStdin = args.includes('--stdin');
   let expression = positional.join(' ');
   if (fromStdin) {
@@ -741,7 +757,20 @@ function summarizeProfile(profile, top) {
 async function commandProfile() {
   const interval = Number(option('--interval', '200'));
   const top = Number(option('--top', '25'));
-  const positional = args.slice(1).filter((arg) => arg !== '--');
+  // Flags are parsed for the connection but stay in argv, so they used to be
+  // glued onto the expression: `dev:eval --port 8877 "1+1"` became
+  // `return (--port 8877 1+1)`. Drop option pairs here.
+  const VALUE_FLAGS = new Set(['--port', '--host', '--target', '--origin', '--timeout']);
+  const positional = [];
+  for (let index = 1; index < args.length; index += 1) {
+    const current = args[index];
+    if (current === '--') continue;
+    if (VALUE_FLAGS.has(current)) {
+      index += 1;
+      continue;
+    }
+    positional.push(current);
+  }
   const script = args.includes('--stdin') ? await readStdin() : positional.join(' ');
   if (!script.trim()) {
     fail('profile needs a script:\n  pnpm run dev:profile -- --stdin < script.js');
@@ -761,7 +790,16 @@ async function commandProfile() {
     }
     await sendWithTimeout(client, 'Profiler.start', {}, 8000);
 
-    let scheduled;
+    // RN 0.88's Hermes inspector reports no result to an evaluate issued
+    // before the runtime is enabled: the socket is open, the target is listed,
+    // and every call simply never answers. Enabling first is what makes the
+    // documented `dev:eval` path work again on SDK 58.
+    try {
+      await sendWithTimeout(client, 'Runtime.enable', {}, 5000);
+    } catch {
+      // Older targets tolerate evaluate without it; carry on and let the
+      // evaluate itself report the failure if this target needs something else.
+    }
     try {
       scheduled = await sendWithTimeout(
         client,

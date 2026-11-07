@@ -37,7 +37,7 @@ export function createAlbumPhotoStore({
             const sealed = await fetchObject(record.id);
             const opened = open(record, sealed);
             directory.create({ idempotent: true, intermediates: true });
-            file.write(opened);
+            await file.write(opened);
           }
           photos.push({
             id: record.id,
