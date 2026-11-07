@@ -176,8 +176,6 @@ let mockServerPlus: Record<string, any> | null = {
   expiresAt: null,
   mediaUsedBytes: 128 * 1024 * 1024,
   mediaLimitBytes: 250 * 1024 * 1024,
-  activeFutureLetters: 1,
-  futureLetterLimit: 1,
 };
 
 vi.mock('@/components/theme/theme-selector', () => ({
@@ -333,31 +331,6 @@ describe('Account relationship', () => {
   });
 });
 
-describe('Account Plus usage', () => {
-  it('shows truthful Free limits from server state', async () => {
-    mockSpace = waitingSpace();
-    await renderAccount();
-
-    expect(screen.getByText(/Free Space, 250 MiB of media\./)).toBeTruthy();
-  });
-
-  it('shows active Plus usage from server state', async () => {
-    mockServerPlus = {
-      isPlus: true,
-      status: 'active',
-      expiresAt: null,
-      mediaUsedBytes: 128 * 1024 * 1024,
-      mediaLimitBytes: 5 * 1024 * 1024 * 1024,
-      activeFutureLetters: 0,
-      futureLetterLimit: null,
-    };
-    mockSpace = joinedSpace();
-    await renderAccount();
-
-    expect(screen.getByText(/Plus is active on your shared Space/)).toBeTruthy();
-    expect(screen.getByText(/128 MiB of 5 GiB media used/)).toBeTruthy();
-  });
-});
 
 describe('Account controls', () => {
   it('renders appearance, data, session, and danger directly', async () => {

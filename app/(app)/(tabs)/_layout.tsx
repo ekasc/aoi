@@ -30,7 +30,14 @@ export default function TabsLayout() {
         fontWeight: '600',
       }}
     >
-      <NativeTabs.Trigger name="(memories)" contentStyle={{ backgroundColor: colors.background }}>
+      <NativeTabs.Trigger
+        name="(memories)"
+        // Android only: no accent slab behind the selection, and every tab
+        // keeps its label so the row reads as four places, not four glyphs.
+        disableIndicator
+        labelVisibilityMode="labeled"
+        contentStyle={{ backgroundColor: colors.background }}
+      >
         <NativeTabs.Trigger.Label>Memories</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           sf={{ default: 'book', selected: 'book.fill' }}
@@ -47,7 +54,14 @@ export default function TabsLayout() {
           }}
         />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="together" contentStyle={{ backgroundColor: colors.background }}>
+      <NativeTabs.Trigger
+        name="together"
+        // Android only: no accent slab behind the selection, and every tab
+        // keeps its label so the row reads as four places, not four glyphs.
+        disableIndicator
+        labelVisibilityMode="labeled"
+        contentStyle={{ backgroundColor: colors.background }}
+      >
         <NativeTabs.Trigger.Label>Us</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           sf={{ default: 'sparkles', selected: 'sparkles' }}
@@ -64,7 +78,14 @@ export default function TabsLayout() {
           }}
         />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="plans" contentStyle={{ backgroundColor: colors.background }}>
+      <NativeTabs.Trigger
+        name="plans"
+        // Android only: no accent slab behind the selection, and every tab
+        // keeps its label so the row reads as four places, not four glyphs.
+        disableIndicator
+        labelVisibilityMode="labeled"
+        contentStyle={{ backgroundColor: colors.background }}
+      >
         <NativeTabs.Trigger.Label>Plans</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           sf={{ default: 'calendar', selected: 'calendar.circle.fill' }}
@@ -84,7 +105,14 @@ export default function TabsLayout() {
           }}
         />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="ours" contentStyle={{ backgroundColor: colors.background }}>
+      <NativeTabs.Trigger
+        name="ours"
+        // Android only: no accent slab behind the selection, and every tab
+        // keeps its label so the row reads as four places, not four glyphs.
+        disableIndicator
+        labelVisibilityMode="labeled"
+        contentStyle={{ backgroundColor: colors.background }}
+      >
         <NativeTabs.Trigger.Label>Lists</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           sf={{ default: 'square.grid.2x2', selected: 'square.grid.2x2.fill' }}

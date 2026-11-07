@@ -9,12 +9,14 @@ import {
   View,
 } from 'react-native';
 import { Redirect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOnboardingFlow } from '@/components/setup/use-onboarding-flow';
 import { ThemedText } from '@/components/themed-text';
 import { Motion, Radii, Spacing } from '@/constants/theme';
+import { Typography } from '@/constants/typography';
 import { Button } from '@/components/ui/button';
 import { Pressed } from '@/components/ui/pressed';
 import { Reveal } from '@/components/ui/reveal';
@@ -51,14 +53,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   /**
-   * The viewport the sheet is read inside.
+   * Fill the viewport.
    *
-   * The sheet used to be a fixed column, which is correct only while the page
-   * fits: on a 320x568 screen, or with the keyboard up, or at a large text
-   * size, the form was taller than the column and its lower half — the date
-   * row, Continue, Back — was painted outside it and could not be reached.
-   * Scrolling the whole sheet keeps every step's actions and the sign-out line
-   * on the page at any height.
+   * On the keyboard-avoiding view it is the screen the sheet is read inside;
+   * on the page's scroll view it is the room the page takes between the
+   * masthead and the sign-out line. Either way the sheet is exactly one screen
+   * tall, which is what keeps the sign-out line in place.
    */
   fill: {
     flex: 1,
@@ -68,12 +68,18 @@ const styles = StyleSheet.create({
     // centres its doors, and to its own content when it is tall.
     flexGrow: 1,
   },
+  /**
+   * The sheet: one screen tall, masthead and sign-out line fixed, the page
+   * between them.
+   *
+   * The sheet used to be a scroll view's content, sized by its own rows, which
+   * made the sign-out line the last row of that column: a step that added a
+   * form pushed it down the page. Now the page scrolls inside the sheet
+   * instead, so the row that never changes height sits still.
+   */
   sheet: {
     alignSelf: 'center',
-    // A grow, not `flex: 1`: a zero basis let the sheet be shorter than its own
-    // rows, which is what let the form overlap the footer instead of pushing it
-    // down. With basis auto it can never be smaller than what it holds.
-    flexGrow: 1,
+    flex: 1,
     maxWidth: 560,
     width: '100%',
   },
@@ -84,6 +90,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: Spacing[16],
     paddingHorizontal: PAGE_GUTTER,
+  },
+  /** The head's leading edge: the way back, then the imprint. */
+  headLeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing[8],
+  },
+  /**
+   * Back, where both platforms keep it: leading edge of the header.
+   *
+   * A chevron rather than a word, so it reads as navigation rather than as a
+   * second decision, and at 32 points with a 12-point reach it still answers a
+   * thumb without making the masthead a toolbar.
+   */
+  backButton: {
+    alignItems: 'center',
+    height: 32,
+    justifyContent: 'center',
+    marginLeft: -Spacing[8],
+    width: 32,
   },
   /**
    * The decision itself, centred in what the masthead and the colophon leave.
@@ -129,9 +155,12 @@ const styles = StyleSheet.create({
    *
    * One image stands for the pair, so it is the space's avatar, and an avatar
    * is square: that is the shape that crops cleanly to the circle a name row
-   * wants and to the 4:5 the keepsake prints on its cover. Full width and 140
-   * tall, it was the largest object on the page while being the only optional
-   * thing on it, which is the hierarchy upside down.
+   * wants and to the 4:5 the keepsake prints on its cover.
+   *
+   * Small on purpose. It is the one optional thing on a page whose answers are
+   * the page: at full width or 168 tall it was the largest object here, which
+   * is the hierarchy upside down. At 104 it reads as a mark beside the questions
+   * rather than as the first thing to do.
    */
   avatar: {
     alignItems: 'center',
@@ -139,18 +168,45 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     borderRadius: Radii.md,
     borderWidth: StyleSheet.hairlineWidth,
-    height: 168,
+    height: 104,
     justifyContent: 'center',
     overflow: 'hidden',
-    width: 168,
+    width: 104,
   },
-  /** The action pair, closer to each other than to the fields above them. */
-  actions: {
-    gap: Spacing[12],
-    paddingTop: Spacing[8],
+  /** The title page's answers, taller than a search field: they are the page. */
+  paperField: {
+    ...Typography.subheading,
+    minHeight: 56,
   },
+  /**
+   * One reserved line for the title page's refusal.
+   *
+   * Reserved rather than mounted on demand: a message that arrives with its own
+   * height would push the button down at the moment the reader is looking at
+   * the field.
+   */
+  fieldMessage: {
+    minHeight: Typography.caption.lineHeight,
+  },
+  fieldMessageText: {
+    ...Typography.caption,
+  },
+  /**
+   * The foot of the sheet: the step's one action, then the way out of it.
+   *
+   * A wizard's action lives here rather than at the end of a growing column —
+   * full width, in the bottom safe area, in the same place on every step. The
+   * sign-out line is an aside under it, quiet enough to be read second.
+   */
   footer: {
+    gap: Spacing[12],
     paddingHorizontal: PAGE_GUTTER,
+    paddingTop: Spacing[16],
+  },
+  /** A button's height, held whether or not this step has one. */
+  footerAction: {
+    justifyContent: 'center',
+    minHeight: 48,
   },
   stepBody: {
     gap: Spacing[24],
@@ -456,9 +512,6 @@ function DoorBlock({
         {/* The topology question, asked once and quietly: a joiner who
             creates splits the couple across two spaces, the costliest
             mis-tap in the product. */}
-        <ThemedText type="caption" style={{ color: palette.muted }}>
-          One space per couple — if they already started one, take the joining door.
-        </ThemedText>
       </View>
     );
   }
@@ -514,85 +567,67 @@ function IdentityStep({
     }
   }, [flow]);
 
+  const { colors } = useAoiTheme();
+  // The first unanswered question is the one named: reporting both at once
+  // reads as a list of scolding, and the reader can only fix one per glance.
+  const problem = flow.nameProblem
+    ? PARTNER_NAME_MESSAGES[flow.nameProblem]
+    : flow.dateProblem
+      ? 'Add the date you started'
+      : null;
+
   return (
     <>
       <Animated.View entering={Reveal.up()} style={styles.form}>
         {/* A title page leads with its mark, so the space's picture is the
             first thing on the page, and it is an object rather than a row. */}
         <SpaceAvatar onPick={() => void pickCover()} palette={palette} uri={flow.photoUri} />
-        {/* One text per control. The placeholder says what the field is and
-            shows where to type; the a11y label carries the same words for a
-            screen reader without printing them twice. An empty underline under
-            a label is an affordance nobody can find. */}
+        {/* Two answers, one under the other: who they are, and since when.
+            Neither wears a label above it — the field says what it wants in its
+            own placeholder, which is the word the reader types over. The a11y
+            label carries the same words for a screen reader. */}
         <PaperTextInput
           accessibilityLabel="Their name"
           autoCapitalize="words"
           autoCorrect={false}
-          error={flow.nameProblem ? PARTNER_NAME_MESSAGES[flow.nameProblem] : undefined}
-          // Reserved up front: the line has to be there before the first
-          // refusal, or the message pushes the date and the button down at the
-          // moment the reader is looking at the field.
-          reservesMessage
-          label="Their name"
+          containerStyle={styles.paperField}
           maxLength={PARTNER_NAME_MAX}
           onChangeText={flow.setPartnerNameDraft}
-          placeholder="e.g. June"
+          placeholder="Their name"
+          placeholderTextColor={palette.muted}
           returnKeyType="done"
           tone="paper"
           value={flow.partnerNameDraft}
-          variant="row"
         />
-        {/* The date is optional. An unset date is shown as a clear action, not
-            as today's date pretending to be a choice. */}
-        {flow.startDate ? (
-          <>
-            <NativeDateTimeField
-              accessibilityLabel="When did you two start?"
-              label="Since"
-              mode="date"
-              onChange={flow.setStartDate}
-              textColor={palette.ink}
-              value={flow.startDate}
-              variant="row"
-            />
-            <Pressable
-              accessibilityLabel="Skip the relationship start date"
-              accessibilityRole="button"
-              onPress={() => flow.setStartDate(null)}
+        {/* The date is taken, not offered: it is on the page from the first
+            frame and one tap to set, and Continue refuses without it. */}
+        <NativeDateTimeField
+          accessibilityLabel="When did you two start?"
+          mode="date"
+          onChange={flow.setStartDate}
+          placeholder="Since"
+          textColor={palette.ink}
+          value={flow.startDate}
+          variant="inline"
+        />
+        {/*
+          One line for both refusals, reserved from the first frame.
+
+          Mounted on demand, the words would arrive with their own height and
+          push the docked action down at the moment the reader is looking at the
+          field. Reserved, the sentence lands in space that was already there.
+        */}
+        <View style={styles.fieldMessage} testID="field-message">
+          {problem ? (
+            <ThemedText
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+              style={[{ color: colors.destructive }, styles.fieldMessageText]}
+              type="caption"
             >
-              <ThemedText type="link" style={{ color: palette.ink }}>
-                Skip the date
-              </ThemedText>
-            </Pressable>
-          </>
-        ) : (
-          <Pressable
-            accessibilityLabel="Add your relationship start date"
-            accessibilityRole="button"
-            onPress={() => flow.setStartDate(new Date())}
-          >
-            <ThemedText type="link" style={{ color: palette.ink }}>
-              Add your start date (optional)
+              {problem}
             </ThemedText>
-          </Pressable>
-        )}
-        <View style={styles.actions}>
-          {/* The name is required, but the button stays live: a disabled
-              Continue that does nothing teaches nothing. Pressing it says
-              which field is missing, and the next keystroke clears that. */}
-          <Button
-            disabled={flow.isSubmitting}
-            label={flow.isSubmitting ? 'Creating…' : 'Continue'}
-            onPress={() => void flow.submitCreate()}
-            tone="sky"
-          />
-          <Button
-            disabled={flow.isSubmitting}
-            label="Back"
-            onPress={flow.goWelcome}
-            tone="paper"
-            variant="ghost"
-          />
+          ) : null}
         </View>
       </Animated.View>
 
@@ -680,19 +715,6 @@ function JoinStep({
             Enter all six characters to join.
           </ThemedText>
         ) : null}
-        <Button
-          label={flow.isSubmitting ? 'Joining…' : 'Join space'}
-          onPress={() => void flow.submitJoin()}
-          disabled={!flow.canJoin || flow.isSubmitting}
-          tone="paper"
-        />
-        <Button
-          label="Back"
-          variant="ghost"
-          onPress={flow.goWelcome}
-          disabled={flow.isSubmitting}
-          tone="paper"
-        />
       </Animated.View>
 
       <ErrorLine color={palette.muted} message={flow.error} />
@@ -818,7 +840,7 @@ function SignOut({
         hitSlop={8}
         onPress={() => void flow.signOut()}
       >
-        <ThemedText style={{ color: palette.focusRing }} type="link">
+        <ThemedText style={{ color: palette.you }} type="link">
           Sign out
         </ThemedText>
       </Pressable>
@@ -976,6 +998,31 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
     transform: [{ translateY: (1 - rise) * Spacing[16] }],
   };
 
+  /**
+   * The step's one action, docked at the foot of the screen.
+   *
+   * A wizard asks one thing per page and offers one way forward, so the action
+   * belongs where a thumb already is rather than at the end of a column that
+   * grows with the form: full width in the bottom safe area, the same place on
+   * every step. The fork itself keeps its actions in the page, because there
+   * the two doors *are* the actions.
+   */
+  const primary =
+    visibleFlow.step === 'identity'
+      ? {
+          disabled: flow.isSubmitting,
+          label: flow.isSubmitting ? 'Creating…' : 'Continue',
+          onPress: () => void flow.submitCreate(),
+        }
+      : visibleFlow.step === 'join'
+        ? {
+            disabled: !flow.canJoin || flow.isSubmitting,
+            label: flow.isSubmitting ? 'Joining…' : 'Join space',
+            onPress: () => void flow.submitJoin(),
+          }
+        : null;
+  const canGoBack = visibleFlow.step !== 'welcome';
+
   return (
     <View pointerEvents={inert ? 'none' : 'auto'} accessibilityElementsHidden={inert}
       aria-hidden={inert} importantForAccessibility={inert ? 'no-hide-descendants' : 'auto'}
@@ -990,35 +1037,60 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
         behavior={isIos ? 'padding' : undefined}
         style={styles.fill}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          style={styles.fill}
+        <View
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: insets.bottom + Spacing[24],
+              paddingTop: insets.top + Spacing[16],
+            },
+          ]}
         >
-          <View
-            style={[
-              styles.sheet,
-              {
-                paddingBottom: insets.bottom + Spacing[24],
-                paddingTop: insets.top + Spacing[16],
-              },
-            ]}
-          >
-            <View style={styles.head}>
+          <View style={styles.head}>
+            <View style={styles.headLeading}>
+              {/* The way back lives where every platform puts it: the leading
+                  edge of the header, above the content it undoes. As a second
+                  button under the form it competed with the one action the page
+                  is asking for. */}
+              {canGoBack ? (
+                <Pressable
+                  accessibilityLabel="Back"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: flow.isSubmitting }}
+                  disabled={flow.isSubmitting}
+                  hitSlop={12}
+                  onPress={flow.goWelcome}
+                  style={styles.backButton}
+                >
+                  <Ionicons color={palette.muted} name="chevron-back" size={18} />
+                </Pressable>
+              ) : null}
               <ThemedText style={{ color: palette.muted }} type="meta">
                 aoi
               </ThemedText>
-              <ThemedText style={{ color: palette.muted }} type="meta">
-                {FOLIO[visibleFlow.step]}
-              </ThemedText>
             </View>
-            <View style={styles.accountLine}>
-              <ThemedText style={{ color: palette.muted }} type="caption">
-                Signed in as {accountLabel}
-              </ThemedText>
-            </View>
+            <ThemedText style={{ color: palette.muted }} type="meta">
+              {FOLIO[visibleFlow.step]}
+            </ThemedText>
+          </View>
+          <View style={styles.accountLine}>
+            <ThemedText style={{ color: palette.muted }} type="caption">
+              Signed in as {accountLabel}
+            </ThemedText>
+          </View>
 
+          {/* The page scrolls on its own, between the masthead and the
+              colophon. Scrolling the whole sheet instead meant the sign-out
+              line was the last thing in the flow, so a step that added a form
+              pushed it down the page: a row that never changed height moved
+              anyway. Pinned here, it holds its place on every step, and the
+              form that arrives scrolls inside the space left above it. */}
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={styles.fill}
+          >
             <View
               onLayout={(event) => measurePage(event.nativeEvent.layout.height)}
               style={styles.page}
@@ -1071,12 +1143,25 @@ function OnboardingForm({ flow, inert = false }: { flow: ReturnType<typeof useOn
                 </Animated.View>
               </View>
             </View>
+          </ScrollView>
 
-            <View style={styles.footer}>
-              <SignOut flow={flow} palette={palette} />
+          <View style={styles.footer}>
+            {/* The action's slot is always here, even on a step that has none:
+                the sign-out line under it must not move when a step brings a
+                button with it. */}
+            <View style={styles.footerAction}>
+              {primary ? (
+                <Button
+                  disabled={primary.disabled}
+                  label={primary.label}
+                  onPress={primary.onPress}
+                  tone="paper"
+                />
+              ) : null}
             </View>
+            <SignOut flow={flow} palette={palette} />
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </View>
   );

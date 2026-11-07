@@ -303,7 +303,6 @@ const TABS_LAYOUT_SOURCE = readFileSync('app/(app)/(tabs)/_layout.tsx', 'utf8');
 let mockReduceTransparency = false;
 let mockLiquidGlassAvailable = false;
 let capturedTransparencyHandler: ((value: boolean) => void) | null = null;
-const sendSqueezeSpy = vi.fn();
 let mockAudioGranted = true;
 let mockAudioActive = false;
 let mockAudioDuration = 0;
@@ -462,10 +461,6 @@ vi.mock('@/features/space/space-context', () => ({
     status: 'ready',
     leaveSpace: vi.fn(),
   }),
-}));
-
-vi.mock('@/features/squeeze/squeeze-context', () => ({
-  useSqueeze: () => ({ sendSqueeze: sendSqueezeSpy, isSending: false }),
 }));
 
 vi.mock('@/features/album/use-sky-photos', () => ({
@@ -657,8 +652,6 @@ beforeEach(() => {
   mockRecordStart.mockClear();
   mockStopRecording.mockClear();
   mockSetAudioMode.mockClear();
-  sendSqueezeSpy.mockReset();
-  sendSqueezeSpy.mockResolvedValue(undefined);
   capturedTabTriggers.length = 0;
   for (const key of Object.keys(capturedNativeTabsProps)) {
     delete capturedNativeTabsProps[key as keyof typeof capturedNativeTabsProps];
@@ -735,15 +728,6 @@ describe('P2A tab structure (system tab bar)', () => {
     for (const name of seen) {
       expect(name).not.toMatch(/heart/i);
     }
-  });
-});
-
-describe('P2A Ours ownership', () => {
-  it('keeps Squeeze off the photo sky', async () => {
-    const { default: TogetherScreen } = await import('@/app/(app)/(tabs)/together');
-    render(<TogetherScreen />);
-    expect(screen.queryByText('Squeeze')).toBeNull();
-    expect(sendSqueezeSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -882,7 +866,9 @@ describe('P2A legacy redirects', () => {
   const tabsDir = join(import.meta.dirname, '../../../app/(app)/(tabs)');
   const discoveredTabScreens = () =>
     readdirSync(tabsDir)
-      .filter((entry) => entry.endsWith('.tsx') && entry !== '_layout.tsx')
+      // A platform-specific layout (e.g. _layout.android.tsx) is still a
+      // layout, not a tab screen.
+      .filter((entry) => entry.endsWith('.tsx') && !entry.startsWith('_layout'))
       .map((entry) => entry.replace(/\.tsx$/, ''))
       .sort();
 

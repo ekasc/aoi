@@ -282,7 +282,9 @@ describe('setup wizard screen', () => {
     expect(screen.getByText('Signed in as Alice Moreau')).toBeTruthy();
     expect(screen.getByText('Invite code')).toBeTruthy();
     expect(screen.getByText('Join space')).toBeTruthy();
-    expect(screen.getByText('Back')).toBeTruthy();
+    // Back is the header's chevron now, not a second button under the form: a
+    // wizard has one action per page, and the way out of it is navigation.
+    expect(screen.getByLabelText('Back')).toBeTruthy();
   });
 
   it('explains a disabled join instead of leaving a dead button', () => {
@@ -333,27 +335,28 @@ describe('setup wizard screen', () => {
   });
 
   it('gives the title page visible controls, not labels over nothing', () => {
-    // The name field was a label above an empty underline, which is an
-    // affordance nobody can find. It carries a placeholder now, and the a11y
-    // label is separate so the same words are not printed twice.
-    // The label is outside the field and always visible, and the placeholder is
-    // only an example. A placeholder standing in for the label is the pattern
-    // that hides the field and reads as pre-filled data.
-    expect(WIZARD_SOURCE).toContain('label="Their name"');
-    expect(WIZARD_SOURCE).toMatch(/placeholder="e\.g\. [^"]+"/);
+    // Each field names itself in its placeholder, which is the word the reader
+    // types over. There is no label above it, so the same words are not printed
+    // twice; the a11y label keeps them for a screen reader.
+    expect(WIZARD_SOURCE).toContain('placeholder="Their name"');
     expect(WIZARD_SOURCE).toContain('accessibilityLabel="Their name"');
-    // The platform's own row rather than Material's underline, which reads as a
-    // ported control on iOS.
-    expect(WIZARD_SOURCE).toContain('variant="row"');
+    expect(WIZARD_SOURCE).not.toContain('label="Their name"');
+    // Two answers, one under the other, both tall enough to be the page's
+    // content rather than two controls in a toolbar.
+    expect(WIZARD_SOURCE).toContain('styles.paperField');
+    // The date wears the text field's underline (`inline`), not its own
+    // bordered box: two different field shapes read as two different kinds of
+    // question.
+    expect(WIZARD_SOURCE).toContain('variant="inline"');
     // One picture stands for the pair, so it is the space's avatar: a thing,
     // not a value, and square rather than a full-width band.
     expect(WIZARD_SOURCE).toContain('SpaceAvatar');
     expect(WIZARD_SOURCE).not.toContain('CoverRow');
     expect(WIZARD_SOURCE).toContain('Add a photo of you two');
     expect(WIZARD_SOURCE).toContain('styles.avatar');
-    // The date says the book's word on screen and the whole question to a
-    // screen reader.
-    expect(WIZARD_SOURCE).toContain('label="Since"');
+    // The date says the page's own word on screen (as its placeholder) and the
+    // whole question to a screen reader.
+    expect(WIZARD_SOURCE).toContain('placeholder="Since"');
     expect(WIZARD_SOURCE).toContain('accessibilityLabel="When did you two start?"');
   });
 

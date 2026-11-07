@@ -81,13 +81,7 @@ describe('destination sky invitation', () => {
     expect(screen.getByLabelText('Copy code instead')).toBeTruthy();
   });
 
-  it('welcomes the joiner without offering someone else\'s invite code', () => {
-    render(createElement(SkyWelcome, {
-      details: { kind: 'joined', name: 'Maya & June', inviteCode: '', photoUri: null, partnerName: 'Maya' }, onEnter: vi.fn(),
-    }));
-    expect(screen.getByText('Maya is already here.')).toBeTruthy();
-    expect(screen.queryByLabelText('Copy code instead')).toBeNull();
-    expect(screen.queryByLabelText('Share invite')).toBeNull();
-    expect(screen.getByLabelText('Go to Memories')).toBeTruthy();
-  });
+  // The joiner's welcome card is gone on purpose: joining means the other
+  // person is already in the space, so there is nothing to tell them and no
+  // code to hand over. They land in Memories instead (see SkyEntryProvider).
 });

@@ -100,20 +100,37 @@ describe('onboarding create path (minimum pre-Story state)', () => {
     expect(replaceMock).toHaveBeenCalledWith('/(app)/(tabs)/(memories)');
   });
 
-  it('creates without inventing a relationship date when the date is skipped', async () => {
+  it('refuses to create until the start date is given, and says so', async () => {
     const { result } = renderHook(() => useOnboardingFlow());
     await act(async () => {
       result.current.goIdentity();
       result.current.setPartnerNameDraft('June');
     });
     expect(result.current.startDate).toBeNull();
+    // Nothing is wrong yet: the refusal arrives on the first Continue.
+    expect(result.current.dateProblem).toBe(false);
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+    // A space minted without its start date would give the sky a calendar with
+    // no first day, so the answer is taken here rather than defaulted later.
+    expect(spaceMock.createSpace).not.toHaveBeenCalled();
+    expect(result.current.dateProblem).toBe(true);
+    expect(result.current.step).toBe('identity');
+
+    await act(async () => {
+      result.current.setStartDate(new Date(2023, 4, 12));
+    });
+    // Answering clears the complaint, exactly as a keystroke clears the name's.
+    expect(result.current.dateProblem).toBe(false);
     await act(async () => {
       await result.current.submitCreate();
     });
     expect(spaceMock.createSpace).toHaveBeenCalledTimes(1);
-    const sent = spaceMock.createSpace.mock.calls[0][0] as Record<string, unknown>;
-    expect('relationshipStartDate' in sent).toBe(false);
-    expect(result.current.step).toBe('minted');
+    expect(spaceMock.createSpace.mock.calls[0][0]).toMatchObject({
+      relationshipStartDate: '2023-05-12',
+    });
   });
 
   it('refuses to create an unnamed space and reports why, not just that', async () => {
@@ -188,6 +205,7 @@ describe('onboarding create path (minimum pre-Story state)', () => {
     const { result } = renderHook(() => useOnboardingFlow());
     await act(async () => {
       result.current.setPartnerNameDraft('June');
+      result.current.setStartDate(new Date(2023, 4, 12));
     });
 
     await act(async () => {
@@ -231,6 +249,7 @@ describe('onboarding create path (minimum pre-Story state)', () => {
     const { result, rerender } = renderHook(() => useOnboardingFlow());
     await act(async () => {
       result.current.setPartnerNameDraft('June');
+      result.current.setStartDate(new Date(2023, 4, 12));
     });
 
     await act(async () => {
@@ -260,6 +279,7 @@ describe('onboarding create path (minimum pre-Story state)', () => {
     const { result } = renderHook(() => useOnboardingFlow());
     await act(async () => {
       result.current.setPartnerNameDraft('June');
+      result.current.setStartDate(new Date(2023, 4, 12));
     });
 
     await act(async () => {
@@ -285,6 +305,7 @@ describe('onboarding create path (minimum pre-Story state)', () => {
     const { result } = renderHook(() => useOnboardingFlow());
     await act(async () => {
       result.current.setPartnerNameDraft('June');
+      result.current.setStartDate(new Date(2023, 4, 12));
     });
 
     await act(async () => {

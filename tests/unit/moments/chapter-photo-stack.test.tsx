@@ -76,8 +76,6 @@ vi.mock('@/features/subscription/subscription-context', () => ({
       expiresAt: null,
       mediaUsedBytes: 0,
       mediaLimitBytes: 5 * 1024 * 1024 * 1024,
-      activeFutureLetters: 0,
-      futureLetterLimit: null,
     },
     refreshServerPlus: vi.fn(async () => {}),
   }),

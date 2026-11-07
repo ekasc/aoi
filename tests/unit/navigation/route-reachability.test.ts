@@ -67,7 +67,9 @@ function navigationStrings(): string[] {
 function orphanRoutes(): string[] {
   const nav = navigationStrings();
   const files = walk(APP_DIR, (f) => f.endsWith('.tsx'))
-    .filter((f) => !f.endsWith('_layout.tsx'))
+    // Layouts are not screens; a platform-specific one (_layout.android.tsx)
+    // is still a layout.
+    .filter((f) => !path.basename(f).startsWith('_layout'))
     .filter((f) => f.includes(`(app)`))
     .filter((f) => !path.basename(f).startsWith('dev-'))
     .filter((f) => !f.includes(`(public)`) && !f.includes(`(auth)`));

@@ -48,11 +48,15 @@ export type OnboardingFlow = {
    */
   nameProblem: PartnerNameProblem | null;
   /**
+   * Whether the start date is still unanswered after a Continue press. The
+   * date is taken, not optional, and null until the reader chooses one:
+   * inventing today would give the sky a timeline the couple never supplied.
+   */
+  dateProblem: boolean;
+  /**
    * The day the relationship started, which is the sky's calendar.
    *
-   * Null until the reader chooses a date. The product contract allows setup
-   * without one, and inventing today would give the sky a timeline the couple
-   * never supplied. The date is optional, visible, and one tap to set or clear.
+   * Null until the reader chooses a date, and required from the first Continue.
    */
   startDate: Date | null;
   setStartDate: (value: Date | null) => void;
@@ -136,7 +140,7 @@ export function useOnboardingFlow(): OnboardingFlow {
   // the next keystroke. It decides *when* the field speaks, never *what* it
   // says: the reason and its wording come from checkPartnerName.
   const [createAttempted, setCreateAttempted] = useState(false);
-  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [startDate, setStartDateState] = useState<Date | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   // What the space was actually made with, captured at the create rather than
   // read back from the space context: the context can lag the create, and the
@@ -209,9 +213,19 @@ export function useOnboardingFlow(): OnboardingFlow {
   const partnerName = nameCheck.ok ? nameCheck.name : null;
   // Silent until the reader has tried, then honest on every keystroke.
   const nameProblem = createAttempted && !nameCheck.ok ? nameCheck.problem : null;
+  // The start date is taken, not optional: one reserved line under the title
+  // page names whichever of the two questions is still unanswered.
+  const dateProblem = createAttempted && !startDate;
 
   const setPartnerName = useCallback((value: string) => {
     setPartnerNameDraft(value);
+    setCreateAttempted(false);
+  }, []);
+
+  // Picking a date answers the second question, so it clears the refusal it was
+  // reported by, exactly as a keystroke clears the first field's.
+  const setStartDate = useCallback((value: Date | null) => {
+    setStartDateState(value);
     setCreateAttempted(false);
   }, []);
 
@@ -228,9 +242,9 @@ export function useOnboardingFlow(): OnboardingFlow {
       enterStory();
       return;
     }
-    if (!partnerName) {
-      // Not a dead button and not a silent refusal: the field is told which
-      // rule it broke, so the reader knows what to do about it.
+    if (!partnerName || !startDate) {
+      // Not a dead button and not a silent refusal: the title page is told
+      // which rule it broke, so the reader knows what to do about it.
       setCreateAttempted(true);
       return;
     }
@@ -252,7 +266,7 @@ export function useOnboardingFlow(): OnboardingFlow {
         createdByUserId: user.id,
         yourName: you,
         partnerName,
-        ...(startDate ? { relationshipStartDate: toDateKey(startDate) } : {}),
+        relationshipStartDate: toDateKey(startDate),
         ...(photoUri ? { photoUri } : {}),
       });
       spaceCreatedRef.current = true;
@@ -332,6 +346,7 @@ export function useOnboardingFlow(): OnboardingFlow {
     /** The name as typed, valid or not. `partnerName` is the parsed one. */
     parsedPartnerName: partnerName,
     nameProblem,
+    dateProblem,
     startDate,
     setStartDate,
     photoUri,
