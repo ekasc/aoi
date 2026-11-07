@@ -1003,11 +1003,9 @@ export function MomentForm({
               label={
                 uploadState === 'uploading'
                   ? 'Uploading media…'
-                  : uploadState === 'confirming'
-                    ? 'Confirming upload…'
-                    : isSaving
-                      ? submittingLabel
-                      : submitLabel
+                  : isSaving
+                    ? submittingLabel
+                    : submitLabel
               }
               disabled={isSaving}
               onPress={handleSave}

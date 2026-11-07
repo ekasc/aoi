@@ -12,7 +12,13 @@ export { uploadErrorCode, isQuotaExceededError };
 export type { MediaUploadResult };
 export type UploadInput = ServiceUploadInput;
 
-type UploadState = 'idle' | 'picking' | 'uploading' | 'confirming' | 'done' | 'error';
+/**
+ * The four states this hook can actually enter. The service performs the
+ * presign, PUT, and complete as one awaited operation, so `picking` and
+ * `confirming` were never reachable here; declaring them only made the
+ * display component render modes no caller could produce.
+ */
+type UploadState = 'idle' | 'uploading' | 'done' | 'error';
 
 /**
  * Hook wrapper around the shared upload service. Preserves the previous
