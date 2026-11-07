@@ -15,7 +15,7 @@ sources:
     sha256: 2f128b880b932c6fcc96996dbe43febadd8e1603d5560b33cee7bc6afc20a792
   - path: tests/unit/composer/composer-send.test.ts
     sha256: bdaec56277866d52447fc31db4eb0617bcc2613fac197bad1c0baaa38521c807
-  - path: docs/product/first-use-acceptance.md
+  - path: PRODUCT.md
     sha256: 61dca1d66da19e2376242baf2b3421dd2f9e29814f47a233fd86b46ea9bf8a9f
 ---
 
@@ -35,7 +35,7 @@ sources:
 - A send failure preserves the draft and exposes retry/remove rather than silently discarding it (`features/composer/send-pipeline.ts`, composer tests).
 - The remote moments context merges pages and reconciliation data rather than replacing the local list wholesale (`features/moments/moments-context.tsx`, `tests/unit/hooks/moments-context-remote.test.tsx`).
 - A create with the same `clientId` is idempotent at the API boundary, which is the server-side guard against duplicate retries (`packages/api/src/domains/moments.ts`).
-- The first-use checklist requires that offline work is preserved, pending/failed is distinct from saved, and retry produces one memory without duplicates (`docs/product/first-use-acceptance.md`).
+- The first-use checklist requires that offline work is preserved, pending/failed is distinct from saved, and retry produces one memory without duplicates (`PRODUCT.md`).
 
 ## Documented intent (not proof of current behavior)
 
@@ -62,6 +62,6 @@ sources:
 - `features/moments/moments-context.tsx`
 - `tests/unit/hooks/moments-context-remote.test.tsx`
 - `tests/unit/composer/composer-send.test.ts`
-- `docs/product/first-use-acceptance.md`
+- `PRODUCT.md`
 
 A simulated statement about any item above is a hypothesis. Only an executed Aoi test with recorded evidence may be reported as reproduced behavior.

@@ -55,7 +55,7 @@
     "The pre-join memory is missing or attributed to B after joining."
   ],
   "relevant_source_files": [
-    "docs/product/first-use-acceptance.md",
+    "PRODUCT.md",
     "components/space/partner-invitation.tsx",
     "packages/api/src/domains/spaces.ts",
     "packages/api/src/domains/moments.ts"

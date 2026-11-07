@@ -15,7 +15,7 @@ sources:
     sha256: efdc5f81dfd5a92d73a522035f195e2f85e57c036a14acf5637de9097f8ce181
   - path: tests/unit/space/space-context-refresh.test.tsx
     sha256: 8c134b87d9d9a0b4fb39e597d404b4efa92a436802eddc51eeb672ba428a5c55
-  - path: docs/product/first-use-acceptance.md
+  - path: PRODUCT.md
     sha256: 61dca1d66da19e2376242baf2b3421dd2f9e29814f47a233fd86b46ea9bf8a9f
 ---
 
@@ -64,6 +64,6 @@ sources:
 - `packages/api/src/domains/spaces.ts`
 - `packages/api/src/domains/auth.ts`
 - `tests/unit/space/space-context-refresh.test.tsx`
-- `docs/product/first-use-acceptance.md`
+- `PRODUCT.md`
 
 A simulated statement about any item above is a hypothesis. Only an executed Aoi test with recorded evidence may be reported as reproduced behavior.

@@ -51,7 +51,7 @@
     "features/composer/send-pipeline.ts",
     "features/composer/composer-machine.ts",
     "features/moments/moments-context.tsx",
-    "docs/product/first-use-acceptance.md"
+    "PRODUCT.md"
   ],
   "existing_test_coverage": [],
   "confidence": "hypothesis",

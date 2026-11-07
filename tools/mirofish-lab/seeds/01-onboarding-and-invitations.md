@@ -17,7 +17,7 @@ sources:
     sha256: e1489530a8035b42f7bd8ee8d3f35c7fe9bf5812d2943f44d667afb9a0c66816
   - path: packages/shared/src/space.ts
     sha256: 3b366a5c64ce90806c23ade9f82e74615293d0e3e1531e798ef5117b7ec8cda1
-  - path: docs/product/first-use-acceptance.md
+  - path: PRODUCT.md
     sha256: 61dca1d66da19e2376242baf2b3421dd2f9e29814f47a233fd86b46ea9bf8a9f
 ---
 
@@ -39,7 +39,7 @@ sources:
 - The join write is one D1 batch: guarded invite redemption, partner membership insert, partner-name update, and one-time partner binding. Concurrent redeemers cannot both win (`joinSpaceProgram`).
 - `partnerJoined` is the reliable membership signal. `inviteCode` is empty when no live unredeemed invite exists, and `inviteExpiresAt` carries the expiry (`spaceSchema`, `loadSpaceWithInvite`).
 - The invitation sheet regenerates an expired code before sharing and never claims that opening the share sheet means the partner joined (`components/space/partner-invitation.tsx`).
-- Account and the first-memory prompt are the stable invitation entry points; the sheet reports membership from a server read, including a manual status check (`docs/product/first-use-acceptance.md`, `PartnerInvitation`).
+- Account and the first-memory prompt are the stable invitation entry points; the sheet reports membership from a server read, including a manual status check (`PRODUCT.md`, `PartnerInvitation`).
 
 ## Documented intent (not proof of current behavior)
 
@@ -68,6 +68,6 @@ sources:
 - `components/space/partner-invitation.tsx`
 - `packages/api/src/domains/spaces.ts`
 - `packages/shared/src/space.ts`
-- `docs/product/first-use-acceptance.md`
+- `PRODUCT.md`
 
 A simulated statement about any item above is a hypothesis. Only an executed Aoi test with recorded evidence may be reported as reproduced behavior.

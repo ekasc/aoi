@@ -116,11 +116,11 @@ Every scenario records its Aoi commit, simulation id, observation ids, source fi
 
 | ID | Observations | Aoi commit | Relevant source |
 | --- | --- | --- | --- |
-| AOI-SIM-001 | obs-001, obs-003 | 048f7838 | `docs/product/first-use-acceptance.md`<br>`components/space/partner-invitation.tsx` |
+| AOI-SIM-001 | obs-001, obs-003 | 048f7838 | `PRODUCT.md`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-002 | obs-002 | 048f7838 | `features/composer/send-pipeline.ts`<br>`features/composer/composer-machine.ts` |
 | AOI-SIM-003 | obs-001, obs-002 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
 | AOI-SIM-004 | obs-003 | 048f7838 | `features/composer/send-pipeline.ts`<br>`features/composer/composer-machine.ts` |
-| AOI-SIM-005 | obs-001, obs-002, obs-003 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-005 | obs-001, obs-002, obs-003 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-006 | obs-001 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
 | AOI-SIM-007 | obs-002, obs-004 | 048f7838 | `features/composer/send-pipeline.ts`<br>`features/composer/composer-machine.ts` |
 | AOI-SIM-008 | obs-003 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/moments/ownership.ts` |
@@ -128,20 +128,20 @@ Every scenario records its Aoi commit, simulation id, observation ids, source fi
 | AOI-SIM-010 | obs-002 | 048f7838 | `features/composer/send-pipeline.ts`<br>`features/composer/composer-machine.ts` |
 | AOI-SIM-011 | obs-001, obs-002 | 048f7838 | `packages/shared/src/plus.ts`<br>`packages/api/src/domains/plus.ts` |
 | AOI-SIM-012 | obs-003 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
-| AOI-SIM-013 | obs-001 | 048f7838 | `docs/product/first-use-acceptance.md`<br>`components/space/partner-invitation.tsx` |
-| AOI-SIM-014 | obs-002 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-013 | obs-001 | 048f7838 | `PRODUCT.md`<br>`components/space/partner-invitation.tsx` |
+| AOI-SIM-014 | obs-002 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-015 | obs-001, obs-002 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
-| AOI-SIM-016 | obs-003 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
-| AOI-SIM-017 | obs-001, obs-002 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-016 | obs-003 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-017 | obs-001, obs-002 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-018 | obs-001 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
 | AOI-SIM-019 | obs-002, obs-003 | 048f7838 | `features/composer/send-pipeline.ts`<br>`features/composer/composer-machine.ts` |
 | AOI-SIM-020 | obs-001, obs-002 | 048f7838 | `app/(app)/album/restore.tsx`<br>`features/album/protocol-recovery.ts` |
 | AOI-SIM-021 | obs-001 | 048f7838 | `packages/shared/src/plus.ts`<br>`packages/api/src/domains/plus.ts` |
-| AOI-SIM-022 | obs-002 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
-| AOI-SIM-023 | obs-001, obs-003 | 048f7838 | `docs/product/first-use-acceptance.md`<br>`components/space/partner-invitation.tsx` |
+| AOI-SIM-022 | obs-002 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-023 | obs-001, obs-003 | 048f7838 | `PRODUCT.md`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-024 | obs-002 | 048f7838 | `packages/api/src/domains/spaces.ts`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-025 | obs-001, obs-002, obs-003 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
-| AOI-SIM-026 | obs-001, obs-002 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-026 | obs-001, obs-002 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-027 | obs-001 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
 | AOI-SIM-028 | obs-002 | 048f7838 | `features/composer/send-pipeline.ts`<br>`features/composer/composer-machine.ts` |
 | AOI-SIM-029 | obs-003 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
@@ -150,35 +150,35 @@ Every scenario records its Aoi commit, simulation id, observation ids, source fi
 | AOI-SIM-032 | obs-003 | 048f7838 | `features/composer/send-pipeline.ts`<br>`features/composer/composer-machine.ts` |
 | AOI-SIM-033 | obs-001 | 048f7838 | `packages/shared/src/plus.ts`<br>`packages/api/src/domains/plus.ts` |
 | AOI-SIM-034 | obs-002 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
-| AOI-SIM-035 | obs-001, obs-002, obs-003 | 048f7838 | `docs/product/first-use-acceptance.md`<br>`components/space/partner-invitation.tsx` |
+| AOI-SIM-035 | obs-001, obs-002, obs-003 | 048f7838 | `PRODUCT.md`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-036 | obs-001, obs-002 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
-| AOI-SIM-037 | obs-001, obs-002 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-037 | obs-001, obs-002 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-038 | obs-001 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
 | AOI-SIM-039 | obs-002 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
 | AOI-SIM-040 | obs-003 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/moments/ownership.ts` |
 | AOI-SIM-041 | obs-001 | 048f7838 | `app/(app)/album/restore.tsx`<br>`features/album/protocol-recovery.ts` |
-| AOI-SIM-042 | obs-002 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-042 | obs-002 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-043 | obs-001, obs-002 | 048f7838 | `packages/shared/src/plus.ts`<br>`packages/api/src/domains/plus.ts` |
 | AOI-SIM-044 | obs-003 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/moments/ownership.ts` |
-| AOI-SIM-045 | obs-001 | 048f7838 | `docs/product/first-use-acceptance.md`<br>`components/space/partner-invitation.tsx` |
+| AOI-SIM-045 | obs-001 | 048f7838 | `PRODUCT.md`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-046 | obs-002, obs-003 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
 | AOI-SIM-047 | obs-001, obs-003 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
 | AOI-SIM-048 | obs-002 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
-| AOI-SIM-049 | obs-001, obs-003 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-049 | obs-001, obs-003 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-050 | obs-002 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/moments/ownership.ts` |
 | AOI-SIM-051 | obs-001 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
 | AOI-SIM-052 | obs-001, obs-002 | 048f7838 | `app/(app)/album/restore.tsx`<br>`features/album/protocol-recovery.ts` |
 | AOI-SIM-053 | obs-003 | 048f7838 | `packages/api/src/domains/spaces.ts`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-054 | obs-001, obs-002 | 048f7838 | `packages/shared/src/plus.ts`<br>`packages/api/src/domains/plus.ts` |
-| AOI-SIM-055 | obs-001, obs-003 | 048f7838 | `docs/product/first-use-acceptance.md`<br>`components/space/partner-invitation.tsx` |
+| AOI-SIM-055 | obs-001, obs-003 | 048f7838 | `PRODUCT.md`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-056 | obs-002, obs-004 | 048f7838 | `packages/api/src/domains/spaces.ts`<br>`components/space/partner-invitation.tsx` |
 | AOI-SIM-057 | obs-001, obs-002 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
-| AOI-SIM-058 | obs-001, obs-002, obs-003, obs-004 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-058 | obs-001, obs-002, obs-003, obs-004 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 | AOI-SIM-059 | obs-001, obs-002 | 048f7838 | `packages/api/src/domains/moments.ts`<br>`features/composer/send-pipeline.ts` |
 | AOI-SIM-060 | obs-001, obs-002 | 048f7838 | `app/(app)/album/restore.tsx`<br>`features/album/protocol-recovery.ts` |
 | AOI-SIM-061 | obs-003 | 048f7838 | `app/(app)/account.tsx`<br>`app/(app)/profile/edit-relationship.tsx` |
 | AOI-SIM-062 | obs-001 | 048f7838 | `packages/shared/src/plus.ts`<br>`packages/api/src/domains/plus.ts` |
-| AOI-SIM-063 | obs-002 | 048f7838 | `docs/product/relationship-home-and-archive.md`<br>`app/(app)/(tabs)/together.tsx` |
+| AOI-SIM-063 | obs-002 | 048f7838 | `PRODUCT.md`<br>`app/(app)/(tabs)/together.tsx` |
 
 ## 4. Coverage analysis against the existing tests
 

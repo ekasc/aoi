@@ -13,7 +13,7 @@ sources:
     sha256: 749769dce5ceb93b5055214374dfef1bef5d360ead91fdc46122485e79216058
   - path: app/(app)/paywall.tsx
     sha256: 37ae0f6c044d69df8b1c2a06e1475a63f2221d597cd15466c4c40e281461e66e
-  - path: docs/product/relationship-home-and-archive.md
+  - path: PRODUCT.md
     sha256: b7880500c07bd9ca767571ed9614e1112c59c3a462be1d6a3af64a2eea9e99ac
 ---
 
@@ -30,8 +30,8 @@ sources:
 ## Verified in current source
 
 - Plus is Space-level, not per person. One entitlement covers both active members, and both read the same authoritative row (`packages/shared/src/plus.ts`, `packages/api/src/domains/plus.ts`).
-- Free includes shared notes, the sky, the day count, the relationship home, everyday resurfacing, chronological reading, gallery, existing chapters, plans, responses, and Little things. Privacy and export are not paywalled (`docs/product/relationship-home-and-archive.md`).
-- The implemented Plus benefits are a media ceiling from 250 MiB to 5 GiB per Space, removal of the one-active-future-letter limit, and PDF chapter keepsakes (`mediaLimitForSpace`, `futureLetterLimitForSpace`).
+- Free includes shared notes, the sky, the day count, everyday resurfacing, chronological reading, gallery, existing chapters, plans, lists, responses, and partner details. Privacy and export are not paywalled (`PRODUCT.md`).
+- The implemented Plus benefits are a media ceiling from 250 MiB to 5 GiB per Space, Sky History, and PDF chapter keepsakes (`mediaLimitForSpace`, `PRODUCT.md`).
 - The backend entitlement row is authoritative. Client RevenueCat state is for purchase/restore UX only and cannot grant features by itself (`packages/shared/src/plus.ts`).
 - Verified webhook events are deduplicated, stale events cannot regress a newer state, expiry is read-time, and a transfer moves the entitlement without leaving two Spaces Plus (`packages/api/src/domains/plus.ts`).
 - A grant with no active Space is ignored; an ambiguous or unknown provider identity is ignored; a non-member can never read another Space's Plus row (`getSpacePlusProgram`).
@@ -60,6 +60,6 @@ sources:
 - `packages/api/src/routes/session-plus.ts`
 - `features/subscription/subscription-context.tsx`
 - `app/(app)/paywall.tsx`
-- `docs/product/relationship-home-and-archive.md`
+- `PRODUCT.md`
 
 A simulated statement about any item above is a hypothesis. Only an executed Aoi test with recorded evidence may be reported as reproduced behavior.
