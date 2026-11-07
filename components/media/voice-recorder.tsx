@@ -1,10 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { haptics } from '@/features/haptics/haptics';
+import {
+  VOICE_RECORDER_INITIAL,
+  voiceRecorderBusy,
+  voiceRecorderReducer,
+  type VoiceRecorderEvent,
+} from '@/features/media/voice-recorder-machine';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 import {
@@ -44,10 +50,21 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
   const surface2 = useThemeColor({}, 'surface2');
   const muted = useThemeColor({}, 'muted');
   const danger = useThemeColor({}, 'danger');
-  const [permissionDenied, setPermissionDenied] = useState(false);
-  const [recordFailed, setRecordFailed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const phase = useRef<'idle' | 'starting' | 'recording' | 'stopping'>('idle');
+  const [machine, dispatch] = useReducer(voiceRecorderReducer, VOICE_RECORDER_INITIAL);
+  // The machine is read across awaits and from the native status callback, so
+  // its latest value is mirrored synchronously. Every write goes through
+  // `commit`, which computes the next state before dispatching, keeping the
+  // mirror and React state identical without a render in between.
+  const machineRef = useRef(machine);
+  const commit = useCallback((event: VoiceRecorderEvent) => {
+    const next = voiceRecorderReducer(machineRef.current, event);
+    machineRef.current = next;
+    dispatch(event);
+    return next;
+  }, []);
+  const busy = voiceRecorderBusy(machine);
+  const permissionDenied = machine.failure === 'permission';
+  const recordFailed = machine.failure === 'start';
   const generation = useRef(0);
   const mounted = useRef(true);
   const callbacks = useRef({ onRecorded, onError, onRecordingChange, disabled });
@@ -74,7 +91,7 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
       if (status.isFinished && status.hasError) {
         acceptingStatus.current = false;
         restoreAudioMode();
-        if (phase.current !== 'stopping') phase.current = 'idle';
+        commit({ type: 'nativeFinished' });
         callbacks.current.onError?.('Voice recording failed. Try again?');
         return;
       }
@@ -87,11 +104,11 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
         lastHandledUri.current = status.url;
         acceptingStatus.current = false;
         restoreAudioMode();
-        if (phase.current !== 'stopping') phase.current = 'idle';
+        commit({ type: 'nativeFinished' });
         callbacks.current.onRecorded(status.url);
       }
     },
-    [restoreAudioMode]
+    [commit, restoreAudioMode]
   );
 
   const recorder = useAudioRecorder(
@@ -106,10 +123,9 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
   }, [disabled, isRecording, onRecordingChange]);
 
   const stopRecording = useCallback(async () => {
-    if (phase.current !== 'recording') return;
-    phase.current = 'stopping';
+    if (machineRef.current.phase !== 'recording') return;
+    commit({ type: 'stopRequested' });
     const attempt = generation.current;
-    setBusy(true);
     try {
       await recorder.stop();
     } catch {
@@ -119,11 +135,13 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
       }
     } finally {
       const stillRecording = recorder.isRecording;
-      phase.current = mounted.current && stillRecording ? 'recording' : 'idle';
+      // A failed stop that leaves native capture running returns to
+      // `recording`, so the next press retries the stop instead of starting a
+      // second recording.
+      commit({ type: 'stopSettled', stillRecording: mounted.current && stillRecording });
       if (!stillRecording) restoreAudioMode();
-      if (mounted.current) setBusy(false);
     }
-  }, [recorder, restoreAudioMode]);
+  }, [commit, recorder, restoreAudioMode]);
 
   useLayoutEffect(() => {
     if (!disabled) return;
@@ -155,29 +173,27 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
       return;
     }
 
-    if (phase.current === 'recording') {
+    if (machineRef.current.phase === 'recording') {
       haptics.tap();
       await stopRecording();
       return;
     }
 
-    if (phase.current !== 'idle') return;
-    phase.current = 'starting';
-    setBusy(true);
+    if (machineRef.current.phase !== 'idle') return;
+    commit({ type: 'press' });
     acceptingStatus.current = false;
     const attempt = generation.current;
     const isCurrent = () => mounted.current && !callbacks.current.disabled && generation.current === attempt;
 
-    setRecordFailed(false);
     try {
       const permission = await requestRecordingPermissionsAsync();
       if (!isCurrent()) return;
       if (!permission.granted) {
-        setPermissionDenied(true);
+        commit({ type: 'permissionDenied' });
         callbacks.current.onError?.('Microphone access is needed for voice traces.');
         return;
       }
-      setPermissionDenied(false);
+      commit({ type: 'permissionGranted' });
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       audioModeActive.current = true;
       if (!isCurrent()) { restoreAudioMode(); return; }
@@ -185,19 +201,20 @@ export function VoiceRecorder({ onRecorded, disabled, compact, onError, onRecord
       if (!isCurrent()) { restoreAudioMode(); return; }
       haptics.impact();
       recorder.record();
-      phase.current = 'recording';
+      commit({ type: 'started' });
       acceptingStatus.current = true;
     } catch {
       restoreAudioMode();
       if (isCurrent()) {
-        setRecordFailed(true);
+        commit({ type: 'startFailed' });
         callbacks.current.onError?.('Could not start voice recording. Try again?');
       }
     } finally {
-      if (phase.current === 'starting') phase.current = 'idle';
-      if (mounted.current) setBusy(false);
+      // A start that lost ownership (disable, unmount, newer attempt) may not
+      // leave the machine believing it still owns capture.
+      commit({ type: 'startAborted' });
     }
-  }, [recorder, restoreAudioMode, stopRecording]);
+  }, [commit, recorder, restoreAudioMode, stopRecording]);
 
   if (compact) {
     return (
