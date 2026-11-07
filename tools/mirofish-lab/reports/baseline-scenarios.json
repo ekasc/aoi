@@ -56,7 +56,7 @@
       "The pre-join memory is missing or attributed to B after joining."
     ],
     "relevant_source_files": [
-      "docs/product/first-use-acceptance.md",
+      "PRODUCT.md",
       "components/space/partner-invitation.tsx",
       "packages/api/src/domains/spaces.ts",
       "packages/api/src/domains/moments.ts"
@@ -314,7 +314,7 @@
       "The app adds a second, unrequested copy to resolve the ambiguity."
     ],
     "relevant_source_files": [
-      "docs/product/relationship-home-and-archive.md",
+      "PRODUCT.md",
       "app/(app)/(tabs)/together.tsx",
       "features/album/sky-photo-repository.ts",
       "features/moments/moments-context.tsx"
@@ -411,7 +411,7 @@
       "features/space/space-context.tsx",
       "features/session/session-context.tsx",
       "tests/unit/space/space-context-refresh.test.tsx",
-      "docs/product/first-use-acceptance.md"
+      "PRODUCT.md"
     ],
     "existing_test_coverage": [
       "tests/unit/space/mirofish-stale-space-mutation.test.tsx:64 — [AOI-SIM-011] ignores a join that finishes after the previous account changes"
@@ -622,7 +622,7 @@
       "packages/shared/src/plus.ts",
       "packages/api/src/domains/plus.ts",
       "features/subscription/subscription-context.tsx",
-      "docs/product/relationship-home-and-archive.md"
+      "PRODUCT.md"
     ],
     "existing_test_coverage": [
       "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"

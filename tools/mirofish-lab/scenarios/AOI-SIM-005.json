@@ -45,7 +45,7 @@
     "The app adds a second, unrequested copy to resolve the ambiguity."
   ],
   "relevant_source_files": [
-    "docs/product/relationship-home-and-archive.md",
+    "PRODUCT.md",
     "app/(app)/(tabs)/together.tsx",
     "features/album/sky-photo-repository.ts",
     "features/moments/moments-context.tsx"

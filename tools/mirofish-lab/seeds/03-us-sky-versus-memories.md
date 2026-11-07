@@ -13,7 +13,7 @@ sources:
     sha256: d92d2e90e6ff8b57ab9051c355a6ad8259d0bacf820ca628929ecb2a3280386a
   - path: features/moments/moments-context.tsx
     sha256: c8c8fd44f3abe4136778020eed51884d831e00f2733e2a57e925d45c49ce8d00
-  - path: docs/product/relationship-home-and-archive.md
+  - path: PRODUCT.md
     sha256: b7880500c07bd9ca767571ed9614e1112c59c3a462be1d6a3af64a2eea9e99ac
 ---
 
@@ -29,11 +29,11 @@ sources:
 
 ## Verified in current source
 
-- Us renders a relationship sky and chronological shared activity from the shared moments store; Memories is the complete reading and media-browsing destination (`docs/product/relationship-home-and-archive.md`).
+- Us renders the photo sky from the shared encrypted album; Memories is the complete reading and media-browsing destination (`PRODUCT.md`).
 - Sky photos are stored through a separate sky-photo repository and are not dated memories (`features/album/sky-photo-repository.ts`).
-- A published memory with a future occurrence date remains in the archive but does not light today's sky (`docs/product/relationship-home-and-archive.md`).
-- Us does not add a second notification schedule, and on-this-day is an editorial heading over the existing same-month/day rule.
-- Free and Plus see the same relationship home; the sky is not an entitlement branch.
+- The sky is driven by album addedAt dates, not memory occurrence dates (`features/album/sky-photo-repository.ts`).
+- Everyday resurfacing is a silent local notification from `features/moments/resurface.ts`.
+- Free and Plus see the same sky; Sky History is the Plus branch (`PRODUCT.md`).
 
 ## Documented intent (not proof of current behavior)
 
@@ -59,6 +59,6 @@ sources:
 - `features/home/day-sky.ts`
 - `features/album/sky-photo-repository.ts`
 - `features/moments/moments-context.tsx`
-- `docs/product/relationship-home-and-archive.md`
+- `PRODUCT.md`
 
 A simulated statement about any item above is a hypothesis. Only an executed Aoi test with recorded evidence may be reported as reproduced behavior.

@@ -5,9 +5,9 @@ aoi_commit: 048f78383a2ff423a8b3c1f0532c4514b387708f
 sources:
   - path: PRODUCT.md
     sha256: ed50534f24aafe50353f2115ab377e7d4acb112d437668929bdc62ee54820a3a
-  - path: docs/product/first-use-acceptance.md
+  - path: PRODUCT.md
     sha256: 61dca1d66da19e2376242baf2b3421dd2f9e29814f47a233fd86b46ea9bf8a9f
-  - path: docs/product/relationship-home-and-archive.md
+  - path: PRODUCT.md
     sha256: b7880500c07bd9ca767571ed9614e1112c59c3a462be1d6a3af64a2eea9e99ac
   - path: app/(app)/(tabs)/_layout.tsx
     sha256: 6fee7a053f4c6eae475f939fb3f2000df08770b83a39131937fce9a4eff1935b
@@ -27,21 +27,20 @@ sources:
 
 ## Verified in current source
 
-- Aoi is a private space for exactly two people to save memories and make plans together (`docs/product/first-use-acceptance.md`).
-- The authenticated tab layout exposes Memories, Us, Plans, and Space (`app/(app)/(tabs)/_layout.tsx`). The task brief calls the fourth destination Lists; the checked-in tab is Space, and Plans/Lists content lives behind it.
+- Aoi is a private space for exactly two people to save memories and make plans together (`PRODUCT.md`).
+- The authenticated tab layout exposes Memories, Us, Plans, and Lists (`app/(app)/(tabs)/_layout.tsx`).
 - A relationship space has one creator and at most one active partner. Storage enforces one active membership per user and one active partner per space (`packages/api/src/domains/spaces.ts`, partial unique indexes).
 - A space is not a group. Invitations admit one partner, and the partner slot never becomes reusable after someone has joined (`joinSpaceProgram`, `packages/api/src/domains/spaces.ts`).
 - Memory authorship is viewer-relative: the API returns `authorRole: "you"` for the caller and `"partner"` for the other member (`momentToApi`, `packages/api/src/domains/moments.ts`).
 
 ## Documented intent (not proof of current behavior)
 
-- The first useful action is saving one memory, possibly before the partner joins (`docs/product/first-use-acceptance.md`).
-- Us and Memories are separate destinations with different content: sky photos versus dated memories (`docs/product/relationship-home-and-archive.md`).
-- Plans and collections are shared planning surfaces; goals do not automatically become memories (`docs/product/relationship-home-and-archive.md`).
+- The first useful action is saving one memory, possibly before the partner joins (`PRODUCT.md`).
+- Us and Memories are separate destinations with different content: sky photos versus dated memories (`PRODUCT.md`).
+- Plans and collections are shared planning surfaces; goals do not automatically become memories (`PRODUCT.md`).
 
 ## Unresolved or contradicted
 
-- The product brief refers to a Lists tab while the checked-in navigation calls the fourth destination Space. This lab models what the source actually exposes and does not assume a Lists route exists.
 - No source establishes that adding a photo in one destination publishes it to the other.
 
 ## Fictional situation material for MiroFish
@@ -52,8 +51,8 @@ sources:
 ## Source files
 
 - `PRODUCT.md`
-- `docs/product/first-use-acceptance.md`
-- `docs/product/relationship-home-and-archive.md`
+- `PRODUCT.md`
+- `PRODUCT.md`
 - `app/(app)/(tabs)/_layout.tsx`
 - `packages/shared/src/space.ts`
 

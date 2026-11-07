@@ -57,7 +57,7 @@
     "packages/shared/src/plus.ts",
     "packages/api/src/domains/plus.ts",
     "features/subscription/subscription-context.tsx",
-    "docs/product/relationship-home-and-archive.md"
+    "PRODUCT.md"
   ],
   "existing_test_coverage": [
     "packages/api/src/__tests__/routes/session-plus.test.ts:141 — valid webhook activates Plus for the purchaser Space; partner reads the same state"
