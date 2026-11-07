@@ -121,7 +121,6 @@ export interface QueueBatchLike {
 export const RATE_LIMIT_NAMES = [
   'AUTH',
   'GENERAL',
-  'SQUEEZE',
   'LOCATION_REQUEST',
   'MEDIA',
 ] as const;
@@ -142,7 +141,6 @@ export interface WorkerEnv {
   AOI_ANALYTICS?: AnalyticsEngineDatasetBinding;
   RATE_LIMIT_AUTH: RateLimitBinding;
   RATE_LIMIT_GENERAL: RateLimitBinding;
-  RATE_LIMIT_SQUEEZE: RateLimitBinding;
   RATE_LIMIT_LOCATION_REQUEST: RateLimitBinding;
   RATE_LIMIT_MEDIA: RateLimitBinding;
   /** App-level vars (wrangler `vars` / `[vars]`), not secrets. */

@@ -18,13 +18,11 @@ import { mediaRouter } from './routes/session-media';
 import { albumRouter } from './routes/session-album';
 import { albumProtocolRouter } from './routes/session-album-protocol';
 import { calendarRouter } from './routes/session-calendar';
-import { lettersRouter } from './routes/session-letters';
 import { questionRouter } from './routes/session-question';
 import { somedayRouter } from './routes/session-someday';
 import { collectionsRouter } from './routes/session-collections';
 import { locationRouter } from './routes/session-location';
 import { preferencesRouter } from './routes/session-preferences';
-import { squeezesRouter } from './routes/session-squeezes';
 import { responsesRouter } from './routes/session-responses';
 import { partnerDetailsRouter } from './routes/session-partner-details';
 
@@ -167,8 +165,10 @@ export function createApp(layers: RuntimeLayer): OpenAPIHono<AppEnv> {
     if (res.status !== 400) return;
     if (!(res.headers.get('content-type') ?? '').includes('application/json')) return;
     const body = await res.clone().json().catch(() => null);
-    if (!body || body.success !== false || !Array.isArray(body.error?.issues)) return;
-    const issue = body.error.issues[0];
+    if (!body || body.success !== false) return;
+    // Zod 4 serializes its error as name/message rather than an issues array.
+    if (!Array.isArray(body.error?.issues) && body.error?.name !== 'ZodError') return;
+    const issue = body.error.issues?.[0];
     const message =
       typeof issue?.message === 'string' &&
       /^[\w .,'!?-]{1,120}$/.test(issue.message)
@@ -187,13 +187,11 @@ export function createApp(layers: RuntimeLayer): OpenAPIHono<AppEnv> {
   app.route('/', albumRouter(run));
   app.route('/', albumProtocolRouter(run));
   app.route('/', calendarRouter(run));
-  app.route('/', lettersRouter(run));
   app.route('/', questionRouter(run));
   app.route('/', somedayRouter(run));
   app.route('/', collectionsRouter(run));
   app.route('/', locationRouter(run));
   app.route('/', preferencesRouter(run));
-  app.route('/', squeezesRouter(run));
   app.route('/', responsesRouter(run));
   app.route('/', partnerDetailsRouter(run));
 

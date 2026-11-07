@@ -85,6 +85,13 @@
       "when": 1789614499770,
       "tag": "0011_graceful_gressill",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793668192709,
+      "tag": "0012_lowly_elektra",
+      "breakpoints": true
     }
   ]
 }

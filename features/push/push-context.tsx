@@ -7,7 +7,6 @@ import { useCalendar } from '@/features/calendar/calendar-context';
 import { useSpace } from '@/features/space/space-context';
 import { useMoments } from '@/features/moments/moments-context';
 import { registerDevicePushToken } from '@/features/push/register-push-token';
-import { useSqueeze } from '@/features/squeeze/squeeze-context';
 
 // Once per session is plenty — no re-registration churn on focus/nav.
 let registeredThisSession = false;
@@ -19,8 +18,7 @@ let registeredThisSession = false;
  *   permission granted, physical device only — simulators no-op silently).
  *   The once-flag is only set after a real success, so a failed attempt
  *   (offline boot, denied permission) is retried on a later mount.
- * - Listens for received pushes and routes them: `squeeze` lights up the
- *   real overlay through the squeeze context; `moment_*` gently refreshes
+ * - Listens for received pushes and routes them: `moment_*` gently refreshes
  *   the timeline so partner changes appear without waiting for app focus;
  *   `event_*`
  *   refreshes the calendar (a partner planned / shifted / let go of a plan
@@ -29,11 +27,9 @@ let registeredThisSession = false;
  *   taps the notification — the response listener routes those too.
  *
  * The foreground handler (banner visible, never sound) is set globally in
- * `app/_layout.tsx`. Stub mode is a complete no-op — the simulated squeeze
- * loop stays intact for offline dev.
+ * `app/_layout.tsx`. Stub mode is a complete no-op.
  */
 export function PushProvider({ children }: PropsWithChildren) {
-  const { receiveSqueeze } = useSqueeze();
   const { refresh } = useMoments();
   const { refresh: refreshCalendar } = useCalendar();
   const { refreshSpace } = useSpace();
@@ -67,11 +63,6 @@ export function PushProvider({ children }: PropsWithChildren) {
 
       if (!data) {
         return; // Unknown kinds are never acted on.
-      }
-
-      if (data.kind === 'squeeze') {
-        receiveSqueeze();
-        return;
       }
 
       // v1: location sharing is not in the release runtime. Location push
@@ -126,7 +117,6 @@ export function PushProvider({ children }: PropsWithChildren) {
       responseSubscription.remove();
     };
   }, [
-    receiveSqueeze,
     refresh,
     refreshCalendar,
     refreshSpace,

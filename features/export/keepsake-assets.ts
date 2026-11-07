@@ -143,7 +143,7 @@ function defaultDeps(): StagePhotosDeps {
     },
     writeTempFile: async (name: string, bytes: Uint8Array) => {
       const dest = new File(assetsDir(), name);
-      dest.write(bytes);
+      await dest.write(bytes);
       return dest.uri;
     },
     transformPhoto: async (uri: string) => {

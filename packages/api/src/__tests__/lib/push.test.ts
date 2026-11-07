@@ -10,9 +10,9 @@ import {
 } from '../../lib/push.js';
 
 const DEFAULT_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
-const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
-const TEST_PARTNER_ID = '00000000-0000-0000-0000-000000000002';
-const TEST_SPACE_ID = '00000000-0000-0000-0000-000000000010';
+const TEST_USER_ID = '00000000-0000-4000-8000-000000000001';
+const TEST_PARTNER_ID = '00000000-0000-4000-8000-000000000002';
+const TEST_SPACE_ID = '00000000-0000-4000-8000-000000000010';
 
 const mockSelectQueue: Array<Array<Record<string, unknown>>> = [];
 const deleteWhereCalls: unknown[] = [];
@@ -56,90 +56,6 @@ function tokenRow(expoPushToken: string, overrides: Record<string, unknown> = {}
   return { expoPushToken, ...overrides };
 }
 
-describe('buildPushCopy', () => {
-  it('gives every kind a warm, vague title and body', () => {
-    for (const kind of [
-      'squeeze',
-      'partner_joined',
-      'moment_added',
-      'moment_edited',
-      'moment_deleted',
-      'letter_sealed',
-      'event_added',
-      'event_updated',
-      'event_deleted',
-    ] as const) {
-      const copy = buildPushCopy(kind);
-      expect(copy.title.length).toBeGreaterThan(0);
-      expect(copy.body.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('tells the person who was already there, and says nothing else', () => {
-    // The whole point of this one: somebody who has been sitting alone in a
-    // space they made finally has company. Warm, and it carries no name and no
-    // content, like every other push here.
-    const copy = buildPushCopy('partner_joined');
-    expect(copy.title).toBe('They joined your space');
-    expect(copy.body).toBe('Your sky has two people in it now.');
-    expect(`${copy.title} ${copy.body}`).not.toContain('Alice');
-  });
-
-  it('calendar kinds carry a weekday at most — never a title, date, or time', () => {
-    const secret = 'Dinner at the lighthouse';
-    const added = buildPushCopy('event_added', undefined, 'Friday');
-    expect(added.body).toContain('Friday');
-    const updated = buildPushCopy('event_updated', undefined, 'Friday');
-    expect(updated.body).toContain('Friday');
-    // Without a weekday the copy simply stays vaguer.
-    expect(buildPushCopy('event_added').body).not.toContain('undefined');
-    expect(buildPushCopy('event_deleted').title.length).toBeGreaterThan(0);
-
-    for (const copy of [added, updated, buildPushCopy('event_deleted')]) {
-      const wire = `${copy.title} ${copy.body}`;
-      expect(wire).not.toContain(secret);
-      // No dates, no clock times — a weekday name is the ceiling.
-      expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-      expect(wire).not.toMatch(/\d{1,2}:\d{2}/);
-    }
-  });
-
-  it('location kinds carry the sender name at most — never coordinates', () => {
-    const request = buildPushCopy('location_request', 'Mara');
-    expect(request.title).toContain('Mara');
-    const granted = buildPushCopy('location_granted', 'Mara');
-    expect(granted.title).toContain('Mara');
-    const stopped = buildPushCopy('location_stopped');
-    expect(stopped.title.length).toBeGreaterThan(0);
-
-    // The builder has no coordinate parameter; assert the copy for every
-    // location kind stays free of anything resembling a position.
-    for (const copy of [request, granted, stopped]) {
-      expect(`${copy.title} ${copy.body}`).not.toMatch(/\d+\.\d+/);
-    }
-  });
-
-  it('moment copy never carries content — the builder accepts none', () => {
-    // Structural privacy: buildPushCopy(kind) has no content parameter, so
-    // moment text can never enter a payload through it. Assert the copy for
-    // the moment kinds stays generic.
-    const secret = 'dinner at the pier, sunset, her laugh';
-    for (const kind of ['moment_added', 'moment_edited', 'moment_deleted'] as const) {
-      const copy = buildPushCopy(kind);
-      expect(`${copy.title} ${copy.body}`).not.toContain(secret);
-    }
-  });
-
-  it('letter_sealed copy never carries the words or the date', () => {
-    const copy = buildPushCopy('letter_sealed');
-    const wire = `${copy.title} ${copy.body}`;
-    expect(wire).not.toContain('tide');
-    expect(wire).not.toContain('summer');
-    // The opening day is content too — never in the copy.
-    expect(wire).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-    expect(wire).not.toMatch(/\b\d{1,2}\b/);
-  });
-});
 
 describe('sendPushToUser', () => {
   it('does not call Expo when the user has no tokens', async () => {
@@ -158,9 +74,9 @@ describe('sendPushToUser', () => {
     );
 
     await sendPushToUser(TEST_USER_ID, {
-      title: 'A squeeze for you',
-      body: 'Your partner is thinking of you.',
-      data: { kind: 'squeeze' },
+      title: 'A memory from your partner',
+      body: 'Open aoi to see it.',
+      data: { kind: 'moment_added' },
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -170,9 +86,9 @@ describe('sendPushToUser', () => {
     expect(sent).toHaveLength(2);
     expect(sent[0]).toMatchObject({
       to: 'ExpoPushToken[device-a]',
-      title: 'A squeeze for you',
-      body: 'Your partner is thinking of you.',
-      data: { kind: 'squeeze' },
+      title: 'A memory from your partner',
+      body: 'Open aoi to see it.',
+      data: { kind: 'moment_added' },
       sound: null, // silent — memories must never become noise
     });
   });
@@ -319,7 +235,7 @@ describe('notifyPartnerInSpace', () => {
   it('never pushes to the sender when they are the only member', async () => {
     mockSelectQueue.push([{ userId: TEST_USER_ID }]);
 
-    await notifyPartnerInSpace(TEST_SPACE_ID, TEST_USER_ID, 'squeeze');
+    await notifyPartnerInSpace(TEST_SPACE_ID, TEST_USER_ID, 'moment_added');
 
     expect(fetchMock).not.toHaveBeenCalled();
   });

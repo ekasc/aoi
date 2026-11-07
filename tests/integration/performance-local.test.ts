@@ -4,7 +4,7 @@ import { startBoundaryServer, TOKEN_A } from './helpers/http-harness';
 
 it('serves 200 authenticated reads with 20 concurrent local clients', async () => {
   const server = await startBoundaryServer();
-  const paths = ['/v1/spaces/current', '/v1/spaces/current/moments', '/v1/spaces/current/collections', '/v1/spaces/current/letters'];
+  const paths = ['/v1/spaces/current', '/v1/spaces/current/moments', '/v1/spaces/current/collections'];
   const timings: number[] = [];
   const failures: { path: string; status: number }[] = [];
   const start = performance.now();

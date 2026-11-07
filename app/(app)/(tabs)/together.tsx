@@ -25,7 +25,6 @@ import { haptics } from '@/features/haptics/haptics';
 import type { SkyItem } from '@/features/home/day-sky';
 import { clampSkyHistoryIndex, formatRelationshipAge, skyHistoryMonths } from '@/features/home/sky-history';
 import { useSession } from '@/features/session/session-context';
-import { useSqueeze } from '@/features/squeeze/squeeze-context';
 import { useSpace } from '@/features/space/space-context';
 import { useSubscription } from '@/features/subscription/subscription-context';
 import { useAoiTheme } from '@/features/theme/theme-context';
@@ -47,7 +46,6 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
   const { space } = useSpace();
   const { user } = useSession();
   const phraseConfirmed = useRecoveryPhraseConfirmed(space?.id ?? null);
-  const { sendSqueeze, isSending: squeezeSending } = useSqueeze();
   const canEditRelationship = space?.createdByUserId === user?.id;
   const { isPlus } = useSubscription();
   const preview = usePreviewVariant();
@@ -123,15 +121,6 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
           <ScreenHeader title="Us" tone="onDark" subtitle={viewingPast ? months[index].label : undefined} actions={
             <View style={styles.headerActions}>
               {viewingPast ? <Button label="Today" accessibilityLabel="Return to today" tone="sky" variant="muted" size="sm" onPress={returnToToday} /> : null}
-              <IconButton
-                label={squeezeSending ? 'Sending a squeeze' : 'Send a squeeze'}
-                variant="ghost"
-                disabled={squeezeSending}
-                accessibilityState={{ busy: squeezeSending, disabled: squeezeSending }}
-                onPress={() => void sendSqueeze()}
-              >
-                <Ionicons name="hand-left-outline" size={22} color={SKY_CONTROL_INK} accessible={false} aria-hidden />
-              </IconButton>
             </View>
           } />
         </View>
@@ -216,7 +205,7 @@ export function UsPhotoSky({ album }: { album: ReturnType<typeof useSkyPhotos> }
       {!showEmptyPrompt && !showLoadingPanel && !historyOpen ? <Pressable accessibilityRole="button" accessibilityLabel="Choose photos for your sky"
         accessibilityHint="Opens the photo picker. Photos are encrypted on this device and shared with your partner in your sky."
         accessibilityState={{ disabled: busy || album.status !== 'ready', busy }} disabled={busy || album.status !== 'ready'}
-        onPress={choosePhotos} style={({ pressed }) => [styles.fab, { bottom: fabBottomOffset(insets.bottom, process.env.EXPO_OS === 'ios'), boxShadow: shadow(Elevation.floating, shadowColor) }, pressed ? Pressed.onMedia : undefined, busy || album.status !== 'ready' ? styles.fabDisabled : undefined]}>
+        onPress={choosePhotos} style={({ pressed }) => [styles.fab, { bottom: fabBottomOffset(insets.bottom), boxShadow: shadow(Elevation.floating, shadowColor) }, pressed ? Pressed.onMedia : undefined, busy || album.status !== 'ready' ? styles.fabDisabled : undefined]}>
         <GlassSurface effect="clear" style={[styles.fabGlass, { backgroundColor: withAlpha(accent, process.env.EXPO_OS === 'ios' ? 0.25 : 0.6) }]}>
           <Ionicons name="add" size={26} color={mode === 'dark' ? onAccent : accentInk} accessible={false} aria-hidden />
         </GlassSurface>

@@ -50,7 +50,7 @@ export default function OursScreen() {
 			router.push("/(app)/collection/new");
 		}
 	}, [router]);
-	const fabBottom = fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios");
+	const fabBottom = fabBottomOffset(insets.bottom);
 
 	const isFocused = useIsFocused();
 	const { height: windowHeight } = useWindowDimensions();

@@ -6,15 +6,12 @@ import {
   createSpaceRequestSchema,
   isAllowedMediaMimeType,
   isExpoPushToken,
-  letterSchema,
   locationShareRequestSchema,
   mediaObjectUrl,
   mediaUploadIntentRequestSchema,
   momentSchema,
   parsePushNotificationData,
   pushNotificationDataSchema,
-  sealLetterRequestSchema,
-  sortLettersNewestFirst,
   sortSomedayItems,
   spaceSchema,
   userSchema,
@@ -189,24 +186,6 @@ describe('moment contract', () => {
   });
 });
 
-describe('letter contract', () => {
-  it('allows a body-less (locked) letter and an opened letter with body', () => {
-    const base = {
-      id: 'l1',
-      authorRole: 'partner',
-      authorName: 'B',
-      caption: null,
-      sealedUntil: '2030-01-01T00:00:00.000Z',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      isOpened: false,
-      readyToOpen: false,
-      openedAt: null,
-    };
-    expect(letterSchema.safeParse(base).success).toBe(true);
-    expect(letterSchema.safeParse({ ...base, isOpened: true, body: 'secret' }).success).toBe(true);
-  });
-});
-
 describe('push helpers', () => {
   it('recognizes current and legacy Expo token formats', () => {
     expect(isExpoPushToken('ExpoPushToken[AbCdEf12_345]')).toBe(true);
@@ -215,7 +194,6 @@ describe('push helpers', () => {
   });
 
   it('narrows push data to known kinds only', () => {
-    expect(parsePushNotificationData({ kind: 'squeeze' })).toEqual({ kind: 'squeeze' });
     expect(parsePushNotificationData({ kind: 'mystery' })).toBeNull();
     expect(parsePushNotificationData(null)).toBeNull();
     expect(pushNotificationDataSchema.safeParse({ kind: 'event_added' }).success).toBe(true);
@@ -285,17 +263,6 @@ describe('question contract', () => {
 });
 
 describe('shared pure helpers (behavior pins)', () => {
-  it('sorts letters newest-first', () => {
-    const items = [
-      { createdAt: '2026-01-01T00:00:00.000Z' },
-      { createdAt: '2026-01-02T00:00:00.000Z' },
-    ];
-    expect(sortLettersNewestFirst(items).map((i) => i.createdAt)).toEqual([
-      '2026-01-02T00:00:00.000Z',
-      '2026-01-01T00:00:00.000Z',
-    ]);
-  });
-
   it('sorts someday items open-first, then most-recently-checked', () => {
     const items = [
       { createdAt: '2026-01-01T00:00:00.000Z', checkedAt: null },

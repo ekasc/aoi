@@ -1216,8 +1216,8 @@ export default function MemoriesScreen() {
 	// a disagreement between the two is what blanks the screen.
 	const showingDedication = view === 'feed' && firstPage.kind === 'dedication';
 	const listBottomPadding = showingDedication
-		? fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios")
-		: fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + FAB_SIZE + Spacing[24];
+		? fabBottomOffset(insets.bottom)
+		: fabBottomOffset(insets.bottom) + FAB_SIZE + Spacing[24];
 	const emptySpacePadding = useMemo(
 		() =>
 			headerHeight +
@@ -1466,7 +1466,7 @@ export default function MemoriesScreen() {
 
 	// FAB floats over the feed, clear of the docked system tab bar.
 	const fabBottom = useMemo(
-		() => fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios"),
+		() => fabBottomOffset(insets.bottom),
 		[insets.bottom],
 	);
 
@@ -1510,7 +1510,17 @@ export default function MemoriesScreen() {
                 accessibilityElementsHidden={entry.kind !== 'welcome'} aria-hidden={entry.kind !== 'welcome'}
                 importantForAccessibility={entry.kind === 'welcome' ? 'auto' : 'no-hide-descendants'}
                 style={[StyleSheet.absoluteFill, invitationStyle]} testID="sky-welcome">
-                <SkyWelcome details={entry.details} onEnter={enter} />
+                {/*
+                  Only creation stops here. The card's job is to hand the
+                  reader their invite code, so it exists for the person who
+                  made the space. Someone who joined with a code already knows
+                  the other person is in it — that is what a working code
+                  means — so the arrival runs and lands them in Memories
+                  instead of pausing on a sentence that tells them nothing.
+                */}
+                {entry.details.kind === 'created' ? (
+                  <SkyWelcome details={entry.details} onEnter={enter} />
+                ) : null}
               </Animated.View>
             ) : null}
 

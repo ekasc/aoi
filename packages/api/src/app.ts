@@ -11,11 +11,9 @@ import { activityRouter } from './routes/activity.js';
 import { calendarRouter } from './routes/calendar.js';
 import { somedayRouter } from './routes/someday.js';
 import { questionRouter } from './routes/question.js';
-import { lettersRouter } from './routes/letters.js';
 import { preferencesRouter } from './routes/preferences.js';
 import { mediaRouter } from './routes/media.js';
 import { pushRouter } from './routes/push.js';
-import { squeezesRouter } from './routes/squeezes.js';
 import { locationRouter } from './routes/location.js';
 
 const app = new Hono();
@@ -56,11 +54,9 @@ app.route('/', activityRouter);
 app.route('/', calendarRouter);
 app.route('/', somedayRouter);
 app.route('/', questionRouter);
-app.route('/', lettersRouter);
 app.route('/', preferencesRouter);
 app.route('/', mediaRouter);
 app.route('/', pushRouter);
-app.route('/', squeezesRouter);
 app.route('/', locationRouter);
 
 // ── Global error handler ─────────────────────────────────────────────────

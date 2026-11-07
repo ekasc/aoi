@@ -28,8 +28,8 @@ describe('rate limiter dev fallback', () => {
       return undefined;
     });
     await limiter.consume('AUTH', 'ip-1');
-    await limiter.consume('SQUEEZE', 'ip-1');
-    expect(seen.sort()).toEqual(['AUTH', 'SQUEEZE']);
+    await limiter.consume('MEDIA', 'ip-1');
+    expect(seen.sort()).toEqual(['AUTH', 'MEDIA']);
   });
 });
 

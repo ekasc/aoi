@@ -2,11 +2,9 @@ import { Effect } from 'effect';
 
 import type { RevenueCatWebhookEvent, SpacePlusResponse } from '@aoi/shared';
 import {
-  FREE_FUTURE_LETTERS,
   FREE_MEDIA_BYTES,
   PLUS_GRANT_EVENT_TYPES,
   PLUS_REVOKE_EVENT_TYPES,
-  futureLetterLimitForSpace,
   mediaLimitForSpace,
   revenueCatWebhookBodySchema,
 } from '@aoi/shared';
@@ -717,8 +715,6 @@ export const getSpacePlusProgram = (
         expiresAt: null,
         mediaUsedBytes: 0,
         mediaLimitBytes: FREE_MEDIA_BYTES,
-        activeFutureLetters: 0,
-        futureLetterLimit: FREE_FUTURE_LETTERS,
       } as const;
     }
     const db = yield* Db;
@@ -729,15 +725,13 @@ export const getSpacePlusProgram = (
       expiresAt: usage.expiresAt,
       mediaUsedBytes: usage.mediaUsedBytes,
       mediaLimitBytes: usage.mediaLimitBytes,
-      activeFutureLetters: usage.activeFutureLetters,
-      futureLetterLimit: usage.futureLetterLimit,
     };
   });
 
 /**
  * Single shared usage computation for one Space: Plus liveness plus the
  * counted usage both enforcement paths rely on. `db` is the raw D1 binding
- * (callers already hold Db) so media/letters enforcement and the read path
+ * (callers already hold Db) so media enforcement and the read path
  * can never disagree on what "used" means.
  *
  * Media counts photo + voice rows with upload_state in (pending, complete)
@@ -774,8 +768,6 @@ export interface SpaceUsage {
   readonly expiresAt: string | null;
   readonly mediaUsedBytes: number;
   readonly mediaLimitBytes: number;
-  readonly activeFutureLetters: number;
-  readonly futureLetterLimit: number | null;
 }
 
 export const readSpaceUsage = (
@@ -803,18 +795,12 @@ export const readSpaceUsage = (
         .prepare(`select ${COUNTED_MEDIA_BYTES_SQL} as used`)
         .bind(spaceId, spaceId, spaceId)
         .first<{ used: number }>();
-      const lettersRow = await d1
-        .prepare(`select count(*) as active from letters where space_id = ? and opened_at is null`)
-        .bind(spaceId)
-        .first<{ active: number }>();
       return {
         isPlus: live,
         expiresAt:
           plusRow && plusRow.expires_at !== null ? new Date(plusRow.expires_at).toISOString() : null,
         mediaUsedBytes: mediaRow?.used ?? 0,
         mediaLimitBytes: mediaLimitForSpace(live),
-        activeFutureLetters: lettersRow?.active ?? 0,
-        futureLetterLimit: futureLetterLimitForSpace(live),
       };
     },
     catch: () => new InternalError({}),

@@ -89,8 +89,6 @@ let mockServerPlus: Record<string, any> | null = {
   expiresAt: null,
   mediaUsedBytes: 0,
   mediaLimitBytes: 5 * 1024 * 1024 * 1024,
-  activeFutureLetters: 0,
-  futureLetterLimit: null,
 };
 const refreshServerPlusSpy = vi.fn(async () => {});
 
@@ -158,8 +156,6 @@ beforeEach(() => {
     expiresAt: null,
     mediaUsedBytes: 0,
     mediaLimitBytes: 5 * 1024 * 1024 * 1024,
-    activeFutureLetters: 0,
-    futureLetterLimit: null,
   };
 });
 
@@ -262,6 +258,7 @@ describe('ChapterDetailScreen (range-loaded, Story-independent)', () => {
   });
 });
 
+
 describe('ChapterDetailScreen export action', () => {
   async function renderReadyChapter() {
     const { key } = oldMonthDay(10);
@@ -334,8 +331,6 @@ describe('ChapterDetailScreen export action', () => {
       expiresAt: null,
       mediaUsedBytes: 0,
       mediaLimitBytes: 250 * 1024 * 1024,
-      activeFutureLetters: 0,
-      futureLetterLimit: 1,
     };
     await renderReadyChapter();
 
@@ -371,10 +366,8 @@ describe('ChapterDetailScreen export action', () => {
       expiresAt: null,
       mediaUsedBytes: 0,
       mediaLimitBytes: 250 * 1024 * 1024,
-      activeFutureLetters: 0,
-      futureLetterLimit: 1,
     };
-    const key = await renderReadyChapter();
+    await renderReadyChapter();
 
     // Entries (photo/note/voice) render with no Plus requirement…
     expect(screen.getByTestId("chapter-photo-stack")).toBeTruthy();

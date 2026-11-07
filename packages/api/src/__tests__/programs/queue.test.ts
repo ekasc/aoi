@@ -71,7 +71,7 @@ describe('queue consumer', () => {
   it('acks a well-formed job handled successfully', async () => {
     const handled: unknown[] = [];
     const out = await runBatch(
-      [message({ type: 'push.deliver', kind: 'squeeze', spaceId: 's1', fromUserId: 'u1' })],
+      [message({ type: 'push.deliver', kind: 'moment_added', spaceId: 's1', fromUserId: 'u1' })],
       {
         'push.deliver': (job) =>
           Effect.sync(() => {
@@ -103,14 +103,14 @@ describe('queue consumer', () => {
     const failing: QueueHandler = () => Effect.fail(new Error('expo down'));
 
     const early = await runBatch(
-      [message({ type: 'push.deliver', kind: 'squeeze', spaceId: 's1', fromUserId: 'u1' }, { attempts: 2 })],
+      [message({ type: 'push.deliver', kind: 'moment_added', spaceId: 's1', fromUserId: 'u1' }, { attempts: 2 })],
       { 'push.deliver': failing }
     );
     expect(early.retried).toBe(1);
     expect(early.dlq).toEqual([]);
 
     const exhausted = await runBatch(
-      [message({ type: 'push.deliver', kind: 'squeeze', spaceId: 's1', fromUserId: 'u1' }, { attempts: MAX_JOB_ATTEMPTS })],
+      [message({ type: 'push.deliver', kind: 'moment_added', spaceId: 's1', fromUserId: 'u1' }, { attempts: MAX_JOB_ATTEMPTS })],
       { 'push.deliver': failing }
     );
     expect(exhausted.dlq).toHaveLength(1);
@@ -124,7 +124,7 @@ describe('queue consumer', () => {
       throw new Error('handler exploded synchronously');
     };
     const out = await runBatch(
-      [message({ type: 'push.deliver', kind: 'squeeze', spaceId: 's1', fromUserId: 'u1' }, { attempts: MAX_JOB_ATTEMPTS })],
+      [message({ type: 'push.deliver', kind: 'moment_added', spaceId: 's1', fromUserId: 'u1' }, { attempts: MAX_JOB_ATTEMPTS })],
       { 'push.deliver': throwing }
     );
     expect(out.dlq).toHaveLength(1);
@@ -134,7 +134,7 @@ describe('queue consumer', () => {
   it('handles a mixed batch independently per message', async () => {
     const out = await runBatch(
       [
-        message({ type: 'push.deliver', kind: 'squeeze', spaceId: 's1', fromUserId: 'u1' }, { id: 'good' }),
+        message({ type: 'push.deliver', kind: 'moment_added', spaceId: 's1', fromUserId: 'u1' }, { id: 'good' }),
         message({ garbage: true }, { id: 'poison' }),
       ],
       {

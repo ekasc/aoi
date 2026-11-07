@@ -16,10 +16,9 @@ export interface RateLimiterService {
 
 export class RateLimiter extends Context.Tag('aoi/RateLimiter')<RateLimiterService, RateLimiterService>() {}
 
-const BINDING_KEYS: Record<RateLimitName, 'RATE_LIMIT_AUTH' | 'RATE_LIMIT_GENERAL' | 'RATE_LIMIT_SQUEEZE' | 'RATE_LIMIT_LOCATION_REQUEST' | 'RATE_LIMIT_MEDIA'> = {
+const BINDING_KEYS: Record<RateLimitName, 'RATE_LIMIT_AUTH' | 'RATE_LIMIT_GENERAL' | 'RATE_LIMIT_LOCATION_REQUEST' | 'RATE_LIMIT_MEDIA'> = {
   AUTH: 'RATE_LIMIT_AUTH',
   GENERAL: 'RATE_LIMIT_GENERAL',
-  SQUEEZE: 'RATE_LIMIT_SQUEEZE',
   LOCATION_REQUEST: 'RATE_LIMIT_LOCATION_REQUEST',
   MEDIA: 'RATE_LIMIT_MEDIA',
 };
@@ -45,7 +44,7 @@ export function makeRateLimiterService(
 }
 
 export const makeRateLimiterLayer = (
-  env: Pick<WorkerEnv, 'APP_ENV' | 'RATE_LIMIT_AUTH' | 'RATE_LIMIT_GENERAL' | 'RATE_LIMIT_SQUEEZE' | 'RATE_LIMIT_LOCATION_REQUEST' | 'RATE_LIMIT_MEDIA'>
+  env: Pick<WorkerEnv, 'APP_ENV' | 'RATE_LIMIT_AUTH' | 'RATE_LIMIT_GENERAL' | 'RATE_LIMIT_LOCATION_REQUEST' | 'RATE_LIMIT_MEDIA'>
 ): Layer.Layer<RateLimiterService> =>
   Layer.succeed(
     RateLimiter,

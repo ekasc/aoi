@@ -12,9 +12,7 @@ import { ResponsesProvider } from "@/features/responses/responses-context";
 import { useSession } from "@/features/session/session-context";
 import { SomedayProvider } from "@/features/someday/someday-context";
 import { useSpace } from "@/features/space/space-context";
-import { SqueezeProvider } from "@/features/squeeze/squeeze-context";
 import { useAoiTheme } from "@/features/theme/theme-context";
-import { SqueezeOverlay } from "@/components/squeeze/squeeze-overlay";
 import { ComposerProvider } from "@/features/composer/composer-context";
 import { useDevSeed } from "@/features/dev/preview";
 import { Typography } from "@/constants/typography";
@@ -66,8 +64,18 @@ export default function AuthenticatedAppLayout() {
 		);
 	}
 
-	if (spaceStatus !== "ready") {
+	// Only "this account has no space" belongs in onboarding. A failed read is
+	// not an empty account: with a cached snapshot it renders from the device,
+	// and without one it waits here rather than pretending the space is gone.
+	if (spaceStatus === "none") {
 		return <Redirect href="/(auth)/space-setup" />;
+	}
+	if (spaceStatus === "error") {
+		return (
+			<View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
+				<ActivityIndicator color={colors.accentInk} />
+			</View>
+		);
 	}
 
 	return (
@@ -76,11 +84,9 @@ export default function AuthenticatedAppLayout() {
 				<CollectionsProvider>
 				<SomedayProvider>
 					<QuestionProvider>
-						<SqueezeProvider>
 						<PushProvider>
 							<ResponsesProvider>
 							<ComposerProvider>
-							<SqueezeOverlay />
 						<Stack
 								screenOptions={{
 									contentStyle: { backgroundColor: colors.background },
@@ -242,7 +248,6 @@ export default function AuthenticatedAppLayout() {
 							</ComposerProvider>
 							</ResponsesProvider>
 						</PushProvider>
-					</SqueezeProvider>
 					</QuestionProvider>
 				</SomedayProvider>
 				</CollectionsProvider>
