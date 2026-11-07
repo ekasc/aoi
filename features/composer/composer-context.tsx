@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type PropsWithChildren,
@@ -45,6 +46,14 @@ import {
   stagedPathFor,
 } from '@/features/composer/composer-store';
 import { createDefaultComposerStore as createStore } from '@/features/composer/secure-draft-store';
+import {
+  beginSendRecord,
+  deliveredRecord,
+  failedRecord,
+  outboxReducer,
+  type OutboxAction,
+  type OutboxState,
+} from '@/features/composer/outbox-reducer';
 import { sendPendingRecord, type CreateFn, type SlotCheckpoint } from '@/features/composer/send-pipeline';
 
 export type ComposerDeps = {
@@ -76,15 +85,6 @@ export type ComposerValue = {
 
 const ComposerContext = createContext<ComposerValue | undefined>(undefined);
 
-type InternalState = {
-  draft: ComposerDraft | null;
-  pending: PendingRecord[];
-  hydrating: boolean;
-  error: string | null;
-  sendingIds: string[];
-  scopeKey: string | null;
-};
-
 function codedError(code: string): Error & { code?: string } {
   const err = new Error(code) as Error & { code?: string };
   err.code = code;
@@ -115,14 +115,18 @@ export function ComposerProvider({
   const [store] = useState<ComposerStore>(() => deps?.store ?? createStore());
   const nowFn = useMemo(() => deps?.now ?? (() => new Date().toISOString()), [deps?.now]);
 
-  const [state, setState] = useState<InternalState>(() => ({
-    draft: null,
-    pending: [],
-    hydrating: Boolean(user?.id && space?.id),
-    error: null,
-    sendingIds: [],
-    scopeKey: user?.id && space?.id ? scopeKey({ viewerId: user.id, spaceId: space.id }) : null,
-  }));
+  const [state, dispatch] = useReducer(
+    outboxReducer,
+    null,
+    (): OutboxState => ({
+      draft: null,
+      pending: [],
+      hydrating: Boolean(user?.id && space?.id),
+      error: null,
+      sendingIds: [],
+      scopeKey: user?.id && space?.id ? scopeKey({ viewerId: user.id, spaceId: space.id }) : null,
+    })
+  );
 
   // Latest-value mirrors: written only in layout effects / event callbacks,
   // never read or written during render.
@@ -140,9 +144,6 @@ export function ComposerProvider({
     createRef.current = deps?.create ?? ((input: CreateMomentInput) => addMoment(input));
   }, [deps?.create, addMoment]);
   useLayoutEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-  useLayoutEffect(() => {
     scopeRef.current = scope;
   }, [scope]);
   const sendChainRef = useRef(Promise.resolve());
@@ -157,10 +158,16 @@ export function ComposerProvider({
     return run;
   }, []);
 
-  const setPartial = useCallback((patch: Partial<InternalState>) => {
-    const next = { ...stateRef.current, ...patch };
+  /**
+   * Apply one transition and return its result. The mirror is updated before
+   * dispatch so async continuations see the committed state in the same tick,
+   * exactly as a partial-state commit did; the reducer owns what changes.
+   */
+  const commit = useCallback((action: OutboxAction): OutboxState => {
+    const next = outboxReducer(stateRef.current, action);
     stateRef.current = next;
-    setState(next);
+    dispatch(action);
+    return next;
   }, []);
 
   const persist = useCallback(
@@ -177,7 +184,7 @@ export function ComposerProvider({
   useEffect(() => {
     let cancelled = false;
     if (!scope) {
-      setPartial({ draft: null, pending: [], hydrating: false, error: null, sendingIds: [], scopeKey: null });
+      commit({ type: 'scopeCleared' });
       return;
     }
     const active: ComposerScope = { ...scope };
@@ -206,17 +213,17 @@ export function ComposerProvider({
           }
         }
         if (cancelled) return;
-        setPartial({ draft, pending, hydrating: false, error: null, sendingIds: [], scopeKey: activeKey });
+        commit({ type: 'hydrated', scopeKey: activeKey, draft, pending });
       } catch (err) {
         if (cancelled) return;
         const { message } = classifySendError(err);
-        setPartial({ draft: null, pending: [], hydrating: false, error: message, scopeKey: activeKey });
+        commit({ type: 'hydrateFailed', scopeKey: activeKey, message });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [scope, store, nowFn, setPartial]);
+  }, [scope, store, nowFn, commit]);
 
   const runSend = useCallback(
     (clientId: string, automatic = false) => {
@@ -236,25 +243,19 @@ export function ComposerProvider({
           // Stale scope: leave the disk copy queued, touch nothing in memory.
           return;
         }
-        setPartial({ sendingIds: [...stateRef.current.sendingIds, clientId] });
-        const sending: PendingRecord = { ...record, status: 'sending', attempts: record.attempts + 1, updatedAt: nowFn(), errorCode: null, errorMessage: null };
+        commit({ type: 'sendRequested', clientId });
+        const sending = beginSendRecord(record, nowFn());
         const nextPending = stateRef.current.pending.map((p) => (p.clientId === clientId ? sending : p));
         try {
           await persist(currentScope, stateRef.current.draft, nextPending);
         } catch (err) {
           if (!scopeEquals(record.scope, scopeRef.current)) return;
           const { message } = classifySendError(err);
-          setPartial({
-            pending: stateRef.current.pending.map((p) =>
-              p.clientId === clientId ? { ...p, status: 'failed' as const, errorMessage: message } : p
-            ),
-            sendingIds: stateRef.current.sendingIds.filter((id) => id !== clientId),
-            error: message,
-          });
+          commit({ type: 'sendNotPersisted', clientId, message });
           return;
         }
         if (!scopeEquals(record.scope, scopeRef.current)) return;
-        setPartial({ pending: nextPending });
+        commit({ type: 'sendPersisted', record: sending });
         let latestSlots = sending.slots.map((s) => ({ ...s }));
 
         const onSlotUploaded = async (checkpoint: SlotCheckpoint) => {
@@ -266,22 +267,17 @@ export function ComposerProvider({
             s.stagedId === checkpoint.stagedId ? { ...s, uploaded: checkpoint.uploaded } : s
           );
           if (scopeEquals(record.scope, scopeRef.current)) {
-            const updated = stateRef.current.pending.map((p) =>
-              p.clientId === clientId
-                ? {
-                    ...p,
-                    slots: p.slots.map((s) =>
-                      s.stagedId === checkpoint.stagedId ? { ...s, uploaded: checkpoint.uploaded } : s
-                    ),
-                    updatedAt: nowFn(),
-                  }
-                : p
-            );
-            setPartial({ pending: updated });
+            const updated = commit({
+              type: 'slotUploaded',
+              clientId,
+              stagedId: checkpoint.stagedId,
+              uploaded: checkpoint.uploaded,
+              now: nowFn(),
+            });
             const target = scopeRef.current;
             if (target) {
               try {
-                await persist(target, stateRef.current.draft, updated);
+                await persist(target, stateRef.current.draft, updated.pending);
               } catch {
                 // Checkpoint persist failure: the upload still succeeded
                 // server-side; retry will replay create idempotently.
@@ -326,15 +322,7 @@ export function ComposerProvider({
           // remove immediately (the fetch lands after the create). Staged
           // files are cleaned on acknowledge, not here, so the preview
           // survives. No bus, no navigation/scroll from the provider.
-          const delivered: PendingRecord = {
-            ...sending,
-            status: 'delivered',
-            deliveredMoment: moment,
-            errorCode: null,
-            errorMessage: null,
-            updatedAt: nowFn(),
-            slots: latestSlots.map((s) => ({ ...s })),
-          };
+          const delivered = deliveredRecord(sending, moment, latestSlots, nowFn());
           const stillCurrent = scopeEquals(record.scope, scopeRef.current) && scopeRef.current;
           if (stillCurrent) {
             const updated = stateRef.current.pending.map((item) =>
@@ -345,11 +333,7 @@ export function ComposerProvider({
             } catch {
               // Best-effort; the moment is already delivered.
             }
-            setPartial({
-              pending: updated,
-              sendingIds: stateRef.current.sendingIds.filter((id) => id !== clientId),
-              error: null,
-            });
+            commit({ type: 'sendDelivered', clientId, record: delivered });
           } else {
             // Scope drifted mid-send: persist delivered on the RECORD's
             // scope file without touching new-scope memory or credentials.
@@ -364,7 +348,7 @@ export function ComposerProvider({
             } catch {
               // Best-effort.
             }
-            setPartial({ sendingIds: stateRef.current.sendingIds.filter((id) => id !== clientId) });
+            commit({ type: 'sendFinished', clientId });
           }
         } catch (err) {
           const code = (err as { code?: unknown } | null)?.code;
@@ -383,28 +367,21 @@ export function ComposerProvider({
               // Best-effort.
             }
             if (scopeEquals(record.scope, scopeRef.current)) {
-              setPartial({
-                pending: stateRef.current.pending.map((p) =>
-                  p.clientId === clientId ? { ...p, status: 'queued' as const } : p
-                ),
-                sendingIds: stateRef.current.sendingIds.filter((id) => id !== clientId),
-              });
+              commit({ type: 'sendRequeued', clientId });
             } else {
-              setPartial({ sendingIds: stateRef.current.sendingIds.filter((id) => id !== clientId) });
+              commit({ type: 'sendFinished', clientId });
             }
             return;
           }
           const { code: errCode, message } = classifySendError(err);
           // Quota + generic failures retain the draft/attachments and need
           // explicit retry (no auto loops / quota reattempts).
-          const failed: PendingRecord = {
-            ...sending,
-            status: 'failed',
-            errorCode: errCode,
-            errorMessage: message,
-            updatedAt: nowFn(),
-            slots: latestSlots.map((s) => ({ ...s })),
-          };
+          const failed = failedRecord(sending, {
+            code: errCode,
+            message,
+            slots: latestSlots,
+            nowIso: nowFn(),
+          });
           if (scopeEquals(record.scope, scopeRef.current) && scopeRef.current) {
             const target = scopeRef.current;
             const updated = stateRef.current.pending.map((p) => (p.clientId === clientId ? failed : p));
@@ -413,11 +390,7 @@ export function ComposerProvider({
             } catch {
               // Best-effort; in-memory still reflects the failure.
             }
-            setPartial({
-              pending: updated,
-              sendingIds: stateRef.current.sendingIds.filter((id) => id !== clientId),
-              error: message,
-            });
+            commit({ type: 'sendFailed', clientId, record: failed, message });
           } else {
             try {
               const disk = await store.loadManifest(record.scope);
@@ -426,7 +399,7 @@ export function ComposerProvider({
             } catch {
               // Best-effort.
             }
-            setPartial({ sendingIds: stateRef.current.sendingIds.filter((id) => id !== clientId) });
+            commit({ type: 'sendFinished', clientId });
           }
         }
       });
@@ -436,7 +409,7 @@ export function ComposerProvider({
       );
       return task;
     },
-    [nowFn, persist, setPartial, store]
+    [nowFn, persist, commit, store]
   );
 
   const resumeQueued = useCallback(() => {
@@ -474,11 +447,11 @@ export function ComposerProvider({
         if (!draft) throw codedError('STORE_UNAVAILABLE');
         if (body.length > COMPOSER_BODY_MAX) throw codedError('BODY_TOO_LONG');
         const next: ComposerDraft = { ...draft, body, updatedAt: nowFn() };
-        setPartial({ draft: next, error: null });
+        commit({ type: 'draftReplaced', draft: next });
         await persist(target, next, stateRef.current.pending);
       });
     },
-    [enqueueMutation, nowFn, persist, setPartial]
+    [enqueueMutation, nowFn, persist, commit]
   );
 
   const setOccurredAt = useCallback(
@@ -490,11 +463,11 @@ export function ComposerProvider({
         const draft = stateRef.current.draft;
         if (!draft) throw codedError('STORE_UNAVAILABLE');
         const next: ComposerDraft = { ...draft, occurredAt: iso, updatedAt: nowFn() };
-        setPartial({ draft: next, error: null });
+        commit({ type: 'draftReplaced', draft: next });
         await persist(target, next, stateRef.current.pending);
       });
     },
-    [enqueueMutation, nowFn, persist, setPartial]
+    [enqueueMutation, nowFn, persist, commit]
   );
 
   const addAssets = useCallback(
@@ -545,11 +518,11 @@ export function ComposerProvider({
         throw err;
       }
       const next: ComposerDraft = { ...draft, assets: [...draft.assets, ...staged], updatedAt: nowFn() };
-      setPartial({ draft: next, error: null });
+      commit({ type: 'draftReplaced', draft: next });
       await persist(target, next, stateRef.current.pending);
       });
     },
-    [enqueueMutation, nowFn, persist, setPartial, store]
+    [enqueueMutation, nowFn, persist, commit, store]
   );
 
   const removeAsset = useCallback(
@@ -565,7 +538,7 @@ export function ComposerProvider({
         assets: draft.assets.filter((a) => a.stagedId !== stagedId),
         updatedAt: nowFn(),
       };
-      setPartial({ draft: next, error: null });
+      commit({ type: 'draftReplaced', draft: next });
       if (found) {
         const dir = stagedDirFor(target);
         if (found.localUri.startsWith(dir)) {
@@ -579,7 +552,7 @@ export function ComposerProvider({
       await persist(target, next, stateRef.current.pending);
       });
     },
-    [enqueueMutation, nowFn, persist, setPartial, store]
+    [enqueueMutation, nowFn, persist, commit, store]
   );
 
   const reorderAsset = useCallback(
@@ -594,11 +567,11 @@ export function ComposerProvider({
           assets: moveAssetIndex(draft.assets, fromIndex, toIndex),
           updatedAt: nowFn(),
         };
-        setPartial({ draft: next, error: null });
+        commit({ type: 'draftReplaced', draft: next });
         await persist(target, next, stateRef.current.pending);
       });
     },
-    [enqueueMutation, nowFn, persist, setPartial]
+    [enqueueMutation, nowFn, persist, commit]
   );
 
   const save = useCallback(async () => {
@@ -614,11 +587,11 @@ export function ComposerProvider({
       // Persisted-before-pending: the manifest write completes before any
       // network starts, so a crash mid-upload still resumes from disk.
       await persist(target, fresh, nextPending);
-      setPartial({ draft: fresh, pending: nextPending, error: null });
+      commit({ type: 'draftAndPendingReplaced', draft: fresh, pending: nextPending });
       void runSend(record.clientId);
       return { clientId: record.clientId };
     });
-  }, [enqueueMutation, nowFn, persist, runSend, setPartial]);
+  }, [enqueueMutation, nowFn, persist, runSend, commit]);
 
   const discardDraft = useCallback(async () => {
     return enqueueMutation(async () => {
@@ -642,12 +615,12 @@ export function ComposerProvider({
         await persist(target, fresh, stateRef.current.pending);
       } catch (err) {
         const { message } = classifySendError(err);
-        setPartial({ error: message });
+        commit({ type: 'errorSet', message });
         throw err;
       }
-      setPartial({ draft: fresh, error: null });
+      commit({ type: 'draftReplaced', draft: fresh });
     });
-  }, [enqueueMutation, nowFn, persist, setPartial, store]);
+  }, [enqueueMutation, nowFn, persist, commit, store]);
 
   const retry = useCallback(
     async (clientId: string) => {
@@ -695,10 +668,10 @@ export function ComposerProvider({
         };
         const remaining = stateRef.current.pending.filter((p) => p.clientId !== clientId);
         await persist(target, next, remaining);
-        setPartial({ draft: next, pending: remaining, error: null });
+        commit({ type: 'draftAndPendingReplaced', draft: next, pending: remaining });
       });
     },
-    [enqueueMutation, nowFn, persist, setPartial]
+    [enqueueMutation, nowFn, persist, commit]
   );
 
   const discardPending = useCallback(
@@ -723,10 +696,10 @@ export function ComposerProvider({
           }
         }
         await persist(target, stateRef.current.draft, remaining);
-        setPartial({ pending: remaining, error: null });
+        commit({ type: 'pendingRemoved', clientId, clearError: true });
       });
     },
-    [enqueueMutation, persist, setPartial, store]
+    [enqueueMutation, persist, commit, store]
   );
 
   const acknowledgeDelivered = useCallback(
@@ -766,7 +739,7 @@ export function ComposerProvider({
         } catch {
           // Best-effort; in-memory still drops the acknowledged row.
         }
-        setPartial({ pending: remaining });
+        commit({ type: 'pendingRemoved', clientId });
         const dir = stagedDirFor(found.scope);
         const owned = found.slots.map((s) => s.localUri).filter((uri) => uri.startsWith(dir));
         if (owned.length > 0) {
@@ -778,7 +751,7 @@ export function ComposerProvider({
         }
       });
     },
-    [enqueueMutation, persist, setPartial, store]
+    [enqueueMutation, persist, commit, store]
   );
 
   const resetCorrupt = useCallback(async () => {
@@ -798,12 +771,12 @@ export function ComposerProvider({
         await persist(target, fresh, []);
       } catch (err) {
         const { message } = classifySendError(err);
-        setPartial({ error: message });
+        commit({ type: 'errorSet', message });
         throw err;
       }
-      setPartial({ draft: fresh, pending: [], hydrating: false, error: null, sendingIds: [], scopeKey: scopeKey(target) });
+      commit({ type: 'corruptReset', draft: fresh, scopeKey: scopeKey(target) });
     });
-  }, [enqueueMutation, nowFn, persist, setPartial, store]);
+  }, [enqueueMutation, nowFn, persist, commit, store]);
 
   // Scope-tagged visible state: while the scope key lags the current scope,
   // hide stale draft/pending immediately during render (no ref read, no
