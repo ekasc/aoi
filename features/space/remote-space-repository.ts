@@ -73,7 +73,7 @@ export const remoteSpaceRepository: SpaceRepository = {
   },
 
   async clearSpaceForUser(_userId: string): Promise<void> {
-    // No dedicated leave endpoint yet — skip for MVP
+    await apiFetch('/v1/spaces/leave', { method: 'POST' });
   },
 
   async leaveSpace(_userId: string): Promise<void> {

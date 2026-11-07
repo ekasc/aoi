@@ -176,6 +176,20 @@ async function signInWithGoogle(
 
   const { GoogleSignin } = GoogleSigninModule;
 
+  // Sign out of the Google SDK before signing in, every time.
+  //
+  // The SDK keeps the account it last used, so `signIn()` after an app
+  // sign-out hands back that same account without asking: the reader picks
+  // "another account" and is put back into the one they just left. Clearing
+  // the cached credential first is what makes the account sheet a real
+  // choice. Idempotent, and it never throws when nothing is cached.
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // Nothing cached, or the platform refused: `signIn()` below still runs
+    // and will prompt, which is the behaviour we want anyway.
+  }
+
   let response;
   try {
     response = await GoogleSignin.signIn();

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { userSchema } from './user';
+import { registerPushTokenRequestSchema } from './push';
 
 export const AUTH_PROVIDERS = ['apple', 'google'] as const;
 
@@ -107,6 +108,7 @@ export type RefreshResponse = z.infer<typeof refreshResponseSchema>;
 
 export const logoutRequestSchema = z.object({
   refreshToken: z.string().optional(),
+  expoPushToken: registerPushTokenRequestSchema.shape.expoPushToken.optional(),
 });
 
 export type LogoutRequest = z.infer<typeof logoutRequestSchema>;

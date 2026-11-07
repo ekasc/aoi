@@ -7,6 +7,7 @@ import {
   oauthGoogleIdTokenRequestSchema,
   oauthNativeCallbackRequestSchema,
   refreshRequestSchema,
+  logoutRequestSchema,
   sessionResponseSchema,
 } from '@aoi/shared';
 
@@ -209,12 +210,13 @@ export function authRouter(run: RunProgram): Hono {
   );
 
   // ── Logout ───────────────────────────────────────────────────────────
-  router.post('/v1/auth/logout', requireAuth, async (c) => {
+  router.post('/v1/auth/logout', requireAuth, zValidator('json', logoutRequestSchema), async (c) => {
     const header = c.req.header('Authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     // Body refreshToken is accepted for contract compatibility; the session
     // token (from the header) is the credential actually revoked.
-    await run(requireToken(token).pipe(Effect.flatMap(signOutProgram)));
+    const { expoPushToken } = c.req.valid('json');
+    await run(requireToken(token).pipe(Effect.flatMap((sessionToken) => signOutProgram(sessionToken, expoPushToken))));
     return c.json({ ok: true });
   });
 

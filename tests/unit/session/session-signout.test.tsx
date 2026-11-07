@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react';
 
 import { setApiTokens, getApiTokens } from '@/features/api-client';
 import { setAuthApi } from '@/features/auth/auth-api';
@@ -118,7 +118,8 @@ describe('signOut push-token cleanup (single choke point)', () => {
     expect(pushApiMock.unregisterPushToken).toHaveBeenCalledTimes(1);
     expect(authApi.logout).toHaveBeenCalledWith(
       'access-token-123',
-      'refresh-token-123'
+      'refresh-token-123',
+      undefined
     );
     // The token is unregistered while the access token is still valid —
     // strictly before the logout call.
@@ -159,12 +160,94 @@ describe('signOut push-token cleanup (single choke point)', () => {
       fireEvent.click(view.getByTestId('sign-out-everywhere'));
     });
 
-    expect(pushApiMock.unregisterPushToken).toHaveBeenCalledTimes(1);
+    expect(pushApiMock.unregisterPushToken).not.toHaveBeenCalled();
     expect(authApi.revokeAllSessions).toHaveBeenCalledWith('access-token-123');
-    expect(callOrder).toEqual(['unregisterPushToken', 'revokeAllSessions']);
+    expect(callOrder).toEqual(['revokeAllSessions']);
     expect(secureStoreMock.deleteItemAsync).toHaveBeenCalledWith('aoi.session.v1');
     expect(view.getByTestId('sign-out').textContent).toBe('signed_out');
     view.unmount();
+  });
+
+  it('keeps the session and push registration when sign out everywhere fails', async () => {
+    const authApi = createAuthApiMock();
+    vi.mocked(authApi.revokeAllSessions).mockRejectedValueOnce(new Error('offline'));
+    setAuthApi(authApi);
+    secureStoreMock.getItemAsync.mockResolvedValue(STORED_SESSION);
+    const { result, unmount } = renderHook(() => useSession(), { wrapper: SessionProvider });
+    await waitFor(() => expect(result.current.status).toBe('signed_in'));
+    await act(async () => { await expect(result.current.signOutEverywhere()).rejects.toThrow('offline'); });
+    expect(result.current.status).toBe('signed_in');
+    expect(pushApiMock.unregisterPushToken).not.toHaveBeenCalled();
+    expect(secureStoreMock.deleteItemAsync).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('uses the live credential rather than an obsolete session snapshot for revocation', async () => {
+    const authApi = createAuthApiMock();
+    setAuthApi(authApi);
+    secureStoreMock.getItemAsync.mockResolvedValue(STORED_SESSION);
+    const { result, unmount } = renderHook(() => useSession(), { wrapper: SessionProvider });
+    await waitFor(() => expect(result.current.status).toBe('signed_in'));
+    setApiTokens({ accessToken: 'renewed-token', refreshToken: 'renewed-token' });
+    await act(async () => { await result.current.signOutEverywhere(); });
+    expect(authApi.revokeAllSessions).toHaveBeenCalledWith('renewed-token');
+    unmount();
+  });
+
+  it('does not delete the next account when sign-in starts during credential deletion', async () => {
+    const authApi = createAuthApiMock();
+    setAuthApi(authApi);
+    secureStoreMock.getItemAsync.mockResolvedValue(STORED_SESSION);
+    let saved: string | null = STORED_SESSION;
+    let finishDelete: () => void = () => {};
+    secureStoreMock.deleteItemAsync.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { finishDelete = resolve; });
+      saved = null;
+    });
+    secureStoreMock.setItemAsync.mockImplementation(async (_key: string, value: string) => { saved = value; });
+    const { signInWithOAuthProvider } = await import('@/features/auth/oauth-client');
+    const nextUser = { ...USER, id: 'user-2' };
+    vi.mocked(signInWithOAuthProvider).mockResolvedValueOnce({ user: nextUser, tokens: { accessToken: 'token-2' } });
+    const { result, unmount } = renderHook(() => useSession(), { wrapper: SessionProvider });
+    await waitFor(() => expect(result.current.status).toBe('signed_in'));
+    let leaving: Promise<void>;
+    act(() => { leaving = result.current.signOut(); });
+    await waitFor(() => expect(secureStoreMock.deleteItemAsync).toHaveBeenCalled());
+    await act(async () => {
+      const joining = result.current.signInWithProvider('google');
+      finishDelete();
+      await Promise.all([joining, leaving]);
+    });
+    expect(result.current.user?.id).toBe('user-2');
+    expect(JSON.parse(saved ?? '{}').user?.id).toBe('user-2');
+    unmount();
+  });
+
+  it('reports failure and keeps the session when offline sign-out cannot delete saved credentials', async () => {
+    const authApi = createAuthApiMock();
+    vi.mocked(authApi.logout).mockRejectedValueOnce(new Error('offline'));
+    setAuthApi(authApi);
+    secureStoreMock.getItemAsync.mockResolvedValue(STORED_SESSION);
+    secureStoreMock.deleteItemAsync.mockRejectedValueOnce(new Error('keychain unavailable'));
+    const { result, unmount } = renderHook(() => useSession(), { wrapper: SessionProvider });
+    await waitFor(() => expect(result.current.status).toBe('signed_in'));
+    await act(async () => { await expect(result.current.signOut()).rejects.toThrow('keychain unavailable'); });
+    expect(result.current.status).toBe('signed_in');
+    expect(result.current.user?.id).toBe(USER.id);
+    expect(getApiTokens()?.accessToken).toBe('access-token-123');
+    unmount();
+  });
+
+  it.each(['signOut', 'signOutEverywhere', 'deleteAccount'] as const)('does not restore revoked credentials when local cleanup fails after %s', async (action) => {
+    setAuthApi(createAuthApiMock());
+    secureStoreMock.getItemAsync.mockResolvedValue(STORED_SESSION);
+    secureStoreMock.deleteItemAsync.mockRejectedValueOnce(new Error('keychain unavailable'));
+    const { result, unmount } = renderHook(() => useSession(), { wrapper: SessionProvider });
+    await waitFor(() => expect(result.current.status).toBe('signed_in'));
+    await act(async () => { await result.current[action](); });
+    expect(result.current.status).toBe('signed_out');
+    expect(getApiTokens()).toBeNull();
+    unmount();
   });
 
   it('republishes the stored tokens to the api-client on restore (token plumbing)', async () => {

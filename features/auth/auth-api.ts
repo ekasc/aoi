@@ -1,3 +1,8 @@
+import { sessionResponseSchema, oauthCallbackResponseSchema } from '@aoi/shared';
+
+import { apiFetch } from '@/features/api-client';
+import { withRequestDeadline } from '@/features/request-deadline';
+
 import { getAuthApiBaseUrl, isAuthStubMode } from './auth-config';
 import { mockAuthApi } from './mock-auth-api';
 import type {
@@ -5,7 +10,6 @@ import type {
   AuthApi,
   AuthSessionPayload,
   GoogleIdTokenSignInRequest,
-  IdTokenSignInResponse,
 } from './types';
 
 /**
@@ -32,7 +36,7 @@ class RemoteAuthApi implements AuthApi {
     pathname: string,
     payload: AppleIdTokenSignInRequest | GoogleIdTokenSignInRequest
   ): Promise<AuthSessionPayload> {
-    const response = await this.post<IdTokenSignInResponse>(pathname, payload);
+    const response = oauthCallbackResponseSchema.parse(await this.post(pathname, payload));
     return {
       user: response.user,
       tokens: {
@@ -44,75 +48,69 @@ class RemoteAuthApi implements AuthApi {
   }
 
   async getSession(accessToken: string) {
-    const response = await fetch(`${this.baseUrl}/v1/auth/session`, {
+    const response = await apiFetch<unknown>('/v1/auth/session', {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
     });
 
-    if (!response.ok) {
-      // Status travels: restore must tell "credentials dead" (401) apart
-      // from "server hiccup" (anything else) — see session-context.
-      const error = new Error('Unable to fetch session.') as Error & {
-        status?: number;
-      };
-      error.status = response.status;
-      throw error;
-    }
-
-    const payload = (await response.json()) as { user: AuthSessionPayload['user'] };
-    return payload.user;
+    return sessionResponseSchema.parse(response).user;
   }
 
-  async logout(accessToken: string, refreshToken?: string) {
-    await fetch(`${this.baseUrl}/v1/auth/logout`, {
+  async logout(accessToken: string, refreshToken?: string, expoPushToken?: string) {
+    await this.authenticatedRequest('/v1/auth/logout', accessToken, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify(
-        refreshToken ? { refreshToken } : {}
-      ),
+      body: JSON.stringify({
+        ...(refreshToken ? { refreshToken } : {}),
+        ...(expoPushToken ? { expoPushToken } : {}),
+      }),
     });
   }
 
   async revokeAllSessions(accessToken: string) {
-    const response = await fetch(`${this.baseUrl}/v1/auth/sessions`, {
+    await this.authenticatedRequest('/v1/auth/sessions', accessToken, {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
     });
-    if (!response.ok) {
-      throw new Error('Unable to sign out every session.');
-    }
   }
 
   async deleteAccount(accessToken: string) {
-    await fetch(`${this.baseUrl}/v1/auth/account`, {
+    await this.authenticatedRequest('/v1/auth/account', accessToken, {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
     });
   }
 
-  private async post<T>(pathname: string, payload: unknown) {
-    const response = await fetch(`${this.baseUrl}${pathname}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+  private async authenticatedRequest(path: string, accessToken: string, options: RequestInit) {
+    await withRequestDeadline(async (signal) => {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        ...options,
+        headers: { ...options.headers, Authorization: `Bearer ${accessToken}` },
+        signal,
+      });
+      if (!response.ok) throw new Error('Unable to complete account request. Please try again.');
     });
+  }
 
-    if (!response.ok) {
-      throw new Error(`Auth request failed: ${response.status}`);
-    }
+  private async post(pathname: string, payload: unknown): Promise<unknown> {
+    return withRequestDeadline(async (signal) => {
+      const response = await fetch(`${this.baseUrl}${pathname}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal,
+      });
 
-    return (await response.json()) as T;
+      if (!response.ok) {
+        throw new Error(`Auth request failed: ${response.status}`);
+      }
+
+      return response.json();
+    });
   }
 }
 

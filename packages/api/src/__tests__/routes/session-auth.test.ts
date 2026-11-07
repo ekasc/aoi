@@ -65,6 +65,17 @@ const TOKEN = 'session-token-abc123';
 const EXPIRY = Date.parse('2027-01-15T00:00:00.000Z');
 
 describe('worker auth routes (Bearer contract)', () => {
+  it('returns a safe canonical error for a malformed refresh credential', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/v1/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: { secret: 'must-not-be-echoed' } }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request' } });
+  });
+
   it('GET /v1/auth/session returns { authenticated, user, expiresAt } for a live token', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
@@ -154,7 +165,7 @@ describe('worker auth routes (Bearer contract)', () => {
     expect(row?.expires_at).toBe(EXPIRY);
   });
 
-  it('POST /v1/auth/refresh → 401 for an expired session', async () => {
+  it('POST /v1/auth/refresh renews an existing session after its old expiry', async () => {
     const { harness, app } = makeApp();
     insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
     insertSession(harness.d1, 'sess-1', USER_A, TOKEN, Date.parse('2026-01-10T00:00:00.000Z'));
@@ -165,9 +176,9 @@ describe('worker auth routes (Bearer contract)', () => {
       body: JSON.stringify({ refreshToken: TOKEN }),
     });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error.code).toBe('UNAUTHORIZED');
+    expect(body.accessToken).toBe(TOKEN);
   });
 
   it('POST /v1/auth/logout revokes the token (session then 401s)', async () => {
@@ -186,6 +197,46 @@ describe('worker auth routes (Bearer contract)', () => {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
     expect(after.status).toBe(401);
+  });
+
+  it('logout atomically cleans this device push token without affecting other devices or users', async () => {
+    const { harness, app } = makeApp();
+    const otherUser = '00000000-0000-4000-8000-000000000002';
+    insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
+    insertUser(harness.d1, otherUser, 'partner@example.com', 'Partner');
+    insertSession(harness.d1, 'sess-1', USER_A, TOKEN, EXPIRY);
+    insertSession(harness.d1, 'sess-2', USER_A, 'other-device-session', EXPIRY);
+    for (const [id, owner, push] of [
+      ['this-device', USER_A, 'ExpoPushToken[this-device]'],
+      ['other-device', USER_A, 'ExpoPushToken[other-device]'],
+      ['partner-device', otherUser, 'ExpoPushToken[partner-device]'],
+    ]) {
+      harness.d1.runSync('insert into push_tokens (id,user_id,expo_push_token) values (?,?,?)', id, owner, push);
+    }
+    const response = await app.request('/v1/auth/logout', {
+      method: 'POST', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expoPushToken: 'ExpoPushToken[this-device]' }),
+    });
+    expect(response.status).toBe(200);
+    expect(harness.d1.rawDb.prepare('select id from push_tokens order by id').all()).toEqual([
+      { id: 'other-device' }, { id: 'partner-device' },
+    ]);
+    expect(harness.d1.rawDb.prepare('select token from user_sessions').all()).toEqual([{ token: 'other-device-session' }]);
+  });
+
+  it('logout cannot remove a push registration owned by another account', async () => {
+    const { harness, app } = makeApp();
+    const otherUser = '00000000-0000-4000-8000-000000000002';
+    insertUser(harness.d1, USER_A, 'aoi@example.com', 'Aoi');
+    insertUser(harness.d1, otherUser, 'partner@example.com', 'Partner');
+    insertSession(harness.d1, 'sess-1', USER_A, TOKEN, EXPIRY);
+    harness.d1.runSync('insert into push_tokens (id,user_id,expo_push_token) values (?,?,?)', 'partner-device', otherUser, 'ExpoPushToken[partner-device]');
+    const response = await app.request('/v1/auth/logout', {
+      method: 'POST', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expoPushToken: 'ExpoPushToken[partner-device]' }),
+    });
+    expect(response.status).toBe(200);
+    expect(harness.d1.rawDb.prepare('select id from push_tokens').all()).toEqual([{ id: 'partner-device' }]);
   });
 
   it('DELETE /v1/auth/account soft-deletes the user, revokes sessions, and leaves the space', async () => {

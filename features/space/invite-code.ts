@@ -14,8 +14,7 @@ const INVITE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
  * `/.well-known/apple-app-site-association` yet, and no `associatedDomains` is
  * declared, so the custom scheme is still the path that opens the app. The
  * shape is pinned here, by a test, so the day the plumbing lands it is a config
- * change rather than a discovery on someone's phone (see
- * `docs/decisions/invite-link-domain.md`).
+ * change rather than a discovery on someone's phone.
  */
 export const INVITE_LINK_SCHEME = 'aoi';
 export const INVITE_LINK_HOST = 'join';
