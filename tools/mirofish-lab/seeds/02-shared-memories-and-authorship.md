@@ -17,7 +17,7 @@ sources:
     sha256: 5018dfcdd841e812a6a62bb6f8ff3ea775285bbfea78b26bee5e8fd68d2de4a3
   - path: packages/shared/src/moment.ts
     sha256: c9925c8598c4c35718959ef23251a34f65f8f8dc011171348996ec0cc7e4b8e9
-  - path: docs/product/first-use-acceptance.md
+  - path: PRODUCT.md
     sha256: 61dca1d66da19e2376242baf2b3421dd2f9e29814f47a233fd86b46ea9bf8a9f
 ---
 
@@ -38,7 +38,7 @@ sources:
 - Editing and deleting use the observed `updatedAt` as a compare-and-swap. A stale write returns 409 with no activity row; a write scoped to another user is 403; a read of an already-deleted moment is 404 (`packages/api/src/domains/moments.ts`).
 - Only the author may edit or delete their own memory. The API projects `isOwn` and a viewer-relative `authorName` (`"You"` for the caller, the other member's live name otherwise).
 - Deleting a memory is a tombstone, not a hard delete. Attached media is released only when no other live moment references it, in the same batch as the tombstone (`momentToApi` / delete path).
-- The composer preserves a failed or pending send and exposes retry/remove controls; a preview being visible is not the same as a completed server write (`features/composer/*`, `docs/product/first-use-acceptance.md`).
+- The composer preserves a failed or pending send and exposes retry/remove controls; a preview being visible is not the same as a completed server write (`features/composer/*`, `PRODUCT.md`).
 
 ## Documented intent (not proof of current behavior)
 
@@ -67,6 +67,6 @@ sources:
 - `features/composer/composer-machine.ts`
 - `packages/api/src/domains/moments.ts`
 - `packages/shared/src/moment.ts`
-- `docs/product/first-use-acceptance.md`
+- `PRODUCT.md`
 
 A simulated statement about any item above is a hypothesis. Only an executed Aoi test with recorded evidence may be reported as reproduced behavior.

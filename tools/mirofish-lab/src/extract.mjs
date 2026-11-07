@@ -44,11 +44,11 @@ const CODE_FACTS = {
   'features/album/protocol-trust.ts': [
     'Devices have identities and trust anchors; enrollment is explicit.',
   ],
-  'docs/product/first-use-acceptance.md': [
+  'PRODUCT.md': [
     'The product requires pending, failed, and saved states to be distinguishable.',
     'The owner\'s physical two-phone acceptance run remains the gate for native UX.',
   ],
-  'docs/product/relationship-home-and-archive.md': [
+  'PRODUCT.md': [
     'Us and Memories are intentionally separate destinations; sky photos are not dated memories.',
     'Free and Plus see the same relationship home.',
   ],

@@ -12,8 +12,8 @@
       "status": "verified",
       "sources": [
         "PRODUCT.md",
-        "docs/product/first-use-acceptance.md",
-        "docs/product/relationship-home-and-archive.md",
+        "PRODUCT.md",
+        "PRODUCT.md",
         "app/(app)/(tabs)/_layout.tsx",
         "packages/shared/src/space.ts"
       ],
@@ -31,7 +31,7 @@
         "components/space/partner-invitation.tsx",
         "packages/api/src/domains/spaces.ts",
         "packages/shared/src/space.ts",
-        "docs/product/first-use-acceptance.md"
+        "PRODUCT.md"
       ],
       "sha256": "809b2a6ad8a007dd80c97c243d03ae92eaef7313d6a701b25ef0cd3e0a607a92"
     },
@@ -47,7 +47,7 @@
         "features/composer/composer-machine.ts",
         "packages/api/src/domains/moments.ts",
         "packages/shared/src/moment.ts",
-        "docs/product/first-use-acceptance.md"
+        "PRODUCT.md"
       ],
       "sha256": "809665f8f59e7e892aa92f35c0126116887c62767a52e938a71cbc69f09f3c0c"
     },
@@ -61,7 +61,7 @@
         "features/home/day-sky.ts",
         "features/album/sky-photo-repository.ts",
         "features/moments/moments-context.tsx",
-        "docs/product/relationship-home-and-archive.md"
+        "PRODUCT.md"
       ],
       "sha256": "cad97e2999867f8866f3c71f0d0aa2ff650212c3aee1f270d8ca7fe51628ab68"
     },
@@ -76,7 +76,7 @@
         "features/moments/moments-context.tsx",
         "tests/unit/hooks/moments-context-remote.test.tsx",
         "tests/unit/composer/composer-send.test.ts",
-        "docs/product/first-use-acceptance.md"
+        "PRODUCT.md"
       ],
       "sha256": "bc01881e9522d36a156ef6a5a512bbb860607558397880a17d62efa82045cb7a"
     },
@@ -91,7 +91,7 @@
         "packages/api/src/domains/spaces.ts",
         "packages/api/src/domains/auth.ts",
         "tests/unit/space/space-context-refresh.test.tsx",
-        "docs/product/first-use-acceptance.md"
+        "PRODUCT.md"
       ],
       "sha256": "351c1846671c84eebb168390de9b936a4169ae835f3f02f348a54f0e1df9857a"
     },
@@ -121,7 +121,7 @@
         "packages/api/src/routes/session-plus.ts",
         "features/subscription/subscription-context.tsx",
         "app/(app)/paywall.tsx",
-        "docs/product/relationship-home-and-archive.md"
+        "PRODUCT.md"
       ],
       "sha256": "28c44488a4ed7d629a8edbb119a84ecdf5a676280a9a46120de98ca5b37d03bb"
     }
