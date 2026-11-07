@@ -101,6 +101,23 @@ export function SkyEntryProvider({ children, userId }: { children: ReactNode; us
     }));
   }, [entry, finish, progress, reduceMotion]);
 
+  /**
+   * Joining lands straight in the space.
+   *
+   * Creation stops on the welcome card because it carries the invite code —
+   * the one thing the creator has to send. A joiner has already used that
+   * code, so being told "they are already here" is the app repeating what the
+   * code meant. The arrival still plays, then this dismisses it without a tap.
+   */
+  useEffect(() => {
+    if (entry?.kind !== 'welcome' || entry.details.kind !== 'joined') return;
+    // Next frame, not synchronously: the arrival clock has just been released
+    // and setting state inside the effect body would cascade a second render
+    // into the same commit.
+    const frame = requestAnimationFrame(() => enter());
+    return () => cancelAnimationFrame(frame);
+  }, [enter, entry]);
+
   // The landing, not the end. The sky contracts into the header partway
   // through and the ground follows it; the moment it settles is when the space
   // becomes real, so that is where the one haptic belongs. Driven by the

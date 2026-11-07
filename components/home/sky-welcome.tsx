@@ -14,7 +14,20 @@ import { useAoiTheme } from '@/features/theme/theme-context';
 import { isDarkBackground } from '@/components/home/memory-sky';
 import { inviteAppLink, inviteMessage } from '@/features/space/invite-code';
 
-export function SkyWelcome({ details, onEnter }: { details: SkyEntry; onEnter: () => void }) {
+/**
+ * The arrival card for the person who made the space.
+ *
+ * It exists to hand over the invite code, so it is created-only: someone who
+ * joined with that code has nothing to read here, and lands straight in
+ * Memories instead (see `SkyEntryProvider`).
+ */
+export function SkyWelcome({
+  details,
+  onEnter,
+}: {
+  details: SkyEntry;
+  onEnter: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const { colors } = useAoiTheme();
   const ink = { color: colors.textPrimary };
@@ -61,48 +74,40 @@ export function SkyWelcome({ details, onEnter }: { details: SkyEntry; onEnter: (
       <Animated.View style={[styles.invitation, entranceStyle]} testID="sky-invitation-content">
         {details.photoUri ? <Image accessible={false} source={{ uri: details.photoUri }} contentFit="cover" style={styles.photo} /> : null}
         <ThemedText type="title" style={ink}>{details.name || 'Your sky'}</ThemedText>
-        {details.kind === 'created' ? (
-          <View accessible accessibilityLabel={`Your invite code, ${details.inviteCode.split('').join(' ')}`} style={styles.codeBlock}>
-            <ThemedText type="meta" style={muted}>Your invite code</ThemedText>
-            <View style={styles.codeRow}>
-              {details.inviteCode.split('').map((character, index) => (
-                <ThemedText key={`${character}-${index}`} style={[styles.code, ink]}>{character}</ThemedText>
-              ))}
-            </View>
+        <View accessible accessibilityLabel={`Your invite code, ${details.inviteCode.split('').join(' ')}`} style={styles.codeBlock}>
+          <ThemedText type="meta" style={muted}>Your invite code</ThemedText>
+          <View style={styles.codeRow}>
+            {details.inviteCode.split('').map((character, index) => (
+              <ThemedText key={`${character}-${index}`} style={[styles.code, ink]}>{character}</ThemedText>
+            ))}
           </View>
-        ) : <ThemedText style={muted}>{details.partnerName ? `${details.partnerName} is already here.` : 'Your space is ready.'}</ThemedText>}
-        {details.kind === 'created' ? (
-          <ThemedText type="caption" style={muted}>
-            This code expires 15 minutes after it was made.
+        </View>
+        <ThemedText type="caption" style={muted}>
+          This code expires 15 minutes after it was made.
+        </ThemedText>
+        <ThemedText type="body" style={muted}>Send this invite to your partner. They sign in on their phone and join your space with this code. You can start adding memories while you wait.</ThemedText>
+        {/* The link is the good path and the share sheet is the natural way
+            to send one, so sharing leads and copying is the fallback for
+            when there is no one to message yet. */}
+        <Button
+          disabled={!code || sharing}
+          label={sharing ? 'Opening…' : 'Share invite'}
+          variant="muted"
+          onPress={() => void handleShare()}
+        />
+        {/* The button says it copied. A line underneath saying the same
+            thing was the app repeating itself in two places, and it moved
+            everything below it when it appeared. */}
+        <Button
+          accessibilityLiveRegion="polite"
+          label={copied(code) ? 'Code copied' : 'Copy code instead'}
+          variant="muted"
+          onPress={() => copy(code)}
+        />
+        {shareError ? (
+          <ThemedText accessibilityRole="alert" type="caption" style={{ color: colors.destructive }}>
+            {shareError}
           </ThemedText>
-        ) : null}
-        {details.kind === 'created' ? (
-          <>
-            <ThemedText type="body" style={muted}>Send this invite to your partner. They sign in on their phone and join your space with this code. You can start adding memories while you wait.</ThemedText>
-            {/* The link is the good path and the share sheet is the natural way
-                to send one, so sharing leads and copying is the fallback for
-                when there is no one to message yet. */}
-            <Button
-              disabled={!code || sharing}
-              label={sharing ? 'Opening…' : 'Share invite'}
-              variant="muted"
-              onPress={() => void handleShare()}
-            />
-            {/* The button says it copied. A line underneath saying the same
-                thing was the app repeating itself in two places, and it moved
-                everything below it when it appeared. */}
-            <Button
-              accessibilityLiveRegion="polite"
-              label={copied(code) ? 'Code copied' : 'Copy code instead'}
-              variant="muted"
-              onPress={() => copy(code)}
-            />
-            {shareError ? (
-              <ThemedText accessibilityRole="alert" type="caption" style={{ color: colors.destructive }}>
-                {shareError}
-              </ThemedText>
-            ) : null}
-          </>
         ) : null}
         <Button label="Go to Memories" onPress={onEnter} />
       </Animated.View>

@@ -355,7 +355,7 @@ describe('authenticated default entry is Memories', () => {
     expect(lastRedirectHref).toBe('/(app)/(tabs)/(memories)');
   });
 
-  it('root index still guards signed_out to public and unready to setup', async () => {
+  it('root index guards signed_out to public and a confirmed empty account to setup', async () => {
     sessionState = { status: 'signed_out', isHydrated: true };
     const { default: Index } = await import('@/app/index');
     const first = render(<Index />);
@@ -363,10 +363,21 @@ describe('authenticated default entry is Memories', () => {
     first.unmount();
 
     sessionState = { status: 'signed_in', isHydrated: true };
-    spaceState = { status: 'loading', isHydrated: true };
+    spaceState = { status: 'none', isHydrated: true };
     lastRedirectHref = null;
     render(<Index />);
     expect(lastRedirectHref).toBe('/(auth)/space-setup');
+  });
+
+  it.each([
+    ['root', () => import('@/app/index')],
+    ['auth', () => import('@/app/(auth)/_layout')],
+    ['public', () => import('@/app/(public)/_layout')],
+  ] as const)('%s entry never sends a failed space read to onboarding', async (_name, load) => {
+    spaceState = { status: 'error', isHydrated: true };
+    const { default: Entry } = await load();
+    render(<Entry />);
+    expect(lastRedirectHref).toBe('/(app)/(tabs)/(memories)');
   });
 
   it('auth layout sends a ready sign-in straight to the Memories default', async () => {

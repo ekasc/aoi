@@ -12,8 +12,15 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { NativeSheet } from '@/components/ui/native-sheet';
 
 export type NativeDateTimeFieldProps = {
-  label: string;
-  value: Date;
+  /**
+   * The field's name, printed above it. Omit it to let the field stand alone:
+   * an unset field then reads as its `placeholder`, like a text field does.
+   */
+  label?: string;
+  /** What an unset field says instead of a date. */
+  placeholder?: string;
+  /** Null renders the field unset: it asks for a date rather than claiming one. */
+  value: Date | null;
   mode: 'date' | 'time' | 'datetime';
   onChange: (nextValue: Date) => void;
   accessibilityLabel?: string;
@@ -23,8 +30,12 @@ export type NativeDateTimeFieldProps = {
   disabled?: boolean;
   /** Compact chip variant: no label or caption, tighter padding. */
   compact?: boolean;
-  /** Apple-style grouped row: label left, value right, tap to expand. */
-  variant?: 'stacked' | 'row';
+  /**
+   * `row` is the platform's form row: label left, value right, no border.
+   * `inline` is the same row under a label, wearing the text field's hairline
+   * underline instead of a bordered box, so the two fields in a group match.
+   */
+  variant?: 'stacked' | 'row' | 'inline';
   /** Hide the confirmation button (e.g. when an external advance control is used). */
   hideDone?: boolean;
   /** Picker text color — improves contrast on dark panels (iOS only). */
@@ -61,6 +72,7 @@ function formatFieldValue(value: Date, mode: 'date' | 'time' | 'datetime') {
 
 export function NativeDateTimeField({
   label,
+  placeholder,
   value,
   mode,
   onChange,
@@ -82,6 +94,7 @@ export function NativeDateTimeField({
   const [isOpen, setIsOpen] = useState(false);
 
   const isRow = variant === 'row';
+  const isInline = variant === 'inline';
   const [sheetOpen, setSheetOpen] = useState(false);
   const waitingForKeyboard = useRef(false);
   useEffect(() => {
@@ -93,7 +106,22 @@ export function NativeDateTimeField({
     });
     return () => subscription.remove();
   }, [isIos]);
-  const valueLabel = useMemo(() => formatFieldValue(value, mode), [mode, value]);
+  const valueLabel = useMemo(
+    () => (value ? formatFieldValue(value, mode) : 'Choose'),
+    [mode, value]
+  );
+  // The picker always needs a date to start from, even when the field is unset.
+  const pickerValue = useMemo(() => value ?? new Date(), [value]);
+  // The inline variant shares a row with another field, so the long date does
+  // not fit beside the chevron: the same day in the short form, chosen by hand
+  // in the picker that opens from it.
+  const inlineLabel = useMemo(
+    () =>
+      value
+        ? value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : placeholder ?? 'Choose',
+    [value, placeholder]
+  );
   // Android has no combined datetime picker — fall back to date-only there.
   const pickerMode = isAndroid && mode === 'datetime' ? 'date' : mode;
   const pickerDisplay = useMemo(() => (isIos ? 'spinner' : 'default'), [isIos]);
@@ -115,13 +143,17 @@ export function NativeDateTimeField({
 
   return (
     <View style={styles.container}>
-      {!isRow && !compact ? (
-        <ThemedText type="meta" style={{ color: muted }}>
-          {label}
-        </ThemedText>
+      {!isRow && !compact && label ? (
+        isInline ? (
+          <ThemedText type="label">{label}</ThemedText>
+        ) : (
+          <ThemedText type="meta" style={{ color: muted }}>
+            {label}
+          </ThemedText>
+        )
       ) : null}
       <Pressable
-        accessibilityLabel={accessibilityLabel ?? `Choose ${label.toLowerCase()}`}
+        accessibilityLabel={accessibilityLabel ?? (label ? `Choose ${label.toLowerCase()}` : 'Choose a date')}
         accessibilityRole="button"
         accessibilityState={{ disabled: Boolean(disabled), expanded: isIos ? sheetOpen : isOpen }}
         disabled={disabled}
@@ -140,8 +172,9 @@ export function NativeDateTimeField({
           }
         }}
         style={[
-          isRow ? styles.rowButton : styles.valueButton,
-          isRow
+          isRow ? styles.rowButton : isInline ? styles.inlineButton : styles.valueButton,
+          isInline ? { borderBottomColor: border } : undefined,
+          isRow || isInline
             ? undefined
             : {
                 borderColor: border,
@@ -151,13 +184,23 @@ export function NativeDateTimeField({
           disabled ? styles.disabled : undefined,
         ]}
       >
-        {isRow ? (
+        {isRow || isInline ? (
           <>
-            <ThemedText type="body" style={{ color: muted }}>
-              {label}
-            </ThemedText>
+            {isRow ? (
+              <ThemedText type="body" style={{ color: muted }}>
+                {label ?? ''}
+              </ThemedText>
+            ) : (
+              // Unset reads as an ask, not as a value: the field says what it
+              // needs rather than showing today's date as if it were chosen.
+              <ThemedText type="subheading" style={value ? undefined : { color: muted }}>
+                {inlineLabel}
+              </ThemedText>
+            )}
             <View style={styles.rowSpacer} />
-            <ThemedText type="body">{valueLabel}</ThemedText>
+            {isRow ? (
+              <ThemedText type="body">{valueLabel}</ThemedText>
+            ) : null}
             <Ionicons
               color={muted}
               name={(isIos ? sheetOpen : isOpen) ? 'chevron-up' : 'chevron-down'}
@@ -187,7 +230,7 @@ export function NativeDateTimeField({
             mode={pickerMode}
             onChange={handlePickerChange}
             textColor={textColor}
-            value={value}
+            value={pickerValue}
           />
           {hideDone ? null : (
             <Button label="Done" onPress={() => setSheetOpen(false)} />
@@ -203,7 +246,7 @@ export function NativeDateTimeField({
             minuteInterval={minuteInterval}
             mode={pickerMode}
             onChange={handlePickerChange}
-            value={value}
+            value={pickerValue}
           />
       ) : null}
     </View>
@@ -222,6 +265,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing[8],
+  },
+  /** The text field's underline, so a date sits in a row of paper fields. */
+  inlineButton: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[8],
+    minHeight: 56,
+    paddingVertical: Spacing[8],
   },
   rowSpacer: {
     flex: 1,

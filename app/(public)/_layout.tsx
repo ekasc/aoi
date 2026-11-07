@@ -14,11 +14,11 @@ export default function PublicLayout() {
 	}
 
 	if (status === "signed_in") {
-		if (!isSpaceHydrated || !isThemeHydrated) {
+		if (!isSpaceHydrated || !isThemeHydrated || spaceStatus === "loading") {
 			return null;
 		}
 
-		if (spaceStatus !== "ready") {
+		if (spaceStatus === "none") {
 			return <Redirect href="/(auth)/space-setup" />;
 		}
 

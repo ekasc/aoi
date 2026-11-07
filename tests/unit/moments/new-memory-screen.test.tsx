@@ -57,11 +57,11 @@ describe('New memory editor chrome + keyboard', () => {
     expect(NEW_MEMORY_SOURCE).toContain('InlineMemoryComposer');
   });
 
-  it('writes like the letter editor and guides the empty draft', () => {
-    // Display serif at letter scale: writing should feel like writing. The
+  it('writes at display scale and guides the empty draft', () => {
+    // Display serif at reading scale: writing should feel like writing. The
     // size and leading moved onto the shared `inputDisplay` token when the
-    // composer, the letter editor and the event editor stopped each carrying
-    // their own copy of the same 22pt serif.
+    // composer and the event editor stopped each carrying their own copy of
+    // the same 22pt serif.
     expect(COMPOSER_SOURCE).toContain('...Typography.inputDisplay');
     // A quiet hint fills the empty void; it only renders pre-first-word.
     expect(COMPOSER_SOURCE).toContain('composer-empty-hint');
