@@ -29,11 +29,11 @@ export default function Index() {
 		return <Redirect href="/(public)" />;
 	}
 
-	if (!isSpaceHydrated || !isThemeHydrated) {
+	if (!isSpaceHydrated || !isThemeHydrated || spaceStatus === "loading") {
 		return null;
 	}
 
-	if (spaceStatus !== "ready") {
+	if (spaceStatus === "none") {
 		return <Redirect href="/(auth)/space-setup" />;
 	}
 

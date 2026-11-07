@@ -42,7 +42,7 @@ async function fixtureUri(): Promise<string> {
   if (!target.exists) {
     const bytes = await (await fetch(source)).arrayBuffer();
     target.create({ overwrite: true });
-    target.write(new Uint8Array(bytes));
+    await target.write(new Uint8Array(bytes));
   }
   return target.uri;
 }

@@ -27,12 +27,12 @@ export default function AuthLayout() {
   }
 
   if (status === 'signed_in') {
-    if (!isSpaceHydrated || !isThemeHydrated) {
+    if (!isSpaceHydrated || !isThemeHydrated || spaceStatus === 'loading') {
       return null;
     }
 
     if (isSignInRoute) {
-      if (spaceStatus !== 'ready') {
+      if (spaceStatus === 'none') {
         return <Redirect href="/(auth)/space-setup" />;
       }
 
@@ -41,7 +41,7 @@ export default function AuthLayout() {
 
     // An already-ready Space skips setup entirely — except the setup
     // route itself, which redirects to the Memories default on its own once ready.
-    if (spaceStatus !== 'ready') {
+    if (spaceStatus === 'none') {
       if (!isSpaceSetupRoute) {
         return <Redirect href="/(auth)/space-setup" />;
       }
