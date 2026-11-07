@@ -5,7 +5,7 @@ import { Surface } from '@/components/ui/surface';
 import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
-type UploadState = 'idle' | 'picking' | 'uploading' | 'confirming' | 'done' | 'error';
+type UploadState = 'idle' | 'uploading' | 'done' | 'error';
 
 export type UploadProgressProps = {
   state: UploadState;
@@ -15,9 +15,7 @@ export type UploadProgressProps = {
 
 const STATE_LABELS: Record<UploadState, string> = {
   idle: '',
-  picking: 'Selecting…',
   uploading: 'Uploading media…',
-  confirming: 'Confirming upload…',
   done: 'Upload complete',
   error: 'Upload failed',
 };
@@ -30,7 +28,7 @@ export function UploadProgress({ state, progress, error }: UploadProgressProps) 
   const muted = useThemeColor({}, 'muted');
   const danger = useThemeColor({}, 'danger');
 
-  if (state === 'idle' || state === 'picking') return null;
+  if (state === 'idle') return null;
 
   const isError = state === 'error';
   const isDone = state === 'done';
