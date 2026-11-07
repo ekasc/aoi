@@ -8,8 +8,7 @@ import { describe, expect, it } from 'vitest';
  * by @cloudflare/vitest-pool-workers). This test is the verdict: if it
  * passes, Stage 10 can build the sanitize job on server-side re-encode. If
  * it fails, the documented fallback applies (client `exif:false` baseline +
- * magic-byte verification, server re-encode deferred; see
- * docs/shape/spike-sharp-wasm.md).
+ * magic-byte verification, server re-encode deferred).
  *
  * The test deliberately mirrors Tsuki's proven pattern:
  * - `const { default: sharp } = await import('sharp')` — dynamic import

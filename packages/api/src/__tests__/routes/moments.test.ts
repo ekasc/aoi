@@ -256,7 +256,7 @@ describe('GET /v1/spaces/current/moments', () => {
     const jwt = await getTestJwt();
     const own = momentRow();
     const partner = momentRow({
-      id: '00000000-0000-0000-0000-000000000021',
+      id: '00000000-0000-4000-8000-000000000021',
       createdByUserId: TEST_OTHER_USER_ID,
       authorRole: 'partner' as const,
       authorName: 'Alex',
@@ -277,7 +277,7 @@ describe('GET /v1/spaces/current/moments', () => {
     // Partner moment whose stored snapshot still carries the old hardcoded
     // 'you'/'You' — the joined display name must win for the viewer.
     const partner = momentRow({
-      id: '00000000-0000-0000-0000-000000000021',
+      id: '00000000-0000-4000-8000-000000000021',
       createdByUserId: TEST_OTHER_USER_ID,
       authorRole: 'you' as const,
       authorName: 'Alex',

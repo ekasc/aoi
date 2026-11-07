@@ -143,7 +143,7 @@ describe('GET /v1/spaces/current/calendar/events', () => {
       [spaceMemberRow()],
       [
         eventRow({ location: 'Tokyo, Japan' }),
-        eventRow({ id: '00000000-0000-0000-0000-000000000031', location: null }),
+        eventRow({ id: '00000000-0000-4000-8000-000000000031', location: null }),
       ]
     );
     const res = await app.fetch(
@@ -175,9 +175,9 @@ describe('GET /v1/spaces/current/calendar/events', () => {
       [
         eventRow(),
         // Self-created event "about" the partner: still own.
-        eventRow({ id: '00000000-0000-0000-0000-000000000031', actor: 'partner', actorName: 'Alex' }),
+        eventRow({ id: '00000000-0000-4000-8000-000000000031', actor: 'partner', actorName: 'Alex' }),
         // Partner-created event: not own, whatever the actor says.
-        eventRow({ id: '00000000-0000-0000-0000-000000000032', createdByUserId: TEST_OTHER_USER_ID }),
+        eventRow({ id: '00000000-0000-4000-8000-000000000032', createdByUserId: TEST_OTHER_USER_ID }),
       ]
     );
     const res = await app.fetch(

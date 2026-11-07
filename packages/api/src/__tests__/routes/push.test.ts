@@ -8,7 +8,7 @@ vi.stubEnv('CORS_ORIGIN', '*');
 
 const VALID_TOKEN = 'ExponentPushToken[abcDEF123_-]';
 const VALID_NEW_FORMAT_TOKEN = 'ExpoPushToken[abcDEF123_-]';
-const TOKEN_ROW_ID = '00000000-0000-0000-0000-000000000050';
+const TOKEN_ROW_ID = '00000000-0000-4000-8000-000000000050';
 
 let mockReturningResult: any[] = [];
 const insertValuesCalls: any[] = [];

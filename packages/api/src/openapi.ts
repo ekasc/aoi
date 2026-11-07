@@ -153,7 +153,7 @@ export function registerOpenApiRoutes<E extends Env>(app: OpenAPIHono<E>): void 
   // `register` accepts zod schemas directly and emits $ref components.
   for (const [name, schema] of Object.entries(SHARED_COMPONENT_SCHEMAS)) {
     // Shared contracts can be constructed before the OpenAPI extension loads.
-    app.openAPIRegistry.register(name, schema);
+    app.openAPIRegistry.register(name, schema.clone());
   }
 
   app.openapi(healthzRoute, (c) => c.json({ status: 'ok', at: new Date().toISOString() }));
