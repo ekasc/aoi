@@ -73,7 +73,6 @@ export default defineConfig({
             'packages/api/src/__tests__/routes/question.test.ts',
             'packages/api/src/__tests__/routes/someday.test.ts',
             'packages/api/src/__tests__/routes/spaces.test.ts',
-            'packages/api/src/__tests__/routes/squeezes.test.ts',
           ],
           environment: 'node',
           globals: true,

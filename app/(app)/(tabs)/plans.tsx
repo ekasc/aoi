@@ -408,7 +408,7 @@ export default function PlansScreen() {
 	const insets = useSafeAreaInsets();
 	const reduceMotion = useReducedMotion();
 	const fabBottom = useMemo(
-		() => fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios"),
+		() => fabBottomOffset(insets.bottom),
 		[insets.bottom],
 	);
 	const {
@@ -479,6 +479,7 @@ export default function PlansScreen() {
 	const textColor = useThemeColor({}, "text");
 	const muted = useThemeColor({}, "muted");
 	const border = useThemeColor({}, "border");
+	const surface2 = useThemeColor({}, "surface2");
 	const accent = useThemeColor({}, "accent");
 	const accentInk = useThemeColor({}, "accentInk");
 	const onAccent = useThemeColor({}, "onAccent");
@@ -1444,12 +1445,29 @@ export default function PlansScreen() {
 	const monthChrome = (
 	<>
 		<View style={headerBlockStyle}>
-			<MemorySky compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
+			{/*
+			  `header` is the working-screen band: the sky is identity here, not
+			  the subject, so it takes the top of the page without eating it (and
+			  it is short enough to finish its fade inside the header block —
+			  the compact band is taller than this block, so it was clipped
+			  mid-gradient and ended on a hard line).
+			*/}
+			<MemorySky header compact moments={moments ?? []} daysTogether={daysTogether} startDate={space?.relationshipStartDate ?? null} focused={isFocused} />
 			<View style={styles.pillRow}>
 				{/* Month first, then the view control against the right edge,
 				    where a thumb reaches for it. Drilled in, the control
 				    stands down: Back is the way out. */}
-				<GlassSurface style={styles.pill}>
+				{/*
+				  Flat, like the view switch beside it: one row, one material.
+				  This was glass, which made the two controls read as two
+				  different themes sitting next to each other.
+				*/}
+				<View
+					style={[
+						styles.pill,
+						{ backgroundColor: surface2, borderColor: border },
+					]}
+				>
 					<Pressable
 						accessibilityHint={yearOpen ? "Returns to the month view" : "Shows every month of the year"}
 						accessibilityLabel={yearOpen ? "Back to the month view" : "Open the year view"}
@@ -1469,7 +1487,7 @@ export default function PlansScreen() {
 							)}
 						</View>
 					</Pressable>
-				</GlassSurface>
+				</View>
 				{focusedDay !== null ? null : (
 				<View style={styles.viewSwitch}>
 				{/* One control, three ways to see the same plans. It replaces
@@ -1669,6 +1687,7 @@ const styles = StyleSheet.create({
 	},
 	pill: {
 		borderRadius: Radii.pill,
+		borderWidth: StyleSheet.hairlineWidth,
 		flexDirection: 'row',
 		overflow: 'hidden',
 	},

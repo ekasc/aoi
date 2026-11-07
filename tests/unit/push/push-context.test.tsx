@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 
 import { PushProvider } from '@/features/push/push-context';
-import { SqueezeProvider, useSqueeze } from '@/features/squeeze/squeeze-context';
 
 const notificationsMock = vi.hoisted(() => ({
   requestPermissionsAsync: vi.fn(),
@@ -15,6 +14,7 @@ const notificationsMock = vi.hoisted(() => ({
 const apiClientMock = vi.hoisted(() => ({
   isStubMode: vi.fn(() => false),
   apiFetch: vi.fn(async () => ({})),
+  getApiSessionGeneration: vi.fn(() => 0),
 }));
 
 const momentsMock = vi.hoisted(() => ({
@@ -49,18 +49,11 @@ let responseListener: ((response: unknown) => void) | null = null;
 let removeReceived: ReturnType<typeof vi.fn> | null = null;
 let removeResponse: ReturnType<typeof vi.fn> | null = null;
 
-function SqueezeProbe() {
-  const { incomingSqueeze } = useSqueeze();
-  return <div data-testid="squeeze">{incomingSqueeze ? 'incoming' : 'quiet'}</div>;
-}
-
 function renderProvider() {
   return render(
-    <SqueezeProvider>
-      <PushProvider>
-        <SqueezeProbe />
-      </PushProvider>
-    </SqueezeProvider>
+    <PushProvider>
+      <div />
+    </PushProvider>
   );
 }
 
@@ -141,18 +134,6 @@ describe('PushProvider token registration (remote)', () => {
 });
 
 describe('PushProvider receive handling (remote)', () => {
-  it('lights up the squeeze overlay when a squeeze push arrives', async () => {
-    const view = renderProvider();
-    await waitFor(() => expect(receivedListener).not.toBeNull());
-
-    deliver({ kind: 'squeeze' });
-
-    await waitFor(() =>
-      expect(view.getByTestId('squeeze').textContent).toBe('incoming')
-    );
-    view.unmount();
-  });
-
   it('re-reads the space when someone joins it', async () => {
     const view = renderProvider();
     await waitFor(() => expect(receivedListener).not.toBeNull());
@@ -204,7 +185,6 @@ describe('PushProvider receive handling (remote)', () => {
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     expect(calendarMock.refresh).not.toHaveBeenCalled();
-    expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
   });
 });
@@ -243,18 +223,6 @@ describe('PushProvider location routing (v1: ignored)', () => {
 });
 
 describe('PushProvider response handling (backgrounded/killed)', () => {
-  it('lights up the squeeze overlay when the user taps a backgrounded squeeze push', async () => {
-    const view = renderProvider();
-    await waitFor(() => expect(responseListener).not.toBeNull());
-
-    deliverResponse({ kind: 'squeeze' });
-
-    await waitFor(() =>
-      expect(view.getByTestId('squeeze').textContent).toBe('incoming')
-    );
-    view.unmount();
-  });
-
   it('refreshes moments when the user taps a backgrounded moment_* push', async () => {
     const view = renderProvider();
     await waitFor(() => expect(responseListener).not.toBeNull());
@@ -292,7 +260,6 @@ describe('PushProvider response handling (backgrounded/killed)', () => {
     await act(async () => {});
     expect(momentsMock.refresh).not.toHaveBeenCalled();
     expect(calendarMock.refresh).not.toHaveBeenCalled();
-    expect(view.getByTestId('squeeze').textContent).toBe('quiet');
     view.unmount();
   });
 

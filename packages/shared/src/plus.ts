@@ -17,21 +17,13 @@ export type PlusStatus = z.infer<typeof plusStatusSchema>;
 /**
  * v1 benefit contract (P8B). Quotas are Space-level and shared by both
  * members. Free covers all core functionality; Plus raises the media
- * ceiling, removes the future-letter count cap, and unlocks PDF keepsakes.
+ * ceiling and unlocks PDF keepsakes.
  * Storage is never called "unlimited".
  */
 export const FREE_MEDIA_BYTES = 250 * 1024 * 1024;
 export const PLUS_MEDIA_BYTES = 5 * 1024 * 1024 * 1024;
-/** Free Spaces hold one unopened future-sealed letter at a time. */
-export const FREE_FUTURE_LETTERS = 1;
-
 export function mediaLimitForSpace(isPlus: boolean): number {
   return isPlus ? PLUS_MEDIA_BYTES : FREE_MEDIA_BYTES;
-}
-
-/** Plus has no application-level count limit: null means unlimited. */
-export function futureLetterLimitForSpace(isPlus: boolean): number | null {
-  return isPlus ? null : FREE_FUTURE_LETTERS;
 }
 
 /**
@@ -103,10 +95,6 @@ export const spacePlusResponseSchema = z.object({
   mediaUsedBytes: z.number().int().nonnegative(),
   /** Current media ceiling for this Space. */
   mediaLimitBytes: z.number().int().positive(),
-  /** Unopened future-sealed letters; due-but-unopened still counts until opened. */
-  activeFutureLetters: z.number().int().nonnegative(),
-  /** Current future-letter allowance; null means unlimited (Plus). */
-  futureLetterLimit: z.number().int().positive().nullable(),
 });
 
 export type SpacePlusResponse = z.infer<typeof spacePlusResponseSchema>;
@@ -121,11 +109,6 @@ export const limitDetailsSchema = z.discriminatedUnion('kind', [
     usedBytes: z.number().int().nonnegative(),
     limitBytes: z.number().int().positive(),
     plusLimitBytes: z.number().int().positive(),
-  }),
-  z.object({
-    kind: z.literal('future_letters'),
-    usedCount: z.number().int().nonnegative(),
-    limitCount: z.number().int().positive(),
   }),
 ]);
 

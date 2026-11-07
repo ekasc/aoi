@@ -21,8 +21,6 @@ export function buildPushCopy(
   dayOfWeek?: string
 ): { title: string; body: string } {
   switch (kind) {
-    case 'squeeze':
-      return { title: 'A squeeze for you', body: 'Your partner is thinking of you.' };
     case 'partner_joined':
       // The one push here that is about the pair rather than an object. It
       // carries no name and no content: the reader knows who they invited.
@@ -51,10 +49,6 @@ export function buildPushCopy(
         title: 'Location sharing stopped',
         body: 'Your partner stopped sharing their location.',
       };
-    case 'letter_sealed':
-      // Never the words, never the date — just the fact that something is
-      // waiting.
-      return { title: 'A letter, sealed', body: 'They sealed something for a future day.' };
     case 'event_added':
       // Day of week at most — never the title, never the details.
       return {

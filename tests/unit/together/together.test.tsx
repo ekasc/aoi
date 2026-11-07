@@ -8,10 +8,9 @@ import type { ViewerPhoto } from '@/components/moments/photo-viewer';
 const state = vi.hoisted(() => ({
   photos: [] as SkyPhoto[], status: 'ready', readError: null as string | null,
   operation: null as string | null, actionError: null as string | null, scopeKey: 'album-a', reload: vi.fn(), choosePhotos: vi.fn().mockResolvedValue(undefined),
-  sendSqueeze: vi.fn(), isSending: false, lastSentAt: null, push: vi.fn(), isPlus: true, startDate: '2026-03-10' as string | null, viewerId: 'user-1', createdBy: 'user-1',
+  isSending: false, lastSentAt: null, push: vi.fn(), isPlus: true, startDate: '2026-03-10' as string | null, viewerId: 'user-1', createdBy: 'user-1',
 }));
 vi.mock('@/features/album/use-sky-photos', () => ({ useSkyPhotos: () => state }));
-vi.mock('@/features/squeeze/squeeze-context', () => ({ useSqueeze: () => state }));
 vi.mock('@/features/space/space-context', () => ({ useSpace: () => ({ space: { relationshipStartDate: state.startDate, createdByUserId: state.createdBy } }) }));
 vi.mock('@/features/session/session-context', () => ({ useSession: () => ({ user: { id: state.viewerId } }) }));
 vi.mock('@/features/dev/preview', () => ({ usePreviewVariant: () => ({ active: false, variant: 'full' }), skyPreviewStart: () => ({ monthsBack: 0, entitlement: null }) }));
@@ -248,12 +247,6 @@ describe('Us photo sky', () => {
     await press(screen.getByLabelText('Revisit your sky'));
     expect(screen.getByText('Ask your partner to add your relationship start date to explore earlier skies.')).toBeTruthy();
     expect(screen.queryByLabelText('Set our start date')).toBeNull();
-  });
-  it('sends a squeeze from the sky header', async () => {
-    state.photos = [photo('one')];
-    render(<UsScreen />);
-    await press(screen.getByLabelText('Send a squeeze'));
-    expect(state.sendSqueeze).toHaveBeenCalledOnce();
   });
   it('keeps the populated sky free of extra labels and shortcuts', () => {
     state.photos = [photo('one')];

@@ -729,7 +729,7 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
 
   it('Plans renders the same sky compact behind its header (existing providers, no new fetch)', () => {
     expect(PLANS_SOURCE).toContain('MemorySky');
-    expect(PLANS_SOURCE).toContain('<MemorySky compact');
+    expect(PLANS_SOURCE).toContain('<MemorySky header compact');
     expect(PLANS_SOURCE).toContain('useIsFocused');
     expect(PLANS_SOURCE).toContain('getDaysTogether');
     expect(PLANS_SOURCE).toContain('focused={isFocused}');
@@ -749,7 +749,7 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     expect(returnedTree.indexOf('<FrostedBackdrop')).toBeLessThan(
       returnedTree.indexOf('{monthChrome}'),
     );
-    expect(PLANS_SOURCE).toContain('<MemorySky compact');
+    expect(PLANS_SOURCE).toContain('<MemorySky header compact');
     // The stage holds every scroller on this screen (`styles.modeStage`), and
     // it renders after the sky, so no scroll offset can shift the sky.
     const stage = PLANS_SOURCE.slice(
@@ -760,7 +760,7 @@ describe('Compact wiring (Memories + Plans tabs)', () => {
     expect(returnedTree.indexOf('{monthChrome}')).toBeLessThan(
       returnedTree.indexOf('{drillStage}'),
     );
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
+    expect(PLANS_SOURCE.indexOf('<MemorySky header compact')).toBeLessThan(
       PLANS_SOURCE.indexOf('styles.pillRow'),
     );
   });
@@ -833,7 +833,7 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     // The docked system bar is cleared explicitly now that insets are local,
     // and the end clears the floating FAB with room to spare.
     expect(INDEX_SOURCE).toContain(
-      'fabBottomOffset(insets.bottom, process.env.EXPO_OS === "ios") + FAB_SIZE + Spacing[24]',
+      'fabBottomOffset(insets.bottom) + FAB_SIZE + Spacing[24]',
     );
     expect(INDEX_SOURCE).not.toContain('tabBarRowTopOffset');
     // Full-bleed sky: the root carries no horizontal padding (it would
@@ -874,8 +874,8 @@ describe('Fixed header block (pinned sky, zero overlap)', () => {
     // dead band under the header, twice, so there is none.
     expect(PLANS_SOURCE).toContain('styles.headerBlock');
     expect(PLANS_SOURCE).not.toContain('height: headerBlockHeight');
-    expect(PLANS_SOURCE).toContain('<MemorySky compact');
-    expect(PLANS_SOURCE.indexOf('<MemorySky compact')).toBeLessThan(
+    expect(PLANS_SOURCE).toContain('<MemorySky header compact');
+    expect(PLANS_SOURCE.indexOf('<MemorySky header compact')).toBeLessThan(
       PLANS_SOURCE.indexOf('styles.pillRow'),
     );
     // The weekday row is chrome, not list content. The week strip is gone:

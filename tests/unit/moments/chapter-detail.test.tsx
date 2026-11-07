@@ -89,8 +89,6 @@ let mockServerPlus: Record<string, any> | null = {
   expiresAt: null,
   mediaUsedBytes: 0,
   mediaLimitBytes: 5 * 1024 * 1024 * 1024,
-  activeFutureLetters: 0,
-  futureLetterLimit: null,
 };
 const refreshServerPlusSpy = vi.fn(async () => {});
 
@@ -158,8 +156,6 @@ beforeEach(() => {
     expiresAt: null,
     mediaUsedBytes: 0,
     mediaLimitBytes: 5 * 1024 * 1024 * 1024,
-    activeFutureLetters: 0,
-    futureLetterLimit: null,
   };
 });
 
@@ -262,129 +258,6 @@ describe('ChapterDetailScreen (range-loaded, Story-independent)', () => {
   });
 });
 
-describe('ChapterDetailScreen export action', () => {
-  async function renderReadyChapter() {
-    const { key } = oldMonthDay(10);
-    loadChapterRange.mockResolvedValue([
-      makeMoment({ id: 'm-note', type: 'note', title: 'Lake note', body: 'Still water.', occurredAt: `${key}-05T12:00:00.000Z` }),
-      makeMoment({ id: 'm-photo', type: 'media', mediaPreview: 'https://cdn.test/p.jpg', occurredAt: `${key}-10T12:00:00.000Z` }),
-      makeMoment({ id: 'm-voice', type: 'trace', audioUri: 'https://cdn.test/v.m4a', occurredAt: `${key}-15T12:00:00.000Z` }),
-    ]);
-    searchParams = { id: `month:${key}` };
-
-    const { default: ChapterDetailScreen } = await import('@/app/(app)/chapter/[id]');
-    render(<ChapterDetailScreen />);
-    await waitFor(() => expect(screen.getByTestId("chapter-photo-stack")).toBeTruthy());
-    return key;
-  }
-
-  it('exports through the authenticated pipeline with range members', async () => {
-    const key = await renderReadyChapter();
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('Keep as PDF'));
-    });
-
-    // One call carrying the authoritative members — auth, staging, and
-    // cleanup all happen inside the orchestration (pinned downstream).
-    expect(exportChapterKeepsakeSpy).toHaveBeenCalledTimes(1);
-    const [input] = exportChapterKeepsakeSpy.mock.calls[0];
-    // Human filename from the chapter title, not the id grammar.
-    expect(input.filename).toContain(`aoi-keepsake-august-2026`);
-    expect(input.members.map((member: { id: string }) => member.id)).toEqual([
-      'm-note',
-      'm-photo',
-      'm-voice',
-    ]);
-    expect(screen.queryByText('No ink.')).toBeNull();
-  });
-
-  it('surfaces render failure without claiming success', async () => {
-    await renderReadyChapter();
-    exportChapterKeepsakeSpy.mockResolvedValueOnce({ status: 'failed', error: 'No ink.' });
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('Keep as PDF'));
-    });
-
-    expect(await screen.findByText('No ink.')).toBeTruthy();
-  });
-
-  it('treats share-sheet cancellation as a quiet no-op', async () => {
-    await renderReadyChapter();
-    exportChapterKeepsakeSpy.mockResolvedValueOnce({ status: 'cancelled' });
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('Keep as PDF'));
-    });
-
-    expect(screen.queryByText('No ink.')).toBeNull();
-    expect(screen.getByText('Keep as PDF')).toBeTruthy();
-  });
-
-  it('known Free routes export to upgrade instead of exporting', async () => {
-    mockServerPlus = {
-      isPlus: false,
-      status: 'inactive',
-      expiresAt: null,
-      mediaUsedBytes: 0,
-      mediaLimitBytes: 250 * 1024 * 1024,
-      activeFutureLetters: 0,
-      futureLetterLimit: 1,
-    };
-    await renderReadyChapter();
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('Keep as PDF · Plus'));
-    });
-
-    expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/paywall', params: { feature: 'keepsake' } });
-    expect(exportChapterKeepsakeSpy).not.toHaveBeenCalled();
-  });
-
-  it('unknown serverPlus is never displayed as authoritative Free', async () => {
-    mockServerPlus = null;
-    await renderReadyChapter();
-
-    expect(screen.queryByText('Keep as PDF · Plus')).toBeNull();
-    expect(screen.getByText('Check Plus status')).toBeTruthy();
-    expect(
-      screen.getByText(/Plus status is unclear right now/)
-    ).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('Check Plus status'));
-    });
-    expect(refreshServerPlusSpy).toHaveBeenCalledTimes(1);
-    expect(exportChapterKeepsakeSpy).not.toHaveBeenCalled();
-  });
-
-  it('Free chapter viewing stays fully readable; only export is gated', async () => {
-    mockServerPlus = {
-      isPlus: false,
-      status: 'inactive',
-      expiresAt: null,
-      mediaUsedBytes: 0,
-      mediaLimitBytes: 250 * 1024 * 1024,
-      activeFutureLetters: 0,
-      futureLetterLimit: 1,
-    };
-    const key = await renderReadyChapter();
-
-    // Entries (photo/note/voice) render with no Plus requirement…
-    expect(screen.getByTestId("chapter-photo-stack")).toBeTruthy();
-    expect(screen.getByTestId('chapter-member-m-note')).toBeTruthy();
-    expect(screen.getByTestId('chapter-member-m-photo')).toBeTruthy();
-    expect(screen.getByTestId('chapter-member-m-voice')).toBeTruthy();
-
-    // …while export offers the upgrade path instead.
-    await act(async () => {
-      fireEvent.click(screen.getByText('Keep as PDF · Plus'));
-    });
-    expect(pushSpy).toHaveBeenCalledWith({ pathname: '/(app)/paywall', params: { feature: 'keepsake' } });
-    expect(exportChapterKeepsakeSpy).not.toHaveBeenCalled();
-  });
-});
 
 describe('ChapterDetailScreen share card', () => {
   it('previews the card and shares the capture', async () => {

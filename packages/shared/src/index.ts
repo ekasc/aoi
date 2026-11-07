@@ -7,7 +7,6 @@ export * from './preferences';
 export * from './activity';
 export * from './someday';
 export * from './question';
-export * from './letter';
 export * from './plus';
 export * from './push';
 export * from './location';
