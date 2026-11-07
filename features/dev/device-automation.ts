@@ -8,6 +8,7 @@ import {
   type Fiber,
   type FiberRoot,
 } from '@/features/dev/element-tree';
+import { notificationsModule } from '@/features/notifications/notifications-module';
 import { readPhases, resetPhases } from '@/features/dev/phase-timer';
 import { seedDevSkyPhotos } from '@/features/dev/dev-seed-sky';
 import {
@@ -341,6 +342,76 @@ export function a11y(): AccessibilityInventory {
   return captureAccessibilityInventory();
 }
 
+export type ScheduledTestNotification = {
+  ok: boolean;
+  identifier: string | null;
+  fireAt: string | null;
+  granted: boolean;
+  /** Why nothing was scheduled; absent when `ok`. */
+  reason?: string;
+};
+
+/**
+ * Post a real local notification through the app's own notification module.
+ *
+ * Unit tests fake `expo-notifications`, so none of them can prove the OS
+ * accepts the request, that it lands silently, or that the tray entry carries
+ * an intent back into the app. This is the lever for that: it goes through
+ * `notificationsModule()` (so the same gating the app uses applies) and the
+ * same `scheduleNotificationAsync` shape the reminder paths use.
+ *
+ * Dev-only, like the rest of this surface.
+ */
+export async function notifyIn(
+  seconds = 6,
+  options: { title?: string; body?: string } = {},
+): Promise<ScheduledTestNotification> {
+  const empty = { identifier: null, fireAt: null } as const;
+  const notifications = notificationsModule();
+
+  if (!notifications) {
+    return { ...empty, ok: false, granted: false, reason: 'notifications-unavailable' };
+  }
+
+  let granted = false;
+
+  try {
+    const permission = await notifications.requestPermissionsAsync();
+    granted = permission.granted === true;
+
+    if (!granted) {
+      return { ...empty, ok: false, granted, reason: 'permission-denied' };
+    }
+
+    const fireDate = new Date(Date.now() + Math.max(1, seconds) * 1000);
+    const identifier = await notifications.scheduleNotificationAsync({
+      content: {
+        title: options.title ?? 'aoi e2e',
+        body: options.body ?? 'scheduled by the e2e harness',
+        sound: false,
+      },
+      trigger: {
+        type: notifications.SchedulableTriggerInputTypes.DATE,
+        date: fireDate,
+      },
+    });
+
+    return {
+      ok: true,
+      identifier,
+      fireAt: fireDate.toISOString(),
+      granted,
+    };
+  } catch (error) {
+    return {
+      ...empty,
+      ok: false,
+      granted,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 /** One object for the CDP surface: `__aoiDebug.press(...)`, `__aoiDebug.measure(...)`. */
 export const automation = {
   a11y,
@@ -348,6 +419,7 @@ export const automation = {
   inventory,
   measure,
   navigate,
+  notifyIn,
   outline,
   // Phase spans: the attribution tool for a stall no profiler can be pointed at.
   phases: readPhases,

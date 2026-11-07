@@ -98,11 +98,11 @@ function probePushNativeModule(): { platformOS: string | undefined; present: boo
 		if (platformOS !== 'ios') {
 			return { platformOS, present: true };
 		}
-		// eslint-disable-next-line @typescript-eslint/no-require-imports -- deep import mirrors the spec's own source of truth; guarded, fail-open.
-		const registry = require('react-native/Libraries/TurboModule/TurboModuleRegistry') as {
-			get?: (name: string) => unknown;
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- module-scope guard installed before any screen runs; see notificationsModule above.
+		const { TurboModuleRegistry: registry } = require('react-native') as {
+			TurboModuleRegistry?: { get?: (name: string) => unknown };
 		};
-		if (typeof registry.get !== 'function') {
+		if (typeof registry?.get !== 'function') {
 			return { platformOS, present: null };
 		}
 		return { platformOS, present: registry.get('PushNotificationManager') != null };

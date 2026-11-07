@@ -80,10 +80,10 @@ function toState(
 /**
  * Device-local weekly question for stub mode.
  *
- * Deliberately does NOT simulate a partner answer (unlike squeeze's
- * simulated reply): the reveal only means anything when it carries their
- * real words, so the calmer option is to show only your own answer with the
- * soft unlock note. Fabricated partner words would undercut the ritual.
+ * Deliberately does NOT simulate a partner answer: the reveal only means
+ * anything when it carries their real words, so the calmer option is to show
+ * only your own answer with the soft unlock note. Fabricated partner words
+ * would undercut the ritual.
  * Remote mode reveals for real once both partners have answered.
  */
 export function createLocalQuestionRepository(userId: string): QuestionRepository {
