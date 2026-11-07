@@ -122,7 +122,7 @@ function memberConsentRow(
 
 function locationShareRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: '00000000-0000-0000-0000-000000000040',
+    id: '00000000-0000-4000-8000-000000000040',
     userId: TEST_OTHER_USER_ID,
     spaceId: TEST_SPACE_ID,
     mode: 'live',
@@ -343,7 +343,7 @@ describe('GET /v1/spaces/current/location — freshness + consumption', () => {
         reportedAt: new Date(currentNow - 60_000),
       }),
     ]);
-    mockWriteResult = [{ id: '00000000-0000-0000-0000-000000000040' }];
+    mockWriteResult = [{ id: '00000000-0000-4000-8000-000000000040' }];
 
     const first = await app.fetch(req('GET', GET_PATH, { jwt }));
     const firstBody = await first.json();
@@ -550,7 +550,7 @@ describe('DELETE /v1/spaces/current/location/share', () => {
   it('stops sharing and notifies the partner when a row existed', async () => {
     const jwt = await getTestJwt();
     mockSelectQueue.push([membershipRow()]);
-    mockWriteResult = [{ id: '00000000-0000-0000-0000-000000000040' }];
+    mockWriteResult = [{ id: '00000000-0000-4000-8000-000000000040' }];
     const res = await app.fetch(req('DELETE', SHARE_PATH, { jwt }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -616,7 +616,7 @@ describe('POST /v1/spaces/current/location/consent', () => {
   it('opting out deletes any share row and notifies location_stopped', async () => {
     const jwt = await getTestJwt();
     pushGetPreamble();
-    mockWriteResult = [{ id: '00000000-0000-0000-0000-000000000040' }];
+    mockWriteResult = [{ id: '00000000-0000-4000-8000-000000000040' }];
     const res = await app.fetch(
       req('POST', CONSENT_PATH, { jwt, body: { consented: false } })
     );

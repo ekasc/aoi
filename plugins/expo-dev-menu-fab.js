@@ -5,7 +5,7 @@
  * stays reachable through the shake gesture — only the always-on-top
  * button is removed so design captures read as production.
  */
-const { withAndroidManifest } = require('@expo/config-plugins');
+const { withAndroidManifest } = require('expo/config-plugins');
 
 const FLAG = 'EXDevMenuShowFloatingActionButton';
 

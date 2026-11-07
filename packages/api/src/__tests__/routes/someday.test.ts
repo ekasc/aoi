@@ -5,8 +5,8 @@ import { app, getTestJwt, req, TEST_USER_ID, TEST_OTHER_USER_ID, TEST_SPACE_ID }
 vi.stubEnv('JWT_SECRET', 'test-jwt-secret-for-testing');
 vi.stubEnv('CORS_ORIGIN', '*');
 
-const TEST_SOMEDAY_ID = '00000000-0000-0000-0000-000000000040';
-const TEST_OTHER_SPACE_ID = '00000000-0000-0000-0000-000000000011';
+const TEST_SOMEDAY_ID = '00000000-0000-4000-8000-000000000040';
+const TEST_OTHER_SPACE_ID = '00000000-0000-4000-8000-000000000011';
 
 const mockSelectQueue: any[][] = [];
 let mockReturningResult: any[] = [];
@@ -94,7 +94,7 @@ describe('GET /v1/spaces/current/someday', () => {
       [
         somedayRow(),
         somedayRow({
-          id: '00000000-0000-0000-0000-000000000041',
+          id: '00000000-0000-4000-8000-000000000041',
           title: 'Partner item',
           createdByUserId: TEST_OTHER_USER_ID,
         }),
@@ -113,16 +113,16 @@ describe('GET /v1/spaces/current/someday', () => {
     mockSelectQueue.push(
       [spaceMemberRow()],
       [
-        somedayRow({ id: '00000000-0000-0000-0000-000000000041', title: 'Old open', createdAt: new Date('2026-06-01T10:00:00Z') }),
+        somedayRow({ id: '00000000-0000-4000-8000-000000000041', title: 'Old open', createdAt: new Date('2026-06-01T10:00:00Z') }),
         somedayRow({
-          id: '00000000-0000-0000-0000-000000000042',
+          id: '00000000-0000-4000-8000-000000000042',
           title: 'Checked long ago',
           checkedAt: new Date('2026-07-02T10:00:00Z'),
           checkedByUserId: TEST_OTHER_USER_ID,
         }),
-        somedayRow({ id: '00000000-0000-0000-0000-000000000043', title: 'New open', createdAt: new Date('2026-07-10T10:00:00Z') }),
+        somedayRow({ id: '00000000-0000-4000-8000-000000000043', title: 'New open', createdAt: new Date('2026-07-10T10:00:00Z') }),
         somedayRow({
-          id: '00000000-0000-0000-0000-000000000044',
+          id: '00000000-0000-4000-8000-000000000044',
           title: 'Checked recently',
           createdAt: new Date('2026-06-15T10:00:00Z'),
           checkedAt: new Date('2026-07-20T10:00:00Z'),
@@ -147,12 +147,12 @@ describe('GET /v1/spaces/current/someday', () => {
       [spaceMemberRow()],
       [
         somedayRow({
-          id: '00000000-0000-0000-0000-000000000041',
+          id: '00000000-0000-4000-8000-000000000041',
           checkedAt: new Date('2026-07-20T10:00:00Z'),
           checkedByUserId: TEST_USER_ID,
         }),
         somedayRow({
-          id: '00000000-0000-0000-0000-000000000042',
+          id: '00000000-0000-4000-8000-000000000042',
           checkedAt: new Date('2026-07-21T10:00:00Z'),
           checkedByUserId: TEST_OTHER_USER_ID,
         }),

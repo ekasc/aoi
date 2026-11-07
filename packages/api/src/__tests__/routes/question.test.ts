@@ -49,7 +49,7 @@ function expectedWeek(now = FIXED_NOW) {
 
 function weeklyAnswerRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: '00000000-0000-0000-0000-000000000050',
+    id: '00000000-0000-4000-8000-000000000050',
     spaceId: TEST_SPACE_ID,
     userId: TEST_USER_ID,
     weekKey: expectedWeek().weekKey,
@@ -157,7 +157,7 @@ describe('GET /v1/spaces/current/question', () => {
       [
         weeklyAnswerRow(),
         weeklyAnswerRow({
-          id: '00000000-0000-0000-0000-000000000051',
+          id: '00000000-0000-4000-8000-000000000051',
           userId: TEST_OTHER_USER_ID,
           answer: 'Their secret answer',
         }),
@@ -233,7 +233,7 @@ describe('PUT /v1/spaces/current/question/answer', () => {
       [
         weeklyAnswerRow({ answer: 'Something small and true.' }),
         weeklyAnswerRow({
-          id: '00000000-0000-0000-0000-000000000051',
+          id: '00000000-0000-4000-8000-000000000051',
           userId: TEST_OTHER_USER_ID,
           answer: 'Their secret answer',
         }),
